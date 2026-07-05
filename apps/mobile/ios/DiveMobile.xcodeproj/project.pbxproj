@@ -28,6 +28,9 @@
 		8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B5388708193690CDCF20BB /* DiveSessionStore.swift */; };
 		AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */; };
 		ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 972E39BFCAB25BD1867935E1 /* Foundation.framework */; };
+		B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* DemoDepthSensorProvider.swift */; };
+		B10000000000000000000002 /* DepthSensorAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* DepthSensorAvailability.swift */; };
+		B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */; };
 		C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* WatchConnectivityInbox.swift */; };
 		C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* WatchConnectivityModule.swift */; };
 		C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* WatchConnectivityModuleBridge.m */; };
@@ -108,6 +111,10 @@
 		956EB9D331534828E0706E5C /* SessionListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		972E39BFCAB25BD1867935E1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthGaugeRail.swift; sourceTree = "<group>"; };
+		B20000000000000000000001 /* DemoDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoDepthSensorProvider.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* DepthSensorAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorAvailability.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthAutoLaunchAuthorization.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = DiveMobile/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = DiveMobile/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = DiveMobile/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
@@ -174,10 +181,12 @@
 				895332B886DE77424F1410C1 /* DiveWatchApp.swift */,
 				66C077D411D8E510F33267A1 /* Models */,
 				E01C29F743F7AC71BB250F07 /* Recording */,
+				B30000000000000000000001 /* Runtime */,
 				8500806367AB67E6834194EA /* Sensors */,
 				8F2F8F15CA5FAA9EAB959C88 /* Storage */,
 				C92F451D86433739DA2613A0 /* Sync */,
 				C2D0DFFB26398A6FE9F151FC /* Views */,
+				B20000000000000000000004 /* Info.plist */,
 				541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */,
 			);
 			name = DiveWatchApp;
@@ -251,6 +260,8 @@
 			isa = PBXGroup;
 			children = (
 				50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */,
+				B20000000000000000000002 /* DepthSensorAvailability.swift */,
+				B20000000000000000000001 /* DemoDepthSensorProvider.swift */,
 				39957D0BC852B0FDF38FABA2 /* MockDepthSensorProvider.swift */,
 				1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */,
 			);
@@ -274,6 +285,15 @@
 				5709B34CF0A7D63546082F79 /* Pods-DiveMobile.release.xcconfig */,
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		B30000000000000000000001 /* Runtime */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */,
+			);
+			name = Runtime;
+			path = Runtime;
 			sourceTree = "<group>";
 		};
 		C2D0DFFB26398A6FE9F151FC /* Views */ = {
@@ -572,8 +592,11 @@
 				FA1000000000000000000008 /* SafetyStopController.swift in Sources */,
 				FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */,
 				11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */,
+				B10000000000000000000002 /* DepthSensorAvailability.swift in Sources */,
+				B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */,
 				6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */,
 				AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */,
+				B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */,
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
 				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
 				6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */,
@@ -839,12 +862,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Dive Watch";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKApplication = YES;
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.reactjs.native.example.DiveMobile;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DiveWatchApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -871,12 +890,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = "Dive Watch";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKApplication = YES;
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = org.reactjs.native.example.DiveMobile;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DiveWatchApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

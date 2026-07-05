@@ -171,7 +171,7 @@ export function logEntryFormValuesToEntry(
   return {
     ...entry,
     source: entry.watchCapture ? 'watch' : 'manual',
-    syncStatus: entry.watchCapture ? 'pending' : 'localOnly',
+    syncStatus: entry.watchCapture ? entry.syncStatus : 'localOnly',
     updatedAt: Date.now() / 1000,
     manual: {
       ...entry.manual,

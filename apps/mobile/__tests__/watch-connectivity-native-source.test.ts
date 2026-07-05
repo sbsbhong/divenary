@@ -159,16 +159,54 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('markPlanExecuted');
     expect(transport).toContain('didReceiveApplicationContext applicationContext');
     expect(transport).toContain('onPlannedDivesChanged');
-    expect(home).toContain('DivePlanSetupView(store: store, plan: $plan)');
     expect(home).toContain('PlannedDivesSection(');
     expect(home).toContain('selectedPlanLocalId: plan.sourcePlanLocalId');
     expect(home).toContain('plan = plannedDive.preDivePlan');
     expect(home).toContain('Use Plan');
-    expect(home).toContain('RecordingView(store: store, plan: plan)');
+    expect(home).toContain('onSelect: apply(plannedDive:)');
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .real)');
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .real)');
     expect(home).toContain('ForEach(plannedDives)');
+    expect(home).not.toContain('PreDivePlanFields');
+    expect(home).not.toContain('DiveTextField');
+    expect(home).not.toContain('Stepper(');
     expect(home).not.toContain('plannedDives.prefix(3)');
     expect(home).not.toContain('RecordingView(store: store, plan: plannedDive.preDivePlan)');
     expect(recorder).toContain('sourcePlanLocalId');
+  });
+
+  it('separates real sensor recording from explicit demo capture mode', () => {
+    const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
+    const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const realSensor = readRepoFile('apps/mobile/ios/DiveWatchApp/Sensors/RealDepthSensorProvider.swift');
+    const demoSensor = readRepoFile('apps/mobile/ios/DiveWatchApp/Sensors/DemoDepthSensorProvider.swift');
+    const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
+    const watchInfoPlist = readRepoFile('apps/mobile/ios/DiveWatchApp/Info.plist');
+
+    expect(record).toContain('enum DiveCaptureMode: String, Codable, Equatable');
+    expect(record).toContain('let captureMode: DiveCaptureMode');
+    expect(record).toContain('captureMode = session.captureMode.rawValue');
+    expect(recorder).toContain('init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode)');
+    expect(recorder).toContain('captureMode: captureMode');
+    expect(recording).toContain('enum WatchRecordingMode');
+    expect(recording).toContain('case real');
+    expect(recording).toContain('case demo');
+    expect(recording).toContain('RealDepthSensorProvider()');
+    expect(recording).toContain('DemoDepthSensorProvider()');
+    expect(realSensor).toContain('CMWaterSubmersionManager');
+    expect(realSensor).toContain('didUpdate measurement');
+    expect(realSensor).not.toContain('TODO');
+    expect(demoSensor).toContain('final class DemoDepthSensorProvider');
+    expect(home).toContain('recordingMode: .real');
+    expect(home).toContain('recordingMode: .demo');
+    expect(home).toContain('DepthSensorAvailability.current');
+    expect(home).toContain('DepthAutoLaunchAuthorization');
+    expect(home).not.toContain('PreDivePlanFields');
+    expect(home).not.toContain('DiveTextField');
+    expect(watchInfoPlist).toContain('<key>WKBackgroundModes</key>');
+    expect(watchInfoPlist).toContain('<string>underwater-depth</string>');
+    expect(watchInfoPlist).toContain('<key>NSMotionUsageDescription</key>');
   });
 
   it('refreshes the watch home view with a top pull gesture', () => {
@@ -188,11 +226,14 @@ describe('WatchConnectivity native source contract', () => {
 
     expect(home).toContain('Scuba Start');
     expect(home).toContain('Free Session Start');
+    expect(home).toContain('Demo');
     expect(home).toContain('Air · Stop 5m/3:00');
     expect(home).toContain('Supplemental log');
-    expect(home).toContain('Label("Dive Plan", systemImage: "list.clipboard")');
-    expect(home).toContain('private struct DivePlanSetupView');
-    expect(home).toContain('private struct PreDivePlanFields');
+    expect(home).toContain('Sensor ready');
+    expect(home).not.toContain('Text("Dive Watch")');
+    expect(home).not.toContain('Label("Dive Plan", systemImage: "list.clipboard")');
+    expect(home).not.toContain('private struct DivePlanSetupView');
+    expect(home).not.toContain('private struct PreDivePlanFields');
     expect(home).not.toContain('Start Dive');
     expect(home).not.toContain('@State private var isPreDivePlanExpanded');
     expect(home).not.toContain('PreDivePlanForm(');
@@ -206,8 +247,8 @@ describe('WatchConnectivity native source contract', () => {
       home.indexOf('private func applyPreferredDiveMode()'),
     );
 
-    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .freedive))');
-    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .scuba))');
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .real)');
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .real)');
     expect(explicitStartPlan).toContain('plan.sourcePlanLocalId == nil || plan.diveMode == diveMode');
     expect(explicitStartPlan).toContain('next.sourcePlanLocalId = nil');
     expect(explicitStartPlan).toContain('next.title = ""');
@@ -226,9 +267,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).toContain('DiveAutoStartMonitor(sensorProvider: RealDepthSensorProvider())');
     expect(home).toContain('activationDepthMeters: Double = 3');
     expect(home).toContain('sample.depthMeters >= activationDepthMeters');
-    expect(home).toContain('store.updatePreferredDiveMode(nextMode)');
+    expect(home).toContain('store.updatePreferredDiveMode(diveMode)');
+    expect(home).toContain('store.updatePreferredDiveMode(plan.diveMode)');
     expect(home).toContain('.navigationDestination(item: $automaticDiveStartRequest)');
-    expect(home).toContain('RecordingView(store: store, plan: request.plan)');
+    expect(home).toContain('RecordingView(store: store, plan: request.plan, recordingMode: .real)');
   });
 
   it('keeps active watch dive modes to scuba and freedive with mode-specific live instruments', () => {
@@ -248,7 +290,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('FreeSurfaceIntervalInstrument');
     expect(recording).toContain('ScubaLiveInstrument');
     expect(recording).toContain('SafetyStopInstrument');
-    expect(recording).toContain('Recommended stop complete');
+    expect(recording).toContain('#Preview("Stop Complete")');
     expect(recording).not.toContain('safe to ascend');
   });
 
@@ -292,15 +334,21 @@ describe('WatchConnectivity native source contract', () => {
       recording.indexOf('private struct LiveInstrumentMetric'),
     );
 
-    expect(safetyStopRouting).toContain('case .armed:');
-    expect(safetyStopRouting).toContain('return recorder.scubaSafetyStop.required');
+    expect(safetyStopRouting).toContain('case .active, .pausedTooDeep, .pausedTooShallow, .completed:');
+    expect(safetyStopRouting).toContain('case .armed, .unknown, .notRequired, .skippedOrIncomplete:');
     expect(freeDiveActiveInstrument).toContain('DepthGaugeRail(');
     expect(freeDiveActiveInstrument).toContain('max(30, ceil(max(currentDepthMeters, maxDepthMeters) / 10) * 10)');
     expect(freeDiveActiveInstrument).toContain('String(localized: "Ascent")');
+    expect(freeDiveActiveInstrument).not.toContain('Current dive');
+    expect(freeDiveActiveInstrument).not.toContain('Freedive training reference only.');
     expect(freeDiveActiveInstrument).not.toContain('Ascent/descent');
-    expect(safetyStopInstrument).toContain('title: String(localized: "Current depth")');
+    expect(safetyStopInstrument).toContain('warningBand');
+    expect(safetyStopInstrument).toContain('isTimerPaused');
     expect(safetyStopInstrument).toContain('value: DiveFormatters.depth(currentDepthMeters)');
-    expect(safetyStopInstrument).toContain('Recommended safety stop reminder · no safety calculation');
+    expect(safetyStopInstrument).not.toContain('Within stop zone');
+    expect(safetyStopInstrument).not.toContain('Deeper than stop zone');
+    expect(safetyStopInstrument).not.toContain('Shallower than stop zone');
+    expect(safetyStopInstrument).not.toContain('Recommended safety stop reminder · no safety calculation');
     expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters, safetyStop.maxDepthMeters) + 2) / 2) * 2');
     expect(watchUiCheck).toContain('safe to ascend');
     expect(watchUiCheck).toContain('상승 가능');

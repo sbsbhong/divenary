@@ -3,17 +3,23 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var store: DiveSessionStore
     @StateObject private var autoStartMonitor = DiveAutoStartMonitor(sensorProvider: RealDepthSensorProvider())
+    @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
+    @State private var sensorAvailability = DepthSensorAvailability.current
     @State private var automaticDiveStartRequest: AutomaticDiveStartRequest?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HomeHeader(sessionCount: store.sessions.count)
+                    HomeHeader(
+                        sessionCount: store.sessions.count,
+                        sensorAvailable: sensorAvailability.isWaterSubmersionAvailable,
+                        autoLaunchStatus: autoLaunchAuthorization.statusText
+                    )
 
                     NavigationLink {
-                        RecordingView(store: store, plan: explicitStartPlan(for: .freedive))
+                        RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .real)
                             .onAppear {
                                 selectStartMode(.freedive)
                             }
@@ -26,9 +32,10 @@ struct HomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(!sensorAvailability.isWaterSubmersionAvailable)
 
                     NavigationLink {
-                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba))
+                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .real)
                             .onAppear {
                                 selectStartMode(.scuba)
                             }
@@ -42,11 +49,25 @@ struct HomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(!sensorAvailability.isWaterSubmersionAvailable)
+
+                    if !store.plannedDives.isEmpty {
+                        PlannedDivesSection(
+                            plannedDives: store.plannedDives,
+                            selectedPlanLocalId: plan.sourcePlanLocalId,
+                            onSelect: apply(plannedDive:)
+                        )
+                    }
 
                     NavigationLink {
-                        DivePlanSetupView(store: store, plan: $plan)
+                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .demo)
                     } label: {
-                        PlanSummaryCard(plan: plan)
+                        StartSessionCard(
+                            title: "Demo",
+                            subtitle: String(localized: "Crown-controlled sample dive"),
+                            systemImage: "digitalcrown.arrow.clockwise",
+                            accent: DiveWatchTheme.secondary
+                        )
                     }
                     .buttonStyle(.plain)
 
@@ -70,12 +91,14 @@ struct HomeView: View {
                 await store.refreshFromCompanion()
             }
             .background(DiveWatchTheme.background.ignoresSafeArea())
-            .navigationTitle("Dive Watch")
+            .navigationTitle("Dive")
             .navigationDestination(item: $automaticDiveStartRequest) { request in
-                RecordingView(store: store, plan: request.plan)
+                RecordingView(store: store, plan: request.plan, recordingMode: .real)
             }
             .onAppear {
                 applyPreferredDiveMode()
+                sensorAvailability = DepthSensorAvailability.current
+                autoLaunchAuthorization.refresh()
                 autoStartMonitor.onAutoStart = {
                     startAutomaticDive()
                 }
@@ -123,6 +146,11 @@ struct HomeView: View {
         store.updatePreferredDiveMode(plan.diveMode)
         automaticDiveStartRequest = AutomaticDiveStartRequest(plan: plan)
     }
+
+    private func apply(plannedDive: WatchPlannedDive) {
+        plan = plannedDive.preDivePlan
+        store.updatePreferredDiveMode(plan.diveMode)
+    }
 }
 
 private struct AutomaticDiveStartRequest: Identifiable, Hashable {
@@ -135,66 +163,6 @@ private struct AutomaticDiveStartRequest: Identifiable, Hashable {
 
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
-    }
-}
-
-private struct DivePlanSetupView: View {
-    @ObservedObject var store: DiveSessionStore
-    @Binding var plan: PreDivePlan
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                InstrumentCard(accent: DiveWatchTheme.secondary) {
-                    VStack(alignment: .leading, spacing: 7) {
-                        Text("DIVE PLAN")
-                            .font(DiveWatchTheme.labelFont())
-                            .foregroundStyle(DiveWatchTheme.secondary)
-                        Text(plan.siteName.isEmpty ? String(localized: "Set the plan, then start.") : plan.siteName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.68)
-                    }
-                }
-
-                if !store.plannedDives.isEmpty {
-                    PlannedDivesSection(
-                        plannedDives: store.plannedDives,
-                        selectedPlanLocalId: plan.sourcePlanLocalId,
-                        onSelect: apply(plannedDive:)
-                    )
-                }
-
-                PreDivePlanFields(
-                    plan: $plan,
-                    onDiveModeChanged: { nextMode in
-                        store.updatePreferredDiveMode(nextMode)
-                    }
-                )
-
-                NavigationLink {
-                    RecordingView(store: store, plan: plan)
-                } label: {
-                    Label("Start Planned Dive", systemImage: "play.fill")
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                DiveDisclaimer()
-            }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-            .padding(.vertical, 10)
-        }
-        .refreshable {
-            await store.refreshFromCompanion()
-        }
-        .background(DiveWatchTheme.background.ignoresSafeArea())
-        .navigationTitle("Dive Plan")
-    }
-
-    private func apply(plannedDive: WatchPlannedDive) {
-        plan = plannedDive.preDivePlan
-        store.updatePreferredDiveMode(plan.diveMode)
     }
 }
 
@@ -325,40 +293,25 @@ private struct PlannedDiveMetric: View {
 
 private struct HomeHeader: View {
     let sessionCount: Int
+    let sensorAvailable: Bool
+    let autoLaunchStatus: String
 
     var body: some View {
         InstrumentCard(accent: DiveWatchTheme.primary) {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(alignment: .center) {
-                    StatusPill(title: String(localized: "Watch assistant"))
-                    Spacer(minLength: 6)
-                    Text("\(sessionCount)")
-                        .font(DiveWatchTheme.metricFont(size: 18, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.primary)
-                        .monospacedDigit()
-                    Text("logs")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    StatusPill(
+                        title: sensorAvailable ? String(localized: "Sensor ready") : String(localized: "Ultra required"),
+                        color: sensorAvailable ? DiveWatchTheme.secondary : DiveWatchTheme.danger
+                    )
+                    StatusPill(title: "\(sessionCount)", color: DiveWatchTheme.primary)
                 }
 
-                Text("Dive Watch")
-                    .font(DiveWatchTheme.metricFont(size: 25, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
-
-                Text("Supplemental log · no safety calculation")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-
-                Text("Does not replace a certified dive computer.")
-                    .font(.system(size: 12, weight: .medium))
+                Text(autoLaunchStatus)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.leading)
-                    .lineLimit(3)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.68)
             }
         }
     }
@@ -406,41 +359,6 @@ private struct StartSessionCard: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
-            }
-        }
-    }
-}
-
-private struct PlanSummaryCard: View {
-    let plan: PreDivePlan
-
-    var body: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 8) {
-                    Label("Dive Plan", systemImage: "list.clipboard")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-
-                    Spacer(minLength: 4)
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                }
-
-                Text(plan.siteName.isEmpty ? String(localized: "Set the plan, then start.") : plan.siteName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-
-                HStack(spacing: 8) {
-                    PlannedDiveMetric(title: String(localized: "Mode"), value: plan.diveMode.label)
-                    PlannedDiveMetric(title: String(localized: "Max"), value: DiveFormatters.depth(plan.plannedMaxDepthMeters))
-                }
             }
         }
     }
@@ -500,74 +418,5 @@ private struct LatestMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
-    }
-}
-
-private struct PreDivePlanFields: View {
-    @Binding var plan: PreDivePlan
-    let onDiveModeChanged: (DiveMode) -> Void
-
-    var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.secondary) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("PLAN DETAILS")
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.secondary)
-
-                Picker("Mode", selection: diveModeSelection) {
-                    ForEach(DiveMode.allCases) { mode in
-                        Text(mode.label).tag(mode)
-                    }
-                }
-                .labelsHidden()
-                .frame(height: 58)
-
-                if plan.diveMode == .scuba {
-                    DiveTextField(title: String(localized: "Gas label"), text: $plan.gasLabel)
-                }
-                DiveTextField(title: String(localized: "Site"), text: $plan.siteName)
-                DiveTextField(title: String(localized: "Buddy"), text: $plan.buddyName)
-                DiveTextField(title: String(localized: "Quick note"), text: $plan.quickNote)
-
-                Stepper(value: $plan.plannedMaxDepthMeters, in: 3...40, step: 1) {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("PLANNED MAX")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                        Text("\(Int(plan.plannedMaxDepthMeters)) m")
-                            .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .monospacedDigit()
-                    }
-                }
-            }
-        }
-    }
-
-    private var diveModeSelection: Binding<DiveMode> {
-        Binding(
-            get: { plan.diveMode },
-            set: { nextMode in
-                plan.diveMode = nextMode
-                onDiveModeChanged(nextMode)
-            }
-        )
-    }
-}
-
-private struct DiveTextField: View {
-    let title: String
-    @Binding var text: String
-
-    var body: some View {
-        TextField(title, text: $text)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(DiveWatchTheme.text)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                    .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-            )
     }
 }

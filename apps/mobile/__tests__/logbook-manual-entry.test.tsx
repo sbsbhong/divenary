@@ -76,6 +76,25 @@ const watchEntry = watchSessionToDiveLogEntry({
   } satisfies WatchSession,
 });
 
+const demoWatchEntry: DiveLogEntry = {
+  ...watchEntry,
+  localId: 'watch:demo-watch-entry-1:1781352600',
+  manual: {
+    ...watchEntry.manual,
+    site: { name: 'Demo Reef' },
+  },
+  watchCapture: {
+    ...watchEntry.watchCapture!,
+    importKey: 'demo-watch-entry-1:1781352600',
+    session: {
+      ...watchEntry.watchCapture!.session,
+      localSessionId: 'demo-watch-entry-1',
+      siteName: 'Demo Reef',
+      captureMode: 'demo',
+    },
+  },
+};
+
 const secondPreciseWatchEntry = watchSessionToDiveLogEntry({
   now: 1781353000,
   session: {
@@ -808,6 +827,17 @@ describe('Logbook manual entry flow', () => {
     expect(root.findAllByProps({ testID: 'logbook-list-source-Watch Reef' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'logbook-list-source-Manual Reef' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'logbook-list-selected-dot' })).toHaveLength(0);
+  });
+
+  test('marks demo watch captures on the log detail header', async () => {
+    const repository = new LocalDiveLogRepository([demoWatchEntry]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-list-item-Demo Reef');
+
+    expect(root.findByProps({ testID: 'log-entry-detail-source' }).props.label).toBe('Watch');
+    expect(root.findByProps({ testID: 'log-entry-detail-demo-capture' }).props.label).toBe('Demo');
   });
 
   test('labels manual local-only rows as locally saved instead of pending sync', async () => {

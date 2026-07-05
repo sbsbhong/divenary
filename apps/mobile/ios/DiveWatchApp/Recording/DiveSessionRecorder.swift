@@ -18,6 +18,7 @@ final class DiveSessionRecorder: ObservableObject {
     @Published private(set) var isRecording = false
 
     private let sensorProvider: DepthSensorProvider
+    private let captureMode: DiveCaptureMode
     private var startedAt: Date?
     private var activeRecordID: UUID?
     private var activePlan = PreDivePlan()
@@ -26,8 +27,9 @@ final class DiveSessionRecorder: ObservableObject {
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
 
-    init(sensorProvider: DepthSensorProvider) {
+    init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode) {
         self.sensorProvider = sensorProvider
+        self.captureMode = captureMode
     }
 
     func startSession(plan: PreDivePlan = PreDivePlan()) {
@@ -116,6 +118,7 @@ final class DiveSessionRecorder: ObservableObject {
         return DiveSessionRecord(
             id: recordID,
             schemaVersion: 2,
+            captureMode: captureMode,
             diveMode: activePlan.diveMode,
             siteId: nil,
             siteName: activePlan.siteName.isEmpty ? nil : activePlan.siteName,

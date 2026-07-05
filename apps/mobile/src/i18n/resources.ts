@@ -203,6 +203,7 @@ const resources = {
         watchCaptured: '워치 측정값',
         manualSource: '수동',
         watchSource: '워치',
+        demoCapture: '데모',
         sources: {
           watch: '워치',
           manual: '수동',
@@ -584,6 +585,7 @@ const resources = {
         watchCaptured: 'Watch-captured',
         manualSource: 'Manual',
         watchSource: 'Watch',
+        demoCapture: 'Demo',
         sources: {
           watch: 'Watch',
           manual: 'Manual',

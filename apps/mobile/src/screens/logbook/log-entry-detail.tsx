@@ -37,7 +37,18 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const buddies = props.entry.manual.buddyIds.length ? props.entry.manual.buddyIds.join(', ') : t('logbook.none');
   const marineLife = props.entry.manual.observedMarineLife.length ? props.entry.manual.observedMarineLife.join(', ') : t('logbook.none');
   const sourceLabel = props.entry.source === 'watch' ? t('logbook.watchCaptured') : t('logbook.manualValue');
+  const isDemoCapture = props.entry.watchCapture?.session.captureMode === 'demo';
   const note = firstNonBlankText(props.entry.manual.notes, props.entry.watchCapture?.session.notes) ?? t('logbook.noNotes');
+  const headerPills = (
+    <HStack space="xs" className="items-center justify-end">
+      <StatusPill
+        testID="log-entry-detail-source"
+        label={props.entry.source === 'watch' ? t('logbook.watchSource') : t('logbook.manualSource')}
+        tone="secondary"
+      />
+      {isDemoCapture ? <StatusPill testID="log-entry-detail-demo-capture" label={t('logbook.demoCapture')} tone="warning" /> : null}
+    </HStack>
+  );
 
   return (
     <DiveSummaryCard accent="primary">
@@ -51,7 +62,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
       <DiveSummaryCard.Header
         eyebrow={sourceLabel}
         title={props.entry.manual.title ?? props.entry.manual.site.name ?? t('logbook.detailTitle')}
-        right={<StatusPill label={props.entry.source === 'watch' ? t('logbook.watchSource') : t('logbook.manualSource')} tone="secondary" />}
+        right={headerPills}
       />
       <DiveSummaryCard.Body>
         <Text className="text-sm leading-5 text-muted-foreground">

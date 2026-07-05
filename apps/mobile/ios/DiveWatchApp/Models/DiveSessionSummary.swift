@@ -105,6 +105,7 @@ extension DiveSessionRecord {
         DiveSessionRecord(
             id: id,
             schemaVersion: schemaVersion,
+            captureMode: captureMode,
             diveMode: diveMode,
             siteId: siteId,
             siteName: siteName,
@@ -132,6 +133,7 @@ extension DiveSessionRecord {
         DiveSessionRecord(
             id: id,
             schemaVersion: schemaVersion,
+            captureMode: captureMode,
             diveMode: diveMode,
             siteId: siteId,
             siteName: siteName,

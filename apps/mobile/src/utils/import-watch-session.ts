@@ -18,10 +18,9 @@ export const importWatchMessages = (
       importKey,
       importedAt: currentSession?.importedAt ?? importedAt,
       mediaPlaceholders: currentSession?.mediaPlaceholders ?? ['Photo import placeholder'],
-      syncStatus: message.session.syncStatus ?? 'pending',
+      syncStatus: 'synced',
     });
   }
 
   return Array.from(sessionsByKey.values()).sort((left, right) => right.startedAt - left.startedAt);
 };
-

@@ -67,6 +67,9 @@ private struct SessionRow: View {
 
                     HStack(spacing: 5) {
                         StatusPill(title: session.diveMode.label, color: profileColor)
+                        if session.captureMode == .demo {
+                            StatusPill(title: String(localized: "Demo"), color: DiveWatchTheme.secondary)
+                        }
                         Text(session.syncStatus.label)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.mutedText)

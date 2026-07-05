@@ -1,8 +1,14 @@
 import Foundation
 
+enum DiveCaptureMode: String, Codable, Equatable {
+    case real
+    case demo
+}
+
 struct DiveSessionRecord: Codable, Identifiable {
     let id: UUID
     let schemaVersion: Int
+    let captureMode: DiveCaptureMode
     let diveMode: DiveMode
     let siteId: String?
     let siteName: String?
@@ -23,6 +29,111 @@ struct DiveSessionRecord: Codable, Identifiable {
     let endedAt: Date?
     let samples: [DepthSample]
     let payload: DiveSessionPayload
+
+    init(
+        id: UUID,
+        schemaVersion: Int,
+        captureMode: DiveCaptureMode = .real,
+        diveMode: DiveMode,
+        siteId: String?,
+        siteName: String?,
+        sourcePlanLocalId: String?,
+        planTitle: String?,
+        buddyIds: [String],
+        gearIds: [String],
+        tags: [String],
+        notes: String?,
+        rating: Int?,
+        perceivedExertion: Int?,
+        visibilityRating: Int?,
+        waterCondition: WaterCondition,
+        syncStatus: DiveSyncStatus,
+        entryLocation: WatchLocation?,
+        exitLocation: WatchLocation?,
+        startedAt: Date,
+        endedAt: Date?,
+        samples: [DepthSample],
+        payload: DiveSessionPayload
+    ) {
+        self.id = id
+        self.schemaVersion = schemaVersion
+        self.captureMode = captureMode
+        self.diveMode = diveMode
+        self.siteId = siteId
+        self.siteName = siteName
+        self.sourcePlanLocalId = sourcePlanLocalId
+        self.planTitle = planTitle
+        self.buddyIds = buddyIds
+        self.gearIds = gearIds
+        self.tags = tags
+        self.notes = notes
+        self.rating = rating
+        self.perceivedExertion = perceivedExertion
+        self.visibilityRating = visibilityRating
+        self.waterCondition = waterCondition
+        self.syncStatus = syncStatus
+        self.entryLocation = entryLocation
+        self.exitLocation = exitLocation
+        self.startedAt = startedAt
+        self.endedAt = endedAt
+        self.samples = samples
+        self.payload = payload
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case schemaVersion
+        case captureMode
+        case diveMode
+        case siteId
+        case siteName
+        case sourcePlanLocalId
+        case planTitle
+        case buddyIds
+        case gearIds
+        case tags
+        case notes
+        case rating
+        case perceivedExertion
+        case visibilityRating
+        case waterCondition
+        case syncStatus
+        case entryLocation
+        case exitLocation
+        case startedAt
+        case endedAt
+        case samples
+        case payload
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
+            captureMode: try container.decodeIfPresent(DiveCaptureMode.self, forKey: .captureMode) ?? .real,
+            diveMode: try container.decode(DiveMode.self, forKey: .diveMode),
+            siteId: try container.decodeIfPresent(String.self, forKey: .siteId),
+            siteName: try container.decodeIfPresent(String.self, forKey: .siteName),
+            sourcePlanLocalId: try container.decodeIfPresent(String.self, forKey: .sourcePlanLocalId),
+            planTitle: try container.decodeIfPresent(String.self, forKey: .planTitle),
+            buddyIds: try container.decode([String].self, forKey: .buddyIds),
+            gearIds: try container.decode([String].self, forKey: .gearIds),
+            tags: try container.decode([String].self, forKey: .tags),
+            notes: try container.decodeIfPresent(String.self, forKey: .notes),
+            rating: try container.decodeIfPresent(Int.self, forKey: .rating),
+            perceivedExertion: try container.decodeIfPresent(Int.self, forKey: .perceivedExertion),
+            visibilityRating: try container.decodeIfPresent(Int.self, forKey: .visibilityRating),
+            waterCondition: try container.decode(WaterCondition.self, forKey: .waterCondition),
+            syncStatus: try container.decode(DiveSyncStatus.self, forKey: .syncStatus),
+            entryLocation: try container.decodeIfPresent(WatchLocation.self, forKey: .entryLocation),
+            exitLocation: try container.decodeIfPresent(WatchLocation.self, forKey: .exitLocation),
+            startedAt: try container.decode(Date.self, forKey: .startedAt),
+            endedAt: try container.decodeIfPresent(Date.self, forKey: .endedAt),
+            samples: try container.decode([DepthSample].self, forKey: .samples),
+            payload: try container.decode(DiveSessionPayload.self, forKey: .payload)
+        )
+    }
 }
 
 enum DiveSessionPayload: Codable {
@@ -195,6 +306,7 @@ extension DiveSessionRecord {
         self.init(
             id: session.id,
             schemaVersion: 2,
+            captureMode: .real,
             diveMode: session.diveMode,
             siteId: session.siteId,
             siteName: session.siteName,
@@ -232,6 +344,7 @@ private struct RecordWatchSyncMessagePayload: Encodable {
 private struct RecordWatchSessionPayload: Encodable {
     let localSessionId: String
     let schemaVersion: Int
+    let captureMode: String
     let diveMode: String
     let gasLabel: String?
     let siteId: String?
@@ -262,6 +375,7 @@ private struct RecordWatchSessionPayload: Encodable {
         let summary = session.summary
         localSessionId = session.id.uuidString
         schemaVersion = session.schemaVersion
+        captureMode = session.captureMode.rawValue
         diveMode = session.diveMode.rawValue
         gasLabel = session.gasLabel
         siteId = session.siteId

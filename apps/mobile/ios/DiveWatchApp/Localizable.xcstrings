@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ · %2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
     "%@ %lld" : {
       "localizations" : {
         "en" : {
@@ -13,6 +29,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ %2$lld"
+          }
+        }
+      }
+    },
+    "%@: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@: %2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@: %2$@"
           }
         }
       }
@@ -83,6 +115,7 @@
       }
     },
     "Active dive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -131,6 +164,7 @@
       }
     },
     "Air scuba reminder, not a dive computer." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -163,6 +197,7 @@
       }
     },
     "Ascent reminder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -227,6 +262,7 @@
       }
     },
     "Assistant steady" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -238,6 +274,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "보조 상태 안정"
+          }
+        }
+      }
+    },
+    "Auto launch active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto launch active"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 실행 활성"
+          }
+        }
+      }
+    },
+    "Auto launch inactive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto launch inactive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 실행 비활성"
+          }
+        }
+      }
+    },
+    "Auto launch status unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto launch status unavailable"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 실행 상태 확인 불가"
           }
         }
       }
@@ -322,22 +406,6 @@
         }
       }
     },
-    "Count" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Count"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "카운트"
-          }
-        }
-      }
-    },
     "Completed" : {
       "localizations" : {
         "en" : {
@@ -366,6 +434,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "완료 시각"
+          }
+        }
+      }
+    },
+    "Count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Count"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "카운트"
           }
         }
       }
@@ -402,18 +486,18 @@
         }
       }
     },
-    "Current dive" : {
+    "Crown-controlled sample dive" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Current dive"
+            "value" : "Crown-controlled sample dive"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "현재 다이브"
+            "value" : "크라운으로 조절하는 샘플 다이브"
           }
         }
       }
@@ -434,18 +518,18 @@
         }
       }
     },
-    "Depth gauge" : {
+    "Current dive" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Depth gauge"
+            "value" : "Current dive"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수심계"
+            "value" : "현재 다이브"
           }
         }
       }
@@ -462,6 +546,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간보다 깊음"
+          }
+        }
+      }
+    },
+    "Depth gauge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth gauge"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심계"
+          }
+        }
+      }
+    },
+    "Demo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Demo"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데모"
           }
         }
       }
@@ -494,6 +610,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "삭제"
+          }
+        }
+      }
+    },
+    "Dive #%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive #%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 #%@"
           }
         }
       }
@@ -542,22 +674,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "다이브 수"
-          }
-        }
-      }
-    },
-    "Dive #%@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Dive #%@"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다이브 #%@"
           }
         }
       }
@@ -611,6 +727,7 @@
       }
     },
     "DIVE TYPE" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -638,6 +755,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Dive Watch"
+          }
+        }
+      }
+    },
+    "Does not replace a certified dive computer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Does not replace a certified dive computer."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "인증 다이브 컴퓨터를 대체하지 않습니다."
           }
         }
       }
@@ -686,22 +819,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "노력도"
-          }
-        }
-      }
-    },
-    "Does not replace a certified dive computer." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Does not replace a certified dive computer."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "인증 다이브 컴퓨터를 대체하지 않습니다."
           }
         }
       }
@@ -755,22 +872,6 @@
         }
       }
     },
-    "Freedive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Freedive"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프리다이빙"
-          }
-        }
-      }
-    },
     "Free Segment List" : {
       "localizations" : {
         "en" : {
@@ -783,22 +884,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리다이빙 구간 목록"
-          }
-        }
-      }
-    },
-    "Free Session Summary" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Free Session Summary"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프리 세션 요약"
           }
         }
       }
@@ -819,7 +904,40 @@
         }
       }
     },
+    "Free Session Summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Session Summary"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리 세션 요약"
+          }
+        }
+      }
+    },
+    "Freedive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freedive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙"
+          }
+        }
+      }
+    },
     "Freedive session" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -883,22 +1001,6 @@
         }
       }
     },
-    "LAST DIVE" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "LAST DIVE"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "지난 다이브"
-          }
-        }
-      }
-    },
     "Last depth" : {
       "localizations" : {
         "en" : {
@@ -911,6 +1013,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "직전 수심"
+          }
+        }
+      }
+    },
+    "LAST DIVE" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "LAST DIVE"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지난 다이브"
           }
         }
       }
@@ -932,6 +1050,7 @@
       }
     },
     "Live Log" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -943,22 +1062,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "라이브 로그"
-          }
-        }
-      }
-    },
-    "Longest dive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Longest dive"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "최장 다이브"
           }
         }
       }
@@ -991,6 +1094,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "로그"
+          }
+        }
+      }
+    },
+    "Longest dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longest dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최장 다이브"
           }
         }
       }
@@ -1252,6 +1371,7 @@
       }
     },
     "Planning reminder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1349,7 +1469,56 @@
         }
       }
     },
+    "Recommended safety stop reminder · no safety calculation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended safety stop reminder · no safety calculation"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 세이프티 스톱 리마인더 · 안전계산 없음"
+          }
+        }
+      }
+    },
+    "Recommended safety stop reminder." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended safety stop reminder."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 세이프티 스톱 리마인더입니다."
+          }
+        }
+      }
+    },
+    "Recommended stop complete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended stop complete"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
     "Recreational capture and review. Not a certified dive computer." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1381,54 +1550,6 @@
         }
       }
     },
-    "Recommended safety stop reminder." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended safety stop reminder."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "권장 세이프티 스톱 리마인더입니다."
-          }
-        }
-      }
-    },
-    "Recommended safety stop reminder · no safety calculation" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended safety stop reminder · no safety calculation"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "권장 세이프티 스톱 리마인더 · 안전계산 없음"
-          }
-        }
-      }
-    },
-    "Recommended stop complete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recommended stop complete"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "권장 스탑 완료"
-          }
-        }
-      }
-    },
     "Remaining" : {
       "localizations" : {
         "en" : {
@@ -1441,6 +1562,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "남은 시간"
+          }
+        }
+      }
+    },
+    "Reminder active" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder active"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "리마인더 활성"
+          }
+        }
+      }
+    },
+    "Reminder review from watch logs only." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reminder review from watch logs only."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "워치 로그의 리마인더 리뷰만 표시합니다."
           }
         }
       }
@@ -1461,39 +1616,8 @@
         }
       }
     },
-    "Reminder active" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reminder active"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "리마인더 활성"
-          }
-        }
-      }
-    },
-    "Reminder review from watch logs only." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Reminder review from watch logs only."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "워치 로그의 리마인더 리뷰만 표시합니다."
-          }
-        }
-      }
-    },
     "REVIEW" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1510,6 +1634,7 @@
       }
     },
     "Review ascent rate with certified equipment." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1537,6 +1662,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "세이프티 스톱"
+          }
+        }
+      }
+    },
+    "Safety stop planning reminder" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safety stop planning reminder"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세이프티 스톱 계획 리마인더"
           }
         }
       }
@@ -1569,22 +1710,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "세이프티 스톱 요약"
-          }
-        }
-      }
-    },
-    "Safety stop planning reminder" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Safety stop planning reminder"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "세이프티 스톱 계획 리마인더"
           }
         }
       }
@@ -1697,6 +1822,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "스쿠버 시작"
+          }
+        }
+      }
+    },
+    "Sensor ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensor ready"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "센서 준비됨"
           }
         }
       }
@@ -1814,22 +1955,6 @@
         }
       }
     },
-    "Status" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Status"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "상태"
-          }
-        }
-      }
-    },
     "Start a recreational capture to create a watch log." : {
       "localizations" : {
         "en" : {
@@ -1842,22 +1967,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "레크리에이션 캡처를 시작해 워치 로그를 만드세요."
-          }
-        }
-      }
-    },
-    "Started" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Started"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "시작"
           }
         }
       }
@@ -1878,6 +1987,38 @@
         }
       }
     },
+    "Started" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Started"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작"
+          }
+        }
+      }
+    },
+    "Status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상태"
+          }
+        }
+      }
+    },
     "STOP" : {
       "localizations" : {
         "en" : {
@@ -1890,6 +2031,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "스톱"
+          }
+        }
+      }
+    },
+    "Stop 5m/3:00" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop 5m/3:00"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스톱 5m/3:00"
           }
         }
       }
@@ -1970,22 +2127,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간"
-          }
-        }
-      }
-    },
-    "Stop 5m/3:00" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop 5m/3:00"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "스톱 5m/3:00"
           }
         }
       }
@@ -2150,6 +2291,22 @@
         }
       }
     },
+    "Time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시간"
+          }
+        }
+      }
+    },
     "Time in zone" : {
       "localizations" : {
         "en" : {
@@ -2182,23 +2339,24 @@
         }
       }
     },
-    "Time" : {
+    "Total session time" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Time"
+            "value" : "Total session time"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "시간"
+            "value" : "총 세션 시간"
           }
         }
       }
     },
     "Training" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2230,18 +2388,18 @@
         }
       }
     },
-    "Total session time" : {
+    "Ultra required" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Total session time"
+            "value" : "Ultra required"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "총 세션 시간"
+            "value" : "Ultra 필요"
           }
         }
       }
