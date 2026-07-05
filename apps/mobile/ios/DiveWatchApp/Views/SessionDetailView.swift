@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct SessionDetailView: View {
-    let session: DiveSession
+    let session: DiveSessionRecord
 
     private var summary: DiveSessionSummary {
         session.summary

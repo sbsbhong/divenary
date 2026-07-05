@@ -3,11 +3,12 @@ import Foundation
 
 @MainActor
 final class DiveSessionStore: ObservableObject {
-    @Published private(set) var sessions: [DiveSession] = []
+    @Published private(set) var sessions: [DiveSessionRecord] = []
     @Published private(set) var plannedDives: [WatchPlannedDive] = []
     @Published var preferredDiveMode: DiveMode
 
-    private let storageKey = "savedDiveSessions"
+    private let storageKey = "savedDiveSessionRecords"
+    private let legacyStorageKey = "savedDiveSessions"
     private let plannedDivesStorageKey = "savedWatchPlannedDives"
     private let executedPlanIdsStorageKey = "executedWatchPlanIds"
     private static let preferredDiveModeStorageKey = "preferredDiveMode"
@@ -39,7 +40,7 @@ final class DiveSessionStore: ObservableObject {
         syncTransport.activate()
     }
 
-    func save(_ session: DiveSession) {
+    func save(_ session: DiveSessionRecord) {
         let syncStatus = syncTransport.enqueue(session: session)
         sessions.insert(session.withSyncStatus(syncStatus), at: 0)
         if let sourcePlanLocalId = session.resolvedSourcePlanLocalId {
@@ -107,17 +108,30 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func load() {
-        guard let data = userDefaults.data(forKey: storageKey) else {
+        if let data = userDefaults.data(forKey: storageKey) {
+            do {
+                sessions = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
+                    .sorted { $0.startedAt > $1.startedAt }
+            } catch {
+                sessions = []
+                userDefaults.removeObject(forKey: storageKey)
+            }
+            return
+        }
+
+        guard let legacyData = userDefaults.data(forKey: legacyStorageKey) else {
             sessions = []
             return
         }
 
         do {
-            sessions = try JSONDecoder().decode([DiveSession].self, from: data)
+            let legacySessions = try JSONDecoder().decode([DiveSession].self, from: legacyData)
+            sessions = legacySessions
+                .map(DiveSessionRecord.init(legacySession:))
                 .sorted { $0.startedAt > $1.startedAt }
+            persist()
         } catch {
             sessions = []
-            userDefaults.removeObject(forKey: storageKey)
         }
     }
 
@@ -167,7 +181,7 @@ final class DiveSessionStore: ObservableObject {
     }
 }
 
-private extension DiveSession {
+private extension DiveSessionRecord {
     var resolvedSourcePlanLocalId: String? {
         if let sourcePlanLocalId {
             return sourcePlanLocalId

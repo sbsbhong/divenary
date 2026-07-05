@@ -12,11 +12,17 @@ final class DiveSessionRecorder: ObservableObject {
     @Published private(set) var safetyStopRemainingSeconds: TimeInterval = 180
     @Published private(set) var safetyStopActive = false
     @Published private(set) var ascentWarningActive = false
+    @Published private(set) var currentRecordPayload: DiveSessionPayload?
+    @Published private(set) var freeSnapshot: FreeDiveSessionSnapshot?
+    @Published private(set) var scubaSafetyStop: SafetyStopRecord = .legacyUnknown
     @Published private(set) var isRecording = false
 
     private let sensorProvider: DepthSensorProvider
     private var startedAt: Date?
+    private var activeRecordID: UUID?
     private var activePlan = PreDivePlan()
+    private var freeEngine: FreeDiveSessionEngine?
+    private var scubaEngine: ScubaDiveEngine?
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
 
@@ -36,8 +42,22 @@ final class DiveSessionRecorder: ObservableObject {
         safetyStopRemainingSeconds = 180
         safetyStopActive = false
         ascentWarningActive = false
+        currentRecordPayload = nil
+        freeSnapshot = nil
+        scubaSafetyStop = .legacyUnknown
         activePlan = plan
-        startedAt = Date()
+        let startedAt = Date()
+        let sessionID = UUID()
+        self.startedAt = startedAt
+        activeRecordID = sessionID
+        switch plan.diveMode {
+        case .freedive:
+            freeEngine = FreeDiveSessionEngine(startedAt: startedAt)
+            scubaEngine = nil
+        case .scuba:
+            scubaEngine = ScubaDiveEngine(startedAt: startedAt, gasLabel: plan.gasLabel, sessionID: sessionID)
+            freeEngine = nil
+        }
         isRecording = true
 
         sensorProvider.onSample = { [weak self] sample in
@@ -54,8 +74,8 @@ final class DiveSessionRecorder: ObservableObject {
         }
     }
 
-    func stopSession() -> DiveSession? {
-        guard isRecording, let startedAt else { return nil }
+    func stopSession() -> DiveSessionRecord? {
+        guard isRecording, let startedAt, let recordID = activeRecordID else { return nil }
 
         sensorProvider.stop()
         sensorProvider.onSample = nil
@@ -63,15 +83,41 @@ final class DiveSessionRecorder: ObservableObject {
         elapsedTimer = nil
         updateElapsedTime()
         isRecording = false
+        let endedAt = Date()
         let sourcePlanLocalId = activePlan.sourcePlanLocalId
         var sessionTags = activePlan.tags
         if let sourcePlanLocalId, !sessionTags.contains("plan-\(sourcePlanLocalId)") {
             sessionTags.append("plan-\(sourcePlanLocalId)")
         }
 
-        return DiveSession(
+        let payload: DiveSessionPayload
+        switch activePlan.diveMode {
+        case .freedive:
+            guard var engine = freeEngine else { return nil }
+            let session = engine.finish(at: endedAt)
+            payload = .freedive(
+                FreeDiveSession(
+                    id: recordID,
+                    startTime: session.startTime,
+                    endTime: session.endTime,
+                    totalDurationSeconds: session.totalDurationSeconds,
+                    maxDepthMeters: session.maxDepthMeters,
+                    diveCount: session.diveCount,
+                    longestDiveDurationSeconds: session.longestDiveDurationSeconds,
+                    segments: session.segments
+                )
+            )
+        case .scuba:
+            guard var engine = scubaEngine else { return nil }
+            payload = .scuba(engine.finish(at: endedAt))
+        }
+        currentRecordPayload = payload
+
+        return DiveSessionRecord(
+            id: recordID,
+            schemaVersion: 2,
             diveMode: activePlan.diveMode,
-            gasLabel: activePlan.gasLabel,
+            siteId: nil,
             siteName: activePlan.siteName.isEmpty ? nil : activePlan.siteName,
             sourcePlanLocalId: activePlan.sourcePlanLocalId,
             planTitle: activePlan.title.isEmpty ? nil : activePlan.title,
@@ -79,10 +125,17 @@ final class DiveSessionRecorder: ObservableObject {
             gearIds: activePlan.gearIds,
             tags: sessionTags,
             notes: activePlan.quickNote.isEmpty ? nil : activePlan.quickNote,
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
             syncStatus: .pending,
+            entryLocation: nil,
+            exitLocation: nil,
             startedAt: startedAt,
-            endedAt: Date(),
-            samples: samples
+            endedAt: endedAt,
+            samples: samples,
+            payload: payload
         )
     }
 
@@ -91,6 +144,11 @@ final class DiveSessionRecorder: ObservableObject {
         sensorProvider.onSample = nil
         elapsedTimer?.invalidate()
         elapsedTimer = nil
+        currentRecordPayload = nil
+        freeSnapshot = nil
+        scubaSafetyStop = .legacyUnknown
+        freeEngine = nil
+        scubaEngine = nil
         isRecording = false
     }
 
@@ -102,7 +160,22 @@ final class DiveSessionRecorder: ObservableObject {
         waterTemperatureCelsius = sample.waterTemperatureCelsius
         latestAscentRateMetersPerMinute = ascentRate(from: previousSample, to: sample)
         ascentWarningActive = latestAscentRateMetersPerMinute > recommendedAscentRateMetersPerMinute
-        updateSafetyStop(with: sample, previousSample: previousSample)
+
+        switch activePlan.diveMode {
+        case .freedive:
+            freeEngine?.append(sample)
+            freeSnapshot = freeEngine?.snapshot
+            maxDepth = freeSnapshot?.maxDepthMeters ?? max(maxDepth, sample.depthMeters)
+            scubaSafetyStop = .legacyUnknown
+            safetyStopRemainingSeconds = SafetyStopRecord.legacyUnknown.remainingSeconds
+            safetyStopActive = false
+        case .scuba:
+            scubaEngine?.append(sample)
+            scubaSafetyStop = scubaEngine?.safetyStopRecord ?? .legacyUnknown
+            maxDepth = max(maxDepth, sample.depthMeters)
+            safetyStopRemainingSeconds = scubaSafetyStop.remainingSeconds
+            safetyStopActive = scubaSafetyStop.status == .active
+        }
     }
 
     private func updateElapsedTime() {
@@ -119,15 +192,5 @@ final class DiveSessionRecorder: ObservableObject {
         let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
         guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
         return (previous.depthMeters - current.depthMeters) / elapsed * 60
-    }
-
-    private func updateSafetyStop(with sample: DepthSample, previousSample: DepthSample?) {
-        let shouldTrackSafetyStop = maxDepth >= 10
-        let isInSafetyStopWindow = sample.depthMeters >= 3 && sample.depthMeters <= 6
-        safetyStopActive = shouldTrackSafetyStop && isInSafetyStopWindow && safetyStopRemainingSeconds > 0
-
-        guard safetyStopActive, let previousSample else { return }
-        let elapsed = max(0, sample.timestamp.timeIntervalSince(previousSample.timestamp))
-        safetyStopRemainingSeconds = max(0, safetyStopRemainingSeconds - elapsed)
     }
 }

@@ -230,6 +230,15 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('Freedive training reference only.');
   });
 
+  it('keeps watch recording state in mode-specific engines', () => {
+    const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
+
+    expect(recorder).toContain('FreeDiveSessionEngine');
+    expect(recorder).toContain('ScubaDiveEngine');
+    expect(recorder).toContain('DiveSessionRecord');
+    expect(recorder).not.toContain('private func updateSafetyStop');
+  });
+
   it('uses app-store style stars for post-dive rating fields', () => {
     const summary = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SummaryView.swift');
 

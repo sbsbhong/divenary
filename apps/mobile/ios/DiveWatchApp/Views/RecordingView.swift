@@ -4,7 +4,7 @@ struct RecordingView: View {
     @ObservedObject var store: DiveSessionStore
     let plan: PreDivePlan
     @StateObject private var recorder = DiveSessionRecorder(sensorProvider: MockDepthSensorProvider())
-    @State private var completedSession: DiveSession?
+    @State private var completedSession: DiveSessionRecord?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

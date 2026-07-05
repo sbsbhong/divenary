@@ -7,7 +7,7 @@ protocol WatchSyncTransporting: AnyObject {
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)? { get set }
 
     func activate()
-    func enqueue(session: DiveSession) -> DiveSyncStatus
+    func enqueue(session: DiveSessionRecord) -> DiveSyncStatus
     func refreshPlannedDives()
 }
 
@@ -28,7 +28,7 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
         connectivitySession?.activate()
     }
 
-    func enqueue(session diveSession: DiveSession) -> DiveSyncStatus {
+    func enqueue(session diveSession: DiveSessionRecord) -> DiveSyncStatus {
         guard let connectivitySession else {
             return .failed
         }

@@ -46,7 +46,7 @@ private struct EmptySessionsView: View {
 }
 
 private struct SessionRow: View {
-    let session: DiveSession
+    let session: DiveSessionRecord
 
     private var summary: DiveSessionSummary {
         session.summary

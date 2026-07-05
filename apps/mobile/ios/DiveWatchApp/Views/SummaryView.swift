@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct SummaryView: View {
-    let session: DiveSession
-    let onSave: (DiveSession) -> Void
+    let session: DiveSessionRecord
+    let onSave: (DiveSessionRecord) -> Void
     let onDiscard: () -> Void
     @State private var rating = 4
     @State private var perceivedExertion = 2

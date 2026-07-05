@@ -346,7 +346,7 @@ private struct HomeHeader: View {
 }
 
 private struct LatestSessionCard: View {
-    let session: DiveSession
+    let session: DiveSessionRecord
 
     private var summary: DiveSessionSummary {
         session.summary
