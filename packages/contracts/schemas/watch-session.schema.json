@@ -341,52 +341,40 @@
       }
     }
   },
-  "allOf": [
-    {
-      "if": {
-        "properties": {
-          "diveMode": {
-            "const": "freedive"
-          }
-        },
+  "not": {
+    "anyOf": [
+      {
         "required": [
-          "diveMode"
+          "freedive",
+          "scuba"
         ]
       },
-      "then": {
+      {
         "required": [
           "freedive"
         ],
-        "not": {
-          "required": [
-            "scuba"
-          ]
-        }
-      }
-    },
-    {
-      "if": {
         "properties": {
           "diveMode": {
-            "const": "scuba"
+            "not": {
+              "const": "freedive"
+            }
           }
-        },
-        "required": [
-          "diveMode"
-        ]
+        }
       },
-      "then": {
+      {
         "required": [
           "scuba"
         ],
-        "not": {
-          "required": [
-            "freedive"
-          ]
+        "properties": {
+          "diveMode": {
+            "not": {
+              "const": "scuba"
+            }
+          }
         }
       }
-    }
-  ],
+    ]
+  },
   "required": [
     "localSessionId",
     "startedAt",

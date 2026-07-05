@@ -7,8 +7,8 @@
     "startedAt": 1781352000,
     "endedAt": 1781352600,
     "syncStatus": "pending",
-    "maxDepthMeters": 12.4,
-    "averageDepthMeters": 6.2,
+    "maxDepthMeters": 8.4,
+    "averageDepthMeters": 4.2,
     "samples": [
       {
         "localSessionId": "fixture-minimal-session",
@@ -18,7 +18,7 @@
       {
         "localSessionId": "fixture-minimal-session",
         "timestamp": 1781352300,
-        "depthMeters": 12.4
+        "depthMeters": 8.4
       },
       {
         "localSessionId": "fixture-minimal-session",
@@ -27,8 +27,8 @@
       }
     ],
     "scuba": {
-      "maxDepthMeters": 12.4,
-      "averageDepthMeters": 6.2,
+      "maxDepthMeters": 8.4,
+      "averageDepthMeters": 4.2,
       "latestAscentRateMetersPerMinute": 0,
       "maxAscentRateMetersPerMinute": 4.1,
       "safetyStop": {

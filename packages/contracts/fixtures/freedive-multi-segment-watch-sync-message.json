@@ -7,7 +7,113 @@
     "startedAt": 1783225525,
     "endedAt": 1783225825,
     "syncStatus": "pending",
-    "samples": [],
+    "samples": [
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225530,
+        "depthMeters": 0.4
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225535,
+        "depthMeters": 3
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225540,
+        "depthMeters": 7
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225545,
+        "depthMeters": 12
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225550,
+        "depthMeters": 16
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225553,
+        "depthMeters": 18.4
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225558,
+        "depthMeters": 17
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225563,
+        "depthMeters": 12
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225568,
+        "depthMeters": 7
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225573,
+        "depthMeters": 3
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225576,
+        "depthMeters": 0.4
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225700,
+        "depthMeters": 0.5
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225704,
+        "depthMeters": 3
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225708,
+        "depthMeters": 7.5
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225712,
+        "depthMeters": 11.8
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225716,
+        "depthMeters": 15.2
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225720,
+        "depthMeters": 14
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225725,
+        "depthMeters": 10
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225730,
+        "depthMeters": 5
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225735,
+        "depthMeters": 2
+      },
+      {
+        "localSessionId": "watch-free-001",
+        "timestamp": 1783225738,
+        "depthMeters": 0.5
+      }
+    ],
     "freedive": {
       "diveCount": 2,
       "maxDepthMeters": 18.4,
