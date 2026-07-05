@@ -41,6 +41,8 @@
 		FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */; };
 		FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000005 /* DiveSessionRecord.swift */; };
 		FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000006 /* FreeDiveSessionEngine.swift */; };
+		FA1000000000000000000007 /* SafetyStopControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000007 /* SafetyStopControllerTests.swift */; };
+		FA1000000000000000000008 /* SafetyStopController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000008 /* SafetyStopController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -114,6 +116,8 @@
 		FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecordMigrationTests.swift; sourceTree = "<group>"; };
 		FA2000000000000000000005 /* DiveSessionRecord.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecord.swift; sourceTree = "<group>"; };
 		FA2000000000000000000006 /* FreeDiveSessionEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreeDiveSessionEngine.swift; sourceTree = "<group>"; };
+		FA2000000000000000000007 /* SafetyStopControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SafetyStopControllerTests.swift; sourceTree = "<group>"; };
+		FA2000000000000000000008 /* SafetyStopController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SafetyStopController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -295,6 +299,7 @@
 			children = (
 				F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */,
 				FA2000000000000000000006 /* FreeDiveSessionEngine.swift */,
+				FA2000000000000000000008 /* SafetyStopController.swift */,
 			);
 			name = Recording;
 			path = Recording;
@@ -306,6 +311,7 @@
 				FA2000000000000000000001 /* EngineTestFixtures.swift */,
 				FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */,
 				FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */,
+				FA2000000000000000000007 /* SafetyStopControllerTests.swift */,
 			);
 			path = DiveWatchAppTests;
 			sourceTree = "<group>";
@@ -554,6 +560,7 @@
 				891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */,
 				C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */,
 				FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */,
+				FA1000000000000000000008 /* SafetyStopController.swift in Sources */,
 				11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */,
 				6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */,
 				AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */,
@@ -576,6 +583,7 @@
 				FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */,
 				FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */,
 				FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */,
+				FA1000000000000000000007 /* SafetyStopControllerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
