@@ -2,6 +2,7 @@ import React from 'react';
 import { Defs, LinearGradient, Path, Stop, Svg } from 'react-native-svg';
 import type { WatchDepthSample } from '../../types/dive-session';
 import { buildProfileRenderModel } from '../../utils/session-profile-chart';
+import { HStack } from './hstack';
 import { Text } from './text';
 import { VStack } from './vstack';
 

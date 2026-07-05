@@ -138,15 +138,21 @@ export function buildProfileRenderModel(options: {
 
 function getProfileSourcePoints(samples: WatchDepthSample[], kind: ProfileKind): ProfileSourcePoint[] {
   return samples
-    .map(sample => ({
-      timestamp: sample.timestamp,
-      value: kind === 'depth' ? sample.depthMeters : sample.waterTemperatureCelsius,
-    }))
-    .filter((point): point is ProfileSourcePoint => {
-      if (!Number.isFinite(point.timestamp) || !Number.isFinite(point.value)) {
-        return false;
+    .map((sample): ProfileSourcePoint | undefined => {
+      const value = kind === 'depth' ? sample.depthMeters : sample.waterTemperatureCelsius;
+      if (typeof value !== 'number' || !Number.isFinite(sample.timestamp) || !Number.isFinite(value)) {
+        return undefined;
       }
-      return kind === 'temperature' || point.value >= 0;
+      if (kind === 'depth' && value < 0) {
+        return undefined;
+      }
+      return {
+        timestamp: sample.timestamp,
+        value,
+      };
+    })
+    .filter((point): point is ProfileSourcePoint => {
+      return point !== undefined;
     })
     .sort((left, right) => left.timestamp - right.timestamp);
 }
