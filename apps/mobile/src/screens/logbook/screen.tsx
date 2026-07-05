@@ -55,7 +55,10 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const [isSyncingWatch, setIsSyncingWatch] = React.useState(false);
   const consumedPendingDraftKey = React.useRef<string | undefined>(undefined);
   const scrollViewRef = React.useRef<React.ComponentRef<typeof KeyboardAwareScrollView>>(null);
+  const editorOffsetRef = React.useRef(0);
+  const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
+  const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
   const visibleEntries = React.useMemo(() => {
     if (syncFilter === 'all') {
       return props.entries;
@@ -114,11 +117,15 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       return;
     }
 
+    editorFieldOffsetsRef.current = {};
+    setLastScrollTarget(undefined);
     setDraftEntry(createBlankDiveLogEntry());
     setRoute('create');
   }, [props]);
 
   const openEdit = React.useCallback((entry: DiveLogEntry) => {
+    editorFieldOffsetsRef.current = {};
+    setLastScrollTarget(undefined);
     setDraftEntry(entry);
     setRoute('edit');
   }, []);
@@ -159,8 +166,23 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
     [props],
   );
 
+  const registerEditorOffset = React.useCallback((event: { nativeEvent: { layout: { y: number } } }) => {
+    editorOffsetRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const registerEditorFieldOffset = React.useCallback((fieldName: string, y: number) => {
+    editorFieldOffsetsRef.current = {
+      ...editorFieldOffsetsRef.current,
+      [fieldName]: y,
+    };
+  }, []);
+
   const scrollToEditorError = React.useCallback((fieldName: string) => {
-    scrollViewRef.current?.scrollTo({ y: getLogEntryEditorFieldOffset(fieldName), animated: true });
+    const measuredFieldOffset = editorFieldOffsetsRef.current[fieldName];
+    const fallbackOffset = getLogEntryEditorFieldOffset(fieldName);
+    const nextOffset = Math.max(0, measuredFieldOffset === undefined ? fallbackOffset : editorOffsetRef.current + measuredFieldOffset - 16);
+    setLastScrollTarget(nextOffset);
+    scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
   }, []);
 
   const syncWatch = React.useCallback(async () => {
@@ -223,6 +245,9 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               {syncToastMessage}
             </Text>
           ) : null}
+          {lastScrollTarget === undefined ? null : (
+            <Text testID="logbook-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
+          )}
           <VStack space="md" className="rounded-2xl bg-card px-4 py-4">
             <Input className="h-11 rounded-full border-0 bg-muted px-5 shadow-none">
               <InputSlot testID="logbook-search-icon">
@@ -255,15 +280,18 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
         </VStack>
 
         {(route === 'create' || route === 'edit') && draftEntry ? (
-          <LogEntryEditor
-            entry={draftEntry}
-            mode={route === 'edit' ? 'edit' : 'create'}
-            isSaving={props.isSaving}
-            saveError={props.saveError}
-            onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
-            onSave={saveDraft}
-            onInvalidSubmit={scrollToEditorError}
-          />
+          <Box testID="log-entry-editor-card-anchor" onLayout={registerEditorOffset}>
+            <LogEntryEditor
+              entry={draftEntry}
+              mode={route === 'edit' ? 'edit' : 'create'}
+              isSaving={props.isSaving}
+              saveError={props.saveError}
+              onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
+              onSave={saveDraft}
+              onFieldLayout={registerEditorFieldOffset}
+              onInvalidSubmit={scrollToEditorError}
+            />
+          </Box>
         ) : null}
 
         {route === 'detail' && selectedEntry ? (
@@ -297,7 +325,7 @@ function getLogEntryEditorFieldOffset(fieldName: string): number {
     startedAt: 220,
     diveMode: 300,
     siteName: 430,
-    durationMinutes: 520,
+    durationSeconds: 520,
     maxDepthMeters: 520,
     gearIds: 680,
     waterCondition: 760,

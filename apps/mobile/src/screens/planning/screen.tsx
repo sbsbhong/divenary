@@ -50,7 +50,10 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
   const [draftPlan, setDraftPlan] = React.useState<DivePlan | undefined>();
   const [localCompletedPromptPlan, setLocalCompletedPromptPlan] = React.useState<DivePlan | undefined>();
   const scrollViewRef = React.useRef<React.ComponentRef<typeof KeyboardAwareScrollView>>(null);
+  const editorOffsetRef = React.useRef(0);
+  const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
+  const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
   const visiblePlans = React.useMemo(() => (filter === 'all' ? plans : plans.filter(plan => plan.status === filter)), [filter, plans]);
   const selectedPlan = plans.find(plan => plan.localId === selectedId);
   const activePlan = React.useMemo(() => selectActivePlan(plans), [plans]);
@@ -88,6 +91,8 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
       return;
     }
 
+    editorFieldOffsetsRef.current = {};
+    setLastScrollTarget(undefined);
     setDraftPlan(createBlankDivePlan());
     setRoute('create');
   }, [props]);
@@ -104,6 +109,8 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
   }, [props]);
 
   const openEdit = React.useCallback((plan: DivePlan) => {
+    editorFieldOffsetsRef.current = {};
+    setLastScrollTarget(undefined);
     setDraftPlan(plan);
     setSelectedId(plan.localId);
     setRoute('edit');
@@ -151,8 +158,23 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
     [props],
   );
 
+  const registerEditorOffset = React.useCallback((event: { nativeEvent: { layout: { y: number } } }) => {
+    editorOffsetRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const registerEditorFieldOffset = React.useCallback((fieldName: string, y: number) => {
+    editorFieldOffsetsRef.current = {
+      ...editorFieldOffsetsRef.current,
+      [fieldName]: y,
+    };
+  }, []);
+
   const scrollToEditorError = React.useCallback((fieldName: string) => {
-    scrollViewRef.current?.scrollTo({ y: getPlanEditorFieldOffset(fieldName), animated: true });
+    const measuredFieldOffset = editorFieldOffsetsRef.current[fieldName];
+    const fallbackOffset = getPlanEditorFieldOffset(fieldName);
+    const nextOffset = Math.max(0, measuredFieldOffset === undefined ? fallbackOffset : editorOffsetRef.current + measuredFieldOffset - 16);
+    setLastScrollTarget(nextOffset);
+    scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
   }, []);
 
   return (
@@ -170,6 +192,9 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
           </HStack>
           <Text className="text-3xl font-semibold text-foreground">{t('planning.title')}</Text>
           <Text className="text-sm leading-5 text-muted-foreground">{t('planning.subtitle')}</Text>
+          {lastScrollTarget === undefined ? null : (
+            <Text testID="planning-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
+          )}
         </VStack>
 
         {completedPromptPlan ? (
@@ -196,15 +221,18 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
         ) : null}
 
         {(route === 'create' || route === 'edit') && draftPlan ? (
-          <PlanEditor
-            plan={draftPlan}
-            mode={route === 'edit' ? 'edit' : 'create'}
-            isSaving={props.isSaving}
-            saveError={props.saveError}
-            onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
-            onSave={savePlan}
-            onInvalidSubmit={scrollToEditorError}
-          />
+          <Box testID="planning-editor-card-anchor" onLayout={registerEditorOffset}>
+            <PlanEditor
+              plan={draftPlan}
+              mode={route === 'edit' ? 'edit' : 'create'}
+              isSaving={props.isSaving}
+              saveError={props.saveError}
+              onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
+              onSave={savePlan}
+              onFieldLayout={registerEditorFieldOffset}
+              onInvalidSubmit={scrollToEditorError}
+            />
+          </Box>
         ) : null}
 
         {route === 'detail' && selectedPlan ? (

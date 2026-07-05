@@ -58,7 +58,8 @@ export function PlanModeFields(props: PlanModeFieldsProps): React.JSX.Element {
           render={({ field }) => (
             <NumericSliderField
               className="flex-1"
-              label={t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' })}
+              label={t('planning.durationMinutesShort', { defaultValue: 'Duration (min)' })}
+              labelTestID="planning-editor-planned-duration-label"
               value={field.value}
               onChange={field.onChange}
               min={0}

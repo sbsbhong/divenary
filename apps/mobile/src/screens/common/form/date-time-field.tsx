@@ -15,6 +15,7 @@ type DateTimeFieldProps = {
   required?: boolean;
   error?: string;
   testID: string;
+  onLayout?: React.ComponentProps<typeof EditorField>['onLayout'];
 };
 
 export function DateTimeField(props: DateTimeFieldProps): React.JSX.Element {
@@ -45,6 +46,8 @@ export function DateTimeField(props: DateTimeFieldProps): React.JSX.Element {
       required={props.required}
       error={props.error}
       errorTestID={`${props.testID}-error`}
+      onLayout={props.onLayout}
+      testID={`${props.testID}-anchor`}
     >
       <Pressable
         testID={`${props.testID}-trigger`}

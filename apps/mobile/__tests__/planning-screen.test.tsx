@@ -101,6 +101,12 @@ const press = async (root: ReactTestRenderer.ReactTestInstance, testID: string) 
   });
 };
 
+const layout = async (root: ReactTestRenderer.ReactTestInstance, testID: string, y: number) => {
+  await ReactTestRenderer.act(async () => {
+    root.findByProps({ testID }).props.onLayout({ nativeEvent: { layout: { y } } });
+  });
+};
+
 const changeText = async (root: ReactTestRenderer.ReactTestInstance, testID: string, value: string) => {
   await ReactTestRenderer.act(async () => {
     const field = findInputLike(root, testID);
@@ -258,6 +264,19 @@ describe('Planning screen planbook flow', () => {
     expect(onInvalidSubmit).toHaveBeenCalledWith('plannedAt');
   });
 
+  it('plan editor scrolls to the first invalid field on failed set planned', async () => {
+    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
+    const root = renderer.root;
+
+    await press(root, 'planning-create-action');
+    await layout(root, 'planning-editor-card-anchor', 160);
+    await layout(root, 'planning-editor-body', 94);
+    await layout(root, 'planning-editor-planned-at-anchor', 80);
+    await press(root, 'planning-editor-save-planned');
+
+    expect(root.findByProps({ testID: 'planning-scroll-target' }).props.children).toBe('318');
+  });
+
   it('renders date time as a row trigger and numeric values as wheel pickers', async () => {
     const renderer = await renderPlanning(new LocalDivePlanRepository([]));
     const root = renderer.root;
@@ -269,6 +288,7 @@ describe('Planning screen planbook flow', () => {
     expect(root.findByProps({ testID: 'planning-editor-planned-at-time' })).toBeTruthy();
     expect(root.findByProps({ testID: 'planning-editor-planned-duration-wheel' })).toBeTruthy();
     expect(root.findByProps({ testID: 'planning-editor-planned-duration-wheel-list' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'planning-editor-planned-duration-label' }).props.children).toBe('Duration (min)');
     expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-wheel' })).toBeTruthy();
     expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-column-meters-wheel-list' })).toBeTruthy();
     expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-column-tenths-wheel-list' })).toBeTruthy();

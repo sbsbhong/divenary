@@ -218,7 +218,7 @@ export function MultiColumnNumberWheelPicker({
               <Box
                 key={column.id}
                 testID={`${testID}-column-${column.id}`}
-                style={[styles.fixedColumn, column.width === undefined ? null : { width: column.width }]}
+                style={column.width === undefined ? styles.fixedColumn : { width: column.width }}
               />
             ),
           )}
@@ -304,7 +304,11 @@ function MultiColumnWheelColumn(props: {
       nestedScrollEnabled
       bounces={false}
       scrollEventThrottle={16}
-      style={[styles.scroller, props.column.width === undefined ? null : { width: props.column.width }, { height: props.layout.wheelHeight }]}
+      style={[
+        props.column.width === undefined ? styles.scroller : styles.fixedWidthScroller,
+        props.column.width === undefined ? null : { width: props.column.width },
+        { height: props.layout.wheelHeight },
+      ]}
       contentContainerStyle={[styles.contentContainer, { paddingVertical: props.layout.centerPadding }]}
     >
       {renderWindow.topSpacerHeight > 0 ? <Box testID={`${props.testID}-top-spacer`} style={{ height: renderWindow.topSpacerHeight }} /> : null}
@@ -378,7 +382,7 @@ function MultiColumnCenterInputTrigger(props: {
             ) : (
               <Box
                 key={column.id}
-                style={[styles.fixedCenterColumn, column.width === undefined ? null : { width: column.width }]}
+                style={column.width === undefined ? styles.fixedCenterColumn : { width: column.width }}
                 className="items-start justify-center"
               >
                 <Text testID={`${props.testID}-${column.id}-fixed`} className="text-sm font-semibold text-foreground">
@@ -400,7 +404,7 @@ function CenterScrollableColumn(props: {
   return (
     <HStack
       testID={`${props.testID}-${props.column.id}-center-column`}
-      style={props.column.width === undefined ? styles.centerColumn : [styles.centerColumn, { width: props.column.width }]}
+      style={props.column.width === undefined ? styles.centerColumn : { width: props.column.width }}
       className="items-baseline justify-center"
     >
       <Text
@@ -438,6 +442,7 @@ const styles = StyleSheet.create({
   fixedColumn: {
     minWidth: 28,
   },
+  fixedWidthScroller: {},
   scroller: {
     flex: 1,
   },

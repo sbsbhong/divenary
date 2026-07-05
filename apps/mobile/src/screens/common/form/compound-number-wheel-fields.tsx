@@ -197,17 +197,17 @@ export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element 
     >
       <MultiColumnNumberWheelPicker
         columns={[
-          { id: 'meters', value: meters, min: 0, max: maxMetersInteger, step: 1, width: 84 },
+          { id: 'meters', value: meters, min: 0, max: maxMetersInteger, step: 1, width: 54 },
           {
             id: 'tenths',
             value: Math.min(tenths, maxTenthsForMeter),
             min: 0,
             max: maxTenthsForMeter,
             step: 1,
-            width: 64,
+            width: 44,
             formatValue: value => `.${value}`,
           },
-          { id: 'unit', fixedLabel: 'm', width: 28 },
+          { id: 'unit', fixedLabel: 'm', width: 22 },
         ]}
         onColumnChange={(columnId, value) => {
           if (columnId === 'meters') {

@@ -1,5 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
+import type { LayoutChangeEvent } from 'react-native';
 import { Controller, useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
@@ -32,6 +33,7 @@ type LogEntryEditorProps = {
   saveError?: Error | null;
   onCancel: () => void;
   onSave: (entry: DiveLogEntry) => Promise<DiveLogEntry>;
+  onFieldLayout?: (fieldName: string, y: number) => void;
   onInvalidSubmit?: (fieldName: string) => void;
 };
 
@@ -49,6 +51,26 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
   const activeDiveMode = form.watch('diveMode') ?? 'scuba';
   const mode = props.mode ?? 'create';
   const errors = form.formState.errors;
+  const bodyOffsetRef = React.useRef(0);
+
+  const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {
+    bodyOffsetRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const registerFieldLayout = React.useCallback(
+    (fieldName: string) => (event: LayoutChangeEvent) => {
+      props.onFieldLayout?.(fieldName, bodyOffsetRef.current + event.nativeEvent.layout.y);
+    },
+    [props],
+  );
+
+  const registerFieldGroupLayout = React.useCallback(
+    (fieldNames: string[]) => (event: LayoutChangeEvent) => {
+      const y = bodyOffsetRef.current + event.nativeEvent.layout.y;
+      fieldNames.forEach(fieldName => props.onFieldLayout?.(fieldName, y));
+    },
+    [props],
+  );
 
   const handleInvalidSubmit = React.useCallback(
     (fieldErrors: FieldErrors<LogEntryFormValues>) => {
@@ -82,7 +104,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
         title={t(mode === 'edit' ? 'logbook.editorEditTitle' : 'logbook.editorTitle')}
         titleTestID="log-entry-editor-title"
       />
-      <DiveSummaryCard.Body>
+      <DiveSummaryCard.Body testID="log-entry-editor-body" onLayout={registerBodyLayout}>
         {props.saveError || localSaveFailed ? (
           <Text
             testID="log-entry-editor-error"
@@ -100,6 +122,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
               onChange={field.onChange}
               required
               error={errors.startedAt?.message}
+              onLayout={registerFieldLayout('startedAt')}
               testID="log-entry-editor-started-at"
             />
           )}
@@ -153,6 +176,8 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
               required
               error={errors.siteName?.message}
               errorTestID="log-entry-editor-site-name-error"
+              onLayout={registerFieldLayout('siteName')}
+              testID="log-entry-editor-site-name-anchor"
             >
               <Input className="h-11 rounded-xl bg-background">
                 <InputField
@@ -165,7 +190,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
             </EditorField>
           )}
         />
-        <HStack space="md">
+        <HStack space="md" onLayout={registerFieldGroupLayout(['durationSeconds', 'maxDepthMeters'])}>
           <Controller
             control={form.control}
             name="durationSeconds"

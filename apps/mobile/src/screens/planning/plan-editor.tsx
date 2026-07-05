@@ -1,7 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
+import type { LayoutChangeEvent } from 'react-native';
 import { Controller, useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { Box } from '../../components/ui/box';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, ScreenBackButton, SelectorPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
@@ -25,6 +27,7 @@ type PlanEditorProps = {
   saveError?: Error | null;
   onCancel: () => void;
   onSave: (plan: DivePlan) => Promise<DivePlan>;
+  onFieldLayout?: (fieldName: string, y: number) => void;
   onInvalidSubmit?: (fieldName: string) => void;
 };
 
@@ -43,6 +46,26 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
   const activeDiveMode = form.watch('diveMode') ?? 'scuba';
   const mode = props.mode ?? 'create';
   const errors = form.formState.errors;
+  const bodyOffsetRef = React.useRef(0);
+
+  const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {
+    bodyOffsetRef.current = event.nativeEvent.layout.y;
+  }, []);
+
+  const registerFieldLayout = React.useCallback(
+    (fieldName: string) => (event: LayoutChangeEvent) => {
+      props.onFieldLayout?.(fieldName, bodyOffsetRef.current + event.nativeEvent.layout.y);
+    },
+    [props],
+  );
+
+  const registerFieldGroupLayout = React.useCallback(
+    (fieldNames: string[]) => (event: LayoutChangeEvent) => {
+      const y = bodyOffsetRef.current + event.nativeEvent.layout.y;
+      fieldNames.forEach(fieldName => props.onFieldLayout?.(fieldName, y));
+    },
+    [props],
+  );
 
   const handleInvalidSubmit = React.useCallback(
     (fieldErrors: FieldErrors<PlanFormValues>) => {
@@ -81,7 +104,7 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
         })}
         titleTestID="planning-editor-title"
       />
-      <DiveSummaryCard.Body>
+      <DiveSummaryCard.Body testID="planning-editor-body" onLayout={registerBodyLayout}>
         {props.saveError || localSaveFailed ? (
           <Text
             testID="planning-editor-error"
@@ -115,6 +138,7 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
               onChange={field.onChange}
               required
               error={errors.plannedAt?.message}
+              onLayout={registerFieldLayout('plannedAt')}
               testID="planning-editor-planned-at"
             />
           )}
@@ -168,6 +192,8 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
               required
               error={errors.siteName?.message}
               errorTestID="planning-editor-site-name-error"
+              onLayout={registerFieldLayout('siteName')}
+              testID="planning-editor-site-name-anchor"
             >
               <Input className="h-11 rounded-xl bg-background">
                 <InputField
@@ -242,7 +268,12 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
             </EditorField>
           )}
         />
-        <PlanModeFields control={form.control} errors={errors} diveMode={activeDiveMode} />
+        <Box
+          testID="planning-editor-mode-fields-anchor"
+          onLayout={registerFieldGroupLayout(['plannedMaxDepthMeters', 'plannedDurationMinutes'])}
+        >
+          <PlanModeFields control={form.control} errors={errors} diveMode={activeDiveMode} />
+        </Box>
         <Controller
           control={form.control}
           name="notes"

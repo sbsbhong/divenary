@@ -176,6 +176,45 @@ describe('NumberWheelPicker', () => {
     expect(renderer!.root.findAllByProps({ testID: 'depth-picker-column-unit-wheel-list' })).toHaveLength(0);
   });
 
+  it('honors explicit compact column widths without reserving blank unit space', async () => {
+    const onColumnChange = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <MultiColumnNumberWheelPicker
+          columns={[
+            { id: 'meters', value: 19, min: 0, max: 60, step: 1, width: 54 },
+            { id: 'tenths', value: 6, min: 0, max: 9, step: 1, width: 44, formatValue: value => `.${value}` },
+            { id: 'unit', fixedLabel: 'm', width: 22 },
+          ]}
+          onColumnChange={onColumnChange}
+          directInput={{
+            value: '19.6',
+            normalize: value => value,
+            onCommit: () => false,
+            keyboardType: 'decimal-pad',
+          }}
+          testID="depth-picker"
+        />,
+      );
+    });
+    renderers.push(renderer!);
+
+    const metersList = renderer!.root.findByProps({ testID: 'depth-picker-column-meters-wheel-list' });
+    const tenthsList = renderer!.root.findByProps({ testID: 'depth-picker-column-tenths-wheel-list' });
+    const fixedUnitColumn = renderer!.root.findByProps({ testID: 'depth-picker-column-unit' });
+
+    expect(metersList.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ width: 54 })]));
+    expect(tenthsList.props.style).toEqual(expect.arrayContaining([expect.objectContaining({ width: 44 })]));
+    expect(fixedUnitColumn.props.style).toEqual({ width: 22 });
+    expect(renderer!.root.findByProps({ testID: 'depth-picker-column-meters-option-18-value' }).props.children).toBe('18');
+    expect(renderer!.root.findAllByProps({ testID: 'depth-picker-column-meters-option-18-unit-column' })).toHaveLength(0);
+    expect(renderer!.root.findByProps({ testID: 'depth-picker-meters-value' }).props.children).toBe('19');
+    expect(renderer!.root.findByProps({ testID: 'depth-picker-tenths-value' }).props.children).toBe('.6');
+    expect(renderer!.root.findByProps({ testID: 'depth-picker-unit-fixed' }).props.children).toBe('m');
+  });
+
   it('renders duration seconds as minute and second columns without emitting on mount', async () => {
     const onChange = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;

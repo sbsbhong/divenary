@@ -14,6 +14,7 @@ type NumericSliderFieldProps = {
   testID: string;
   placeholder?: string;
   className?: string;
+  labelTestID?: string;
   unitLabel?: string;
   valueType?: 'int' | 'float';
   disabled?: boolean;
@@ -30,6 +31,7 @@ export function NumericSliderField(props: NumericSliderFieldProps): React.JSX.El
       required={props.required}
       error={props.error}
       errorTestID={`${props.testID}-error`}
+      labelTestID={props.labelTestID}
       className={props.className}
     >
       <NumberWheelPicker

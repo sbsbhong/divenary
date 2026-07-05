@@ -283,8 +283,8 @@ export function WheelOptionContent(props: {
           {props.valueText}
         </Text>
       </Box>
-      <Box testID={`${props.testIDPrefix}-unit-column`} style={[coreStyles.unitColumn, props.unitColumnStyle]} className="items-start justify-center">
-        {props.unitLabel ? (
+      {props.unitLabel ? (
+        <Box testID={`${props.testIDPrefix}-unit-column`} style={[coreStyles.unitColumn, props.unitColumnStyle]} className="items-start justify-center">
           <Text
             testID={`${props.testIDPrefix}-unit`}
             numberOfLines={1}
@@ -292,8 +292,8 @@ export function WheelOptionContent(props: {
           >
             {props.unitLabel}
           </Text>
-        ) : null}
-      </Box>
+        </Box>
+      ) : null}
     </Animated.View>
   );
 }

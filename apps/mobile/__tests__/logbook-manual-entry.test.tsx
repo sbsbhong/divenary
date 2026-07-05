@@ -315,6 +315,12 @@ const press = async (root: ReactTestRenderer.ReactTestInstance, testID: string) 
   });
 };
 
+const layout = async (root: ReactTestRenderer.ReactTestInstance, testID: string, y: number) => {
+  await ReactTestRenderer.act(async () => {
+    root.findByProps({ testID }).props.onLayout({ nativeEvent: { layout: { y } } });
+  });
+};
+
 const fillManualDraft = async (
   root: ReactTestRenderer.ReactTestInstance,
   overrides: Partial<Record<string, string>> = {},
@@ -601,6 +607,19 @@ describe('Logbook manual entry flow', () => {
     await press(renderer!.root, 'log-entry-editor-save');
 
     expect(onInvalidSubmit).toHaveBeenCalledWith('siteName');
+  });
+
+  test('manual editor scrolls to the first invalid field on failed save', async () => {
+    const renderer = await renderLogbook(new LocalDiveLogRepository([]));
+    const root = renderer.root;
+
+    await press(root, 'logbook-create-action');
+    await layout(root, 'log-entry-editor-card-anchor', 180);
+    await layout(root, 'log-entry-editor-body', 96);
+    await layout(root, 'log-entry-editor-site-name-anchor', 210);
+    await press(root, 'log-entry-editor-save');
+
+    expect(root.findByProps({ testID: 'logbook-scroll-target' }).props.children).toBe('470');
   });
 
   test('manual editor renders date time as a row trigger and numeric values as wheel pickers', async () => {

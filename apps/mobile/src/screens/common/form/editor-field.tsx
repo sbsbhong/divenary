@@ -19,15 +19,18 @@ type EditorFieldProps = {
   children: React.ReactNode;
   className?: string;
   errorTestID?: string;
+  labelTestID?: string;
+  onLayout?: React.ComponentProps<typeof FormControl>['onLayout'];
+  testID?: string;
 };
 
 export function EditorField(props: EditorFieldProps): React.JSX.Element {
   return (
-    <FormControl isInvalid={Boolean(props.error)} className={props.className}>
+    <FormControl testID={props.testID} onLayout={props.onLayout} isInvalid={Boolean(props.error)} className={props.className}>
       <VStack space="xs">
         <FormControlLabel>
           <HStack space="xs" className="items-center">
-            <FormControlLabelText className="text-xs font-semibold uppercase text-muted-foreground">
+            <FormControlLabelText testID={props.labelTestID} className="text-xs font-semibold uppercase text-muted-foreground">
               {props.label}
             </FormControlLabelText>
             {props.required ? (

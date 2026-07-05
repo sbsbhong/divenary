@@ -63,8 +63,12 @@ function DiveSummaryCardHeader(props: DiveSummaryCardHeaderProps): React.JSX.Ele
   );
 }
 
-function DiveSummaryCardBody(props: { children?: React.ReactNode }): React.JSX.Element {
-  return <VStack space="md">{props.children}</VStack>;
+function DiveSummaryCardBody(props: {
+  children?: React.ReactNode;
+  onLayout?: React.ComponentProps<typeof VStack>['onLayout'];
+  testID?: string;
+}): React.JSX.Element {
+  return <VStack testID={props.testID} onLayout={props.onLayout} space="md">{props.children}</VStack>;
 }
 
 function DiveSummaryCardMetric(props: DiveSummaryCardMetricProps): React.JSX.Element {
