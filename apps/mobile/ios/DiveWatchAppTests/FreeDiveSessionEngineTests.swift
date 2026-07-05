@@ -22,6 +22,25 @@ final class FreeDiveSessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.snapshot.activeSegment?.index, 1)
     }
 
+    func testSparseAboveThresholdSpikeDoesNotStartDive() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        engine.append(EngineTestFixtures.sample(0, depth: 0.2))
+        engine.append(EngineTestFixtures.sample(3, depth: 1.3))
+
+        XCTAssertEqual(engine.state, .surfaceReady)
+        XCTAssertEqual(engine.snapshot.diveCount, 0)
+
+        engine.append(EngineTestFixtures.sample(4, depth: 1.6))
+
+        XCTAssertEqual(engine.state, .surfaceReady)
+        XCTAssertEqual(engine.snapshot.diveCount, 0)
+
+        engine.append(EngineTestFixtures.sample(5, depth: 2.1))
+
+        XCTAssertEqual(engine.state, .diveActive)
+        XCTAssertEqual(engine.snapshot.activeSegment?.sampleStartIndex, 0)
+    }
+
     func testActiveDiveSnapshotIsStableAcrossRepeatedReads() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
         [0.2, 1.3, 1.6, 2.1, 2.8].enumerated().forEach { offset, depth in
@@ -44,6 +63,17 @@ final class FreeDiveSessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.state, .surfaceInterval)
         XCTAssertEqual(engine.snapshot.segments.count, 1)
         XCTAssertEqual(engine.snapshot.segments[0].index, 1)
+    }
+
+    func testTransientSurfaceSampleDoesNotCloseActiveDive() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0), (10, 0.7), (13, 0.5)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+
+        XCTAssertEqual(engine.state, .diveActive)
+        XCTAssertEqual(engine.snapshot.segments.count, 0)
+        XCTAssertEqual(engine.snapshot.activeSegment?.index, 1)
     }
 
     func testSecondDescentCreatesDiveTwoInSameSession() {
@@ -87,5 +117,20 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
         XCTAssertEqual(session.diveCount, 1)
         XCTAssertEqual(session.segments[0].endTime, EngineTestFixtures.date(9))
+    }
+
+    func testAppendAfterSummaryDoesNotChangeSnapshot() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+        _ = engine.finish(at: EngineTestFixtures.date(9))
+        let summary = engine.snapshot
+
+        engine.append(EngineTestFixtures.sample(10, depth: 30.0))
+
+        XCTAssertEqual(engine.state, .summary)
+        XCTAssertEqual(engine.snapshot, summary)
+        XCTAssertEqual(engine.snapshot.currentDepthMeters, summary.currentDepthMeters)
     }
 }

@@ -4,6 +4,7 @@ struct FreeDiveSegmentationConfiguration: Equatable {
     var diveStartDepthThreshold: Double = 1.2
     var surfaceDepthThreshold: Double = 0.8
     var sustainedDescentDuration: TimeInterval = 3
+    var sustainedDescentSampleCount: Int = 3
     var surfaceConfirmDuration: TimeInterval = 4
 }
 
@@ -30,8 +31,9 @@ struct FreeDiveSessionEngine {
     private var segments: [FreeDiveSegment] = []
     private var activeSegmentID: UUID?
     private var activeStartIndex: Int?
-    private var sustainedDescentStartIndex: Int?
+    private var sustainedDescentSegmentStartIndex: Int?
     private var sustainedDescentStartedAt: Date?
+    private var sustainedDescentSampleCount = 0
     private var surfaceCandidateStartedAt: Date?
     private(set) var state: FreeDiveSessionState = .surfaceReady
 
@@ -71,6 +73,10 @@ struct FreeDiveSessionEngine {
     }
 
     mutating func append(_ sample: DepthSample) {
+        guard state != .summary else {
+            return
+        }
+
         samples.append(sample)
 
         switch state {
@@ -79,7 +85,7 @@ struct FreeDiveSessionEngine {
         case .diveActive:
             updateDiveState(with: sample)
         case .summary:
-            break
+            return
         }
     }
 
@@ -109,8 +115,9 @@ struct FreeDiveSessionEngine {
 
         activeSegmentID = nil
         activeStartIndex = nil
-        sustainedDescentStartIndex = nil
+        sustainedDescentSegmentStartIndex = nil
         sustainedDescentStartedAt = nil
+        sustainedDescentSampleCount = 0
         surfaceCandidateStartedAt = nil
         state = .summary
 
@@ -119,32 +126,37 @@ struct FreeDiveSessionEngine {
 
     private mutating func updateSurfaceState(with sample: DepthSample) {
         guard sample.depthMeters >= configuration.diveStartDepthThreshold else {
-            sustainedDescentStartIndex = nil
+            sustainedDescentSegmentStartIndex = nil
             sustainedDescentStartedAt = nil
+            sustainedDescentSampleCount = 0
             return
         }
 
-        if sustainedDescentStartedAt == nil {
-            let currentIndex = samples.count - 1
-            let previousIndex = currentIndex - 1
+        let currentIndex = samples.count - 1
+        let previousIndex = currentIndex - 1
+
+        if sustainedDescentStartedAt == nil || isSparseCandidate(previousIndex: previousIndex, sample: sample) {
             if previousIndex >= 0,
                samples[previousIndex].depthMeters < configuration.diveStartDepthThreshold,
                sample.timestamp.timeIntervalSince(samples[previousIndex].timestamp) <= configuration.sustainedDescentDuration {
-                sustainedDescentStartIndex = previousIndex
-                sustainedDescentStartedAt = samples[previousIndex].timestamp
+                sustainedDescentSegmentStartIndex = previousIndex
             } else {
-                sustainedDescentStartIndex = currentIndex
-                sustainedDescentStartedAt = sample.timestamp
+                sustainedDescentSegmentStartIndex = currentIndex
             }
+            sustainedDescentStartedAt = sample.timestamp
+            sustainedDescentSampleCount = 1
+        } else {
+            sustainedDescentSampleCount += 1
         }
 
         guard let descentStart = sustainedDescentStartedAt,
-              sample.timestamp.timeIntervalSince(descentStart) >= configuration.sustainedDescentDuration else {
+              sample.timestamp.timeIntervalSince(descentStart) >= configuration.sustainedDescentDuration ||
+              sustainedDescentSampleCount >= configuration.sustainedDescentSampleCount else {
             return
         }
 
         activeSegmentID = UUID()
-        activeStartIndex = sustainedDescentStartIndex ?? max(0, samples.count - 1)
+        activeStartIndex = sustainedDescentSegmentStartIndex ?? max(0, samples.count - 1)
         surfaceCandidateStartedAt = nil
         state = .diveActive
     }
@@ -168,10 +180,20 @@ struct FreeDiveSessionEngine {
         segments.append(active)
         activeSegmentID = nil
         activeStartIndex = nil
-        sustainedDescentStartIndex = nil
+        sustainedDescentSegmentStartIndex = nil
         sustainedDescentStartedAt = nil
+        sustainedDescentSampleCount = 0
         surfaceCandidateStartedAt = nil
         state = .surfaceInterval
+    }
+
+    private func isSparseCandidate(previousIndex: Int, sample: DepthSample) -> Bool {
+        guard previousIndex >= 0,
+              samples[previousIndex].depthMeters >= configuration.diveStartDepthThreshold else {
+            return false
+        }
+
+        return sample.timestamp.timeIntervalSince(samples[previousIndex].timestamp) > configuration.sustainedDescentDuration
     }
 
     private func makeSession(endedAt: Date) -> FreeDiveSession {
