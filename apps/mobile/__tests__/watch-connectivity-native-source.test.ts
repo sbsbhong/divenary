@@ -276,6 +276,33 @@ describe('WatchConnectivity native source contract', () => {
     expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
   });
 
+  it('keeps mode-specific live instruments honest about depth, stop state, and safety calculation scope', () => {
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const safetyStopRouting = recording.slice(
+      recording.indexOf('private var shouldShowSafetyStopInstrument'),
+      recording.indexOf('private func surfaceRestTime'),
+    );
+    const freeDiveActiveInstrument = recording.slice(
+      recording.indexOf('private struct FreeDiveActiveInstrument'),
+      recording.indexOf('private struct FreeSurfaceIntervalInstrument'),
+    );
+    const safetyStopInstrument = recording.slice(
+      recording.indexOf('private struct SafetyStopInstrument'),
+      recording.indexOf('private struct LiveInstrumentMetric'),
+    );
+
+    expect(safetyStopRouting).toContain('case .armed:');
+    expect(safetyStopRouting).toContain('return recorder.scubaSafetyStop.required');
+    expect(freeDiveActiveInstrument).toContain('DepthGaugeRail(');
+    expect(freeDiveActiveInstrument).toContain('max(30, ceil(max(currentDepthMeters, maxDepthMeters) / 10) * 10)');
+    expect(freeDiveActiveInstrument).toContain('String(localized: "Ascent")');
+    expect(freeDiveActiveInstrument).not.toContain('Ascent/descent');
+    expect(safetyStopInstrument).toContain('title: String(localized: "Current depth")');
+    expect(safetyStopInstrument).toContain('value: DiveFormatters.depth(currentDepthMeters)');
+    expect(safetyStopInstrument).toContain('Recommended safety stop reminder · no safety calculation');
+    expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters, safetyStop.maxDepthMeters) + 2) / 2) * 2');
+  });
+
   it('keeps watch recording state in mode-specific engines', () => {
     const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
 

@@ -92,7 +92,7 @@ struct RecordingView: View {
                 currentDepthMeters: recorder.currentDepth,
                 activeDiveTime: snapshot.activeSegment?.durationSeconds ?? 0,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                verticalRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute
+                ascentRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute
             )
         case .surfaceInterval:
             FreeSurfaceIntervalInstrument(
@@ -126,7 +126,9 @@ struct RecordingView: View {
         switch recorder.scubaSafetyStop.status {
         case .active, .pausedTooDeep, .pausedTooShallow, .completed:
             return true
-        case .unknown, .notRequired, .armed, .skippedOrIncomplete:
+        case .armed:
+            return recorder.scubaSafetyStop.required
+        case .unknown, .notRequired, .skippedOrIncomplete:
             return false
         }
     }
@@ -188,32 +190,42 @@ private struct FreeDiveActiveInstrument: View {
     let currentDepthMeters: Double
     let activeDiveTime: TimeInterval
     let maxDepthMeters: Double
-    let verticalRateMetersPerMinute: Double
+    let ascentRateMetersPerMinute: Double
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
-            Text(DiveFormatters.depth(currentDepthMeters))
-                .font(DiveWatchTheme.metricFont(size: 45, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.primary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.38)
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(DiveFormatters.depth(currentDepthMeters))
+                        .font(DiveWatchTheme.metricFont(size: 42, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.primary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.38)
 
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(DiveFormatters.duration(activeDiveTime))
-                    .font(DiveWatchTheme.metricFont(size: 25, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
+                    Text(DiveFormatters.duration(activeDiveTime))
+                        .font(DiveWatchTheme.metricFont(size: 25, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.text)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.55)
 
-                Text(String(localized: "Current dive"))
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
+                    Text(String(localized: "Current dive"))
+                        .font(DiveWatchTheme.labelFont())
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                DepthGaugeRail(
+                    depthMeters: currentDepthMeters,
+                    maxScaleMeters: maxScaleMeters,
+                    stopZone: nil,
+                    targetDepthMeters: nil
+                )
             }
 
             HStack(spacing: 7) {
@@ -222,8 +234,8 @@ private struct FreeDiveActiveInstrument: View {
                     value: DiveFormatters.depth(maxDepthMeters)
                 )
                 LiveInstrumentMetric(
-                    title: String(localized: "Ascent/descent"),
-                    value: DiveFormatters.verticalRate(verticalRateMetersPerMinute)
+                    title: String(localized: "Ascent"),
+                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
                 )
             }
 
@@ -234,6 +246,10 @@ private struct FreeDiveActiveInstrument: View {
                 .minimumScaleFactor(0.75)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+
+    private var maxScaleMeters: Double {
+        max(30, ceil(max(currentDepthMeters, maxDepthMeters) / 10) * 10)
     }
 }
 
@@ -377,11 +393,16 @@ private struct SafetyStopInstrument: View {
                 }
 
                 LiveInstrumentMetric(
+                    title: String(localized: "Current depth"),
+                    value: DiveFormatters.depth(currentDepthMeters)
+                )
+
+                LiveInstrumentMetric(
                     title: String(localized: "Stop zone"),
                     value: "\(DiveFormatters.depth(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
                 )
 
-                Text(String(localized: "Recommended safety stop reminder."))
+                Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .lineLimit(2)
@@ -391,7 +412,7 @@ private struct SafetyStopInstrument: View {
 
             DepthGaugeRail(
                 depthMeters: currentDepthMeters,
-                maxScaleMeters: max(10, safetyStop.maxDepthMeters + 2),
+                maxScaleMeters: maxScaleMeters,
                 stopZone: safetyStop.minDepthMeters...safetyStop.maxDepthMeters,
                 targetDepthMeters: safetyStop.targetDepthMeters
             )
@@ -418,6 +439,10 @@ private struct SafetyStopInstrument: View {
         case .skippedOrIncomplete:
             return String(localized: "Stop incomplete")
         }
+    }
+
+    private var maxScaleMeters: Double {
+        max(10, ceil((max(currentDepthMeters, safetyStop.maxDepthMeters) + 2) / 2) * 2)
     }
 
     private var isTimerPaused: Bool {

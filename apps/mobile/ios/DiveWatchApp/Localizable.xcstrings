@@ -194,22 +194,6 @@
         }
       }
     },
-    "Ascent/descent" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ascent/descent"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "상승/하강"
-          }
-        }
-      }
-    },
     "ASSIST" : {
       "localizations" : {
         "en" : {
@@ -366,6 +350,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "조류"
+          }
+        }
+      }
+    },
+    "Current depth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current depth"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 수심"
           }
         }
       }
@@ -1249,6 +1249,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "권장 세이프티 스톱 리마인더입니다."
+          }
+        }
+      }
+    },
+    "Recommended safety stop reminder · no safety calculation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended safety stop reminder · no safety calculation"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 세이프티 스톱 리마인더 · 안전계산 없음"
           }
         }
       }
