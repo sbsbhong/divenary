@@ -322,7 +322,7 @@ function ConditionMetricTile(props: {
 }): React.JSX.Element {
   const tileClassName =
     props.tone === 'primary'
-      ? 'flex-1 rounded-2xl border border-primary/20 bg-primary/10 px-4 py-4'
+      ? 'flex-1 rounded-2xl bg-primary/10 px-4 py-4'
       : 'flex-1 rounded-2xl bg-muted px-4 py-4';
   const iconClassName = props.tone === 'primary' ? 'text-primary' : 'text-muted-foreground';
   const labelClassName =

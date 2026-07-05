@@ -455,7 +455,7 @@ export default function RootNavigation(): React.JSX.Element {
             <Pressable
               testID="watch-auto-import-toast"
               onPress={openImportedLogToast}
-              className="absolute left-4 right-4 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm"
+              className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3 shadow-sm"
               style={({ pressed }) => [
                 {
                   bottom:
