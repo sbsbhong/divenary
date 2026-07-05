@@ -40,6 +40,7 @@
 		FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */; };
 		FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */; };
 		FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000005 /* DiveSessionRecord.swift */; };
+		FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000006 /* FreeDiveSessionEngine.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -112,6 +113,7 @@
 		FA2000000000000000000003 /* DiveWatchAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DiveWatchAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecordMigrationTests.swift; sourceTree = "<group>"; };
 		FA2000000000000000000005 /* DiveSessionRecord.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecord.swift; sourceTree = "<group>"; };
+		FA2000000000000000000006 /* FreeDiveSessionEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreeDiveSessionEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -292,6 +294,7 @@
 			isa = PBXGroup;
 			children = (
 				F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */,
+				FA2000000000000000000006 /* FreeDiveSessionEngine.swift */,
 			);
 			name = Recording;
 			path = Recording;
@@ -550,6 +553,7 @@
 				FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */,
 				891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */,
 				C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */,
+				FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */,
 				11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */,
 				6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */,
 				AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */,
@@ -875,7 +879,7 @@
 		FA8000000000000000000001 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -895,7 +899,7 @@
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				TEST_HOST = "";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DiveWatchApp.app/DiveWatchApp";
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
@@ -903,7 +907,7 @@
 		FA8000000000000000000002 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "";
+				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -921,7 +925,7 @@
 				SUPPORTS_MACCATALYST = NO;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
-				TEST_HOST = "";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DiveWatchApp.app/DiveWatchApp";
 				VALIDATE_PRODUCT = YES;
 				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};

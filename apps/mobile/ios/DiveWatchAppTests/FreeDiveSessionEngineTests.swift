@@ -3,10 +3,76 @@ import XCTest
 
 final class FreeDiveSessionEngineTests: XCTestCase {
     func testStartingSessionCreatesNoSegmentUntilMeaningfulDescent() {
-        let engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        engine.append(EngineTestFixtures.sample(0, depth: 0.2))
+        engine.append(EngineTestFixtures.sample(1, depth: 0.6))
+        engine.append(EngineTestFixtures.sample(2, depth: 0.7))
 
         XCTAssertEqual(engine.state, .surfaceReady)
         XCTAssertEqual(engine.snapshot.diveCount, 0)
-        XCTAssertNil(engine.snapshot.activeSegment)
+    }
+
+    func testSustainedDescentStartsDiveOne() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        [0.2, 1.3, 1.6, 2.1, 2.8].enumerated().forEach { offset, depth in
+            engine.append(EngineTestFixtures.sample(TimeInterval(offset), depth: depth))
+        }
+
+        XCTAssertEqual(engine.state, .diveActive)
+        XCTAssertEqual(engine.snapshot.activeSegment?.index, 1)
+    }
+
+    func testReturningToSurfaceClosesDiveOne() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+
+        XCTAssertEqual(engine.state, .surfaceInterval)
+        XCTAssertEqual(engine.snapshot.segments.count, 1)
+        XCTAssertEqual(engine.snapshot.segments[0].index, 1)
+    }
+
+    func testSecondDescentCreatesDiveTwoInSameSession() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5), (20, 1.4), (21, 2.5), (23, 8.0)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+
+        XCTAssertEqual(engine.state, .diveActive)
+        XCTAssertEqual(engine.snapshot.segments.count, 1)
+        XCTAssertEqual(engine.snapshot.activeSegment?.index, 2)
+    }
+
+    func testSurfaceIntervalTimerUsesPreviousSegmentEnd() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+
+        XCTAssertEqual(engine.surfaceInterval(at: EngineTestFixtures.date(44)), 30)
+    }
+
+    func testShallowNoiseDoesNotCreateFakeDive() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for second in 0...20 {
+            let depth = second.isMultiple(of: 2) ? 0.9 : 1.05
+            engine.append(EngineTestFixtures.sample(TimeInterval(second), depth: depth))
+        }
+
+        XCTAssertEqual(engine.snapshot.diveCount, 0)
+        XCTAssertEqual(engine.state, .surfaceReady)
+    }
+
+    func testManualEndFinalizesOpenSegment() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0)] {
+            engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
+        }
+
+        let session = engine.finish(at: EngineTestFixtures.date(9))
+
+        XCTAssertEqual(session.diveCount, 1)
+        XCTAssertEqual(session.segments[0].endTime, EngineTestFixtures.date(9))
     }
 }
