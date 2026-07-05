@@ -87,7 +87,7 @@ Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화�
 
 Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture와 sync status만 최신 payload로 갱신한다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating 같은 맥락이 watch 재가져오기로 사라지지 않는다. Mode-specific metadata도 같은 원칙으로 보존되며, freedive segment와 scuba safety stop 상태는 모바일 detail에서 별도 section으로 확인할 수 있다.
 
-Legacy watch local log는 새 record model로 adapter된다. 기존 freedive log는 하나의 `FreeDiveSegment`를 가진 `FreeDiveSession`으로 보존하고, 기존 scuba log는 safety stop 상태를 unknown 또는 not required로 기본 처리한다. 이 adapter는 기존 저장 데이터를 깨뜨리지 않기 위한 호환 계층이며, 오래된 로그에 없던 safety stop 완료 사실을 새로 만들어내지 않는다.
+Legacy watch local log는 새 record model로 adapter된다. 모바일 runtime validator도 이미 native inbox에 들어온 schema v1/unknown flat `diveMode` payload를 mode-specific payload로 보강한다. 기존 freedive log는 하나의 `FreeDiveSegment`를 가진 `FreeDiveSession`으로 보존하고, 기존 scuba log는 safety stop 상태를 unknown 또는 not required로 기본 처리한다. 이 adapter와 validator 호환 경로는 기존 저장 데이터를 깨뜨리지 않기 위한 계층이며, 오래된 로그에 없던 safety stop 완료 사실을 새로 만들어내지 않는다.
 
 앱 기본 저장소는 AsyncStorage 기반 `PersistentDiveLogRepository`다. `LocalDiveLogRepository`는 테스트와 집중된 동작 검증용 in-memory 저장소로 남아 있다.
 

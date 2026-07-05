@@ -289,31 +289,152 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     return scuba;
   }
 
-  if (freedive.value !== undefined && scuba.value !== undefined) {
+  const legacyModePayload =
+    isLegacyFlatModeSession(schemaVersion.value, objectResult.value, diveMode.value) && diveMode.value !== undefined
+      ? buildLegacyModePayload(session, diveMode.value)
+      : undefined;
+  const freedivePayload = freedive.value ?? (legacyModePayload?.diveMode === 'freedive' ? legacyModePayload.freedive : undefined);
+  const scubaPayload = scuba.value ?? (legacyModePayload?.diveMode === 'scuba' ? legacyModePayload.scuba : undefined);
+
+  if (freedivePayload !== undefined && scubaPayload !== undefined) {
     return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is not allowed with ${joinPath(path, 'freedive')}`);
   }
 
   if (diveMode.value === 'freedive') {
-    if (freedive.value === undefined) {
+    if (freedivePayload === undefined) {
       return failure(joinPath(path, 'freedive'), `${joinPath(path, 'freedive')} is required for freedive sessions`);
     }
-    if (scuba.value !== undefined) {
+    if (scubaPayload !== undefined) {
       return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is not allowed for freedive sessions`);
     }
-    session.freedive = freedive.value;
+    session.freedive = freedivePayload;
   } else if (diveMode.value === 'scuba') {
-    if (scuba.value === undefined) {
+    if (scubaPayload === undefined) {
       return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is required for scuba sessions`);
     }
-    if (freedive.value !== undefined) {
+    if (freedivePayload !== undefined) {
       return failure(joinPath(path, 'freedive'), `${joinPath(path, 'freedive')} is not allowed for scuba sessions`);
     }
-    session.scuba = scuba.value;
-  } else if (freedive.value !== undefined || scuba.value !== undefined) {
+    session.scuba = scubaPayload;
+  } else if (freedivePayload !== undefined || scubaPayload !== undefined) {
     return failure(joinPath(path, 'diveMode'), `${joinPath(path, 'diveMode')} is required for nested mode payloads`);
   }
 
   return { ok: true, value: session as WatchSession };
+}
+
+function isLegacyFlatModeSession(
+  schemaVersion: number | undefined,
+  object: RecordValue,
+  diveMode: WatchSessionCommon['diveMode'],
+): boolean {
+  return (
+    diveMode !== undefined &&
+    (schemaVersion === undefined || schemaVersion < 2) &&
+    !Object.prototype.hasOwnProperty.call(object, 'freedive') &&
+    !Object.prototype.hasOwnProperty.call(object, 'scuba')
+  );
+}
+
+function buildLegacyModePayload(
+  session: WatchSessionCommon,
+  diveMode: 'scuba' | 'freedive',
+): { diveMode: 'freedive'; freedive: FreeDivePayload } | { diveMode: 'scuba'; scuba: ScubaPayload } {
+  if (diveMode === 'freedive') {
+    return { diveMode, freedive: buildLegacyFreeDivePayload(session) };
+  }
+
+  return { diveMode, scuba: buildLegacyScubaPayload(session) };
+}
+
+function buildLegacyFreeDivePayload(session: WatchSessionCommon): FreeDivePayload {
+  const maxDepthMeters = session.maxDepthMeters ?? maxDepthFromSamples(session.samples);
+  const durationSeconds = durationFromSession(session);
+
+  if (session.samples.length === 0) {
+    return {
+      diveCount: 0,
+      maxDepthMeters,
+      longestDiveDurationSeconds: 0,
+      segments: [],
+    };
+  }
+
+  return {
+    diveCount: 1,
+    maxDepthMeters,
+    longestDiveDurationSeconds: durationSeconds,
+    segments: [
+      {
+        segmentId: `${session.localSessionId}-legacy-segment-1`,
+        index: 1,
+        startedAt: session.startedAt,
+        endedAt: segmentEndTime(session),
+        durationSeconds,
+        maxDepthMeters,
+        minDepthMeters: minDepthFromSamples(session.samples),
+        sampleStartIndex: 0,
+        sampleEndIndex: session.samples.length - 1,
+      },
+    ],
+  };
+}
+
+function buildLegacyScubaPayload(session: WatchSessionCommon): ScubaPayload {
+  return {
+    gasLabel: session.gasLabel,
+    maxDepthMeters: session.maxDepthMeters ?? maxDepthFromSamples(session.samples),
+    averageDepthMeters: session.averageDepthMeters ?? averageDepthFromSamples(session.samples),
+    waterTemperatureCelsius: session.waterTemperatureCelsius ?? averageTemperatureFromSamples(session.samples),
+    latestAscentRateMetersPerMinute: 0,
+    maxAscentRateMetersPerMinute: 0,
+    safetyStop: {
+      status: 'unknown',
+      required: false,
+      completed: false,
+      targetDepthMeters: 5,
+      minDepthMeters: 3,
+      maxDepthMeters: 6,
+      durationSeconds: 180,
+      remainingSeconds: 180,
+      timeInZoneSeconds: 0,
+    },
+  };
+}
+
+function segmentEndTime(session: WatchSessionCommon): number {
+  return session.endedAt ?? session.samples[session.samples.length - 1]?.timestamp ?? session.startedAt;
+}
+
+function durationFromSession(session: WatchSessionCommon): number {
+  return Math.max(0, segmentEndTime(session) - session.startedAt);
+}
+
+function maxDepthFromSamples(samples: WatchDepthSample[]): number {
+  return Math.max(0, ...samples.map(sample => sample.depthMeters));
+}
+
+function minDepthFromSamples(samples: WatchDepthSample[]): number {
+  return samples.length === 0 ? 0 : Math.min(...samples.map(sample => sample.depthMeters));
+}
+
+function averageDepthFromSamples(samples: WatchDepthSample[]): number {
+  if (samples.length === 0) {
+    return 0;
+  }
+
+  return samples.reduce((total, sample) => total + sample.depthMeters, 0) / samples.length;
+}
+
+function averageTemperatureFromSamples(samples: WatchDepthSample[]): number | undefined {
+  const temperatures = samples
+    .map(sample => sample.waterTemperatureCelsius)
+    .filter((temperature): temperature is number => temperature !== undefined);
+  if (temperatures.length === 0) {
+    return undefined;
+  }
+
+  return temperatures.reduce((total, temperature) => total + temperature, 0) / temperatures.length;
 }
 
 function parseFreeDivePayload(value: unknown, path: string): ValidationResult<FreeDivePayload> {

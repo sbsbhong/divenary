@@ -75,6 +75,7 @@ Implemented sync and mobile behavior:
 - `packages/contracts/schemas/watch-session.schema.json` is mode-aware and enforces matching nested payloads.
 - Generated TypeScript contracts are post-processed into a stricter `WatchSession` discriminated union.
 - Mobile runtime validation rejects mismatched mode payloads.
+- Mobile runtime validation keeps a compatibility path for legacy flat schema v1 watch messages that already include `diveMode` but do not include nested `freedive` or `scuba` payloads. The validator synthesizes a one-segment freedive payload or a scuba payload with unknown safety stop status before returning the typed message, so pending pre-upgrade WatchConnectivity inbox items are not acknowledged as invalid and dropped.
 - Mobile import preserves mode-specific freedive segment metadata and scuba safety stop metadata in `watchCapture.session`.
 - Mobile log detail renders freedive segment and scuba safety stop sections.
 

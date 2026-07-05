@@ -4,21 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "4cc75c50f68187f4",
+        "id": "72d99e4edf4ef45a",
         "type": "tabs",
         "children": [
           {
-            "id": "ec651fb99c9a0a17",
+            "id": "308f839af53ed59e",
             "type": "leaf",
             "state": {
-              "type": "markdown",
-              "state": {
-                "file": "algorithms/diving-app-algorithm-reference.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "diving-app-algorithm-reference"
+              "type": "graph",
+              "state": {},
+              "icon": "lucide-git-fork",
+              "title": "그래프 뷰"
             }
           }
         ]
@@ -183,8 +179,11 @@
       "bases:새 베이스 생성하기": false
     }
   },
-  "active": "ec651fb99c9a0a17",
+  "active": "308f839af53ed59e",
   "lastOpenFiles": [
+    "architecture/watch-app.md",
+    "log.md",
+    "algorithms/diving-app-algorithm-reference.md",
     "architecture/supabase.md",
     "architecture/monorepo.md",
     "architecture/mobile-logbook-roadmap.md",
@@ -194,7 +193,6 @@
     "decisions/adr-local-first-mobile-logbook.md",
     "decisions/adr-index.md",
     "design/mobile-watch-ui-language.md",
-    "log.md",
     "architecture/sync-flow.md",
     "domains/dive-log.md",
     "domains/diving-glossary.md",
@@ -210,8 +208,6 @@
     "project/diving-app-qa-test-plan.md",
     "project/diving-app-product-roadmap.md",
     "project",
-    "domains/diving-app-scuba-mode.md",
-    "domains/diving-app-safety-ux-legal-notes.md",
     "algorithms",
     "design"
   ]
