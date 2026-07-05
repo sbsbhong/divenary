@@ -19,6 +19,17 @@ const project = readFileSync(projectPath, 'utf8');
 const stringCatalogSource = existsSync(stringCatalogPath) ? readFileSync(stringCatalogPath, 'utf8') : '';
 const stringCatalog = stringCatalogSource ? JSON.parse(stringCatalogSource) : undefined;
 const stringCatalogEntries = Object.values(stringCatalog?.strings ?? {});
+const bannedWatchCopy = [
+  'safe to ascend',
+  '상승 가능',
+  '이제 안전합니다',
+  '안전 확보',
+  '감압 완료',
+  'deco clear',
+  'ceiling clear',
+];
+const copySource = `${source}\n${stringCatalogSource}`;
+const bannedCopyMatches = bannedWatchCopy.filter(copy => copySource.toLowerCase().includes(copy.toLowerCase()));
 
 const checks = [
   {
@@ -55,6 +66,10 @@ const checks = [
         const localizations = entry.localizations ?? {};
         return localizations.en?.stringUnit?.value && localizations.ko?.stringUnit?.value;
       }),
+  },
+  {
+    name: `watch UI avoids banned safety copy${bannedCopyMatches.length > 0 ? `: ${bannedCopyMatches.join(', ')}` : ''}`,
+    failed: bannedCopyMatches.length > 0,
   },
 ];
 

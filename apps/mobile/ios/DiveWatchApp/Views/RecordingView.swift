@@ -482,3 +482,124 @@ private struct LiveInstrumentMetric: View {
         )
     }
 }
+
+#if DEBUG
+#Preview("Free Surface Ready") {
+    FreeSurfaceReadyInstrument(
+        sessionTime: 0,
+        diveCount: 0
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Free Dive Active") {
+    FreeDiveActiveInstrument(
+        currentDepthMeters: 18.4,
+        activeDiveTime: 46,
+        maxDepthMeters: 22.1,
+        ascentRateMetersPerMinute: 3.6
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Free Surface Interval") {
+    FreeSurfaceIntervalInstrument(
+        surfaceRestTime: 135,
+        lastSegment: FreeDiveSegment(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000301")!,
+            index: 3,
+            startTime: Date(timeIntervalSince1970: 1_783_225_525),
+            endTime: Date(timeIntervalSince1970: 1_783_225_571),
+            durationSeconds: 46,
+            maxDepthMeters: 22.1,
+            minDepthMeters: 0.4,
+            sampleStartIndex: 20,
+            sampleEndIndex: 42,
+            descentRateMetersPerSecond: nil,
+            ascentRateMetersPerSecond: nil
+        ),
+        maxDepthMeters: 22.1,
+        diveCount: 3
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Scuba Active") {
+    ScubaLiveInstrument(
+        currentDepthMeters: 18.6,
+        elapsedTime: 18 * 60,
+        displayedMaxDepthMeters: 21.2,
+        ascentRateMetersPerMinute: 4.2,
+        waterTemperatureCelsius: 24
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Safety Stop Inside") {
+    SafetyStopInstrument(
+        currentDepthMeters: 4.8,
+        safetyStop: previewSafetyStop(status: .active, remainingSeconds: 134, timeInZoneSeconds: 46)
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Safety Stop Too Deep") {
+    SafetyStopInstrument(
+        currentDepthMeters: 6.8,
+        safetyStop: previewSafetyStop(status: .pausedTooDeep, remainingSeconds: 168, timeInZoneSeconds: 12)
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Safety Stop Too Shallow") {
+    SafetyStopInstrument(
+        currentDepthMeters: 2.1,
+        safetyStop: previewSafetyStop(status: .pausedTooShallow, remainingSeconds: 92, timeInZoneSeconds: 88)
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Stop Complete") {
+    SafetyStopInstrument(
+        currentDepthMeters: 4.7,
+        safetyStop: previewSafetyStop(
+            status: .completed,
+            completed: true,
+            remainingSeconds: 0,
+            timeInZoneSeconds: 180,
+            completedAt: Date(timeIntervalSince1970: 1_783_225_705)
+        )
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+private func previewSafetyStop(
+    status: SafetyStopStatus,
+    completed: Bool = false,
+    remainingSeconds: TimeInterval,
+    timeInZoneSeconds: TimeInterval,
+    completedAt: Date? = nil
+) -> SafetyStopRecord {
+    SafetyStopRecord(
+        status: status,
+        required: true,
+        completed: completed,
+        targetDepthMeters: 5,
+        minDepthMeters: 3,
+        maxDepthMeters: 6,
+        durationSeconds: 180,
+        startedAt: Date(timeIntervalSince1970: 1_783_225_525),
+        completedAt: completedAt,
+        remainingSeconds: remainingSeconds,
+        timeInZoneSeconds: timeInZoneSeconds
+    )
+}
+#endif

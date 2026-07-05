@@ -278,6 +278,7 @@ describe('WatchConnectivity native source contract', () => {
 
   it('keeps mode-specific live instruments honest about depth, stop state, and safety calculation scope', () => {
     const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const watchUiCheck = readRepoFile('apps/mobile/scripts/check-watch-ui-language.mjs');
     const safetyStopRouting = recording.slice(
       recording.indexOf('private var shouldShowSafetyStopInstrument'),
       recording.indexOf('private func surfaceRestTime'),
@@ -301,6 +302,26 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopInstrument).toContain('value: DiveFormatters.depth(currentDepthMeters)');
     expect(safetyStopInstrument).toContain('Recommended safety stop reminder · no safety calculation');
     expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters, safetyStop.maxDepthMeters) + 2) / 2) * 2');
+    expect(watchUiCheck).toContain('safe to ascend');
+    expect(watchUiCheck).toContain('상승 가능');
+    expect(watchUiCheck).toContain('이제 안전합니다');
+    expect(watchUiCheck).toContain('안전 확보');
+    expect(watchUiCheck).toContain('감압 완료');
+    expect(watchUiCheck).toContain('deco clear');
+    expect(watchUiCheck).toContain('ceiling clear');
+  });
+
+  it('provides watch previews for live freedive and scuba safety stop states', () => {
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+
+    expect(recording).toContain('#Preview("Free Surface Ready")');
+    expect(recording).toContain('#Preview("Free Dive Active")');
+    expect(recording).toContain('#Preview("Free Surface Interval")');
+    expect(recording).toContain('#Preview("Scuba Active")');
+    expect(recording).toContain('#Preview("Safety Stop Inside")');
+    expect(recording).toContain('#Preview("Safety Stop Too Deep")');
+    expect(recording).toContain('#Preview("Safety Stop Too Shallow")');
+    expect(recording).toContain('#Preview("Stop Complete")');
   });
 
   it('summarizes and syncs watch sessions with mode-specific payloads', () => {
