@@ -44,17 +44,16 @@ struct SafetyStopController {
     mutating func update(maxDepthMeters: Double, sample: DepthSample) {
         defer { lastSample = sample }
 
+        guard status != .completed && status != .skippedOrIncomplete else {
+            return
+        }
+
         guard maxDepthMeters >= configuration.armDepthMeters else {
-            status = .notRequired
             return
         }
 
         if status == .notRequired {
             status = .armed
-        }
-
-        guard status != .completed && status != .skippedOrIncomplete else {
-            return
         }
 
         let wasActive = status == .active
@@ -65,11 +64,12 @@ struct SafetyStopController {
                 startedAt = sample.timestamp
             }
             let elapsed = wasActive ? elapsedSinceLastSample(to: sample) : 0
-            remainingSeconds = max(0, remainingSeconds - elapsed)
-            timeInZoneSeconds += elapsed
+            let creditedElapsed = min(elapsed, remainingSeconds)
+            remainingSeconds = max(0, remainingSeconds - creditedElapsed)
+            timeInZoneSeconds += creditedElapsed
             status = remainingSeconds <= 0 ? .completed : .active
             if status == .completed {
-                completedAt = sample.timestamp
+                completedAt = sample.timestamp.addingTimeInterval(-(elapsed - creditedElapsed))
             }
         case .tooDeep:
             if startedAt != nil {

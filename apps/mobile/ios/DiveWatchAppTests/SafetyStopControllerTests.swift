@@ -72,12 +72,62 @@ final class SafetyStopControllerTests: XCTestCase {
         XCTAssertEqual(controller.record.remainingSeconds, 0, accuracy: 0.01)
     }
 
+    func testSparseFinalCompletionIntervalClampsCreditedTime() {
+        var controller = activeController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(100, depth: 5))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(250, depth: 5))
+
+        XCTAssertEqual(controller.record.status, .completed)
+        XCTAssertEqual(controller.record.remainingSeconds, 0, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.record.completedAt, EngineTestFixtures.date(182))
+    }
+
+    func testCompletedStateIsNotResetByLaterBelowArmDepthUpdate() {
+        var controller = activeController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(182, depth: 5))
+        controller.update(maxDepthMeters: 9.9, sample: EngineTestFixtures.sample(190, depth: 0))
+
+        XCTAssertEqual(controller.record.status, .completed)
+        XCTAssertTrue(controller.record.required)
+        XCTAssertTrue(controller.record.completed)
+    }
+
     func testSurfacingBeforeCompletionMarksIncomplete() {
         var controller = activeController()
         controller.markSurfaced(at: EngineTestFixtures.date(40))
 
         XCTAssertEqual(controller.record.status, .skippedOrIncomplete)
         XCTAssertFalse(controller.record.completed)
+    }
+
+    func testIncompleteStateIsNotResetByLaterBelowArmDepthUpdate() {
+        var controller = activeController()
+        controller.markSurfaced(at: EngineTestFixtures.date(40))
+        controller.update(maxDepthMeters: 9.9, sample: EngineTestFixtures.sample(50, depth: 0))
+
+        XCTAssertEqual(controller.record.status, .skippedOrIncomplete)
+        XCTAssertTrue(controller.record.required)
+        XCTAssertFalse(controller.record.completed)
+    }
+
+    func testArmedStateIsNotResetByLaterBelowArmDepthUpdate() {
+        var controller = SafetyStopController()
+        controller.update(maxDepthMeters: 10, sample: EngineTestFixtures.sample(0, depth: 10))
+        controller.update(maxDepthMeters: 9.9, sample: EngineTestFixtures.sample(1, depth: 0))
+
+        XCTAssertEqual(controller.record.status, .armed)
+        XCTAssertTrue(controller.record.required)
+    }
+
+    func testCountingZoneBoundariesAreIncluded() {
+        var controller = SafetyStopController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(0, depth: 12))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(2, depth: 2.7))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 6.3))
+
+        XCTAssertEqual(controller.record.status, .active)
+        XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
     }
 
     func testStatusTextDoesNotExposeBannedSafetyPhrases() {
