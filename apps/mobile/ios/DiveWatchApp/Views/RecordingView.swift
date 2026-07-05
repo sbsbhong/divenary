@@ -48,9 +48,11 @@ struct RecordingView: View {
                 }
 
                 LiveDepthPanel(
+                    currentDepthMeters: recorder.currentDepth,
                     depth: DiveFormatters.depth(recorder.currentDepth),
                     elapsed: DiveFormatters.duration(recorder.elapsedTime),
-                    maxDepth: DiveFormatters.depth(recorder.maxDepth)
+                    maxDepth: DiveFormatters.depth(recorder.maxDepth),
+                    diveMode: plan.diveMode
                 )
 
                 if plan.diveMode == .scuba {
@@ -91,30 +93,54 @@ struct RecordingView: View {
 }
 
 private struct LiveDepthPanel: View {
+    let currentDepthMeters: Double
     let depth: String
     let elapsed: String
     let maxDepth: String
+    let diveMode: DiveMode
 
     var body: some View {
         InstrumentCard {
-            VStack(alignment: .leading, spacing: 9) {
-                Text("CURRENT DEPTH")
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.mutedText)
+            HStack(alignment: .center, spacing: 8) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("CURRENT DEPTH")
+                        .font(DiveWatchTheme.labelFont())
+                        .foregroundStyle(DiveWatchTheme.mutedText)
 
-                Text(depth)
-                    .font(DiveWatchTheme.metricFont(size: 40, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.primary)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.45)
+                    Text(depth)
+                        .font(DiveWatchTheme.metricFont(size: 38, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.primary)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.38)
 
-                HStack(spacing: 10) {
-                    LiveDepthStat(title: String(localized: "Time"), value: elapsed)
-                    LiveDepthStat(title: String(localized: "Max"), value: maxDepth)
+                    HStack(spacing: 8) {
+                        LiveDepthStat(title: String(localized: "Time"), value: elapsed)
+                        LiveDepthStat(title: String(localized: "Max"), value: maxDepth)
+                    }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                DepthGaugeRail(
+                    depthMeters: currentDepthMeters,
+                    maxScaleMeters: maxScaleMeters,
+                    stopZone: stopZone,
+                    targetDepthMeters: targetDepthMeters
+                )
             }
         }
+    }
+
+    private var maxScaleMeters: Double {
+        diveMode == .scuba ? 10 : 30
+    }
+
+    private var stopZone: ClosedRange<Double>? {
+        diveMode == .scuba ? 3...6 : nil
+    }
+
+    private var targetDepthMeters: Double? {
+        diveMode == .scuba ? 5 : nil
     }
 }
 

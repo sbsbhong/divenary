@@ -230,6 +230,18 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('Freedive training reference only.');
   });
 
+  it('uses a deep blue minimal depth gauge on watch live screens', () => {
+    const gauge = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/DepthGaugeRail.swift');
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+
+    expect(gauge).toContain('struct DepthGaugeRail');
+    expect(gauge).toContain('LinearGradient');
+    expect(gauge).toContain('stopZone');
+    expect(gauge).toContain('Image(systemName: "chevron.right")');
+    expect(gauge).toContain('deepBlueGradient');
+    expect(recording).toContain('DepthGaugeRail');
+  });
+
   it('keeps watch recording state in mode-specific engines', () => {
     const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
 

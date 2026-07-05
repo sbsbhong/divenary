@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E2C63175E91C4718DBE3923 /* RecordingView.swift */; };
+		08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */; };
 		0C80B921A6F3F58F76C31292 /* libPods-DiveMobile.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-DiveMobile.a */; };
 		0DA3A8DE547E6EA68A8F60D0 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956EB9D331534828E0706E5C /* SessionListView.swift */; };
 		11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */; };
@@ -106,6 +107,7 @@
 		8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
 		956EB9D331534828E0706E5C /* SessionListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		972E39BFCAB25BD1867935E1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthGaugeRail.swift; sourceTree = "<group>"; };
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = DiveMobile/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = DiveMobile/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = DiveMobile/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
@@ -277,6 +279,7 @@
 		C2D0DFFB26398A6FE9F151FC /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */,
 				2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */,
 				6BE6A545437839029CC97811 /* HomeView.swift */,
 				1E2C63175E91C4718DBE3923 /* RecordingView.swift */,
@@ -574,6 +577,7 @@
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
 				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
 				6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */,
+				08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */,
 				8097168CBD59D256F2B105FC /* DiveFormatters.swift in Sources */,
 				646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */,
 				079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */,
