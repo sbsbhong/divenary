@@ -50,6 +50,8 @@ struct SessionDetailView: View {
                     }
                 }
 
+                modeDetailSection
+
                 InstrumentCard(accent: DiveWatchTheme.secondary) {
                     VStack(spacing: 6) {
                         SummaryRow(title: String(localized: "Gas"), value: session.gasLabel ?? String(localized: "Not set"))
@@ -80,5 +82,175 @@ struct SessionDetailView: View {
         }
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .navigationTitle("Details")
+    }
+
+    @ViewBuilder
+    private var modeDetailSection: some View {
+        switch session.payload {
+        case .freedive(let freeSession):
+            FreeSegmentListSection(session: freeSession)
+        case .scuba(let scubaSession):
+            SafetyStopResultSection(session: scubaSession)
+        }
+    }
+}
+
+private struct FreeSegmentListSection: View {
+    let session: FreeDiveSession
+
+    var body: some View {
+        InstrumentCard(accent: DiveWatchTheme.primary) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Free Segment List")
+                    .font(DiveWatchTheme.labelFont())
+                    .foregroundStyle(DiveWatchTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+
+                if segmentRows.isEmpty {
+                    Text(String(localized: "No segments"))
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                } else {
+                    ForEach(segmentRows) { row in
+                        FreeSegmentRow(row: row)
+                    }
+                }
+            }
+        }
+    }
+
+    private var segmentRows: [FreeSegmentRowModel] {
+        let sortedSegments = session.segments.sorted { left, right in
+            if left.startTime == right.startTime {
+                return left.index < right.index
+            }
+
+            return left.startTime < right.startTime
+        }
+
+        return sortedSegments.indices.map { index in
+            let segment = sortedSegments[index]
+            let previousSegment = index > 0 ? sortedSegments[index - 1] : nil
+            let surfaceIntervalSeconds = previousSegment?.endTime.map {
+                max(0, segment.startTime.timeIntervalSince($0))
+            }
+
+            return FreeSegmentRowModel(segment: segment, surfaceIntervalSeconds: surfaceIntervalSeconds)
+        }
+    }
+}
+
+private struct FreeSegmentRowModel: Identifiable {
+    let segment: FreeDiveSegment
+    let surfaceIntervalSeconds: TimeInterval?
+
+    var id: UUID {
+        segment.id
+    }
+}
+
+private struct FreeSegmentRow: View {
+    let row: FreeSegmentRowModel
+
+    private var segment: FreeDiveSegment {
+        row.segment
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 8) {
+                Text(segmentTitle)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Spacer(minLength: 4)
+
+                Text("\(DiveFormatters.duration(segment.durationSeconds)) · \(DiveFormatters.depth(segment.maxDepthMeters))")
+                    .font(DiveWatchTheme.metricFont(size: 12, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.58)
+            }
+
+            if let surfaceIntervalSeconds = row.surfaceIntervalSeconds {
+                Text("\(String(localized: "Surface interval")): \(DiveFormatters.duration(surfaceIntervalSeconds))")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.68)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
+                .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
+        )
+    }
+
+    private var segmentTitle: String {
+        let indexText = String(format: "%02d", segment.index)
+        return String(format: String(localized: "Dive #%@"), indexText)
+    }
+}
+
+private struct SafetyStopResultSection: View {
+    let session: ScubaDiveSession
+
+    private var safetyStop: SafetyStopRecord {
+        session.safetyStop
+    }
+
+    var body: some View {
+        InstrumentCard(accent: DiveWatchTheme.primary) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Safety Stop Result")
+                        .font(DiveWatchTheme.labelFont())
+                        .foregroundStyle(DiveWatchTheme.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Spacer(minLength: 4)
+                    StatusPill(title: safetyStop.status.displayText, color: statusColor)
+                }
+
+                VStack(spacing: 6) {
+                    SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
+                    SummaryRow(title: String(localized: "Required"), value: localizedBoolean(safetyStop.required))
+                    SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
+                    SummaryRow(title: String(localized: "Target / zone"), value: targetZoneText)
+                    SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))
+                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
+                    if let startedAt = safetyStop.startedAt {
+                        SummaryRow(title: String(localized: "Started"), value: DiveFormatters.sessionDate.string(from: startedAt))
+                    }
+                    if let completedAt = safetyStop.completedAt {
+                        SummaryRow(title: String(localized: "Completed at"), value: DiveFormatters.sessionDate.string(from: completedAt))
+                    }
+                }
+
+                Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+    }
+
+    private var targetZoneText: String {
+        "\(DiveFormatters.depth(safetyStop.targetDepthMeters)) · \(DiveFormatters.depth(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
+    }
+
+    private var statusColor: Color {
+        safetyStop.completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
+    }
+
+    private func localizedBoolean(_ value: Bool) -> String {
+        value ? String(localized: "Yes") : String(localized: "No")
     }
 }

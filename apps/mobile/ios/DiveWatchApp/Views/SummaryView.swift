@@ -42,21 +42,7 @@ struct SummaryView: View {
                     }
                 }
 
-                HStack(spacing: 8) {
-                    MetricCard(title: String(localized: "Duration"), value: DiveFormatters.duration(summary.durationSeconds), compact: true)
-                    MetricCard(title: String(localized: "Max Depth"), value: DiveFormatters.depth(summary.maxDepthMeters), compact: true)
-                }
-
-                InstrumentCard {
-                    VStack(spacing: 6) {
-                        SummaryRow(title: String(localized: "Average depth"), value: DiveFormatters.depth(summary.averageDepthMeters))
-                        SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(summary.averageWaterTemperatureCelsius))
-                        SummaryRow(
-                            title: String(localized: "Ascent reminder max"),
-                            value: DiveFormatters.ascentRate(summary.maxAscentRateMetersPerMinute)
-                        )
-                    }
-                }
+                modeSummarySection
 
                 InstrumentCard(accent: DiveWatchTheme.secondary) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -124,6 +110,89 @@ struct SummaryView: View {
             waterCondition = session.waterCondition
             notes = session.notes ?? ""
         }
+    }
+
+    @ViewBuilder
+    private var modeSummarySection: some View {
+        switch session.payload {
+        case .freedive(let freeSession):
+            FreeSessionSummarySection(session: freeSession)
+        case .scuba(let scubaSession):
+            SafetyStopSummarySection(session: scubaSession)
+        }
+    }
+}
+
+private struct FreeSessionSummarySection: View {
+    let session: FreeDiveSession
+
+    var body: some View {
+        InstrumentCard(accent: DiveWatchTheme.primary) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Free Session Summary")
+                    .font(DiveWatchTheme.labelFont())
+                    .foregroundStyle(DiveWatchTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+
+                SummaryRow(title: String(localized: "Dive count"), value: "\(session.diveCount)")
+                SummaryRow(title: String(localized: "Longest dive"), value: DiveFormatters.duration(session.longestDiveDurationSeconds))
+                SummaryRow(title: String(localized: "Max Depth"), value: DiveFormatters.depth(session.maxDepthMeters))
+                SummaryRow(title: String(localized: "Total session time"), value: DiveFormatters.duration(session.totalDurationSeconds))
+
+                Text(String(localized: "Supplemental log · no safety calculation"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+    }
+}
+
+private struct SafetyStopSummarySection: View {
+    let session: ScubaDiveSession
+
+    private var safetyStop: SafetyStopRecord {
+        session.safetyStop
+    }
+
+    var body: some View {
+        InstrumentCard(accent: DiveWatchTheme.primary) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Safety Stop Summary")
+                        .font(DiveWatchTheme.labelFont())
+                        .foregroundStyle(DiveWatchTheme.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.65)
+                    Spacer(minLength: 4)
+                    StatusPill(title: safetyStop.status.displayText, color: statusColor)
+                }
+
+                SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
+                SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))
+                if safetyStop.timeInZoneSeconds > 0 {
+                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
+                }
+                SummaryRow(title: String(localized: "Required"), value: localizedBoolean(safetyStop.required))
+                SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
+
+                Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+    }
+
+    private var statusColor: Color {
+        safetyStop.completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
+    }
+
+    private func localizedBoolean(_ value: Bool) -> String {
+        value ? String(localized: "Yes") : String(localized: "No")
     }
 }
 

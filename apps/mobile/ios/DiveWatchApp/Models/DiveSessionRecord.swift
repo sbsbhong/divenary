@@ -217,4 +217,202 @@ extension DiveSessionRecord {
             payload: payload
         )
     }
+
+    func syncMessageData(type: String = "sessionEnded") throws -> Data {
+        let message = RecordWatchSyncMessagePayload(type: type, session: RecordWatchSessionPayload(session: self))
+        return try JSONEncoder().encode(message)
+    }
+}
+
+private struct RecordWatchSyncMessagePayload: Encodable {
+    let type: String
+    let session: RecordWatchSessionPayload
+}
+
+private struct RecordWatchSessionPayload: Encodable {
+    let localSessionId: String
+    let schemaVersion: Int
+    let diveMode: String
+    let gasLabel: String?
+    let siteId: String?
+    let siteName: String?
+    let sourcePlanLocalId: String?
+    let planTitle: String?
+    let buddyIds: [String]
+    let gearIds: [String]
+    let tags: [String]
+    let notes: String?
+    let rating: Int?
+    let perceivedExertion: Int?
+    let visibilityRating: Int?
+    let waterCondition: String
+    let syncStatus: String
+    let entryLocation: RecordWatchLocationPayload?
+    let exitLocation: RecordWatchLocationPayload?
+    let startedAt: Double
+    let endedAt: Double?
+    let maxDepthMeters: Double
+    let averageDepthMeters: Double
+    let waterTemperatureCelsius: Double?
+    let samples: [RecordWatchDepthSamplePayload]
+    let freedive: RecordWatchFreeDivePayload?
+    let scuba: RecordWatchScubaPayload?
+
+    init(session: DiveSessionRecord) {
+        let summary = session.summary
+        localSessionId = session.id.uuidString
+        schemaVersion = session.schemaVersion
+        diveMode = session.diveMode.rawValue
+        gasLabel = session.gasLabel
+        siteId = session.siteId
+        siteName = session.siteName
+        sourcePlanLocalId = session.sourcePlanLocalId
+        planTitle = session.planTitle
+        buddyIds = session.buddyIds
+        gearIds = session.gearIds
+        tags = session.tags
+        notes = session.notes
+        rating = session.rating
+        perceivedExertion = session.perceivedExertion
+        visibilityRating = session.visibilityRating
+        waterCondition = session.waterCondition.rawValue
+        syncStatus = session.syncStatus.rawValue
+        entryLocation = session.entryLocation.map(RecordWatchLocationPayload.init(location:))
+        exitLocation = session.exitLocation.map(RecordWatchLocationPayload.init(location:))
+        startedAt = session.startedAt.timeIntervalSince1970
+        endedAt = session.endedAt?.timeIntervalSince1970
+        maxDepthMeters = summary.maxDepthMeters
+        averageDepthMeters = summary.averageDepthMeters
+        waterTemperatureCelsius = summary.averageWaterTemperatureCelsius
+        samples = session.samples.map { RecordWatchDepthSamplePayload(sessionId: session.id.uuidString, sample: $0) }
+
+        switch session.payload {
+        case .freedive(let freeSession):
+            freedive = RecordWatchFreeDivePayload(session: freeSession)
+            scuba = nil
+        case .scuba(let scubaSession):
+            freedive = nil
+            scuba = RecordWatchScubaPayload(session: scubaSession)
+        }
+    }
+}
+
+private struct RecordWatchFreeDivePayload: Encodable {
+    let diveCount: Int
+    let maxDepthMeters: Double
+    let longestDiveDurationSeconds: TimeInterval
+    let segments: [RecordWatchFreeDiveSegmentPayload]
+
+    init(session: FreeDiveSession) {
+        diveCount = session.diveCount
+        maxDepthMeters = session.maxDepthMeters
+        longestDiveDurationSeconds = session.longestDiveDurationSeconds
+        segments = session.segments.map(RecordWatchFreeDiveSegmentPayload.init(segment:))
+    }
+}
+
+private struct RecordWatchFreeDiveSegmentPayload: Encodable {
+    let segmentId: String
+    let index: Int
+    let startedAt: Double
+    let endedAt: Double
+    let durationSeconds: TimeInterval
+    let maxDepthMeters: Double
+    let minDepthMeters: Double
+    let sampleStartIndex: Int
+    let sampleEndIndex: Int
+    let descentRateMetersPerSecond: Double?
+    let ascentRateMetersPerSecond: Double?
+
+    init(segment: FreeDiveSegment) {
+        segmentId = segment.id.uuidString
+        index = segment.index
+        startedAt = segment.startTime.timeIntervalSince1970
+        endedAt = (segment.endTime ?? segment.startTime.addingTimeInterval(segment.durationSeconds)).timeIntervalSince1970
+        durationSeconds = segment.durationSeconds
+        maxDepthMeters = segment.maxDepthMeters
+        minDepthMeters = segment.minDepthMeters
+        sampleStartIndex = segment.sampleStartIndex
+        sampleEndIndex = segment.sampleEndIndex
+        descentRateMetersPerSecond = segment.descentRateMetersPerSecond
+        ascentRateMetersPerSecond = segment.ascentRateMetersPerSecond
+    }
+}
+
+private struct RecordWatchScubaPayload: Encodable {
+    let gasLabel: String?
+    let maxDepthMeters: Double
+    let averageDepthMeters: Double
+    let waterTemperatureCelsius: Double?
+    let latestAscentRateMetersPerMinute: Double
+    let maxAscentRateMetersPerMinute: Double
+    let safetyStop: RecordWatchSafetyStopPayload
+
+    init(session: ScubaDiveSession) {
+        gasLabel = session.gasLabel
+        maxDepthMeters = session.maxDepthMeters
+        averageDepthMeters = session.averageDepthMeters
+        waterTemperatureCelsius = session.waterTemperatureCelsius
+        latestAscentRateMetersPerMinute = session.latestAscentRateMetersPerMinute
+        maxAscentRateMetersPerMinute = session.maxAscentRateMetersPerMinute
+        safetyStop = RecordWatchSafetyStopPayload(record: session.safetyStop)
+    }
+}
+
+private struct RecordWatchSafetyStopPayload: Encodable {
+    let status: String
+    let required: Bool
+    let completed: Bool
+    let targetDepthMeters: Double
+    let minDepthMeters: Double
+    let maxDepthMeters: Double
+    let durationSeconds: TimeInterval
+    let startedAt: Double?
+    let completedAt: Double?
+    let remainingSeconds: TimeInterval
+    let timeInZoneSeconds: TimeInterval
+
+    init(record: SafetyStopRecord) {
+        status = record.status.rawValue
+        required = record.required
+        completed = record.completed
+        targetDepthMeters = record.targetDepthMeters
+        minDepthMeters = record.minDepthMeters
+        maxDepthMeters = record.maxDepthMeters
+        durationSeconds = record.durationSeconds
+        startedAt = record.startedAt?.timeIntervalSince1970
+        completedAt = record.completedAt?.timeIntervalSince1970
+        remainingSeconds = record.remainingSeconds
+        timeInZoneSeconds = record.timeInZoneSeconds
+    }
+}
+
+private struct RecordWatchLocationPayload: Encodable {
+    let latitude: Double
+    let longitude: Double
+    let horizontalAccuracyMeters: Double?
+    let capturedAt: Double?
+
+    init(location: WatchLocation) {
+        latitude = location.latitude
+        longitude = location.longitude
+        horizontalAccuracyMeters = location.horizontalAccuracyMeters
+        capturedAt = location.capturedAt?.timeIntervalSince1970
+    }
+}
+
+private struct RecordWatchDepthSamplePayload: Encodable {
+    let localSessionId: String
+    let timestamp: Double
+    let depthMeters: Double
+    let pressureKPa: Double?
+    let waterTemperatureCelsius: Double?
+
+    init(sessionId: String, sample: DepthSample) {
+        localSessionId = sessionId
+        timestamp = sample.timestamp.timeIntervalSince1970
+        depthMeters = sample.depthMeters
+        pressureKPa = sample.pressureKPa
+        waterTemperatureCelsius = sample.waterTemperatureCelsius
+    }
 }

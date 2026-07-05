@@ -303,6 +303,33 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters, safetyStop.maxDepthMeters) + 2) / 2) * 2');
   });
 
+  it('summarizes and syncs watch sessions with mode-specific payloads', () => {
+    const summary = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SummaryView.swift');
+    const detail = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SessionDetailView.swift');
+    const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
+    const envelope = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncEnvelope.swift');
+    const sessionPayloadBlock = record.slice(
+      record.indexOf('private struct RecordWatchSessionPayload'),
+      record.indexOf('private struct RecordWatchFreeDivePayload'),
+    );
+
+    expect(summary).toContain('Free Session Summary');
+    expect(summary).toContain('Safety Stop Summary');
+    expect(detail).toContain('Free Segment List');
+    expect(detail).toContain('Safety Stop Result');
+    expect(envelope).toContain('try session.syncMessageData()');
+    expect(record).toContain('func syncMessageData(type: String = "sessionEnded") throws -> Data');
+    expect(sessionPayloadBlock).toContain('let freedive: RecordWatchFreeDivePayload?');
+    expect(sessionPayloadBlock).toContain('let scuba: RecordWatchScubaPayload?');
+    expect(sessionPayloadBlock).toContain('switch session.payload');
+    expect(sessionPayloadBlock).toContain('case .freedive(let freeSession):');
+    expect(sessionPayloadBlock).toContain('freedive = RecordWatchFreeDivePayload(session: freeSession)');
+    expect(sessionPayloadBlock).toContain('scuba = nil');
+    expect(sessionPayloadBlock).toContain('case .scuba(let scubaSession):');
+    expect(sessionPayloadBlock).toContain('freedive = nil');
+    expect(sessionPayloadBlock).toContain('scuba = RecordWatchScubaPayload(session: scubaSession)');
+  });
+
   it('keeps watch recording state in mode-specific engines', () => {
     const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
 

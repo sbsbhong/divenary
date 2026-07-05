@@ -338,6 +338,38 @@
         }
       }
     },
+    "Completed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completed"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료 여부"
+          }
+        }
+      }
+    },
+    "Completed at" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Completed at"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료 시각"
+          }
+        }
+      }
+    },
     "Current" : {
       "localizations" : {
         "en" : {
@@ -494,6 +526,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "다이브 캡처됨"
+          }
+        }
+      }
+    },
+    "Dive count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive count"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 수"
+          }
+        }
+      }
+    },
+    "Dive #%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive #%@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 #%@"
           }
         }
       }
@@ -707,6 +771,38 @@
         }
       }
     },
+    "Free Segment List" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Segment List"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙 구간 목록"
+          }
+        }
+      }
+    },
+    "Free Session Summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Session Summary"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리 세션 요약"
+          }
+        }
+      }
+    },
     "Free Session Start" : {
       "localizations" : {
         "en" : {
@@ -851,6 +947,22 @@
         }
       }
     },
+    "Longest dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Longest dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최장 다이브"
+          }
+        }
+      }
+    },
     "LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT." : {
       "localizations" : {
         "en" : {
@@ -947,6 +1059,22 @@
         }
       }
     },
+    "No" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아니요"
+          }
+        }
+      }
+    },
     "No logs" : {
       "localizations" : {
         "en" : {
@@ -991,6 +1119,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "저장된 세션 없음"
+          }
+        }
+      }
+    },
+    "No segments" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No segments"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "구간 없음"
           }
         }
       }
@@ -1285,6 +1429,38 @@
         }
       }
     },
+    "Remaining" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remaining"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "남은 시간"
+          }
+        }
+      }
+    },
+    "Required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "필요 여부"
+          }
+        }
+      }
+    },
     "Reminder active" : {
       "localizations" : {
         "en" : {
@@ -1361,6 +1537,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "세이프티 스톱"
+          }
+        }
+      }
+    },
+    "Safety Stop Result" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safety Stop Result"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세이프티 스톱 결과"
+          }
+        }
+      }
+    },
+    "Safety Stop Summary" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Safety Stop Summary"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세이프티 스톱 요약"
           }
         }
       }
@@ -1606,6 +1814,22 @@
         }
       }
     },
+    "Status" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Status"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상태"
+          }
+        }
+      }
+    },
     "Start a recreational capture to create a watch log." : {
       "localizations" : {
         "en" : {
@@ -1618,6 +1842,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "레크리에이션 캡처를 시작해 워치 로그를 만드세요."
+          }
+        }
+      }
+    },
+    "Started" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Started"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "시작"
           }
         }
       }
@@ -1878,6 +2118,22 @@
         }
       }
     },
+    "Target / zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Target / zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "목표 / 구간"
+          }
+        }
+      }
+    },
     "Temp" : {
       "localizations" : {
         "en" : {
@@ -1890,6 +2146,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수온"
+          }
+        }
+      }
+    },
+    "Time in zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Time in zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "구간 체류 시간"
           }
         }
       }
@@ -1954,6 +2226,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "미실행 계획"
+          }
+        }
+      }
+    },
+    "Total session time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total session time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "총 세션 시간"
           }
         }
       }
@@ -2067,6 +2355,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간 내"
+          }
+        }
+      }
+    },
+    "Yes" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yes"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "예"
           }
         }
       }
