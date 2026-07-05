@@ -114,6 +114,22 @@
         }
       }
     },
+    "Air · Stop 5m/3:00" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Air · Stop 5m/3:00"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공기 · 스톱 5m/3:00"
+          }
+        }
+      }
+    },
     "Air scuba reminder, not a dive computer." : {
       "localizations" : {
         "en" : {
@@ -530,6 +546,22 @@
         }
       }
     },
+    "Does not replace a certified dive computer." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Does not replace a certified dive computer."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "인증 다이브 컴퓨터를 대체하지 않습니다."
+          }
+        }
+      }
+    },
     "End Dive" : {
       "localizations" : {
         "en" : {
@@ -575,6 +607,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리다이빙"
+          }
+        }
+      }
+    },
+    "Free Session Start" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Session Start"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리 세션 시작"
           }
         }
       }
@@ -1061,6 +1109,22 @@
         }
       }
     },
+    "Recommended safety stop reminder." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended safety stop reminder."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 세이프티 스톱 리마인더입니다."
+          }
+        }
+      }
+    },
     "Reminder active" : {
       "localizations" : {
         "en" : {
@@ -1253,6 +1317,22 @@
         }
       }
     },
+    "Scuba Start" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Scuba Start"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스쿠버 시작"
+          }
+        }
+      }
+    },
     "Selected Plan" : {
       "localizations" : {
         "en" : {
@@ -1382,6 +1462,22 @@
         }
       }
     },
+    "Start Planned Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Planned Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계획 다이브 시작"
+          }
+        }
+      }
+    },
     "STOP" : {
       "localizations" : {
         "en" : {
@@ -1410,6 +1506,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "요약"
+          }
+        }
+      }
+    },
+    "Supplemental log · no safety calculation" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Supplemental log · no safety calculation"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "보조 로그 · 안전계산 없음"
           }
         }
       }

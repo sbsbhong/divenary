@@ -183,13 +183,17 @@ describe('WatchConnectivity native source contract', () => {
     expect(transport).toContain('handleReceivedApplicationContext(from: connectivitySession)');
   });
 
-  it('keeps the watch home focused on dive type and moves plan fields behind Dive Plan', () => {
+  it('keeps watch home focused on starting scuba and free sessions', () => {
     const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
 
-    expect(home).toContain('DiveModeSelector(');
+    expect(home).toContain('Scuba Start');
+    expect(home).toContain('Free Session Start');
+    expect(home).toContain('Air · Stop 5m/3:00');
+    expect(home).toContain('Supplemental log');
     expect(home).toContain('Label("Dive Plan", systemImage: "list.clipboard")');
     expect(home).toContain('private struct DivePlanSetupView');
     expect(home).toContain('private struct PreDivePlanFields');
+    expect(home).not.toContain('Start Dive');
     expect(home).not.toContain('@State private var isPreDivePlanExpanded');
     expect(home).not.toContain('PreDivePlanForm(');
     expect(home).not.toContain('isExpanded');
