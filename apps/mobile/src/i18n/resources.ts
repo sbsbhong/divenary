@@ -223,7 +223,7 @@ const resources = {
           timeInZone: '구간 체류',
           safetyStopStatuses: {
             unknown: '기록 없음',
-            notRequired: '스탑 불필요',
+            notRequired: '권장 스탑 기록 없음',
             armed: '스탑 준비',
             active: '스탑 진행 중',
             pausedTooDeep: '깊이 이탈로 일시중지',
@@ -604,7 +604,7 @@ const resources = {
           timeInZone: 'Time in zone',
           safetyStopStatuses: {
             unknown: 'No record',
-            notRequired: 'Not required',
+            notRequired: 'No recommended stop recorded',
             armed: 'Stop prepared',
             active: 'Stop active',
             pausedTooDeep: 'Paused too deep',

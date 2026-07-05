@@ -1202,7 +1202,7 @@ describe('Logbook manual entry flow', () => {
 
     await press(root, 'logbook-list-item-Scuba Metadata Reef');
 
-    expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gas-label-Air' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gas-label-EAN32' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gear-bcd-1,computer-1' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-water-condition-mild' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-pressure-200bar->70bar' })).toBeTruthy();
