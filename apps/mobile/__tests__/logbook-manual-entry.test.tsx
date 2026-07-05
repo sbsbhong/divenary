@@ -935,6 +935,43 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'log-entry-detail-note' }).props.children).toBe('Watch quick note from pre-dive');
   });
 
+  test('detail renders watch profiles with 850 raw samples', async () => {
+    const largeSamples = Array.from({ length: 850 }, (_, index) => ({
+      localSessionId: 'watch-entry-large-profile',
+      timestamp: 1781352000 + index,
+      depthMeters: index < 425 ? index / 20 : (850 - index) / 20,
+      waterTemperatureCelsius: 25 - Math.min(index, 849 - index) / 500,
+    }));
+    const watchEntryWithLargeProfiles: DiveLogEntry = {
+      ...watchEntry,
+      localId: 'watch-entry-large-profile',
+      manual: {
+        ...watchEntry.manual,
+        site: { name: 'Large Profile Reef' },
+      },
+      watchCapture: {
+        ...watchEntry.watchCapture!,
+        session: {
+          ...watchEntry.watchCapture!.session,
+          localSessionId: 'watch-entry-large-profile',
+          siteName: 'Large Profile Reef',
+          samples: largeSamples,
+        },
+        samples: largeSamples,
+      },
+    };
+    const repository = new LocalDiveLogRepository([watchEntryWithLargeProfiles]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-list-item-Large Profile Reef');
+
+    expect(root.findByProps({ testID: 'log-entry-detail-depth-profile' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-depth-profile-chart' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-temperature-profile' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-temperature-profile-chart' })).toBeTruthy();
+  });
+
   test('returns to useful list content when filtering removes the selected detail entry', async () => {
     const repository = new LocalDiveLogRepository([watchEntry, manualEntry]);
     const renderer = await renderLogbook(repository);
@@ -1013,7 +1050,7 @@ describe('Logbook manual entry flow', () => {
     expect(entries[0]).toMatchObject({
       localId: 'watch:watch-entry-1:1781352600',
       source: 'watch',
-      syncStatus: 'pending',
+      syncStatus: 'synced',
       manual: {
         site: { name: 'Edited Watch Reef' },
         notes: 'Reviewed on mobile.',
