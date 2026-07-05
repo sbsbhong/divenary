@@ -2,6 +2,17 @@ import XCTest
 @testable import DiveWatchApp
 
 final class ScubaDiveEngineTests: XCTestCase {
+    func testRepeatedFinishReturnsSameSessionID() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
+        engine.append(EngineTestFixtures.sample(0, depth: 0))
+        engine.append(EngineTestFixtures.sample(60, depth: 12))
+
+        let first = engine.finish(at: EngineTestFixtures.date(120))
+        let second = engine.finish(at: EngineTestFixtures.date(180))
+
+        XCTAssertEqual(first.id, second.id)
+    }
+
     func testEngineTracksMaxDepthAndSafetyStopRecord() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
         engine.append(EngineTestFixtures.sample(0, depth: 0))
@@ -43,6 +54,47 @@ final class ScubaDiveEngineTests: XCTestCase {
 
         XCTAssertEqual(session.safetyStop.status, .skippedOrIncomplete)
         XCTAssertTrue(session.safetyStop.required)
+        XCTAssertFalse(session.safetyStop.completed)
+    }
+
+    func testShallowFinishDoesNotRequireSafetyStop() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
+        engine.append(EngineTestFixtures.sample(0, depth: 0))
+        engine.append(EngineTestFixtures.sample(60, depth: 4))
+        engine.append(EngineTestFixtures.sample(120, depth: 0.4))
+
+        let session = engine.finish(at: EngineTestFixtures.date(150))
+
+        XCTAssertEqual(session.safetyStop.status, .notRequired)
+        XCTAssertFalse(session.safetyStop.required)
+        XCTAssertFalse(session.safetyStop.completed)
+    }
+
+    func testCompletedStopFollowedBySurfacedFinishStaysCompleted() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
+        engine.append(EngineTestFixtures.sample(0, depth: 0))
+        engine.append(EngineTestFixtures.sample(60, depth: 18))
+        engine.append(EngineTestFixtures.sample(120, depth: 5))
+        engine.append(EngineTestFixtures.sample(300, depth: 5))
+        engine.append(EngineTestFixtures.sample(360, depth: 0.4))
+
+        let session = engine.finish(at: EngineTestFixtures.date(420))
+
+        XCTAssertEqual(session.safetyStop.status, .completed)
+        XCTAssertTrue(session.safetyStop.required)
+        XCTAssertTrue(session.safetyStop.completed)
+    }
+
+    func testNoSamplesFinishReturnsEmptySummaryAndNoRequiredStop() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
+
+        let session = engine.finish(at: EngineTestFixtures.date(60))
+
+        XCTAssertEqual(session.maxDepthMeters, 0)
+        XCTAssertEqual(session.averageDepthMeters, 0)
+        XCTAssertNil(session.waterTemperatureCelsius)
+        XCTAssertEqual(session.safetyStop.status, .notRequired)
+        XCTAssertFalse(session.safetyStop.required)
         XCTAssertFalse(session.safetyStop.completed)
     }
 }

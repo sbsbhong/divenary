@@ -1,6 +1,7 @@
 import Foundation
 
 struct ScubaDiveEngine {
+    private let sessionID: UUID
     private let startedAt: Date
     private let gasLabel: String?
     private var samples: [DepthSample] = []
@@ -9,7 +10,8 @@ struct ScubaDiveEngine {
     private var latestAscentRateMetersPerMinute: Double = 0
     private var maxAscentRateMetersPerMinute: Double = 0
 
-    init(startedAt: Date, gasLabel: String?) {
+    init(startedAt: Date, gasLabel: String?, sessionID: UUID = UUID()) {
+        self.sessionID = sessionID
         self.startedAt = startedAt
         self.gasLabel = gasLabel
     }
@@ -37,7 +39,7 @@ struct ScubaDiveEngine {
         }
 
         return ScubaDiveSession(
-            id: UUID(),
+            id: sessionID,
             startTime: startedAt,
             endTime: date,
             durationSeconds: max(0, date.timeIntervalSince(startedAt)),
