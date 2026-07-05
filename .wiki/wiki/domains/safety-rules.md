@@ -1,8 +1,8 @@
 # 안전 규칙
 
-Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28
-Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05
+Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Updated: 2026-07-05
 Status: Reference / Safety Critical
 Owner: local product/dev agent
 Last reviewed: 2026-06-28
@@ -41,7 +41,9 @@ Related pages: [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotia
 
 현재 watch/mobile 화면은 ascent, safety stop, surface interval, no-fly concept을 assistant, 확인 상태, 수동 계획 알림으로만 언급한다. Planbook의 planned max depth, planned duration, water condition, visibility expectation 같은 값은 사용자의 의도와 준비 메모이지 실제 측정값이나 안전 계산 결과가 아니다. 이 경계는 UI copy와 documentation에서 명시적으로 유지해야 한다.
 
-Scuba UX는 air scuba reference assistant를 둘 수 있지만, 이는 세이프티 스톱과 상승 속도를 참고 상태로 보여주는 범위에 한정한다. v1에는 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함하되, 이는 감압 모델 기반 의무 정지가 아니라 비인증 참고 기능이다. `safe to ascend`, `no decompression required`, `required stop`처럼 certified dive computer나 감압 판단처럼 읽히는 문구는 쓰지 않는다. Freedive UX도 training reference 범위에 머물러야 한다.
+Scuba UX는 air scuba reference assistant를 둘 수 있지만, 이는 세이프티 스톱과 상승 속도를 참고 상태로 보여주는 범위에 한정한다. v1에는 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함하되, 이는 감압 모델 기반 의무 정지가 아니라 비인증 참고 기능이다. 기본 구현은 max depth가 threshold 이상이면 reminder를 arm하고, 3-6m stop zone 안에서만 countdown을 누적하며, 너무 깊거나 얕으면 timer를 pause한다. 완료 문구도 `권장 스탑 완료`처럼 권장 reminder 완료만 뜻해야 한다.
+
+`safe to ascend`, `no decompression required`, `required stop`처럼 certified dive computer나 감압 판단처럼 읽히는 문구는 쓰지 않는다. Watch UI guard는 active Swift source와 `Localizable.xcstrings`에서 `safe to ascend`, `상승 가능`, `이제 안전합니다`, `안전 확보`, `감압 완료`, `deco clear`, `ceiling clear` 같은 문구를 금지한다. Freedive UX도 training reference와 log review 범위에 머물러야 한다.
 
 Manual scuba pressure entry는 로그/계획 metadata로만 허용된다. 사용자가 start/end pressure와 `bar` 또는 `psi` 단위를 입력할 수는 있지만, 앱은 이 값으로 gas remaining, reserve, turn pressure, out-of-air risk, emergency action, ascent permission, dive continuation decision을 계산하거나 제안하지 않는다. Tank transmitter, air integration, gas management 계산은 별도 high-risk 범위이며 제품/검증 결정 전에는 구현하지 않는다.
 

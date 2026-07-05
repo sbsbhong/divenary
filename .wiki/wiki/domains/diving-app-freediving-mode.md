@@ -1,8 +1,8 @@
 # Diving App / Freediving Mode
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md)
-Updated: 2026-06-28
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; Diving App repository implementation, 2026-07-05
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Updated: 2026-07-05
 Status: Draft / Needs Validation
 Owner: local product/dev agent
 Last reviewed: 2026-06-28
@@ -16,13 +16,14 @@ Freedive mode의 핵심은 압축공기 호흡 기반 NDL 계산이 아니라 �
 
 ## 현재 상태
 
-현재 저장소의 watch 앱은 `scuba`와 `freedive` 모드를 구분하지만, 실제 underwater sensor behavior는 아직 지원 hardware에서 검증되지 않았다. 이 문서는 향후 제품 기능 기준이며 현재 구현 완료 상태가 아니다.
+현재 저장소의 watch 앱은 `scuba`와 `freedive` 모드를 구분한다. Watch freedive recording은 한 `FreeDiveSession` 안에 여러 `FreeDiveSegment`를 저장하는 model과 `FreeDiveSessionEngine`을 갖는다. 실제 underwater sensor behavior는 아직 지원 hardware에서 검증되지 않았고, 현재 engine 검증은 simulated depth sample 기반이다.
 
 ## 기능 표
 
 | 기능 | 기준 | 한계 |
 |---|---|---|
 | 자동 다이브 감지 | `d > 1m`가 3~5초 지속되면 시작, `d < 0.5~1m`가 일정 시간 지속되면 종료 | 센서 노이즈와 수면 움직임 때문에 hysteresis와 debounce가 필요하다. |
+| 세션 안의 다중 segment | 사용자가 프리 세션을 시작하면 각 sustained descent/ascent가 `FreeDiveSegment`로 기록된다. | 얕은 수면 휴식이나 젖은 watch noise는 새 segment가 아니어야 한다. |
 | 현재 수심 | 최신 filtered depth 표시 | 검증되지 않은 센서값은 안전-critical truth가 아니다. |
 | 최대 수심 | session 중 최대 filtered depth | 이상치 제거 정책이 필요하다. |
 | 평균 수심 | 시간가중 평균 수심 | sample 누락 구간은 품질 표시가 필요하다. |
@@ -38,6 +39,8 @@ Freedive mode의 핵심은 압축공기 호흡 기반 NDL 계산이 아니라 �
 | 로그 저장 | depth profile, 시간, summary 저장 | 로그는 사후 리뷰 자료다. |
 
 ## 회복 타이머와 반복 부하
+
+현재 watch implementation에서 surface interval은 이전 segment end와 다음 segment start 사이에서 계산한다. Live surface interval 화면에서는 현재 얕은 수심보다 수면 휴식 시간이 우선 표시된다. 이 값은 회복 맥락을 기록하고 보여주는 보조 지표이며 blackout이나 저산소 위험 예측값이 아니다.
 
 기본 규칙:
 

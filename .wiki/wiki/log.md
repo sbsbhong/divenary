@@ -1,5 +1,17 @@
 # Wiki Log
 
+## [2026-07-05] ingest | Watch freedive segments and scuba safety stop implementation
+- Added: Watch freedive segments and scuba safety stop implementation raw source
+- Updated: Watch 앱 구조
+- Updated: 동기화 흐름 구조
+- Updated: 구현 우선순위 기록
+- Updated: 다이브 로그 도메인
+- Updated: 안전 규칙
+- Updated: Diving App / Scuba Mode
+- Updated: Diving App / Freediving Mode
+- Updated: Diving App / Open Questions
+- Updated: 열린 질문
+
 ## [2026-06-28] ingest | Mobile form validation and pressure metadata
 - Added: Mobile form validation and pressure metadata raw source
 - Updated: 다이브 로그 도메인

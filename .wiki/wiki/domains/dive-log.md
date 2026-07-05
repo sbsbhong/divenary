@@ -1,16 +1,16 @@
 # 다이브 로그 도메인
 
-Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28
-Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05
+Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Updated: 2026-07-05
 
 ## 요약
 
-Dive log domain은 현재 watch에서 기록한 레크리에이션 세션과 모바일에서 직접 작성한 수동 로그를 과거 기록 확인, 모바일 import, 비중요 계획/기억 화면에 쓰기 위해 model한다.
+Dive log domain은 현재 watch에서 기록한 레크리에이션 세션과 모바일에서 직접 작성한 수동 로그를 과거 기록 확인, 모바일 import, 비중요 계획/기억 화면에 쓰기 위해 model한다. Watch-origin log는 mode별 payload를 보존하며, freedive는 한 session 안의 여러 dive segment를, scuba는 rule-based safety stop reminder 결과를 담을 수 있다.
 
 ## 현재 상태
 
-Shared watch sync contract는 `WatchSession`, `WatchDepthSample`, `WatchLocation`, `WatchSyncMessage`를 사용한다. Watch 앱은 동기화 가능한 payload로 mapping되는 local Swift `DiveSession`, `DepthSample` model을 갖는다. 모바일 앱의 최종 로그북 항목은 `DiveLogEntry`이며, 기존 Home/Planning 화면을 위해 `MobileDiveSession` compatibility view를 만든다.
+Shared watch sync contract는 `WatchSession`, `WatchDepthSample`, `WatchLocation`, `WatchSyncMessage`를 사용한다. Watch 앱은 동기화 가능한 payload로 mapping되는 local Swift `DiveSessionRecord`, `DiveSessionPayload`, `DepthSample` model을 갖는다. 모바일 앱의 최종 로그북 항목은 `DiveLogEntry`이며, 기존 Home/Planning 화면을 위해 `MobileDiveSession` compatibility view를 만든다.
 
 ## 상세
 
@@ -37,6 +37,24 @@ Session metadata는 다음 field를 포함한다.
 - `waterCondition`
 - `syncStatus`
 - `entryLocation`, `exitLocation`
+- mode-specific nested payload: `freedive` 또는 `scuba`
+
+Freedive watch payload는 다음 개념을 포함한다.
+
+- `diveCount`
+- session `maxDepthMeters`
+- `longestDiveDurationSeconds`
+- `segments`
+- 각 segment의 id, index, 시작/종료 시간, duration, max/min depth, sample range, optional descent/ascent rate
+
+Scuba watch payload는 다음 개념을 포함한다.
+
+- gas label
+- max/average depth
+- water temperature
+- latest/max ascent rate
+- `safetyStop`
+- safety stop status, required/completed flags, target/min/max depth, duration, remaining time, time in zone, optional start/completion timestamp
 
 Sample metadata는 다음 field를 포함한다.
 
@@ -46,7 +64,7 @@ Sample metadata는 다음 field를 포함한다.
 - optional `pressureKPa`
 - optional `waterTemperatureCelsius`
 
-Review summary는 duration, max depth, average depth, sample count, average water temperature, ascent-rate reminder summary를 포함할 수 있다. 이 값들은 과거 기록 확인용 값이며 감압 계산이나 비상 지침이 아니다.
+Review summary는 duration, max depth, average depth, sample count, average water temperature, freedive segment summary, scuba safety stop reminder summary를 포함할 수 있다. 이 값들은 과거 기록 확인용 값이며 감압 계산이나 비상 지침이 아니다.
 
 Mobile model은 `WatchSession`과 모바일 최종 로그 항목을 분리한다. `WatchSession`은 watch-to-mobile sync contract로 유지하고, 모바일 로그북은 별도 `DiveLogEntry`를 사용한다.
 
@@ -67,7 +85,9 @@ Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화�
 
 완료된 Planbook 항목에서 Logbook 초안을 만들 수 있다. 이 전환은 자동 로그 저장이 아니라 수동 editor를 여는 흐름이다. 계획에서 복사하는 값은 site, buddy, gear, tags, dive mode, optional `entryStyle`, Air gas label, optional scuba pressure metadata, objective/training focus/notes 같은 안전한 metadata로 제한한다. 계획 최대 수심, 계획 시간, 예상 시야, 예상 난이도, checklist 상태는 실제 측정값이 아니므로 `DiveLogEntry.manual.measuredValues.maxDepthMeters`나 `durationSeconds`에 복사하지 않는다.
 
-Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture와 sync status만 최신 payload로 갱신한다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating 같은 맥락이 watch 재가져오기로 사라지지 않는다.
+Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture와 sync status만 최신 payload로 갱신한다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating 같은 맥락이 watch 재가져오기로 사라지지 않는다. Mode-specific metadata도 같은 원칙으로 보존되며, freedive segment와 scuba safety stop 상태는 모바일 detail에서 별도 section으로 확인할 수 있다.
+
+Legacy watch local log는 새 record model로 adapter된다. 기존 freedive log는 하나의 `FreeDiveSegment`를 가진 `FreeDiveSession`으로 보존하고, 기존 scuba log는 safety stop 상태를 unknown 또는 not required로 기본 처리한다. 이 adapter는 기존 저장 데이터를 깨뜨리지 않기 위한 호환 계층이며, 오래된 로그에 없던 safety stop 완료 사실을 새로 만들어내지 않는다.
 
 앱 기본 저장소는 AsyncStorage 기반 `PersistentDiveLogRepository`다. `LocalDiveLogRepository`는 테스트와 집중된 동작 검증용 in-memory 저장소로 남아 있다.
 

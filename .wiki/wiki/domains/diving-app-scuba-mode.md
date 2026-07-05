@@ -1,8 +1,8 @@
 # Diving App / Scuba Mode
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md)
-Updated: 2026-06-28
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Updated: 2026-07-05
 Status: Draft / Needs Validation / Safety Critical
 Owner: local product/dev agent
 Last reviewed: 2026-06-28
@@ -16,7 +16,7 @@ Scuba mode는 사용자가 다이브 컴퓨터로 인식할 수 있으므로 가
 
 ## 현재 상태
 
-현재 앱은 certified dive computer가 아니며 감압 판단, 생명-critical underwater instruction, 의료 판단을 제공하지 않는다. v1의 스쿠버 범위는 Air-only safety-stop 리마인더까지 포함하고, v2 이상의 스쿠버 계산 기능은 별도 검증 기준으로 다룬다.
+현재 앱은 certified dive computer가 아니며 감압 판단, 생명-critical underwater instruction, 의료 판단을 제공하지 않는다. v1의 스쿠버 범위는 Air-only gauge/log와 rule-based safety-stop 리마인더까지 포함하고, v2 이상의 스쿠버 계산 기능은 별도 검증 기준으로 다룬다. Watch implementation은 `SafetyStopController`와 `ScubaDiveEngine`으로 reminder state를 testable logic에 둔다.
 
 ## 필수 역할
 
@@ -64,7 +64,7 @@ else:
 
 ## v1 Air-only safety stop 범위
 
-v1 스쿠버는 Air-only로 시작한다. Safety stop은 스쿠버 앱의 기본 사용성을 위해 포함하되, 감압 모델이나 tissue state 기반 판단이 아니라 rule-based 리마인더와 타이머로 제한한다.
+v1 스쿠버는 Air-only로 시작한다. Safety stop은 스쿠버 앱의 기본 사용성을 위해 포함하되, 감압 모델이나 tissue state 기반 판단이 아니라 rule-based 리마인더와 타이머로 제한한다. 현재 기본값은 max depth threshold 도달 후 stop reminder를 arm하고, 5m/180초 target과 3-6m displayed zone을 사용한다. Countdown은 stop zone 안에서만 줄고, 너무 깊거나 얕으면 pause된다.
 
 v1 safety stop에서 허용한다.
 
@@ -73,11 +73,14 @@ v1 safety stop에서 허용한다.
 - countdown pause/resume
 - safety-stop 이탈 marker와 사후 로그 표시
 - 비인증 참고 기능임을 나타내는 짧은 copy
+- completed/incomplete 상태의 로그 저장
+- `권장 스탑 완료`, `타이머 일시정지`, `안전계산 없음` 같은 제한된 copy
 
 v1 safety stop에서 하지 않는다.
 
 - NDL, ceiling, TTS와 연결한 안전 판단
 - `required stop`, `safe to ascend`, `no decompression required` 같은 표현
+- `상승 가능`, `이제 안전합니다`, `안전 확보`, `감압 완료`, `deco clear`, `ceiling clear` 같은 표현
 - Nitrox/FO2, ppO2, CNS, tissue loading 기반 계산
 - mandatory deco obligation 처리
 
