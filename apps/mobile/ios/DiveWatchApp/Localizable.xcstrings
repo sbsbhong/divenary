@@ -1446,22 +1446,6 @@
         }
       }
     },
-    "Start Dive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start Dive"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다이브 시작"
-          }
-        }
-      }
-    },
     "Start Planned Dive" : {
       "localizations" : {
         "en" : {
@@ -1490,6 +1474,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "스톱"
+          }
+        }
+      }
+    },
+    "Stop 5m/3:00" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop 5m/3:00"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스톱 5m/3:00"
           }
         }
       }

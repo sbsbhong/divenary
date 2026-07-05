@@ -13,14 +13,14 @@ struct HomeView: View {
                     HomeHeader(sessionCount: store.sessions.count)
 
                     NavigationLink {
-                        RecordingView(store: store, plan: freePlan)
+                        RecordingView(store: store, plan: explicitStartPlan(for: .freedive))
                             .onAppear {
                                 selectStartMode(.freedive)
                             }
                     } label: {
                         StartSessionCard(
                             title: "Free Session Start",
-                            subtitle: "Supplemental log · no safety calculation",
+                            subtitle: String(localized: "Supplemental log · no safety calculation"),
                             systemImage: "figure.pool.swim",
                             accent: DiveWatchTheme.primary
                         )
@@ -28,15 +28,15 @@ struct HomeView: View {
                     .buttonStyle(.plain)
 
                     NavigationLink {
-                        RecordingView(store: store, plan: scubaPlan)
+                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba))
                             .onAppear {
                                 selectStartMode(.scuba)
                             }
                     } label: {
                         StartSessionCard(
                             title: "Scuba Start",
-                            subtitle: "Air · Stop 5m/3:00",
-                            footnote: "Recommended safety stop reminder.",
+                            subtitle: scubaStartSubtitle,
+                            footnote: String(localized: "Recommended safety stop reminder."),
                             systemImage: "drop.fill",
                             accent: DiveWatchTheme.secondary
                         )
@@ -87,16 +87,26 @@ struct HomeView: View {
         }
     }
 
-    private var scubaPlan: PreDivePlan {
-        var next = plan
-        next.diveMode = .scuba
-        next.gasLabel = next.gasLabel.isEmpty ? "Air" : next.gasLabel
-        return next
+    private var scubaStartSubtitle: String {
+        let gasLabel = explicitStartPlan(for: .scuba).gasLabel
+        guard gasLabel != "Air" else {
+            return String(localized: "Air · Stop 5m/3:00")
+        }
+        return "\(gasLabel) · \(String(localized: "Stop 5m/3:00"))"
     }
 
-    private var freePlan: PreDivePlan {
+    private func explicitStartPlan(for diveMode: DiveMode) -> PreDivePlan {
         var next = plan
-        next.diveMode = .freedive
+        let preservesSelectedPlan = plan.sourcePlanLocalId == nil || plan.diveMode == diveMode
+        next.diveMode = diveMode
+        if diveMode == .scuba {
+            next.gasLabel = next.gasLabel.isEmpty ? "Air" : next.gasLabel
+        }
+        if !preservesSelectedPlan {
+            next.sourcePlanLocalId = nil
+            next.title = ""
+            next.userTags = next.userTags.filter { !$0.hasPrefix("plan-") }
+        }
         return next
     }
 
@@ -356,8 +366,8 @@ private struct HomeHeader: View {
 
 private struct StartSessionCard: View {
     let title: LocalizedStringKey
-    let subtitle: LocalizedStringKey
-    var footnote: LocalizedStringKey?
+    let subtitle: String
+    var footnote: String?
     let systemImage: String
     let accent: Color
 

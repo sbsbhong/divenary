@@ -199,6 +199,21 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).not.toContain('isExpanded');
   });
 
+  it('treats mismatched explicit watch home starts as ad-hoc sessions', () => {
+    const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
+    const explicitStartPlan = home.slice(
+      home.indexOf('private func explicitStartPlan(for diveMode: DiveMode) -> PreDivePlan'),
+      home.indexOf('private func applyPreferredDiveMode()'),
+    );
+
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .freedive))');
+    expect(home).toContain('RecordingView(store: store, plan: explicitStartPlan(for: .scuba))');
+    expect(explicitStartPlan).toContain('plan.sourcePlanLocalId == nil || plan.diveMode == diveMode');
+    expect(explicitStartPlan).toContain('next.sourcePlanLocalId = nil');
+    expect(explicitStartPlan).toContain('next.title = ""');
+    expect(explicitStartPlan).toContain('next.userTags = next.userTags.filter { !$0.hasPrefix("plan-") }');
+  });
+
   it('persists the preferred watch dive mode and auto-starts recording below the depth threshold', () => {
     const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
     const store = readRepoFile('apps/mobile/ios/DiveWatchApp/Storage/DiveSessionStore.swift');
