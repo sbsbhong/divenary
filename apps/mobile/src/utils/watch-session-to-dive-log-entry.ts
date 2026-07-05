@@ -8,24 +8,28 @@ type WatchSessionToDiveLogEntryOptions = {
   localId?: string;
 };
 
+export const DEFAULT_WATCH_LOG_SITE_NAME = '워치 다이브';
+export const DEFAULT_WATCH_SCUBA_START_PRESSURE_BAR = 150;
+
 export const watchSessionToDiveLogEntry = (options: WatchSessionToDiveLogEntryOptions): DiveLogEntry => {
   const timestamp = options.now ?? Date.now() / 1000;
   const importKey = getSessionImportKey(options.session);
   const summary = summarizeSession(options.session);
   const localId = options.localId ?? `watch:${importKey}`;
   const manualMeasuredValues = getManualMeasuredValues(options.session);
+  const siteName = firstNonBlankText(options.session.siteName, DEFAULT_WATCH_LOG_SITE_NAME);
 
   return {
     localId,
     source: 'watch',
-    syncStatus: options.session.syncStatus ?? 'pending',
+    syncStatus: 'synced',
     createdAt: timestamp,
     updatedAt: timestamp,
     manual: {
       title: options.session.planTitle,
       site: {
         siteId: options.session.siteId,
-        name: options.session.siteName,
+        name: siteName,
       },
       buddyIds: options.session.buddyIds ?? [],
       gearIds: options.session.gearIds ?? [],
@@ -80,5 +84,23 @@ const getManualMeasuredValues = (session: WatchSession): DiveLogManualMeasuredVa
     perceivedExertion: session.perceivedExertion,
     visibilityRating: session.visibilityRating,
     waterCondition: session.waterCondition,
+    pressure:
+      session.diveMode === 'scuba'
+        ? {
+            unit: 'bar',
+            start: DEFAULT_WATCH_SCUBA_START_PRESSURE_BAR,
+          }
+        : undefined,
   };
 };
+
+function firstNonBlankText(...values: Array<string | undefined>): string | undefined {
+  for (const value of values) {
+    const trimmedValue = value?.trim();
+    if (trimmedValue) {
+      return trimmedValue;
+    }
+  }
+
+  return undefined;
+}

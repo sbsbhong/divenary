@@ -57,6 +57,7 @@ public extension WatchSyncMessage {
 public struct WatchSession: Codable {
     public let averageDepthMeters: Double?
     public let buddyIds: [String]?
+    public let captureMode: CaptureMode?
     public let diveMode: DiveMode?
     /// Unix timestamp in seconds
     public let endedAt: Double?
@@ -82,9 +83,10 @@ public struct WatchSession: Codable {
     public let waterCondition: WaterCondition?
     public let waterTemperatureCelsius: Double?
 
-    public init(averageDepthMeters: Double?, buddyIds: [String]?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
+    public init(averageDepthMeters: Double?, buddyIds: [String]?, captureMode: CaptureMode?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
         self.averageDepthMeters = averageDepthMeters
         self.buddyIds = buddyIds
+        self.captureMode = captureMode
         self.diveMode = diveMode
         self.endedAt = endedAt
         self.entryLocation = entryLocation
@@ -134,6 +136,7 @@ public extension WatchSession {
     func with(
         averageDepthMeters: Double?? = nil,
         buddyIds: [String]?? = nil,
+        captureMode: CaptureMode?? = nil,
         diveMode: DiveMode?? = nil,
         endedAt: Double?? = nil,
         entryLocation: WatchLocation?? = nil,
@@ -163,6 +166,7 @@ public extension WatchSession {
         return WatchSession(
             averageDepthMeters: averageDepthMeters ?? self.averageDepthMeters,
             buddyIds: buddyIds ?? self.buddyIds,
+            captureMode: captureMode ?? self.captureMode,
             diveMode: diveMode ?? self.diveMode,
             endedAt: endedAt ?? self.endedAt,
             entryLocation: entryLocation ?? self.entryLocation,
@@ -198,6 +202,11 @@ public extension WatchSession {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
+}
+
+public enum CaptureMode: String, Codable {
+    case demo = "demo"
+    case real = "real"
 }
 
 public enum DiveMode: String, Codable {

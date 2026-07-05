@@ -3,6 +3,7 @@
 export interface WatchSessionCommon {
   localSessionId: string;
   schemaVersion?: number;
+  captureMode?: "real" | "demo";
   diveMode?: "scuba" | "freedive";
   gasLabel?: string;
   siteId?: string;

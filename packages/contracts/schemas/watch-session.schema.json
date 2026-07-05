@@ -228,6 +228,13 @@
       "type": "integer",
       "minimum": 1
     },
+    "captureMode": {
+      "type": "string",
+      "enum": [
+        "real",
+        "demo"
+      ]
+    },
     "diveMode": {
       "type": "string",
       "enum": [

@@ -55,13 +55,49 @@ describe('watchSessionToDiveLogEntry', () => {
     ],
   };
 
-  it.each(['pending', 'synced', 'failed'] as const)('preserves watch sync status %s', syncStatus => {
+  it.each(['pending', 'synced', 'failed'] as const)('marks imported mobile log synced while preserving raw watch status %s', syncStatus => {
     const entry = watchSessionToDiveLogEntry({
       session: { ...baseSession, syncStatus },
       now: 1781353000,
     });
 
-    expect(entry.syncStatus).toBe(syncStatus);
+    expect(entry.syncStatus).toBe('synced');
+    expect(entry.watchCapture?.session.syncStatus).toBe(syncStatus);
+  });
+
+  it('uses watch log defaults when site and scuba pressure are missing', () => {
+    const entry = watchSessionToDiveLogEntry({
+      session: {
+        ...baseSession,
+        siteId: undefined,
+        siteName: undefined,
+      },
+      now: 1781353000,
+    });
+
+    expect(entry.manual.site).toEqual({ siteId: undefined, name: '워치 다이브' });
+    expect(entry.manual.measuredValues.pressure).toEqual({ unit: 'bar', start: 150 });
+  });
+
+  it('preserves demo capture mode in the raw watch payload', () => {
+    const session = { ...baseSession, captureMode: 'demo' as const };
+    const entry = watchSessionToDiveLogEntry({
+      session,
+      now: 1781353000,
+    });
+
+    expect(entry.watchCapture?.session.captureMode).toBe('demo');
+    expect(entry.watchCapture?.samples).toBe(baseSession.samples);
+  });
+
+  it('treats legacy sessions without capture mode as real without rewriting raw payload', () => {
+    const entry = watchSessionToDiveLogEntry({
+      session: baseSession,
+      now: 1781353000,
+    });
+
+    expect(entry.watchCapture?.session.captureMode).toBeUndefined();
+    expect(entry.watchCapture?.session).toBe(baseSession);
   });
 
   it('maps a watch session into a watch-sourced log entry without losing the raw payload', () => {
@@ -88,6 +124,7 @@ describe('watchSessionToDiveLogEntry', () => {
       measuredValues: {
         diveMode: 'scuba',
         gasLabel: 'Air',
+        pressure: { unit: 'bar', start: 150 },
       },
     });
 
@@ -237,5 +274,6 @@ describe('watchSessionToDiveLogEntry', () => {
       waterTemperatureCelsius: 23.1,
     });
     expect(entry.manual.measuredValues.gasLabel).toBe('Nitrox 32');
+    expect(entry.manual.measuredValues.pressure).toEqual({ unit: 'bar', start: 150 });
   });
 });

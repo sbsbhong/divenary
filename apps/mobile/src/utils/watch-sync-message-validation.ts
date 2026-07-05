@@ -14,6 +14,7 @@ export type WatchSyncMessagesParseResult =
   | { ok: false; error: WatchSyncMessageValidationError };
 
 const messageTypes = ['sessionCreated', 'sessionUpdated', 'sessionEnded'] as const;
+const captureModes = ['real', 'demo'] as const;
 const diveModes = ['scuba', 'freedive'] as const;
 const syncStatuses = ['pending', 'synced', 'failed'] as const;
 const waterConditions = ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'] as const;
@@ -22,6 +23,7 @@ const messageKeys = ['type', 'session'] as const;
 const sessionKeys = [
   'localSessionId',
   'schemaVersion',
+  'captureMode',
   'diveMode',
   'gasLabel',
   'siteId',
@@ -220,6 +222,12 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     return schemaVersion;
   }
   assignOptional(session, 'schemaVersion', schemaVersion.value);
+
+  const captureMode = readEnum(objectResult.value, 'captureMode', captureModes, path);
+  if (!captureMode.ok) {
+    return captureMode;
+  }
+  assignOptional(session, 'captureMode', captureMode.value);
 
   const diveMode = readEnum(objectResult.value, 'diveMode', diveModes, path);
   if (!diveMode.ok) {

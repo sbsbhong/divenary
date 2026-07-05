@@ -63,6 +63,43 @@ describe('watch sync message validation', () => {
     expect(result.message.session.planTitle).toBe('Blue Wall morning');
   });
 
+  it('accepts explicit demo capture mode', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'demo-session-1',
+        schemaVersion: 2,
+        captureMode: 'demo',
+        startedAt: 1781352000,
+        samples: [{ localSessionId: 'demo-session-1', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.captureMode).toBe('demo');
+  });
+
+  it('rejects unknown capture mode values', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'bad-capture-mode',
+        captureMode: 'mock',
+        startedAt: 1781352000,
+        samples: [{ localSessionId: 'bad-capture-mode', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected invalid capture mode');
+    }
+    expect(result.error.message).toContain('session.captureMode');
+  });
+
   it('validates arrays for transport batches', () => {
     const result = parseWatchSyncMessagesValue([minimalFixture, metadataRichFixture]);
 
