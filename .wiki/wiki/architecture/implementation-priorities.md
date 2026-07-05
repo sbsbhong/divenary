@@ -1,16 +1,16 @@
 # 구현 우선순위 기록
 
 Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
 Updated: 2026-07-05
 
 ## 요약
 
-이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity 검증과 실제 depth provider 연동은 아직 남아 있다.
+이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity/auto-launch/underwater sensor 검증은 아직 남아 있다.
 
 ## 현재 상태
 
-모바일 앱은 `DiveLogRepository`와 `DivePlanRepository` 경계를 갖고 AsyncStorage 기반 persistent repository를 기본으로 사용한다. 모바일은 원시 watch sync JSON을 실행 시점에 검증한 뒤 `WatchSyncMessage`로 좁혀 import할 수 있다. Watch 앱 source는 `apps/mobile/ios/DiveWatchApp`로 이관됐고, `apps/mobile/ios/DiveMobile.xcodeproj`의 embedded companion target으로 관리된다. Watch 앱은 sync-ready JSON encoder, 로컬 저장 흐름, WatchConnectivity `transferUserInfo` enqueue, reachable `sendMessage`, activation/reachability 기반 pending retry, acknowledgement 기반 local sync status 갱신을 갖는다. 모바일 iOS app도 WatchConnectivity userInfo/message를 durable inbox에 저장한 뒤 React Native로 넘기는 receiver와 JS acknowledge 경로를 갖는다. `diveMode`는 현재 contract, generated TypeScript/Swift, runtime validator, 모바일 Logbook/Planbook UI, watch mode model에서 `scuba`와 `freedive`만 active mode로 둔다. Watch freedive는 한 session 안에 여러 `FreeDiveSegment`를 저장하고, scuba는 rule-based `SafetyStopController`와 mode-aware log payload를 갖는다. 모바일은 Notifee 기반 watch sync notification service와 Settings opt-in을 갖고, Home은 provider-neutral 위치 조건 interface와 mock provider를 갖는다. 다만 entitlement, background delivery, 사용자-facing retry/backoff policy, 실기기 검증은 아직 완료되지 않았다. `RealDepthSensorProvider`는 자리 표시자이며 실제 Apple Watch underwater sensor behavior는 검증되지 않았다. Supabase, 인증, cloud backup은 아직 구현되어 있지 않다.
+모바일 앱은 `DiveLogRepository`와 `DivePlanRepository` 경계를 갖고 AsyncStorage 기반 persistent repository를 기본으로 사용한다. 모바일은 원시 watch sync JSON을 실행 시점에 검증한 뒤 `WatchSyncMessage`로 좁혀 import할 수 있다. Watch 앱 source는 `apps/mobile/ios/DiveWatchApp`로 이관됐고, `apps/mobile/ios/DiveMobile.xcodeproj`의 embedded companion target으로 관리된다. Watch 앱은 sync-ready JSON encoder, 로컬 저장 흐름, WatchConnectivity `transferUserInfo` enqueue, reachable `sendMessage`, activation/reachability 기반 pending retry, acknowledgement 기반 local sync status 갱신을 갖는다. 모바일 iOS app도 WatchConnectivity userInfo/message를 durable inbox에 저장한 뒤 React Native로 넘기는 receiver와 JS acknowledge 경로를 갖는다. `diveMode`는 현재 contract, generated TypeScript/Swift, runtime validator, 모바일 Logbook/Planbook UI, watch mode model에서 `scuba`와 `freedive`만 active mode로 둔다. Watch freedive는 한 session 안에 여러 `FreeDiveSegment`를 저장하고, scuba는 rule-based `SafetyStopController`와 mode-aware log payload를 갖는다. Watch 실기기 recording path는 `RealDepthSensorProvider`가 `CMWaterSubmersionManager`를 사용하고, fake sample은 명시적인 `DemoDepthSensorProvider`/`captureMode: demo` 경로로 분리됐다. 모바일은 Notifee 기반 watch sync notification service와 Settings opt-in을 갖고, Home은 provider-neutral 위치 조건 interface와 mock provider를 갖는다. 다만 entitlement, background delivery, 사용자-facing retry/backoff policy, 실기기 underwater sensor/auto-launch 검증은 아직 완료되지 않았다. Supabase, 인증, cloud backup은 아직 구현되어 있지 않다.
 
 ## 상세
 
@@ -70,8 +70,11 @@ Updated: 2026-07-05
    - entitlement, background delivery, 장시간 retry behavior, 실기기 pairing은 simulator만으로 검증됐다고 쓰면 안 된다.
    - 관련 문서: [Watch 앱 구조](watch-app.md), [동기화 흐름 구조](sync-flow.md)
 
-5. 실제 Apple Watch 수심 센서 provider
-   - `RealDepthSensorProvider`를 실제 sensor API 기반으로 구현하고 지원 Apple Watch hardware에서 수동 검증해야 한다.
+5. 실제 Apple Watch 수심 센서 provider 검증
+   - `RealDepthSensorProvider`는 `CMWaterSubmersionManager` 기반으로 구현됐다.
+   - Watch target metadata에는 `NSMotionUsageDescription`과 `WKBackgroundModes`의 `underwater-depth`가 포함된다.
+   - 지원 Apple Watch Ultra hardware에서 depth/pressure/temperature sample, auto-launch prompt, background handoff를 수동 검증해야 한다.
+   - Store-level Ultra-only install filtering은 App Store/TestFlight 단계에서 확인해야 한다. 현재 앱은 `waterSubmersionAvailable` runtime gate로 real start를 제한하고 demo mode만 별도로 열어둔다.
    - 수중 센서값은 공개 배포 전까지 safety-critical truth로 표현하지 않는다.
    - 관련 문서: [Watch 앱 구조](watch-app.md), [안전 규칙](../domains/safety-rules.md)
 

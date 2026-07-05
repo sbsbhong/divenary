@@ -1,7 +1,7 @@
 # 동기화 흐름 구조
 
 Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository source, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 동기화 흐름 구조](../../raw/architecture/sync-flow.md); [Planned dive application context delivery](../../raw/architecture/2026-06-28-planned-dive-application-context-delivery.md); [Planned dive context breakpoint hardening](../../raw/architecture/2026-06-28-planned-dive-context-breakpoint-hardening.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Raw: [Pre-Karpathy: 동기화 흐름 구조](../../raw/architecture/sync-flow.md); [Planned dive application context delivery](../../raw/architecture/2026-06-28-planned-dive-application-context-delivery.md); [Planned dive context breakpoint hardening](../../raw/architecture/2026-06-28-planned-dive-context-breakpoint-hardening.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
 Updated: 2026-07-05
 
 ## 요약
@@ -34,6 +34,7 @@ Session contract가 지원하는 값은 다음과 같다.
 - safety stop record: `unknown`, `notRequired`, `armed`, `active`, `pausedTooDeep`, `pausedTooShallow`, `completed`, `skippedOrIncomplete`, required/completed flags, target/min/max depth, duration, remaining time, time in zone, optional start/completion timestamp
 - gas label, site id/name, buddy, gear, tag, note
 - source plan local id와 plan title
+- capture mode: `real`, `demo`
 - rating, perceived exertion, visibility rating, water condition
 - sync status: `pending`, `synced`, `failed`
 - entry/exit location placeholder
@@ -49,7 +50,7 @@ Mobile import 동작은 다음과 같다.
 - `src/utils/watch-fixtures.ts`는 `packages/contracts/fixtures/metadata-rich-watch-sync-message.json`을 import하고 validator를 통과한 message만 앱 fixture로 export한다.
 - `src/native/watch-connectivity.ts`는 iOS native `WatchConnectivityModule`에서 전달되는 raw JSON payload를 React Native event와 drain method로 받고, 무효 payload drop acknowledge와 import 완료 acknowledge를 구분한다. 또한 planned dive update와 linked watch status query를 노출한다.
 - `src/states/watch-connectivity-sync.tsx`는 pending native payload를 drain하고 새 event를 구독한 뒤, validator를 통과한 payload를 repository import로 넘긴다. 저장에 성공한 WatchConnectivity 수신 항목은 mobile top-level `syncStatus`를 `synced`로 보정하고, raw watch capture 안의 원본 `session.syncStatus`는 보존한다. 새 entry를 자동 import한 경우 root navigation으로 imported entry를 전달해 safe-area 안쪽 toast를 띄우고, 사용자는 toast의 로그 작성 action으로 해당 Logbook detail route를 열거나 닫을 수 있다. Settings opt-in이 켜져 있고 앱이 foreground가 아니면 Notifee local notification도 요청한다.
-- `watch-session-to-dive-log-entry.ts`는 `WatchSession`을 watch source `DiveLogEntry`로 변환한다. Freedive segment metadata와 scuba safety stop metadata는 `watchCapture.session`에 보존하고, detail 화면에서 mode별 section으로 표시한다.
+- `watch-session-to-dive-log-entry.ts`는 `WatchSession`을 watch source `DiveLogEntry`로 변환한다. Freedive segment metadata, scuba safety stop metadata, raw capture mode는 `watchCapture.session`에 보존하고, detail 화면에서 mode별 section과 demo capture marker로 표시한다.
 - 모바일 계획에서 시작한 watch session은 import 중 `sourcePlanLocalId`로 원본 `DivePlan`을 조회한다. 찾은 계획의 title, site, buddy, gear, tags, notes, dive mode, gas label, training metadata를 imported log의 manual overlay에 합치고, 원본 계획은 `status: completed`, `completedAt`, `convertedLogLocalId`를 저장한다. 계획 최대 수심과 계획 시간은 실제 측정값이 아니므로 watch capture의 실측 summary를 대체하지 않는다.
 - `DiveLogRepository.importWatchMessages`는 validator를 통과해 typed `WatchSyncMessage[]`가 된 payload를 import한다.
 - Import는 `localSessionId`와 `endedAt` 기반 key로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, 누락된 watch 동기화 상태를 `pending`으로 기본값 처리하고, 최신 항목이 먼저 오도록 정렬한다.

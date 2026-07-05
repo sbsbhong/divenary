@@ -28,13 +28,13 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다. | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md) | 이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity 검증과 실제 depth provider 연동은 아직 남아 있다. | 2026-07-05 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md) | 이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity/auto-launch/underwater sensor 검증은 아직 남아 있다. | 2026-07-05 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md) | 모바일 앱은 로그북의 중심이 되고, watch 앱은 측정 가능한 세션 데이터를 제공하는 캡처 source가 된다. 승인된 방향은 local-first 모바일 로그북을 먼저 만들고, 이후 로그인과 Supabase 동기화를 같은 저장소 경계 위에 붙이는 것이다. | 2026-06-28 |
 | [모바일 구조](architecture/mobile.md) | `apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Gluestack UI v4/NativeWind styling stack을 사용한다. | 2026-06-28 |
 | [Monorepo 구조](architecture/monorepo.md) | 이 저장소는 Turborepo로 관리되는 Yarn 1 workspace monorepo다. 앱 workspace는 `apps/` 아래에 있고, 공유 package는 `packages/` 아래에 있다. | 2026-06-28 |
 | [Supabase 구조](architecture/supabase.md) | 현재 저장소에는 구현된 Supabase 영역이 없다. | 2026-06-28 |
-| [동기화 흐름 구조](architecture/sync-flow.md) | 현재 동기화 모델은 계약을 먼저 정의하는 방식이다. `WatchSession`은 `freedive`/`scuba` mode별 nested payload를 검증하고, WatchConnectivity queued envelope와 live message를 함께 쓰며, mobile-to-watch planned dive 목록은 최신 application context와 reachable `sendMessage`로 전달한다. | 2026-07-05 |
-| [Watch 앱 구조](architecture/watch-app.md) | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Watch 기록은 `DiveSessionRecord`와 mode-specific payload를 중심으로 하며, freedive는 여러 segment를 한 session에 저장하고 scuba는 rule-based safety stop reminder 상태를 기록한다. | 2026-07-05 |
+| [동기화 흐름 구조](architecture/sync-flow.md) | 현재 동기화 모델은 계약을 먼저 정의하는 방식이다. `WatchSession`은 `freedive`/`scuba` mode별 nested payload와 optional `captureMode`를 검증하고, WatchConnectivity queued envelope와 live message를 함께 쓰며, mobile-to-watch planned dive 목록은 최신 application context와 reachable `sendMessage`로 전달한다. | 2026-07-05 |
+| [Watch 앱 구조](architecture/watch-app.md) | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Watch 기록은 `DiveSessionRecord`와 mode-specific payload를 중심으로 하며, freedive는 여러 segment를 한 session에 저장하고 scuba는 rule-based safety stop reminder 상태를 기록하며, real sensor provider와 명시적 demo mode를 분리한다. | 2026-07-05 |
 
 ## domains
 
@@ -46,7 +46,7 @@
 | [Diving App / Non-Negotiable Safety Rules](domains/diving-app-non-negotiable-safety-rules.md) | 제품 구현에서 절대 위반하면 안 되는 safety-critical 규칙을 정리하고, v1 Air-only safety stop을 감압 의무나 상승 안전 보장처럼 표현하지 않는 규칙을 포함한다. | 2026-06-28 |
 | [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 안전 copy, warning hierarchy, 책임 관련 UX 원칙을 정리하고, v1 Air-only safety stop을 reminder/timer/reference로 제한하는 표현 경계를 유지한다. | 2026-06-28 |
 | [Diving App / Scuba Mode](domains/diving-app-scuba-mode.md) | Scuba mode v1은 Air-only gauge/log와 rule-based safety stop reminder를 포함하지만, NDL, ceiling, TTS, CNS, gas remaining 같은 계산 기능은 v2 이후 고위험 검증 범위로 분리한다. | 2026-07-05 |
-| [다이브 로그 도메인](domains/dive-log.md) | Dive log domain은 watch/import/manual 로그를 model하며, watch-origin log는 freedive segment payload와 scuba safety stop reminder 결과를 보존하되, gas/deco/safety decision으로 해석하지 않는다. | 2026-07-05 |
+| [다이브 로그 도메인](domains/dive-log.md) | Dive log domain은 watch/import/manual 로그를 model하며, watch-origin log는 capture mode, freedive segment payload, scuba safety stop reminder 결과를 보존하되, gas/deco/safety decision으로 해석하지 않는다. | 2026-07-05 |
 | [다이브 계획 도메인](domains/dive-planning.md) | 모바일 Planbook은 비중요 계획 알림이며, optional planned pressure는 준비 맥락 metadata일 뿐 실제 측정값이나 안전 계산 결과가 아니다. | 2026-06-28 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱에서 오래 유지할 domain 용어를 정의한다. 정의 범위는 레크리에이션 기록과 확인이며, certified dive-computer behavior가 아니다. | 2026-06-28 |
 | [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, Air-only reminders와 manual pressure metadata를 gas/deco/safety decision으로 해석하지 않는다. Watch UI는 `safe to ascend`, `상승 가능`, `감압 완료` 같은 safety guarantee copy를 guard한다. | 2026-07-05 |

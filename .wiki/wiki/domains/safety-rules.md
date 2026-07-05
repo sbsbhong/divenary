@@ -1,7 +1,7 @@
 # 안전 규칙
 
 Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
 Updated: 2026-07-05
 Status: Reference / Safety Critical
 Owner: local product/dev agent
@@ -53,7 +53,9 @@ Watch sync notification은 local repository 저장 결과를 알려주는 기능
 
 Watch Home의 수심 3m 이상 자동 기록 시작은 사용자가 시작 버튼을 누르지 못했을 때 기록을 시작하기 위한 편의 trigger다. 이 trigger는 다이빙 시작 여부의 certified 판단, 안전 안내, 비상 판단, 감압 계산과 연결하지 않는다.
 
-실제 underwater Apple Watch sensor behavior는 공개 배포 전에 지원되는 hardware에서 수동 검증해야 한다. Simulator나 mock sensor behavior는 실제 underwater correctness의 증거가 아니다.
+Fake depth sample은 명시적인 demo capture mode에서만 허용된다. Demo capture는 로그 리뷰에서 `demo`로 표시되어야 하며, 실측 watch log나 안전 근거처럼 취급하지 않는다.
+
+실제 underwater Apple Watch sensor behavior는 공개 배포 전에 지원되는 hardware에서 수동 검증해야 한다. Simulator, mock sensor, demo mode behavior는 실제 underwater correctness의 증거가 아니다.
 
 Decompression planning, air integration, tank pressure, emergency decision, certified dive-computer behavior는 별도 high-risk work다. 구현 전 명시적인 제품, 검증, 책임 범위 결정이 필요하다.
 

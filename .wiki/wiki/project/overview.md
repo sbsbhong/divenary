@@ -24,7 +24,7 @@ Updated: 2026-06-28
 
 ## 상세
 
-watch 앱의 기록 흐름은 현재 `MockDepthSensorProvider`를 사용한다. `RealDepthSensorProvider`는 향후 `CMWaterSubmersionManager` 연동을 위한 자리 표시자이며, 공개 배포 전 지원되는 Apple Watch hardware에서 수동 검증이 필요하다.
+watch 앱의 일반 기록 흐름은 `RealDepthSensorProvider`를 통해 `CMWaterSubmersionManager` 기반 depth/pressure sample을 받도록 구현됐다. Fake sample은 명시적 demo mode의 `DemoDepthSensorProvider`에서만 사용한다. 실제 underwater sensor behavior, auto-launch, Store/TestFlight 수준 Ultra-only filtering은 공개 배포 전 지원되는 Apple Watch Ultra hardware와 배포 채널에서 수동 검증이 필요하다.
 
 모바일 앱은 generated TypeScript watch contract type과 로컬 watch fixture message를 import한다. 가져온 watch session은 raw `WatchSession`을 보존한 `DiveLogEntry`가 되며, 기본 구현에서는 AsyncStorage 기반 `PersistentDiveLogRepository`에 저장된다. Server 저장은 아직 없다.
 

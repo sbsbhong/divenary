@@ -1,5 +1,22 @@
 # Wiki Log
 
+## [2026-07-05] ingest | Watch real-device readiness and explicit demo mode
+- Added: Watch real-device readiness and explicit demo mode raw source
+- Updated: Watch 앱 구조
+- Updated: 동기화 흐름 구조
+- Updated: 구현 우선순위 기록
+- Updated: 다이브 로그 도메인
+- Updated: 안전 규칙
+- Updated: Diving App / Open Questions
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 결정: 명시적 테스트 모드에서만 테스트 데이터 사용
+  - 사용자 결정: 일반 기록은 수심 최우선 계기판형, 세이프티 스톱 때만 전용 화면
+  - 구현: `RealDepthSensorProvider`, `DemoDepthSensorProvider`, `captureMode`, watch target `Info.plist`, mobile demo marker, profile downsampling
+- 요약:
+  - Real recording은 `CMWaterSubmersionManager` 기반 provider로, fake sample은 explicit demo mode로 분리했다. Watch Home은 plan 생성/편집을 제거하고 모바일 계획 선택만 유지한다. 실기기 underwater sensor, auto-launch, store-level Ultra-only install filtering은 검증 항목으로 남겼다.
+
 ## [2026-07-05] ingest | Watch freedive segments and scuba safety stop implementation
 - Added: Watch freedive segments and scuba safety stop implementation raw source
 - Updated: Watch 앱 구조

@@ -1,7 +1,7 @@
 # 다이브 로그 도메인
 
 Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md)
+Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
 Updated: 2026-07-05
 
 ## 요약
@@ -36,6 +36,7 @@ Session metadata는 다음 field를 포함한다.
 - `visibilityRating`
 - `waterCondition`
 - `syncStatus`
+- `captureMode`: `real` 또는 `demo`
 - `entryLocation`, `exitLocation`
 - mode-specific nested payload: `freedive` 또는 `scuba`
 
@@ -85,7 +86,9 @@ Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화�
 
 완료된 Planbook 항목에서 Logbook 초안을 만들 수 있다. 이 전환은 자동 로그 저장이 아니라 수동 editor를 여는 흐름이다. 계획에서 복사하는 값은 site, buddy, gear, tags, dive mode, optional `entryStyle`, Air gas label, optional scuba pressure metadata, objective/training focus/notes 같은 안전한 metadata로 제한한다. 계획 최대 수심, 계획 시간, 예상 시야, 예상 난이도, checklist 상태는 실제 측정값이 아니므로 `DiveLogEntry.manual.measuredValues.maxDepthMeters`나 `durationSeconds`에 복사하지 않는다.
 
-Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture와 sync status만 최신 payload로 갱신한다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating 같은 맥락이 watch 재가져오기로 사라지지 않는다. Mode-specific metadata도 같은 원칙으로 보존되며, freedive segment와 scuba safety stop 상태는 모바일 detail에서 별도 section으로 확인할 수 있다.
+Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture와 sync status만 최신 payload로 갱신한다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating 같은 맥락이 watch 재가져오기로 사라지지 않는다. Mode-specific metadata와 `captureMode`도 같은 원칙으로 보존되며, freedive segment와 scuba safety stop 상태는 모바일 detail에서 별도 section으로 확인할 수 있다. Demo capture는 작은 marker로 표시해 실측 기록과 구분한다.
+
+Watch sample profile은 모바일 detail에서 depth/temperature SVG path로 렌더링한다. 원본 sample은 보존하고, 렌더링 단계에서만 min/max bucket downsampling을 적용해 850개 이상의 sample도 detail 화면에서 보이도록 한다.
 
 Legacy watch local log는 새 record model로 adapter된다. 모바일 runtime validator도 이미 native inbox에 들어온 schema v1/unknown flat `diveMode` payload를 mode-specific payload로 보강한다. 기존 freedive log는 하나의 `FreeDiveSegment`를 가진 `FreeDiveSession`으로 보존하고, 기존 scuba log는 safety stop 상태를 unknown 또는 not required로 기본 처리한다. 이 adapter와 validator 호환 경로는 기존 저장 데이터를 깨뜨리지 않기 위한 계층이며, 오래된 로그에 없던 safety stop 완료 사실을 새로 만들어내지 않는다.
 
