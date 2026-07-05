@@ -157,7 +157,7 @@ extension DiveSessionRecord {
                 durationSeconds: summary.durationSeconds,
                 maxDepthMeters: summary.maxDepthMeters,
                 minDepthMeters: session.samples.map(\.depthMeters).min() ?? 0,
-                sampleStartIndex: session.samples.isEmpty ? 0 : 0,
+                sampleStartIndex: 0,
                 sampleEndIndex: max(0, session.samples.count - 1),
                 descentRateMetersPerSecond: nil,
                 ascentRateMetersPerSecond: nil
