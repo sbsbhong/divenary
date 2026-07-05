@@ -1,5 +1,7 @@
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import minimalFixture from '../../../packages/contracts/fixtures/minimal-watch-sync-message.json';
+import freediveFixture from '../../../packages/contracts/fixtures/freedive-multi-segment-watch-sync-message.json';
+import scubaSafetyStopFixture from '../../../packages/contracts/fixtures/scuba-safety-stop-watch-sync-message.json';
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
@@ -103,6 +105,119 @@ describe('watch sync message validation', () => {
       throw new Error('expected removed dive mode to be invalid');
     }
     expect(result.error.message).toContain('session.diveMode');
+  });
+
+  it('accepts freedive sessions with segments', () => {
+    const result = parseWatchSyncMessageValue(freediveFixture);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.diveMode).toBe('freedive');
+    expect(result.message.session.freedive?.segments).toHaveLength(2);
+    expect(result.message.session.freedive?.segments[0]?.segmentId).toBe('free-segment-001');
+  });
+
+  it('rejects freedive sessions without freedive payload', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'freedive-missing-payload',
+        diveMode: 'freedive',
+        startedAt: 1781352000,
+        samples: [{ localSessionId: 'freedive-missing-payload', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected freedive payload to be required');
+    }
+    expect(result.error.message).toContain('session.freedive');
+  });
+
+  it('accepts scuba sessions with safety stop record', () => {
+    const result = parseWatchSyncMessageValue(scubaSafetyStopFixture);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.diveMode).toBe('scuba');
+    expect(result.message.session.scuba?.safetyStop.status).toBe('completed');
+    expect(result.message.session.scuba?.safetyStop.timeInZoneSeconds).toBe(180);
+  });
+
+  it.each([
+    ['freedive mode with scuba payload', { diveMode: 'freedive', scuba: scubaSafetyStopFixture.session.scuba }],
+    ['scuba mode with freedive payload', { diveMode: 'scuba', freedive: freediveFixture.session.freedive }],
+    [
+      'both nested payloads together',
+      {
+        diveMode: 'scuba',
+        freedive: freediveFixture.session.freedive,
+        scuba: scubaSafetyStopFixture.session.scuba,
+      },
+    ],
+  ])('rejects mismatched scuba and freedive payloads: %s', (_caseName, modePayload) => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'mismatched-mode-payload',
+        startedAt: 1781352000,
+        samples: [{ localSessionId: 'mismatched-mode-payload', timestamp: 1781352000, depthMeters: 0 }],
+        ...modePayload,
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected mismatched mode payload to be invalid');
+    }
+  });
+
+  it.each([
+    ['freedive', { freedive: freediveFixture.session.freedive }],
+    ['scuba', { scuba: scubaSafetyStopFixture.session.scuba }],
+  ])('rejects nested %s payload without diveMode', (_payloadName, nestedPayload) => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'nested-without-mode',
+        startedAt: 1781352000,
+        samples: [{ localSessionId: 'nested-without-mode', timestamp: 1781352000, depthMeters: 0 }],
+        ...nestedPayload,
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected nested payload without diveMode to be invalid');
+    }
+    expect(result.error.message).toContain('session.diveMode');
+  });
+
+  it('keeps accepting a legacy flat session without nested payload and without diveMode', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'legacy-flat-session',
+        startedAt: 1781352000,
+        endedAt: 1781352600,
+        maxDepthMeters: 8.4,
+        averageDepthMeters: 4.2,
+        samples: [{ localSessionId: 'legacy-flat-session', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.diveMode).toBeUndefined();
+    expect(result.message.session.freedive).toBeUndefined();
+    expect(result.message.session.scuba).toBeUndefined();
   });
 
   it('builds app fixture messages through the runtime validator', () => {

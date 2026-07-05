@@ -44,12 +44,64 @@ const sessionKeys = [
   'maxDepthMeters',
   'averageDepthMeters',
   'waterTemperatureCelsius',
+  'freedive',
+  'scuba',
   'samples',
 ] as const;
 const locationKeys = ['latitude', 'longitude', 'horizontalAccuracyMeters', 'capturedAt'] as const;
+const freeDiveKeys = ['diveCount', 'maxDepthMeters', 'longestDiveDurationSeconds', 'segments'] as const;
+const freeDiveSegmentKeys = [
+  'segmentId',
+  'index',
+  'startedAt',
+  'endedAt',
+  'durationSeconds',
+  'maxDepthMeters',
+  'minDepthMeters',
+  'sampleStartIndex',
+  'sampleEndIndex',
+  'descentRateMetersPerSecond',
+  'ascentRateMetersPerSecond',
+] as const;
+const scubaKeys = [
+  'gasLabel',
+  'maxDepthMeters',
+  'averageDepthMeters',
+  'waterTemperatureCelsius',
+  'latestAscentRateMetersPerMinute',
+  'maxAscentRateMetersPerMinute',
+  'safetyStop',
+] as const;
+const safetyStopKeys = [
+  'status',
+  'required',
+  'completed',
+  'targetDepthMeters',
+  'minDepthMeters',
+  'maxDepthMeters',
+  'durationSeconds',
+  'startedAt',
+  'completedAt',
+  'remainingSeconds',
+  'timeInZoneSeconds',
+] as const;
+const safetyStopStatuses = [
+  'unknown',
+  'notRequired',
+  'armed',
+  'active',
+  'pausedTooDeep',
+  'pausedTooShallow',
+  'completed',
+  'skippedOrIncomplete',
+] as const;
 const sampleKeys = ['localSessionId', 'timestamp', 'depthMeters', 'pressureKPa', 'waterTemperatureCelsius'] as const;
 
 type WatchLocation = NonNullable<WatchSession['entryLocation']>;
+type FreeDivePayload = NonNullable<WatchSession['freedive']>;
+type FreeDiveSegment = FreeDivePayload['segments'][number];
+type ScubaPayload = NonNullable<WatchSession['scuba']>;
+type SafetyStopRecord = ScubaPayload['safetyStop'];
 
 export function parseWatchSyncMessageJson(rawJson: string): WatchSyncMessageParseResult {
   try {
@@ -227,7 +279,339 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     assignOptional(session, key, result.value);
   }
 
+  const freedive = readObject(objectResult.value, 'freedive', path, parseFreeDivePayload);
+  if (!freedive.ok) {
+    return freedive;
+  }
+
+  const scuba = readObject(objectResult.value, 'scuba', path, parseScubaPayload);
+  if (!scuba.ok) {
+    return scuba;
+  }
+
+  if (freedive.value !== undefined && scuba.value !== undefined) {
+    return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is not allowed with ${joinPath(path, 'freedive')}`);
+  }
+
+  if (diveMode.value === 'freedive') {
+    if (freedive.value === undefined) {
+      return failure(joinPath(path, 'freedive'), `${joinPath(path, 'freedive')} is required for freedive sessions`);
+    }
+    if (scuba.value !== undefined) {
+      return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is not allowed for freedive sessions`);
+    }
+    session.freedive = freedive.value;
+  } else if (diveMode.value === 'scuba') {
+    if (scuba.value === undefined) {
+      return failure(joinPath(path, 'scuba'), `${joinPath(path, 'scuba')} is required for scuba sessions`);
+    }
+    if (freedive.value !== undefined) {
+      return failure(joinPath(path, 'freedive'), `${joinPath(path, 'freedive')} is not allowed for scuba sessions`);
+    }
+    session.scuba = scuba.value;
+  } else if (freedive.value !== undefined || scuba.value !== undefined) {
+    return failure(joinPath(path, 'diveMode'), `${joinPath(path, 'diveMode')} is required for nested mode payloads`);
+  }
+
   return { ok: true, value: session };
+}
+
+function parseFreeDivePayload(value: unknown, path: string): ValidationResult<FreeDivePayload> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, freeDiveKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const diveCount = readInteger(objectResult.value, 'diveCount', path, { required: true, min: 0 });
+  if (!diveCount.ok) {
+    return diveCount;
+  }
+  if (diveCount.value === undefined) {
+    return failure(joinPath(path, 'diveCount'), `${joinPath(path, 'diveCount')} is required`);
+  }
+
+  const maxDepthMeters = readNumber(objectResult.value, 'maxDepthMeters', path, { required: true, min: 0 });
+  if (!maxDepthMeters.ok) {
+    return maxDepthMeters;
+  }
+  if (maxDepthMeters.value === undefined) {
+    return failure(joinPath(path, 'maxDepthMeters'), `${joinPath(path, 'maxDepthMeters')} is required`);
+  }
+
+  const longestDiveDurationSeconds = readNumber(objectResult.value, 'longestDiveDurationSeconds', path, {
+    required: true,
+    min: 0,
+  });
+  if (!longestDiveDurationSeconds.ok) {
+    return longestDiveDurationSeconds;
+  }
+  if (longestDiveDurationSeconds.value === undefined) {
+    return failure(
+      joinPath(path, 'longestDiveDurationSeconds'),
+      `${joinPath(path, 'longestDiveDurationSeconds')} is required`,
+    );
+  }
+
+  const segments = readArray(objectResult.value, 'segments', path, parseFreeDiveSegment, { required: true });
+  if (!segments.ok) {
+    return segments;
+  }
+  if (segments.value === undefined) {
+    return failure(joinPath(path, 'segments'), `${joinPath(path, 'segments')} is required`);
+  }
+
+  return {
+    ok: true,
+    value: {
+      diveCount: diveCount.value,
+      maxDepthMeters: maxDepthMeters.value,
+      longestDiveDurationSeconds: longestDiveDurationSeconds.value,
+      segments: segments.value,
+    },
+  };
+}
+
+function parseFreeDiveSegment(value: unknown, path: string): ValidationResult<FreeDiveSegment> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, freeDiveSegmentKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const segmentId = readString(objectResult.value, 'segmentId', path, { required: true });
+  if (!segmentId.ok) {
+    return segmentId;
+  }
+  if (segmentId.value === undefined) {
+    return failure(joinPath(path, 'segmentId'), `${joinPath(path, 'segmentId')} is required`);
+  }
+
+  const index = readInteger(objectResult.value, 'index', path, { required: true, min: 1 });
+  if (!index.ok) {
+    return index;
+  }
+  if (index.value === undefined) {
+    return failure(joinPath(path, 'index'), `${joinPath(path, 'index')} is required`);
+  }
+
+  const segment: FreeDiveSegment = {
+    segmentId: segmentId.value,
+    index: index.value,
+    startedAt: 0,
+    endedAt: 0,
+    durationSeconds: 0,
+    maxDepthMeters: 0,
+    minDepthMeters: 0,
+    sampleStartIndex: 0,
+    sampleEndIndex: 0,
+  };
+
+  for (const key of ['startedAt', 'endedAt'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    segment[key] = result.value;
+  }
+
+  for (const key of ['durationSeconds', 'maxDepthMeters', 'minDepthMeters'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true, min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    segment[key] = result.value;
+  }
+
+  for (const key of ['sampleStartIndex', 'sampleEndIndex'] as const) {
+    const result = readInteger(objectResult.value, key, path, { required: true, min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    segment[key] = result.value;
+  }
+
+  for (const key of ['descentRateMetersPerSecond', 'ascentRateMetersPerSecond'] as const) {
+    const result = readNumber(objectResult.value, key, path);
+    if (!result.ok) {
+      return result;
+    }
+    assignOptional(segment, key, result.value);
+  }
+
+  return { ok: true, value: segment };
+}
+
+function parseScubaPayload(value: unknown, path: string): ValidationResult<ScubaPayload> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, scubaKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const scuba: ScubaPayload = {
+    maxDepthMeters: 0,
+    averageDepthMeters: 0,
+    latestAscentRateMetersPerMinute: 0,
+    maxAscentRateMetersPerMinute: 0,
+    safetyStop: {
+      status: 'unknown',
+      required: false,
+      completed: false,
+      targetDepthMeters: 0,
+      minDepthMeters: 0,
+      maxDepthMeters: 0,
+      durationSeconds: 0,
+      remainingSeconds: 0,
+      timeInZoneSeconds: 0,
+    },
+  };
+
+  const gasLabel = readString(objectResult.value, 'gasLabel', path);
+  if (!gasLabel.ok) {
+    return gasLabel;
+  }
+  assignOptional(scuba, 'gasLabel', gasLabel.value);
+
+  for (const key of ['maxDepthMeters', 'averageDepthMeters'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true, min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    scuba[key] = result.value;
+  }
+
+  const waterTemperatureCelsius = readNumber(objectResult.value, 'waterTemperatureCelsius', path);
+  if (!waterTemperatureCelsius.ok) {
+    return waterTemperatureCelsius;
+  }
+  assignOptional(scuba, 'waterTemperatureCelsius', waterTemperatureCelsius.value);
+
+  for (const key of ['latestAscentRateMetersPerMinute', 'maxAscentRateMetersPerMinute'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true, min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    scuba[key] = result.value;
+  }
+
+  const safetyStop = readObject(objectResult.value, 'safetyStop', path, parseSafetyStopRecord);
+  if (!safetyStop.ok) {
+    return safetyStop;
+  }
+  if (safetyStop.value === undefined) {
+    return failure(joinPath(path, 'safetyStop'), `${joinPath(path, 'safetyStop')} is required`);
+  }
+  scuba.safetyStop = safetyStop.value;
+
+  return { ok: true, value: scuba };
+}
+
+function parseSafetyStopRecord(value: unknown, path: string): ValidationResult<SafetyStopRecord> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, safetyStopKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const status = readEnum(objectResult.value, 'status', safetyStopStatuses, path, { required: true });
+  if (!status.ok) {
+    return status;
+  }
+  if (status.value === undefined) {
+    return failure(joinPath(path, 'status'), `${joinPath(path, 'status')} is required`);
+  }
+
+  const required = readBoolean(objectResult.value, 'required', path, { required: true });
+  if (!required.ok) {
+    return required;
+  }
+  if (required.value === undefined) {
+    return failure(joinPath(path, 'required'), `${joinPath(path, 'required')} is required`);
+  }
+
+  const completed = readBoolean(objectResult.value, 'completed', path, { required: true });
+  if (!completed.ok) {
+    return completed;
+  }
+  if (completed.value === undefined) {
+    return failure(joinPath(path, 'completed'), `${joinPath(path, 'completed')} is required`);
+  }
+
+  const safetyStop: SafetyStopRecord = {
+    status: status.value,
+    required: required.value,
+    completed: completed.value,
+    targetDepthMeters: 0,
+    minDepthMeters: 0,
+    maxDepthMeters: 0,
+    durationSeconds: 0,
+    remainingSeconds: 0,
+    timeInZoneSeconds: 0,
+  };
+
+  for (const key of ['targetDepthMeters', 'minDepthMeters', 'maxDepthMeters'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    safetyStop[key] = result.value;
+  }
+
+  for (const key of ['durationSeconds', 'remainingSeconds', 'timeInZoneSeconds'] as const) {
+    const result = readNumber(objectResult.value, key, path, { required: true, min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    if (result.value === undefined) {
+      return failure(joinPath(path, key), `${joinPath(path, key)} is required`);
+    }
+    safetyStop[key] = result.value;
+  }
+
+  for (const key of ['startedAt', 'completedAt'] as const) {
+    const result = readNumber(objectResult.value, key, path);
+    if (!result.ok) {
+      return result;
+    }
+    assignOptional(safetyStop, key, result.value);
+  }
+
+  return { ok: true, value: safetyStop };
 }
 
 function parseWatchLocation(value: unknown, path: string): ValidationResult<WatchLocation> {
@@ -369,9 +753,22 @@ function readNumber<Key extends string>(
   object: RecordValue,
   key: Key,
   path: string,
-  options: { required?: boolean } = {},
+  options: { required?: boolean; min?: number; max?: number } = {},
 ): ValidationResult<number | undefined> {
-  return readPrimitive(object, key, path, isFiniteNumber, 'number', options.required);
+  const result = readPrimitive(object, key, path, isFiniteNumber, 'number', options.required);
+  if (!result.ok || result.value === undefined) {
+    return result;
+  }
+
+  const valuePath = joinPath(path, key);
+  if (options.min !== undefined && result.value < options.min) {
+    return failure(valuePath, `${valuePath} must be >= ${options.min}`);
+  }
+  if (options.max !== undefined && result.value > options.max) {
+    return failure(valuePath, `${valuePath} must be <= ${options.max}`);
+  }
+
+  return result;
 }
 
 function readInteger<Key extends string>(
@@ -427,6 +824,15 @@ function readStringArray<Key extends string>(
     }
     return { ok: true, value };
   });
+}
+
+function readBoolean<Key extends string>(
+  object: RecordValue,
+  key: Key,
+  path: string,
+  options: { required?: boolean } = {},
+): ValidationResult<boolean | undefined> {
+  return readPrimitive(object, key, path, isBoolean, 'boolean', options.required);
 }
 
 function readObject<Key extends string, T>(
@@ -525,6 +931,10 @@ function isRecord(value: unknown): value is RecordValue {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function isBoolean(value: unknown): value is boolean {
+  return typeof value === 'boolean';
 }
 
 function isFiniteNumber(value: unknown): value is number {
