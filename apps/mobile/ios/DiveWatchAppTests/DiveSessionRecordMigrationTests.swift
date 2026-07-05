@@ -2,6 +2,64 @@ import XCTest
 @testable import DiveWatchApp
 
 final class DiveSessionRecordMigrationTests: XCTestCase {
+    @MainActor
+    func testFreediveRecorderLiveMaxUsesRawSamplesBeforeSegmentStarts() async {
+        let sensorProvider = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .freedive))
+        sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0.9))
+        await Task.yield()
+
+        XCTAssertEqual(recorder.maxDepth, 0.9, accuracy: 0.001)
+        recorder.cancelSession()
+    }
+
+    func testFreediveRecordSummaryUsesRawSampleMaxWhenPayloadHasNoSegments() {
+        let samples = [
+            EngineTestFixtures.sample(0, depth: 0),
+            EngineTestFixtures.sample(1, depth: 0.9),
+            EngineTestFixtures.sample(2, depth: 0.4)
+        ]
+        let record = DiveSessionRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000789")!,
+            schemaVersion: 2,
+            diveMode: .freedive,
+            siteId: nil,
+            siteName: nil,
+            sourcePlanLocalId: nil,
+            planTitle: nil,
+            buddyIds: [],
+            gearIds: [],
+            tags: [],
+            notes: nil,
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
+            syncStatus: .pending,
+            entryLocation: nil,
+            exitLocation: nil,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(2),
+            samples: samples,
+            payload: .freedive(
+                FreeDiveSession(
+                    id: UUID(uuidString: "00000000-0000-0000-0000-000000000789")!,
+                    startTime: EngineTestFixtures.date(0),
+                    endTime: EngineTestFixtures.date(2),
+                    totalDurationSeconds: 2,
+                    maxDepthMeters: 0,
+                    diveCount: 0,
+                    longestDiveDurationSeconds: 0,
+                    segments: []
+                )
+            )
+        )
+
+        XCTAssertEqual(record.summary.maxDepthMeters, 0.9, accuracy: 0.001)
+    }
+
     func testOldFreediveSessionAdaptsToOneSegment() {
         let samples = [
             EngineTestFixtures.sample(0, depth: 0),
@@ -195,5 +253,17 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(session.diveCount, 1)
         XCTAssertEqual(session.segments.count, 1)
         XCTAssertEqual(session.maxDepthMeters, 12)
+    }
+}
+
+private final class ManualDepthSensorProvider: DepthSensorProvider {
+    var onSample: ((DepthSample) -> Void)?
+
+    func start() {}
+
+    func stop() {}
+
+    func emit(_ sample: DepthSample) {
+        onSample?(sample)
     }
 }

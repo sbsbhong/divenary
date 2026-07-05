@@ -57,7 +57,7 @@ struct DiveSessionSummary: Codable {
         switch record.payload {
         case .freedive(let session):
             self.durationSeconds = session.totalDurationSeconds
-            self.maxDepthMeters = session.maxDepthMeters
+            self.maxDepthMeters = max(session.maxDepthMeters, sampleMaxDepthMeters)
             self.averageDepthMeters = averageDepthMeters
             self.averageWaterTemperatureCelsius = averageWaterTemperatureCelsius
             self.sampleCount = sampleCount

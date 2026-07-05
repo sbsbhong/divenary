@@ -165,7 +165,7 @@ final class DiveSessionRecorder: ObservableObject {
         case .freedive:
             freeEngine?.append(sample)
             freeSnapshot = freeEngine?.snapshot
-            maxDepth = freeSnapshot?.maxDepthMeters ?? max(maxDepth, sample.depthMeters)
+            maxDepth = max(maxDepth, sample.depthMeters, freeSnapshot?.maxDepthMeters ?? 0)
             scubaSafetyStop = .legacyUnknown
             safetyStopRemainingSeconds = SafetyStopRecord.legacyUnknown.remainingSeconds
             safetyStopActive = false
