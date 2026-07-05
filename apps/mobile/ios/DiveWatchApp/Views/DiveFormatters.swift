@@ -35,6 +35,11 @@ enum DiveFormatters {
         String(format: "%.1f m/min", max(0, metersPerMinute))
     }
 
+    static func verticalRate(_ metersPerMinute: Double) -> String {
+        let sanitizedRate = metersPerMinute.isFinite ? metersPerMinute : 0
+        return String(format: "%.1f m/min", sanitizedRate)
+    }
+
     static func rating(_ value: Int?) -> String {
         guard let value else { return String(localized: "Not rated") }
         return String(repeating: "★", count: max(1, min(5, value)))

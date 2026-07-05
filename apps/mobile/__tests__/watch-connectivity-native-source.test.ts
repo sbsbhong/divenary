@@ -231,7 +231,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).toContain('RecordingView(store: store, plan: request.plan)');
   });
 
-  it('keeps active watch dive modes to scuba and freedive with mode-specific recording surfaces', () => {
+  it('keeps active watch dive modes to scuba and freedive with mode-specific live instruments', () => {
     const model = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSession.swift');
     const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
     const diveModeBlock = model.slice(model.indexOf('enum DiveMode'), model.indexOf('enum WaterCondition'));
@@ -243,10 +243,13 @@ describe('WatchConnectivity native source contract', () => {
     expect(diveModeBlock).not.toContain('case pool');
     expect(diveModeBlock).not.toContain('case unknown');
     expect(model).toContain('defaultingRemovedDiveModeToScuba');
-    expect(recording).toContain('ScubaRecordingStatus');
-    expect(recording).toContain('FreediveRecordingStatus');
-    expect(recording).toContain('Air scuba reminder, not a dive computer.');
-    expect(recording).toContain('Freedive training reference only.');
+    expect(recording).toContain('FreeSurfaceReadyInstrument');
+    expect(recording).toContain('FreeDiveActiveInstrument');
+    expect(recording).toContain('FreeSurfaceIntervalInstrument');
+    expect(recording).toContain('ScubaLiveInstrument');
+    expect(recording).toContain('SafetyStopInstrument');
+    expect(recording).toContain('Recommended stop complete');
+    expect(recording).not.toContain('safe to ascend');
   });
 
   it('uses a deep blue minimal depth gauge on watch live screens', () => {
@@ -264,9 +267,11 @@ describe('WatchConnectivity native source contract', () => {
     expect(gauge).toContain('guard maxScaleMeters.isFinite else { return 1 }');
     expect(gauge).toContain('private func sanitizedDepth(_ depth: Double) -> Double');
     expect(gauge).toContain('guard depth.isFinite else { return 0 }');
-    expect(recording).toContain('safetyStopActive: recorder.safetyStopActive');
+    expect(recording).toContain('safetyStop: recorder.scubaSafetyStop');
     expect(recording).toContain('displayedMaxDepthMeters');
     expect(recording).toContain('ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10');
+    expect(recording).toContain('stopZone: safetyStop.minDepthMeters...safetyStop.maxDepthMeters');
+    expect(recording).toContain('targetDepthMeters: safetyStop.targetDepthMeters');
     expect(recording).toContain('DepthGaugeRail');
     expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
   });

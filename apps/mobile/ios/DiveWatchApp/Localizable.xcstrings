@@ -194,6 +194,22 @@
         }
       }
     },
+    "Ascent/descent" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ascent/descent"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "상승/하강"
+          }
+        }
+      }
+    },
     "ASSIST" : {
       "localizations" : {
         "en" : {
@@ -322,6 +338,22 @@
         }
       }
     },
+    "Count" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Count"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "카운트"
+          }
+        }
+      }
+    },
     "Current" : {
       "localizations" : {
         "en" : {
@@ -334,6 +366,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "조류"
+          }
+        }
+      }
+    },
+    "Current dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "현재 다이브"
           }
         }
       }
@@ -370,6 +418,22 @@
         }
       }
     },
+    "Deeper than stop zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deeper than stop zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정지 구간보다 깊음"
+          }
+        }
+      }
+    },
     "Details" : {
       "localizations" : {
         "en" : {
@@ -398,6 +462,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "삭제"
+          }
+        }
+      }
+    },
+    "Dive active" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive active"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 중"
           }
         }
       }
@@ -578,6 +658,22 @@
         }
       }
     },
+    "End to save session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End to save session."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "종료하면 세션이 저장됩니다."
+          }
+        }
+      }
+    },
     "Exertion" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -703,6 +799,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "지난 다이브"
+          }
+        }
+      }
+    },
+    "Last depth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last depth"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "직전 수심"
+          }
+        }
+      }
+    },
+    "Last duration" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last duration"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "직전 시간"
           }
         }
       }
@@ -1125,6 +1253,22 @@
         }
       }
     },
+    "Recommended stop complete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended stop complete"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
     "Reminder active" : {
       "localizations" : {
         "en" : {
@@ -1397,6 +1541,22 @@
         }
       }
     },
+    "Shallower than stop zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Shallower than stop zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정지 구간보다 얕음"
+          }
+        }
+      }
+    },
     "Site" : {
       "localizations" : {
         "en" : {
@@ -1478,6 +1638,86 @@
         }
       }
     },
+    "Stop incomplete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop incomplete"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스탑 미완료"
+          }
+        }
+      }
+    },
+    "Stop not required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop not required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스탑 필요 없음"
+          }
+        }
+      }
+    },
+    "Stop reminder armed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop reminder armed"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스탑 리마인더 준비"
+          }
+        }
+      }
+    },
+    "Stop status unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop status unavailable"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스탑 상태 없음"
+          }
+        }
+      }
+    },
+    "Stop zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정지 구간"
+          }
+        }
+      }
+    },
     "Stop 5m/3:00" : {
       "localizations" : {
         "en" : {
@@ -1522,6 +1762,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "보조 로그 · 안전계산 없음"
+          }
+        }
+      }
+    },
+    "Surface interval" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Surface interval"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수면 휴식"
+          }
+        }
+      }
+    },
+    "Surface ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Surface ready"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수면 대기"
+          }
+        }
+      }
+    },
+    "Surface rest" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Surface rest"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수면 휴식 시간"
           }
         }
       }
@@ -1586,6 +1874,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수온"
+          }
+        }
+      }
+    },
+    "Timer paused" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timer paused"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "타이머 일시정지"
           }
         }
       }
@@ -1731,6 +2035,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "물 상태"
+          }
+        }
+      }
+    },
+    "Within stop zone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Within stop zone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정지 구간 내"
           }
         }
       }

@@ -36,123 +36,400 @@ struct RecordingView: View {
     }
 
     private var recordingContent: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    StatusPill(title: String(localized: "Active dive"))
-                    Spacer(minLength: 6)
-                    Text(DiveFormatters.duration(recorder.elapsedTime))
-                        .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.primary)
-                        .monospacedDigit()
-                }
+        VStack(spacing: 7) {
+            liveInstrument
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .layoutPriority(1)
 
-                LiveDepthPanel(
-                    currentDepthMeters: recorder.currentDepth,
-                    depth: DiveFormatters.depth(recorder.currentDepth),
-                    elapsed: DiveFormatters.duration(recorder.elapsedTime),
-                    displayedMaxDepthMeters: recorder.maxDepth,
-                    maxDepth: DiveFormatters.depth(recorder.maxDepth),
-                    diveMode: plan.diveMode,
-                    safetyStopActive: recorder.safetyStopActive
-                )
-
-                if plan.diveMode == .scuba {
-                    ScubaRecordingStatus(
-                        ascentRate: recorder.latestAscentRateMetersPerMinute,
-                        ascentWarningActive: recorder.ascentWarningActive,
-                        safetyStopActive: recorder.safetyStopActive,
-                        safetyStopRemainingSeconds: recorder.safetyStopRemainingSeconds
-                    )
-                } else {
-                    FreediveRecordingStatus(
-                        elapsed: recorder.elapsedTime,
-                        maxDepth: recorder.maxDepth,
-                        trainingFocus: plan.quickNote
-                    )
-                }
-
-                HStack(spacing: 8) {
-                    CompactMetric(title: String(localized: "Temp"), value: DiveFormatters.temperature(recorder.waterTemperatureCelsius))
-                    CompactMetric(title: String(localized: "Mode"), value: plan.diveMode.label)
-                }
-
-                Button(role: .destructive) {
-                    completedSession = recorder.stopSession()
-                } label: {
-                    Label("End Dive", systemImage: "stop.fill")
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .destructive))
-
-                DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
+            Button(role: .destructive) {
+                completedSession = recorder.stopSession()
+            } label: {
+                Label("End Dive", systemImage: "stop.fill")
             }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-            .padding(.vertical, 10)
+            .buttonStyle(DiveActionButtonStyle(kind: .destructive))
+
+            DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
         }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .padding(.vertical, 8)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .navigationTitle("Live Log")
     }
+
+    @ViewBuilder
+    private var liveInstrument: some View {
+        switch plan.diveMode {
+        case .freedive:
+            freediveInstrument(snapshot: currentFreeSnapshot)
+        case .scuba:
+            if shouldShowSafetyStopInstrument {
+                SafetyStopInstrument(
+                    currentDepthMeters: recorder.currentDepth,
+                    safetyStop: recorder.scubaSafetyStop
+                )
+            } else {
+                ScubaLiveInstrument(
+                    currentDepthMeters: recorder.currentDepth,
+                    elapsedTime: recorder.elapsedTime,
+                    displayedMaxDepthMeters: recorder.maxDepth,
+                    ascentRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute,
+                    waterTemperatureCelsius: recorder.waterTemperatureCelsius
+                )
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func freediveInstrument(snapshot: FreeDiveSessionSnapshot) -> some View {
+        switch snapshot.state {
+        case .surfaceReady:
+            FreeSurfaceReadyInstrument(
+                sessionTime: recorder.elapsedTime,
+                diveCount: snapshot.diveCount
+            )
+        case .diveActive:
+            FreeDiveActiveInstrument(
+                currentDepthMeters: recorder.currentDepth,
+                activeDiveTime: snapshot.activeSegment?.durationSeconds ?? 0,
+                maxDepthMeters: snapshot.maxDepthMeters,
+                verticalRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute
+            )
+        case .surfaceInterval:
+            FreeSurfaceIntervalInstrument(
+                surfaceRestTime: surfaceRestTime(for: snapshot),
+                lastSegment: snapshot.segments.last,
+                maxDepthMeters: snapshot.maxDepthMeters,
+                diveCount: snapshot.diveCount
+            )
+        case .summary:
+            FreeSurfaceIntervalInstrument(
+                surfaceRestTime: surfaceRestTime(for: snapshot),
+                lastSegment: snapshot.segments.last,
+                maxDepthMeters: snapshot.maxDepthMeters,
+                diveCount: snapshot.diveCount
+            )
+        }
+    }
+
+    private var currentFreeSnapshot: FreeDiveSessionSnapshot {
+        recorder.freeSnapshot ?? FreeDiveSessionSnapshot(
+            state: .surfaceReady,
+            segments: [],
+            activeSegment: nil,
+            diveCount: 0,
+            maxDepthMeters: recorder.maxDepth,
+            currentDepthMeters: recorder.currentDepth
+        )
+    }
+
+    private var shouldShowSafetyStopInstrument: Bool {
+        switch recorder.scubaSafetyStop.status {
+        case .active, .pausedTooDeep, .pausedTooShallow, .completed:
+            return true
+        case .unknown, .notRequired, .armed, .skippedOrIncomplete:
+            return false
+        }
+    }
+
+    private func surfaceRestTime(for snapshot: FreeDiveSessionSnapshot) -> TimeInterval {
+        guard let lastEndTime = snapshot.segments.last?.endTime else {
+            return 0
+        }
+
+        return max(0, Date().timeIntervalSince(lastEndTime))
+    }
 }
 
-private struct LiveDepthPanel: View {
-    let currentDepthMeters: Double
-    let depth: String
-    let elapsed: String
-    let displayedMaxDepthMeters: Double
-    let maxDepth: String
-    let diveMode: DiveMode
-    let safetyStopActive: Bool
+private struct FreeSurfaceReadyInstrument: View {
+    let sessionTime: TimeInterval
+    let diveCount: Int
 
     var body: some View {
-        InstrumentCard {
+        VStack(alignment: .leading, spacing: 9) {
+            StatusPill(title: String(localized: "Surface ready"), color: DiveWatchTheme.secondary)
+
+            Spacer(minLength: 2)
+
+            Text(DiveFormatters.duration(sessionTime))
+                .font(DiveWatchTheme.metricFont(size: 44, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.45)
+
+            Text(String(localized: "Session time"))
+                .font(DiveWatchTheme.labelFont())
+                .foregroundStyle(DiveWatchTheme.mutedText)
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Count"),
+                    value: "\(max(0, diveCount))/#"
+                )
+                LiveInstrumentMetric(
+                    title: String(localized: "Mode"),
+                    value: String(localized: "Freedive")
+                )
+            }
+
+            Spacer(minLength: 2)
+
+            Text(String(localized: "Freedive training reference only."))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private struct FreeDiveActiveInstrument: View {
+    let currentDepthMeters: Double
+    let activeDiveTime: TimeInterval
+    let maxDepthMeters: Double
+    let verticalRateMetersPerMinute: Double
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
+
+            Text(DiveFormatters.depth(currentDepthMeters))
+                .font(DiveWatchTheme.metricFont(size: 45, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.primary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.38)
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(DiveFormatters.duration(activeDiveTime))
+                    .font(DiveWatchTheme.metricFont(size: 25, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.55)
+
+                Text(String(localized: "Current dive"))
+                    .font(DiveWatchTheme.labelFont())
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Max"),
+                    value: DiveFormatters.depth(maxDepthMeters)
+                )
+                LiveInstrumentMetric(
+                    title: String(localized: "Ascent/descent"),
+                    value: DiveFormatters.verticalRate(verticalRateMetersPerMinute)
+                )
+            }
+
+            Text(String(localized: "Freedive training reference only."))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private struct FreeSurfaceIntervalInstrument: View {
+    let surfaceRestTime: TimeInterval
+    let lastSegment: FreeDiveSegment?
+    let maxDepthMeters: Double
+    let diveCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StatusPill(title: String(localized: "Surface interval"), color: DiveWatchTheme.secondary)
+
+            Text(DiveFormatters.duration(surfaceRestTime))
+                .font(DiveWatchTheme.metricFont(size: 42, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.45)
+
+            Text(String(localized: "Surface rest"))
+                .font(DiveWatchTheme.labelFont())
+                .foregroundStyle(DiveWatchTheme.mutedText)
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Last duration"),
+                    value: DiveFormatters.duration(lastSegment?.durationSeconds ?? 0)
+                )
+                LiveInstrumentMetric(
+                    title: String(localized: "Last depth"),
+                    value: DiveFormatters.depth(lastSegment?.maxDepthMeters ?? 0)
+                )
+            }
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Max"),
+                    value: DiveFormatters.depth(maxDepthMeters)
+                )
+                LiveInstrumentMetric(
+                    title: String(localized: "Count"),
+                    value: "\(max(0, diveCount))"
+                )
+            }
+
+            Text(String(localized: "End to save session."))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private struct ScubaLiveInstrument: View {
+    let currentDepthMeters: Double
+    let elapsedTime: TimeInterval
+    let displayedMaxDepthMeters: Double
+    let ascentRateMetersPerMinute: Double
+    let waterTemperatureCelsius: Double?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 8) {
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("CURRENT DEPTH")
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(String(localized: "CURRENT DEPTH"))
                         .font(DiveWatchTheme.labelFont())
                         .foregroundStyle(DiveWatchTheme.mutedText)
 
-                    Text(depth)
-                        .font(DiveWatchTheme.metricFont(size: 38, weight: .semibold))
+                    Text(DiveFormatters.depth(currentDepthMeters))
+                        .font(DiveWatchTheme.metricFont(size: 43, weight: .semibold))
                         .foregroundStyle(DiveWatchTheme.primary)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.38)
 
-                    HStack(spacing: 8) {
-                        LiveDepthStat(title: String(localized: "Time"), value: elapsed)
-                        LiveDepthStat(title: String(localized: "Max"), value: maxDepth)
-                    }
+                    Text(String(localized: "Supplemental log · no safety calculation"))
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 DepthGaugeRail(
                     depthMeters: currentDepthMeters,
                     maxScaleMeters: maxScaleMeters,
-                    stopZone: stopZone,
-                    targetDepthMeters: targetDepthMeters
+                    stopZone: nil,
+                    targetDepthMeters: nil
                 )
             }
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(title: String(localized: "Time"), value: DiveFormatters.duration(elapsedTime))
+                LiveInstrumentMetric(title: String(localized: "Max"), value: DiveFormatters.depth(displayedMaxDepthMeters))
+            }
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(title: String(localized: "Ascent"), value: DiveFormatters.ascentRate(ascentRateMetersPerMinute))
+                LiveInstrumentMetric(title: String(localized: "Temp"), value: DiveFormatters.temperature(waterTemperatureCelsius))
+            }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 
     private var maxScaleMeters: Double {
-        if diveMode == .scuba && safetyStopActive {
-            return 10
-        }
-
-        return max(30, ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10)
-    }
-
-    private var stopZone: ClosedRange<Double>? {
-        diveMode == .scuba && safetyStopActive ? 3...6 : nil
-    }
-
-    private var targetDepthMeters: Double? {
-        diveMode == .scuba && safetyStopActive ? 5 : nil
+        max(30, ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10)
     }
 }
 
-private struct LiveDepthStat: View {
+private struct SafetyStopInstrument: View {
+    let currentDepthMeters: Double
+    let safetyStop: SafetyStopRecord
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                StatusPill(title: String(localized: "Safety stop"), color: statusColor)
+
+                Text(DiveFormatters.duration(safetyStop.remainingSeconds))
+                    .font(DiveWatchTheme.metricFont(size: 42, weight: .semibold))
+                    .foregroundStyle(statusColor)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.45)
+
+                Text(statusText)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.68)
+
+                if isTimerPaused {
+                    Text(String(localized: "Timer paused"))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+
+                LiveInstrumentMetric(
+                    title: String(localized: "Stop zone"),
+                    value: "\(DiveFormatters.depth(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
+                )
+
+                Text(String(localized: "Recommended safety stop reminder."))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.72)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            DepthGaugeRail(
+                depthMeters: currentDepthMeters,
+                maxScaleMeters: max(10, safetyStop.maxDepthMeters + 2),
+                stopZone: safetyStop.minDepthMeters...safetyStop.maxDepthMeters,
+                targetDepthMeters: safetyStop.targetDepthMeters
+            )
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+    }
+
+    private var statusText: String {
+        switch safetyStop.status {
+        case .active:
+            return String(localized: "Within stop zone")
+        case .pausedTooDeep:
+            return String(localized: "Deeper than stop zone")
+        case .pausedTooShallow:
+            return String(localized: "Shallower than stop zone")
+        case .completed:
+            return String(localized: "Recommended stop complete")
+        case .unknown:
+            return String(localized: "Stop status unavailable")
+        case .notRequired:
+            return String(localized: "Stop not required")
+        case .armed:
+            return String(localized: "Stop reminder armed")
+        case .skippedOrIncomplete:
+            return String(localized: "Stop incomplete")
+        }
+    }
+
+    private var isTimerPaused: Bool {
+        safetyStop.status == .pausedTooDeep || safetyStop.status == .pausedTooShallow
+    }
+
+    private var statusColor: Color {
+        safetyStop.status == .completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
+    }
+}
+
+private struct LiveInstrumentMetric: View {
     let title: String
     let value: String
 
@@ -161,122 +438,22 @@ private struct LiveDepthStat: View {
             Text(title.uppercased())
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+
             Text(value)
                 .font(DiveWatchTheme.metricFont(size: 15, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.text)
                 .monospacedDigit()
                 .lineLimit(1)
-                .minimumScaleFactor(0.58)
+                .minimumScaleFactor(0.48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct CompactMetric: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title.uppercased())
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-                Text(value)
-                    .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-            }
-        }
-    }
-}
-
-private struct ScubaRecordingStatus: View {
-    let ascentRate: Double
-    let ascentWarningActive: Bool
-    let safetyStopActive: Bool
-    let safetyStopRemainingSeconds: TimeInterval
-
-    var body: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    StatusPill(title: ascentWarningActive ? String(localized: "Ascent reminder") : String(localized: "Assistant steady"))
-
-                    Spacer(minLength: 4)
-
-                    Text(safetyStopActive ? DiveFormatters.duration(safetyStopRemainingSeconds) : String(localized: "REVIEW"))
-                        .font(DiveWatchTheme.metricFont(size: 15, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.primary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.58)
-                }
-
-                Text(
-                    ascentWarningActive
-                        ? String(localized: "Review ascent rate with certified equipment.")
-                        : String(localized: "Reminder review from watch logs only.")
-                )
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-
-                SummaryRow(
-                    title: String(localized: "Ascent"),
-                    value: ascentWarningActive ? String(localized: "Reminder active") : DiveFormatters.ascentRate(ascentRate),
-                    accent: ascentWarningActive ? DiveWatchTheme.primary : nil
-                )
-                SummaryRow(
-                    title: String(localized: "Safety stop"),
-                    value: safetyStopActive ? DiveFormatters.duration(safetyStopRemainingSeconds) : String(localized: "Planning reminder"),
-                    accent: safetyStopActive ? DiveWatchTheme.primary : nil
-                )
-
-                Text("Air scuba reminder, not a dive computer.")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-            }
-        }
-    }
-}
-
-private struct FreediveRecordingStatus: View {
-    let elapsed: TimeInterval
-    let maxDepth: Double
-    let trainingFocus: String
-
-    var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.secondary) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 8) {
-                    StatusPill(title: String(localized: "Freedive session"))
-
-                    Spacer(minLength: 4)
-
-                    Text(DiveFormatters.duration(elapsed))
-                        .font(DiveWatchTheme.metricFont(size: 15, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.secondary)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                }
-
-                SummaryRow(title: String(localized: "Session time"), value: DiveFormatters.duration(elapsed), accent: DiveWatchTheme.secondary)
-                SummaryRow(title: String(localized: "Max"), value: DiveFormatters.depth(maxDepth))
-
-                if !trainingFocus.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    SummaryRow(title: String(localized: "Training"), value: trainingFocus)
-                }
-
-                Text("Freedive training reference only.")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-            }
-        }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
+                .fill(DiveWatchTheme.surfaceContainer)
+        )
     }
 }
