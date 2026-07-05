@@ -27,6 +27,197 @@
         "latitude",
         "longitude"
       ]
+    },
+    "freeDiveSegment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "segmentId": {
+          "type": "string"
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "startedAt": {
+          "type": "number",
+          "description": "Unix timestamp in seconds"
+        },
+        "endedAt": {
+          "type": "number",
+          "description": "Unix timestamp in seconds"
+        },
+        "durationSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "minDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "sampleStartIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "sampleEndIndex": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "descentRateMetersPerSecond": {
+          "type": "number"
+        },
+        "ascentRateMetersPerSecond": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "segmentId",
+        "index",
+        "startedAt",
+        "endedAt",
+        "durationSeconds",
+        "maxDepthMeters",
+        "minDepthMeters",
+        "sampleStartIndex",
+        "sampleEndIndex"
+      ]
+    },
+    "freeDivePayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "diveCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "maxDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "longestDiveDurationSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "segments": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/freeDiveSegment"
+          }
+        }
+      },
+      "required": [
+        "diveCount",
+        "maxDepthMeters",
+        "longestDiveDurationSeconds",
+        "segments"
+      ]
+    },
+    "safetyStopRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "notRequired",
+            "armed",
+            "active",
+            "pausedTooDeep",
+            "pausedTooShallow",
+            "completed",
+            "skippedOrIncomplete"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "completed": {
+          "type": "boolean"
+        },
+        "targetDepthMeters": {
+          "type": "number"
+        },
+        "minDepthMeters": {
+          "type": "number"
+        },
+        "maxDepthMeters": {
+          "type": "number"
+        },
+        "durationSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "startedAt": {
+          "type": "number",
+          "description": "Unix timestamp in seconds"
+        },
+        "completedAt": {
+          "type": "number",
+          "description": "Unix timestamp in seconds"
+        },
+        "remainingSeconds": {
+          "type": "number",
+          "minimum": 0
+        },
+        "timeInZoneSeconds": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "status",
+        "required",
+        "completed",
+        "targetDepthMeters",
+        "minDepthMeters",
+        "maxDepthMeters",
+        "durationSeconds",
+        "remainingSeconds",
+        "timeInZoneSeconds"
+      ]
+    },
+    "scubaPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "gasLabel": {
+          "type": "string"
+        },
+        "maxDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "averageDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "waterTemperatureCelsius": {
+          "type": "number"
+        },
+        "latestAscentRateMetersPerMinute": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxAscentRateMetersPerMinute": {
+          "type": "number",
+          "minimum": 0
+        },
+        "safetyStop": {
+          "$ref": "#/definitions/safetyStopRecord"
+        }
+      },
+      "required": [
+        "maxDepthMeters",
+        "averageDepthMeters",
+        "latestAscentRateMetersPerMinute",
+        "maxAscentRateMetersPerMinute",
+        "safetyStop"
+      ]
     }
   },
   "properties": {
@@ -137,6 +328,12 @@
     "waterTemperatureCelsius": {
       "type": "number"
     },
+    "freedive": {
+      "$ref": "#/definitions/freeDivePayload"
+    },
+    "scuba": {
+      "$ref": "#/definitions/scubaPayload"
+    },
     "samples": {
       "type": "array",
       "items": {
@@ -144,6 +341,52 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "diveMode": {
+            "const": "freedive"
+          }
+        },
+        "required": [
+          "diveMode"
+        ]
+      },
+      "then": {
+        "required": [
+          "freedive"
+        ],
+        "not": {
+          "required": [
+            "scuba"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "diveMode": {
+            "const": "scuba"
+          }
+        },
+        "required": [
+          "diveMode"
+        ]
+      },
+      "then": {
+        "required": [
+          "scuba"
+        ],
+        "not": {
+          "required": [
+            "freedive"
+          ]
+        }
+      }
+    }
+  ],
   "required": [
     "localSessionId",
     "startedAt",

@@ -1,0 +1,33 @@
+{
+  "type": "sessionEnded",
+  "session": {
+    "localSessionId": "watch-scuba-001",
+    "schemaVersion": 2,
+    "diveMode": "scuba",
+    "startedAt": 1783225525,
+    "endedAt": 1783228045,
+    "syncStatus": "pending",
+    "samples": [],
+    "scuba": {
+      "gasLabel": "Air",
+      "maxDepthMeters": 21.2,
+      "averageDepthMeters": 12.4,
+      "waterTemperatureCelsius": 24,
+      "latestAscentRateMetersPerMinute": 0.2,
+      "maxAscentRateMetersPerMinute": 7.8,
+      "safetyStop": {
+        "status": "completed",
+        "required": true,
+        "completed": true,
+        "targetDepthMeters": 5,
+        "minDepthMeters": 3,
+        "maxDepthMeters": 6,
+        "durationSeconds": 180,
+        "startedAt": 1783227800,
+        "completedAt": 1783227980,
+        "remainingSeconds": 0,
+        "timeInZoneSeconds": 180
+      }
+    }
+  }
+}

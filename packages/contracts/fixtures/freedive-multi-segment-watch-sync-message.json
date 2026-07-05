@@ -1,0 +1,41 @@
+{
+  "type": "sessionEnded",
+  "session": {
+    "localSessionId": "watch-free-001",
+    "schemaVersion": 2,
+    "diveMode": "freedive",
+    "startedAt": 1783225525,
+    "endedAt": 1783225825,
+    "syncStatus": "pending",
+    "samples": [],
+    "freedive": {
+      "diveCount": 2,
+      "maxDepthMeters": 18.4,
+      "longestDiveDurationSeconds": 46,
+      "segments": [
+        {
+          "segmentId": "free-segment-001",
+          "index": 1,
+          "startedAt": 1783225530,
+          "endedAt": 1783225576,
+          "durationSeconds": 46,
+          "maxDepthMeters": 18.4,
+          "minDepthMeters": 0.4,
+          "sampleStartIndex": 0,
+          "sampleEndIndex": 10
+        },
+        {
+          "segmentId": "free-segment-002",
+          "index": 2,
+          "startedAt": 1783225700,
+          "endedAt": 1783225738,
+          "durationSeconds": 38,
+          "maxDepthMeters": 15.2,
+          "minDepthMeters": 0.5,
+          "sampleStartIndex": 11,
+          "sampleEndIndex": 20
+        }
+      ]
+    }
+  }
+}

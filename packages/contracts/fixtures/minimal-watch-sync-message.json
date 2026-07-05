@@ -2,8 +2,13 @@
   "type": "sessionEnded",
   "session": {
     "localSessionId": "fixture-minimal-session",
+    "schemaVersion": 2,
+    "diveMode": "scuba",
     "startedAt": 1781352000,
     "endedAt": 1781352600,
+    "syncStatus": "pending",
+    "maxDepthMeters": 12.4,
+    "averageDepthMeters": 6.2,
     "samples": [
       {
         "localSessionId": "fixture-minimal-session",
@@ -20,6 +25,23 @@
         "timestamp": 1781352600,
         "depthMeters": 0
       }
-    ]
+    ],
+    "scuba": {
+      "maxDepthMeters": 12.4,
+      "averageDepthMeters": 6.2,
+      "latestAscentRateMetersPerMinute": 0,
+      "maxAscentRateMetersPerMinute": 4.1,
+      "safetyStop": {
+        "status": "notRequired",
+        "required": false,
+        "completed": false,
+        "targetDepthMeters": 5,
+        "minDepthMeters": 3,
+        "maxDepthMeters": 6,
+        "durationSeconds": 180,
+        "remainingSeconds": 180,
+        "timeInZoneSeconds": 0
+      }
+    }
   }
 }

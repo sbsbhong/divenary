@@ -61,6 +61,7 @@ public struct WatchSession: Codable {
     /// Unix timestamp in seconds
     public let endedAt: Double?
     public let entryLocation, exitLocation: WatchLocation?
+    public let freedive: FreeDivePayload?
     public let gasLabel: String?
     public let gearIds: [String]?
     public let localSessionId: String
@@ -71,6 +72,7 @@ public struct WatchSession: Codable {
     public let rating: Int?
     public let samples: [WatchDepthSample]
     public let schemaVersion: Int?
+    public let scuba: ScubaPayload?
     public let siteId, siteName, sourcePlanLocalId: String?
     /// Unix timestamp in seconds
     public let startedAt: Double
@@ -80,13 +82,14 @@ public struct WatchSession: Codable {
     public let waterCondition: WaterCondition?
     public let waterTemperatureCelsius: Double?
 
-    public init(averageDepthMeters: Double?, buddyIds: [String]?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
+    public init(averageDepthMeters: Double?, buddyIds: [String]?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
         self.averageDepthMeters = averageDepthMeters
         self.buddyIds = buddyIds
         self.diveMode = diveMode
         self.endedAt = endedAt
         self.entryLocation = entryLocation
         self.exitLocation = exitLocation
+        self.freedive = freedive
         self.gasLabel = gasLabel
         self.gearIds = gearIds
         self.localSessionId = localSessionId
@@ -97,6 +100,7 @@ public struct WatchSession: Codable {
         self.rating = rating
         self.samples = samples
         self.schemaVersion = schemaVersion
+        self.scuba = scuba
         self.siteId = siteId
         self.siteName = siteName
         self.sourcePlanLocalId = sourcePlanLocalId
@@ -134,6 +138,7 @@ public extension WatchSession {
         endedAt: Double?? = nil,
         entryLocation: WatchLocation?? = nil,
         exitLocation: WatchLocation?? = nil,
+        freedive: FreeDivePayload?? = nil,
         gasLabel: String?? = nil,
         gearIds: [String]?? = nil,
         localSessionId: String? = nil,
@@ -144,6 +149,7 @@ public extension WatchSession {
         rating: Int?? = nil,
         samples: [WatchDepthSample]? = nil,
         schemaVersion: Int?? = nil,
+        scuba: ScubaPayload?? = nil,
         siteId: String?? = nil,
         siteName: String?? = nil,
         sourcePlanLocalId: String?? = nil,
@@ -161,6 +167,7 @@ public extension WatchSession {
             endedAt: endedAt ?? self.endedAt,
             entryLocation: entryLocation ?? self.entryLocation,
             exitLocation: exitLocation ?? self.exitLocation,
+            freedive: freedive ?? self.freedive,
             gasLabel: gasLabel ?? self.gasLabel,
             gearIds: gearIds ?? self.gearIds,
             localSessionId: localSessionId ?? self.localSessionId,
@@ -171,6 +178,7 @@ public extension WatchSession {
             rating: rating ?? self.rating,
             samples: samples ?? self.samples,
             schemaVersion: schemaVersion ?? self.schemaVersion,
+            scuba: scuba ?? self.scuba,
             siteId: siteId ?? self.siteId,
             siteName: siteName ?? self.siteName,
             sourcePlanLocalId: sourcePlanLocalId ?? self.sourcePlanLocalId,
@@ -253,6 +261,144 @@ public extension WatchLocation {
     }
 }
 
+// MARK: - FreeDivePayload
+public struct FreeDivePayload: Codable {
+    public let diveCount: Int
+    public let longestDiveDurationSeconds, maxDepthMeters: Double
+    public let segments: [FreeDiveSegment]
+
+    public init(diveCount: Int, longestDiveDurationSeconds: Double, maxDepthMeters: Double, segments: [FreeDiveSegment]) {
+        self.diveCount = diveCount
+        self.longestDiveDurationSeconds = longestDiveDurationSeconds
+        self.maxDepthMeters = maxDepthMeters
+        self.segments = segments
+    }
+}
+
+// MARK: FreeDivePayload convenience initializers and mutators
+
+public extension FreeDivePayload {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(FreeDivePayload.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        diveCount: Int? = nil,
+        longestDiveDurationSeconds: Double? = nil,
+        maxDepthMeters: Double? = nil,
+        segments: [FreeDiveSegment]? = nil
+    ) -> FreeDivePayload {
+        return FreeDivePayload(
+            diveCount: diveCount ?? self.diveCount,
+            longestDiveDurationSeconds: longestDiveDurationSeconds ?? self.longestDiveDurationSeconds,
+            maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters,
+            segments: segments ?? self.segments
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// MARK: - FreeDiveSegment
+public struct FreeDiveSegment: Codable {
+    public let ascentRateMetersPerSecond, descentRateMetersPerSecond: Double?
+    public let durationSeconds: Double
+    /// Unix timestamp in seconds
+    public let endedAt: Double
+    public let index: Int
+    public let maxDepthMeters, minDepthMeters: Double
+    public let sampleEndIndex, sampleStartIndex: Int
+    public let segmentId: String
+    /// Unix timestamp in seconds
+    public let startedAt: Double
+
+    public init(ascentRateMetersPerSecond: Double?, descentRateMetersPerSecond: Double?, durationSeconds: Double, endedAt: Double, index: Int, maxDepthMeters: Double, minDepthMeters: Double, sampleEndIndex: Int, sampleStartIndex: Int, segmentId: String, startedAt: Double) {
+        self.ascentRateMetersPerSecond = ascentRateMetersPerSecond
+        self.descentRateMetersPerSecond = descentRateMetersPerSecond
+        self.durationSeconds = durationSeconds
+        self.endedAt = endedAt
+        self.index = index
+        self.maxDepthMeters = maxDepthMeters
+        self.minDepthMeters = minDepthMeters
+        self.sampleEndIndex = sampleEndIndex
+        self.sampleStartIndex = sampleStartIndex
+        self.segmentId = segmentId
+        self.startedAt = startedAt
+    }
+}
+
+// MARK: FreeDiveSegment convenience initializers and mutators
+
+public extension FreeDiveSegment {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(FreeDiveSegment.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        ascentRateMetersPerSecond: Double?? = nil,
+        descentRateMetersPerSecond: Double?? = nil,
+        durationSeconds: Double? = nil,
+        endedAt: Double? = nil,
+        index: Int? = nil,
+        maxDepthMeters: Double? = nil,
+        minDepthMeters: Double? = nil,
+        sampleEndIndex: Int? = nil,
+        sampleStartIndex: Int? = nil,
+        segmentId: String? = nil,
+        startedAt: Double? = nil
+    ) -> FreeDiveSegment {
+        return FreeDiveSegment(
+            ascentRateMetersPerSecond: ascentRateMetersPerSecond ?? self.ascentRateMetersPerSecond,
+            descentRateMetersPerSecond: descentRateMetersPerSecond ?? self.descentRateMetersPerSecond,
+            durationSeconds: durationSeconds ?? self.durationSeconds,
+            endedAt: endedAt ?? self.endedAt,
+            index: index ?? self.index,
+            maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters,
+            minDepthMeters: minDepthMeters ?? self.minDepthMeters,
+            sampleEndIndex: sampleEndIndex ?? self.sampleEndIndex,
+            sampleStartIndex: sampleStartIndex ?? self.sampleStartIndex,
+            segmentId: segmentId ?? self.segmentId,
+            startedAt: startedAt ?? self.startedAt
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
 // MARK: - WatchDepthSample
 public struct WatchDepthSample: Codable {
     public let depthMeters: Double
@@ -312,6 +458,174 @@ public extension WatchDepthSample {
     func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
         return String(data: try self.jsonData(), encoding: encoding)
     }
+}
+
+// MARK: - ScubaPayload
+public struct ScubaPayload: Codable {
+    public let averageDepthMeters: Double
+    public let gasLabel: String?
+    public let latestAscentRateMetersPerMinute, maxAscentRateMetersPerMinute, maxDepthMeters: Double
+    public let safetyStop: SafetyStopRecord
+    public let waterTemperatureCelsius: Double?
+
+    public init(averageDepthMeters: Double, gasLabel: String?, latestAscentRateMetersPerMinute: Double, maxAscentRateMetersPerMinute: Double, maxDepthMeters: Double, safetyStop: SafetyStopRecord, waterTemperatureCelsius: Double?) {
+        self.averageDepthMeters = averageDepthMeters
+        self.gasLabel = gasLabel
+        self.latestAscentRateMetersPerMinute = latestAscentRateMetersPerMinute
+        self.maxAscentRateMetersPerMinute = maxAscentRateMetersPerMinute
+        self.maxDepthMeters = maxDepthMeters
+        self.safetyStop = safetyStop
+        self.waterTemperatureCelsius = waterTemperatureCelsius
+    }
+}
+
+// MARK: ScubaPayload convenience initializers and mutators
+
+public extension ScubaPayload {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(ScubaPayload.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        averageDepthMeters: Double? = nil,
+        gasLabel: String?? = nil,
+        latestAscentRateMetersPerMinute: Double? = nil,
+        maxAscentRateMetersPerMinute: Double? = nil,
+        maxDepthMeters: Double? = nil,
+        safetyStop: SafetyStopRecord? = nil,
+        waterTemperatureCelsius: Double?? = nil
+    ) -> ScubaPayload {
+        return ScubaPayload(
+            averageDepthMeters: averageDepthMeters ?? self.averageDepthMeters,
+            gasLabel: gasLabel ?? self.gasLabel,
+            latestAscentRateMetersPerMinute: latestAscentRateMetersPerMinute ?? self.latestAscentRateMetersPerMinute,
+            maxAscentRateMetersPerMinute: maxAscentRateMetersPerMinute ?? self.maxAscentRateMetersPerMinute,
+            maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters,
+            safetyStop: safetyStop ?? self.safetyStop,
+            waterTemperatureCelsius: waterTemperatureCelsius ?? self.waterTemperatureCelsius
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+// MARK: - SafetyStopRecord
+public struct SafetyStopRecord: Codable {
+    public let completed: Bool
+    /// Unix timestamp in seconds
+    public let completedAt: Double?
+    public let durationSeconds: Double
+    public let maxDepthMeters, minDepthMeters: Double
+    public let remainingSeconds: Double
+    public let safetyStopRecordRequired: Bool
+    /// Unix timestamp in seconds
+    public let startedAt: Double?
+    public let status: Status
+    public let targetDepthMeters: Double
+    public let timeInZoneSeconds: Double
+
+    public enum CodingKeys: String, CodingKey {
+        case completed, completedAt, durationSeconds, maxDepthMeters, minDepthMeters, remainingSeconds
+        case safetyStopRecordRequired = "required"
+        case startedAt, status, targetDepthMeters, timeInZoneSeconds
+    }
+
+    public init(completed: Bool, completedAt: Double?, durationSeconds: Double, maxDepthMeters: Double, minDepthMeters: Double, remainingSeconds: Double, safetyStopRecordRequired: Bool, startedAt: Double?, status: Status, targetDepthMeters: Double, timeInZoneSeconds: Double) {
+        self.completed = completed
+        self.completedAt = completedAt
+        self.durationSeconds = durationSeconds
+        self.maxDepthMeters = maxDepthMeters
+        self.minDepthMeters = minDepthMeters
+        self.remainingSeconds = remainingSeconds
+        self.safetyStopRecordRequired = safetyStopRecordRequired
+        self.startedAt = startedAt
+        self.status = status
+        self.targetDepthMeters = targetDepthMeters
+        self.timeInZoneSeconds = timeInZoneSeconds
+    }
+}
+
+// MARK: SafetyStopRecord convenience initializers and mutators
+
+public extension SafetyStopRecord {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(SafetyStopRecord.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        completed: Bool? = nil,
+        completedAt: Double?? = nil,
+        durationSeconds: Double? = nil,
+        maxDepthMeters: Double? = nil,
+        minDepthMeters: Double? = nil,
+        remainingSeconds: Double? = nil,
+        safetyStopRecordRequired: Bool? = nil,
+        startedAt: Double?? = nil,
+        status: Status? = nil,
+        targetDepthMeters: Double? = nil,
+        timeInZoneSeconds: Double? = nil
+    ) -> SafetyStopRecord {
+        return SafetyStopRecord(
+            completed: completed ?? self.completed,
+            completedAt: completedAt ?? self.completedAt,
+            durationSeconds: durationSeconds ?? self.durationSeconds,
+            maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters,
+            minDepthMeters: minDepthMeters ?? self.minDepthMeters,
+            remainingSeconds: remainingSeconds ?? self.remainingSeconds,
+            safetyStopRecordRequired: safetyStopRecordRequired ?? self.safetyStopRecordRequired,
+            startedAt: startedAt ?? self.startedAt,
+            status: status ?? self.status,
+            targetDepthMeters: targetDepthMeters ?? self.targetDepthMeters,
+            timeInZoneSeconds: timeInZoneSeconds ?? self.timeInZoneSeconds
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
+public enum Status: String, Codable {
+    case active = "active"
+    case armed = "armed"
+    case completed = "completed"
+    case notRequired = "notRequired"
+    case pausedTooDeep = "pausedTooDeep"
+    case pausedTooShallow = "pausedTooShallow"
+    case skippedOrIncomplete = "skippedOrIncomplete"
+    case unknown = "unknown"
 }
 
 public enum SyncStatus: String, Codable {
