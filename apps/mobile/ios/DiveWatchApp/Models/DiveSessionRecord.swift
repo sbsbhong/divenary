@@ -150,7 +150,7 @@ extension DiveSessionRecord {
         switch session.diveMode {
         case .freedive:
             let segment = FreeDiveSegment(
-                id: UUID(),
+                id: session.id,
                 index: 1,
                 startTime: session.startedAt,
                 endTime: session.endedAt,
@@ -170,7 +170,7 @@ extension DiveSessionRecord {
                     totalDurationSeconds: summary.durationSeconds,
                     maxDepthMeters: summary.maxDepthMeters,
                     diveCount: session.samples.isEmpty ? 0 : 1,
-                    longestDiveDurationSeconds: summary.durationSeconds,
+                    longestDiveDurationSeconds: session.samples.isEmpty ? 0 : summary.durationSeconds,
                     segments: session.samples.isEmpty ? [] : [segment]
                 )
             )

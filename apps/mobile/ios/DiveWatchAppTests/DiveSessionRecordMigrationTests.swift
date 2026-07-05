@@ -24,6 +24,8 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(session.diveCount, 1)
         XCTAssertEqual(session.segments.count, 1)
         XCTAssertEqual(session.maxDepthMeters, 12)
+        XCTAssertEqual(session.segments.first?.index, 1)
+        XCTAssertEqual(session.segments.first?.durationSeconds, 20)
         XCTAssertEqual(record.schemaVersion, 2)
         XCTAssertEqual(record.samples.map(\.id), samples.map(\.id))
         XCTAssertEqual(record.samples.map(\.depthMeters), samples.map(\.depthMeters))
@@ -44,9 +46,38 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             return XCTFail("Expected freedive payload")
         }
         XCTAssertEqual(session.diveCount, 0)
+        XCTAssertEqual(session.longestDiveDurationSeconds, 0)
         XCTAssertTrue(session.segments.isEmpty)
         XCTAssertTrue(record.samples.isEmpty)
         XCTAssertEqual(record.schemaVersion, 2)
+    }
+
+    func testOldFreediveSessionSegmentIdIsStableAcrossMigrations() {
+        let old = DiveSession(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000456")!,
+            diveMode: .freedive,
+            syncStatus: .pending,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(20),
+            samples: [
+                EngineTestFixtures.sample(0, depth: 0),
+                EngineTestFixtures.sample(4, depth: 12),
+                EngineTestFixtures.sample(20, depth: 0.4)
+            ]
+        )
+
+        let firstRecord = DiveSessionRecord(legacySession: old)
+        let secondRecord = DiveSessionRecord(legacySession: old)
+
+        guard case let .freedive(firstSession) = firstRecord.payload,
+              case let .freedive(secondSession) = secondRecord.payload else {
+            return XCTFail("Expected freedive payloads")
+        }
+        XCTAssertEqual(firstSession.segments.first?.id, old.id)
+        XCTAssertEqual(secondSession.segments.first?.id, old.id)
+        XCTAssertEqual(firstSession.segments.first?.id, secondSession.segments.first?.id)
+        XCTAssertEqual(firstSession.segments.first?.index, 1)
+        XCTAssertEqual(firstSession.segments.first?.durationSeconds, 20)
     }
 
     func testOldScubaSessionAdaptsWithUnknownSafetyStop() {
