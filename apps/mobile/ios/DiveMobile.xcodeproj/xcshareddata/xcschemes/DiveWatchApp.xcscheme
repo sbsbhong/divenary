@@ -37,6 +37,16 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "FA6000000000000000000001"
+               BuildableName = "DiveWatchAppTests.xctest"
+               BlueprintName = "DiveWatchAppTests"
+               ReferencedContainer = "container:DiveMobile.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
