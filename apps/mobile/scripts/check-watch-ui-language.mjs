@@ -5,6 +5,7 @@ const root = process.cwd();
 const projectPath = join(root, 'ios/DiveMobile.xcodeproj/project.pbxproj');
 const stringCatalogPath = join(root, 'ios/DiveWatchApp/Localizable.xcstrings');
 const source = [
+  'ios/DiveWatchApp/Views/DepthGaugeRail.swift',
   'ios/DiveWatchApp/Views/DiveFormatters.swift',
   'ios/DiveWatchApp/Views/RecordingView.swift',
   'ios/DiveWatchApp/Views/SummaryView.swift',

@@ -51,8 +51,10 @@ struct RecordingView: View {
                     currentDepthMeters: recorder.currentDepth,
                     depth: DiveFormatters.depth(recorder.currentDepth),
                     elapsed: DiveFormatters.duration(recorder.elapsedTime),
+                    displayedMaxDepthMeters: recorder.maxDepth,
                     maxDepth: DiveFormatters.depth(recorder.maxDepth),
-                    diveMode: plan.diveMode
+                    diveMode: plan.diveMode,
+                    safetyStopActive: recorder.safetyStopActive
                 )
 
                 if plan.diveMode == .scuba {
@@ -96,8 +98,10 @@ private struct LiveDepthPanel: View {
     let currentDepthMeters: Double
     let depth: String
     let elapsed: String
+    let displayedMaxDepthMeters: Double
     let maxDepth: String
     let diveMode: DiveMode
+    let safetyStopActive: Bool
 
     var body: some View {
         InstrumentCard {
@@ -132,15 +136,19 @@ private struct LiveDepthPanel: View {
     }
 
     private var maxScaleMeters: Double {
-        diveMode == .scuba ? 10 : 30
+        if diveMode == .scuba && safetyStopActive {
+            return 10
+        }
+
+        return max(30, ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10)
     }
 
     private var stopZone: ClosedRange<Double>? {
-        diveMode == .scuba ? 3...6 : nil
+        diveMode == .scuba && safetyStopActive ? 3...6 : nil
     }
 
     private var targetDepthMeters: Double? {
-        diveMode == .scuba ? 5 : nil
+        diveMode == .scuba && safetyStopActive ? 5 : nil
     }
 }
 

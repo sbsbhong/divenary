@@ -233,13 +233,20 @@ describe('WatchConnectivity native source contract', () => {
   it('uses a deep blue minimal depth gauge on watch live screens', () => {
     const gauge = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/DepthGaugeRail.swift');
     const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const watchUiCheck = readRepoFile('apps/mobile/scripts/check-watch-ui-language.mjs');
 
     expect(gauge).toContain('struct DepthGaugeRail');
     expect(gauge).toContain('LinearGradient');
     expect(gauge).toContain('stopZone');
     expect(gauge).toContain('Image(systemName: "chevron.right")');
     expect(gauge).toContain('deepBlueGradient');
+    expect(gauge).toContain('visibleRange');
+    expect(gauge).toContain('clampedTop');
+    expect(recording).toContain('safetyStopActive: recorder.safetyStopActive');
+    expect(recording).toContain('displayedMaxDepthMeters');
+    expect(recording).toContain('ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10');
     expect(recording).toContain('DepthGaugeRail');
+    expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
   });
 
   it('keeps watch recording state in mode-specific engines', () => {

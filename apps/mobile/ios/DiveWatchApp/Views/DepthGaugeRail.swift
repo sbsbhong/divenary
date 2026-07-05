@@ -102,9 +102,19 @@ struct DepthGaugeRail: View {
     }
 
     private func stopZoneBox(_ zone: ClosedRange<Double>, height: CGFloat) -> some View {
-        let shallowY = yPosition(for: zone.lowerBound, height: height)
-        let deepY = yPosition(for: zone.upperBound, height: height)
-        let boxHeight = max(18, deepY - shallowY)
+        let visibleRange = (
+            lower: max(zone.lowerBound, 0),
+            upper: min(zone.upperBound, scaleUpperBound)
+        )
+        let hasVisibleOverlap = visibleRange.lower < visibleRange.upper
+        let shallowY = rawYPosition(for: visibleRange.lower, height: height)
+        let deepY = rawYPosition(for: visibleRange.upper, height: height)
+        let zoneHeight = max(0, deepY - shallowY)
+        let centeredTop = shallowY - max(0, 18 - zoneHeight) / 2
+        let centeredBottom = deepY + max(0, 18 - zoneHeight) / 2
+        let clampedTop = min(max(centeredTop, 0), height)
+        let clampedBottom = min(max(centeredBottom, 0), height)
+        let boxHeight = hasVisibleOverlap ? max(0, clampedBottom - clampedTop) : 0
 
         return RoundedRectangle(cornerRadius: 6, style: .continuous)
             .fill(Color(red: 0.38, green: 0.79, blue: 1.0).opacity(0.24))
@@ -113,7 +123,8 @@ struct DepthGaugeRail: View {
                     .stroke(Color(red: 0.64, green: 0.9, blue: 1.0).opacity(0.9), lineWidth: 1.4)
             )
             .frame(width: railWidth + 10, height: boxHeight)
-            .position(x: railX + railWidth / 2, y: shallowY + boxHeight / 2)
+            .position(x: railX + railWidth / 2, y: clampedTop + boxHeight / 2)
+            .opacity(boxHeight > 0 ? 1 : 0)
     }
 
     private func targetLine(at depth: Double, height: CGFloat) -> some View {
@@ -139,6 +150,11 @@ struct DepthGaugeRail: View {
         }
         .shadow(color: Color.black.opacity(0.35), radius: 2, x: 0, y: 1)
         .position(x: railX + 5, y: yPosition(for: depthMeters, height: height))
+    }
+
+    private func rawYPosition(for depth: Double, height: CGFloat) -> CGFloat {
+        let clampedDepth = min(max(depth, 0), scaleUpperBound)
+        return CGFloat(clampedDepth / scaleUpperBound) * height
     }
 }
 
