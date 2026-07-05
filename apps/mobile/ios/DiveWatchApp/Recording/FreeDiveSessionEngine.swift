@@ -28,6 +28,7 @@ struct FreeDiveSessionEngine {
     private let configuration: FreeDiveSegmentationConfiguration
     private var samples: [DepthSample] = []
     private var segments: [FreeDiveSegment] = []
+    private var activeSegmentID: UUID?
     private var activeStartIndex: Int?
     private var sustainedDescentStartIndex: Int?
     private var sustainedDescentStartedAt: Date?
@@ -54,12 +55,13 @@ struct FreeDiveSessionEngine {
     }
 
     var activeSegment: FreeDiveSegment? {
-        guard let activeStartIndex, activeStartIndex < samples.count, let latest = samples.last else {
+        guard let activeSegmentID, let activeStartIndex, activeStartIndex < samples.count, let latest = samples.last else {
             return nil
         }
 
         let segmentSamples = Array(samples[activeStartIndex..<samples.count])
         return makeSegment(
+            id: activeSegmentID,
             index: segments.count + 1,
             startIndex: activeStartIndex,
             endIndex: samples.count - 1,
@@ -105,6 +107,7 @@ struct FreeDiveSessionEngine {
             )
         }
 
+        activeSegmentID = nil
         activeStartIndex = nil
         sustainedDescentStartIndex = nil
         sustainedDescentStartedAt = nil
@@ -140,6 +143,7 @@ struct FreeDiveSessionEngine {
             return
         }
 
+        activeSegmentID = UUID()
         activeStartIndex = sustainedDescentStartIndex ?? max(0, samples.count - 1)
         surfaceCandidateStartedAt = nil
         state = .diveActive
@@ -162,6 +166,7 @@ struct FreeDiveSessionEngine {
         }
 
         segments.append(active)
+        activeSegmentID = nil
         activeStartIndex = nil
         sustainedDescentStartIndex = nil
         sustainedDescentStartedAt = nil
@@ -183,6 +188,7 @@ struct FreeDiveSessionEngine {
     }
 
     private func makeSegment(
+        id: UUID,
         index: Int,
         startIndex: Int,
         endIndex: Int,
@@ -191,7 +197,7 @@ struct FreeDiveSessionEngine {
     ) -> FreeDiveSegment {
         let start = segmentSamples.first?.timestamp ?? endTime
         return FreeDiveSegment(
-            id: UUID(),
+            id: id,
             index: index,
             startTime: start,
             endTime: endTime,

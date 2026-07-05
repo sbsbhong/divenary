@@ -22,6 +22,19 @@ final class FreeDiveSessionEngineTests: XCTestCase {
         XCTAssertEqual(engine.snapshot.activeSegment?.index, 1)
     }
 
+    func testActiveDiveSnapshotIsStableAcrossRepeatedReads() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        [0.2, 1.3, 1.6, 2.1, 2.8].enumerated().forEach { offset, depth in
+            engine.append(EngineTestFixtures.sample(TimeInterval(offset), depth: depth))
+        }
+
+        let first = engine.snapshot
+        let second = engine.snapshot
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(first.activeSegment?.id, second.activeSegment?.id)
+    }
+
     func testReturningToSurfaceClosesDiveOne() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
         for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5)] {
