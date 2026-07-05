@@ -37,6 +37,26 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
         engine.append(EngineTestFixtures.sample(5, depth: 2.1))
 
+        XCTAssertEqual(engine.state, .surfaceReady)
+        XCTAssertEqual(engine.snapshot.diveCount, 0)
+
+        engine.append(EngineTestFixtures.sample(6, depth: 2.8))
+
+        XCTAssertEqual(engine.state, .diveActive)
+        XCTAssertEqual(engine.snapshot.activeSegment?.sampleStartIndex, 0)
+    }
+
+    func testRapidAboveThresholdSamplesDoNotBypassSustainedDuration() {
+        var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
+        for (time, depth) in [(0.0, 0.2), (1.0, 1.3), (1.5, 1.6), (2.0, 2.1), (2.5, 2.8)] {
+            engine.append(EngineTestFixtures.sample(time, depth: depth))
+        }
+
+        XCTAssertEqual(engine.state, .surfaceReady)
+        XCTAssertEqual(engine.snapshot.diveCount, 0)
+
+        engine.append(EngineTestFixtures.sample(4, depth: 3.0))
+
         XCTAssertEqual(engine.state, .diveActive)
         XCTAssertEqual(engine.snapshot.activeSegment?.sampleStartIndex, 0)
     }
@@ -56,7 +76,7 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
     func testReturningToSurfaceClosesDiveOne() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
-        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5)] {
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0), (10, 0.7), (14, 0.5)] {
             engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
         }
 
@@ -78,7 +98,7 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
     func testSecondDescentCreatesDiveTwoInSameSession() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
-        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5), (20, 1.4), (21, 2.5), (23, 8.0)] {
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0), (10, 0.7), (14, 0.5), (20, 1.4), (21, 2.5), (23, 8.0)] {
             engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
         }
 
@@ -89,7 +109,7 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
     func testSurfaceIntervalTimerUsesPreviousSegmentEnd() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
-        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (10, 0.7), (14, 0.5)] {
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0), (10, 0.7), (14, 0.5)] {
             engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
         }
 
@@ -109,7 +129,7 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
     func testManualEndFinalizesOpenSegment() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
-        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0)] {
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0)] {
             engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
         }
 
@@ -121,7 +141,7 @@ final class FreeDiveSessionEngineTests: XCTestCase {
 
     func testAppendAfterSummaryDoesNotChangeSnapshot() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
-        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0)] {
+        for (time, depth) in [(0, 0.1), (1, 1.3), (2, 2.0), (3, 5.0), (4, 6.0)] {
             engine.append(EngineTestFixtures.sample(TimeInterval(time), depth: depth))
         }
         _ = engine.finish(at: EngineTestFixtures.date(9))

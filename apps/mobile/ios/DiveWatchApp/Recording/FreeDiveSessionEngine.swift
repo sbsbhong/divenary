@@ -4,7 +4,6 @@ struct FreeDiveSegmentationConfiguration: Equatable {
     var diveStartDepthThreshold: Double = 1.2
     var surfaceDepthThreshold: Double = 0.8
     var sustainedDescentDuration: TimeInterval = 3
-    var sustainedDescentSampleCount: Int = 3
     var surfaceConfirmDuration: TimeInterval = 4
 }
 
@@ -33,7 +32,6 @@ struct FreeDiveSessionEngine {
     private var activeStartIndex: Int?
     private var sustainedDescentSegmentStartIndex: Int?
     private var sustainedDescentStartedAt: Date?
-    private var sustainedDescentSampleCount = 0
     private var surfaceCandidateStartedAt: Date?
     private(set) var state: FreeDiveSessionState = .surfaceReady
 
@@ -117,7 +115,6 @@ struct FreeDiveSessionEngine {
         activeStartIndex = nil
         sustainedDescentSegmentStartIndex = nil
         sustainedDescentStartedAt = nil
-        sustainedDescentSampleCount = 0
         surfaceCandidateStartedAt = nil
         state = .summary
 
@@ -128,7 +125,6 @@ struct FreeDiveSessionEngine {
         guard sample.depthMeters >= configuration.diveStartDepthThreshold else {
             sustainedDescentSegmentStartIndex = nil
             sustainedDescentStartedAt = nil
-            sustainedDescentSampleCount = 0
             return
         }
 
@@ -144,14 +140,10 @@ struct FreeDiveSessionEngine {
                 sustainedDescentSegmentStartIndex = currentIndex
             }
             sustainedDescentStartedAt = sample.timestamp
-            sustainedDescentSampleCount = 1
-        } else {
-            sustainedDescentSampleCount += 1
         }
 
         guard let descentStart = sustainedDescentStartedAt,
-              sample.timestamp.timeIntervalSince(descentStart) >= configuration.sustainedDescentDuration ||
-              sustainedDescentSampleCount >= configuration.sustainedDescentSampleCount else {
+              sample.timestamp.timeIntervalSince(descentStart) >= configuration.sustainedDescentDuration else {
             return
         }
 
@@ -182,7 +174,6 @@ struct FreeDiveSessionEngine {
         activeStartIndex = nil
         sustainedDescentSegmentStartIndex = nil
         sustainedDescentStartedAt = nil
-        sustainedDescentSampleCount = 0
         surfaceCandidateStartedAt = nil
         state = .surfaceInterval
     }
