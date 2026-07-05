@@ -115,7 +115,20 @@
       }
     },
     "Air scuba reminder, not a dive computer." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Air scuba reminder, not a dive computer."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "공기 스쿠버 리마인더이며, 다이브 컴퓨터가 아닙니다."
+          }
+        }
+      }
     },
     "Ascent" : {
       "localizations" : {
@@ -321,6 +334,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "현재 수심"
+          }
+        }
+      }
+    },
+    "Depth gauge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth gauge"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심계"
           }
         }
       }
@@ -551,10 +580,36 @@
       }
     },
     "Freedive session" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freedive session"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙 세션"
+          }
+        }
+      }
     },
     "Freedive training reference only." : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freedive training reference only."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙 훈련 참고용입니다."
+          }
+        }
+      }
     },
     "Gas" : {
       "localizations" : {
@@ -1215,7 +1270,20 @@
       }
     },
     "Session time" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Session time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "세션 시간"
+          }
+        }
+      }
     },
     "Sessions" : {
       "localizations" : {
@@ -1427,7 +1495,20 @@
       }
     },
     "Training" : {
-
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Training"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "훈련"
+          }
+        }
+      }
     },
     "UNEXECUTED PLANS" : {
       "localizations" : {
