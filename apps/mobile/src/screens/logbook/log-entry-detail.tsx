@@ -7,6 +7,7 @@ import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
 import type { DiveFieldSource, DiveLogEntry, DiveLogManualMeasuredValues, DiveLogWatchMeasuredValues } from '../../types/dive-log-entry';
+import type { WatchSession } from '../../types/dive-session';
 import {
   formatDate,
   formatDepth,
@@ -116,6 +117,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
             {t('logbook.rating')}: {formatRating(props.entry.manual.rating, t('formatters.notRated'))}
           </Text>
           <ModeSpecificMetadata entry={props.entry} />
+          <WatchModeMetadata entry={props.entry} />
           {props.onEdit ? (
             <InstrumentButton testID="log-entry-detail-edit" label={t('logbook.editLog')} variant="primary" onPress={() => props.onEdit?.(props.entry)} />
           ) : null}
@@ -132,6 +134,100 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   );
 }
 
+function WatchModeMetadata(props: { entry: DiveLogEntry }): React.JSX.Element | null {
+  const session = props.entry.watchCapture?.session;
+
+  if (!session) {
+    return null;
+  }
+
+  if (session.diveMode === 'freedive' && session.freedive) {
+    return <WatchFreediveMetadata session={session} />;
+  }
+
+  if (session.diveMode === 'scuba' && session.scuba) {
+    return <WatchScubaMetadata session={session} />;
+  }
+
+  return null;
+}
+
+function WatchFreediveMetadata(props: { session: WatchSession }): React.JSX.Element {
+  const { t } = useTranslation();
+  const freedive = props.session.freedive!;
+  const recentSegments = [...freedive.segments]
+    .sort((left, right) => left.index - right.index)
+    .slice(-3);
+  const surfaceIntervalSeconds = getRecentSurfaceIntervalSeconds(freedive.segments);
+  const facts = compactFacts([
+    { id: 'dive-count', label: t('logbook.watchFreedive.diveCount'), value: `${freedive.diveCount}` },
+    { id: 'longest-dive', label: t('logbook.watchFreedive.longestDive'), value: formatDetailDuration(freedive.longestDiveDurationSeconds) },
+    surfaceIntervalSeconds === undefined
+      ? undefined
+      : { id: 'surface-interval', label: t('logbook.watchFreedive.surfaceInterval'), value: formatDuration(surfaceIntervalSeconds) },
+  ]);
+
+  return (
+    <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
+      <HStack className="items-center justify-between">
+        <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
+        <StatusPill label={t('logbook.watchFreedive.session')} tone="secondary" />
+      </HStack>
+      <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
+      {recentSegments.length > 0 ? (
+        <VStack space="xs">
+          {recentSegments.map(segment => (
+            <HStack key={segment.segmentId} className="items-center justify-between">
+              <Text className="text-sm leading-5 text-muted-foreground">
+                {t('logbook.watchFreedive.segmentLabel', { index: String(segment.index).padStart(2, '0') })}
+              </Text>
+              <Text className="text-sm font-semibold text-card-foreground">
+                {formatDetailDuration(segment.durationSeconds)} · {formatDepth(segment.maxDepthMeters)}
+              </Text>
+            </HStack>
+          ))}
+        </VStack>
+      ) : null}
+    </VStack>
+  );
+}
+
+function WatchScubaMetadata(props: { session: WatchSession }): React.JSX.Element {
+  const { t } = useTranslation();
+  const safetyStop = props.session.scuba!.safetyStop;
+  const facts = compactFacts([
+    {
+      id: 'status',
+      label: t('logbook.watchScuba.safetyStopStatus'),
+      value: getSafetyStopStatusLabel(safetyStop.status, t),
+    },
+    safetyStop.remainingSeconds > 0
+      ? {
+          id: 'remaining',
+          label: t('logbook.watchScuba.remaining'),
+          value: formatDuration(safetyStop.remainingSeconds),
+        }
+      : undefined,
+    safetyStop.timeInZoneSeconds > 0
+      ? {
+          id: 'time-in-zone',
+          label: t('logbook.watchScuba.timeInZone'),
+          value: formatDuration(safetyStop.timeInZoneSeconds),
+        }
+      : undefined,
+  ]);
+
+  return (
+    <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
+      <HStack className="items-center justify-between">
+        <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
+        <StatusPill label={t('logbook.watchScuba.safetyStopRecommended')} tone={getSafetyStopTone(safetyStop.status)} />
+      </HStack>
+      <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
+    </VStack>
+  );
+}
+
 function ModeSpecificMetadata(props: { entry: DiveLogEntry }): React.JSX.Element | null {
   const { t } = useTranslation();
   const facts = getModeFacts(props.entry, t);
@@ -143,16 +239,7 @@ function ModeSpecificMetadata(props: { entry: DiveLogEntry }): React.JSX.Element
   return (
     <VStack space="xs" className="rounded-2xl bg-muted px-4 py-4">
       <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.modeDetails')}</Text>
-      {facts.map(fact => (
-        <HStack key={fact.id} className="items-center justify-between">
-          <Text className="text-sm leading-5 text-muted-foreground">{fact.label}</Text>
-          <Text
-            testID={`log-entry-detail-mode-value-${fact.id}-${toTestIdValue(fact.value)}`}
-            className="text-sm font-semibold text-card-foreground">
-            {fact.value}
-          </Text>
-        </HStack>
-      ))}
+      <FactRows facts={facts} testIDPrefix="log-entry-detail-mode-value" />
     </VStack>
   );
 }
@@ -199,6 +286,23 @@ function getModeFacts(entry: DiveLogEntry, t: ReturnType<typeof useTranslation>[
 
 function compactFacts(facts: Array<{ id: string; label: string; value: string | undefined } | undefined>): ModeFact[] {
   return facts.filter((fact): fact is ModeFact => Boolean(fact?.value));
+}
+
+function FactRows(props: { facts: ModeFact[]; testIDPrefix: string }): React.JSX.Element {
+  return (
+    <>
+      {props.facts.map(fact => (
+        <HStack key={fact.id} className="items-center justify-between">
+          <Text className="text-sm leading-5 text-muted-foreground">{fact.label}</Text>
+          <Text
+            testID={`${props.testIDPrefix}-${fact.id}-${toTestIdValue(fact.value)}`}
+            className="text-sm font-semibold text-card-foreground">
+            {fact.value}
+          </Text>
+        </HStack>
+      ))}
+    </>
+  );
 }
 
 function DetailMetric(props: {
@@ -255,6 +359,42 @@ function getMeasuredValue(entry: DiveLogEntry, field: MeasuredField): { value: n
 
 function formatDetailDuration(seconds: number | undefined): string {
   return seconds === undefined ? '--:--' : formatDuration(seconds);
+}
+
+function getRecentSurfaceIntervalSeconds(segments: NonNullable<WatchSession['freedive']>['segments']): number | undefined {
+  const sortedSegments = [...segments].sort((left, right) => left.startedAt - right.startedAt);
+
+  if (sortedSegments.length < 2) {
+    return undefined;
+  }
+
+  const previousSegment = sortedSegments[sortedSegments.length - 2];
+  const latestSegment = sortedSegments[sortedSegments.length - 1];
+
+  return Math.max(0, latestSegment.startedAt - previousSegment.endedAt);
+}
+
+type SafetyStopStatus = NonNullable<WatchSession['scuba']>['safetyStop']['status'];
+type StatusPillTone = React.ComponentProps<typeof StatusPill>['tone'];
+
+function getSafetyStopStatusLabel(status: SafetyStopStatus, t: ReturnType<typeof useTranslation>['t']): string {
+  return t(`logbook.watchScuba.safetyStopStatuses.${status}`, { defaultValue: status });
+}
+
+function getSafetyStopTone(status: SafetyStopStatus): StatusPillTone {
+  if (status === 'completed') {
+    return 'success';
+  }
+
+  if (status === 'skippedOrIncomplete') {
+    return 'danger';
+  }
+
+  if (status === 'active' || status === 'armed' || status === 'pausedTooDeep' || status === 'pausedTooShallow') {
+    return 'warning';
+  }
+
+  return 'muted';
 }
 
 function numberToText(value: number | undefined): string | undefined {

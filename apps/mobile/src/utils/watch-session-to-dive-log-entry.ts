@@ -76,7 +76,7 @@ export const watchSessionToDiveLogEntry = (options: WatchSessionToDiveLogEntryOp
 const getManualMeasuredValues = (session: WatchSession): DiveLogManualMeasuredValues => {
   return {
     diveMode: session.diveMode,
-    gasLabel: session.gasLabel,
+    gasLabel: session.gasLabel ?? session.scuba?.gasLabel,
     perceivedExertion: session.perceivedExertion,
     visibilityRating: session.visibilityRating,
     waterCondition: session.waterCondition,

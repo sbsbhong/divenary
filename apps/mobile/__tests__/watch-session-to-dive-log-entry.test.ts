@@ -113,4 +113,110 @@ describe('watchSessionToDiveLogEntry', () => {
     expect(entry.manual.title).toBe('Blue Wall morning');
     expect(entry.watchCapture?.session.sourcePlanLocalId).toBe('plan-1');
   });
+
+  it('preserves freedive segments and uses freedive max depth for watch measured values', () => {
+    const segments = [
+      {
+        segmentId: 'freedive-segment-1',
+        index: 1,
+        startedAt: 1781352060,
+        endedAt: 1781352102,
+        durationSeconds: 42,
+        maxDepthMeters: 14.2,
+        minDepthMeters: 0,
+        sampleStartIndex: 0,
+        sampleEndIndex: 0,
+      },
+      {
+        segmentId: 'freedive-segment-2',
+        index: 2,
+        startedAt: 1781352240,
+        endedAt: 1781352304,
+        durationSeconds: 64,
+        maxDepthMeters: 18.7,
+        minDepthMeters: 0,
+        sampleStartIndex: 0,
+        sampleEndIndex: 0,
+      },
+    ];
+    const session: WatchSession = {
+      localSessionId: 'freedive-watch-session-1',
+      schemaVersion: 1,
+      diveMode: 'freedive',
+      startedAt: 1781352000,
+      endedAt: 1781352600,
+      samples: [],
+      freedive: {
+        diveCount: 2,
+        maxDepthMeters: 18.7,
+        longestDiveDurationSeconds: 64,
+        segments,
+      },
+    };
+
+    const entry = watchSessionToDiveLogEntry({
+      session,
+      now: 1781353000,
+    });
+
+    expect(entry.watchCapture?.session.freedive?.segments).toEqual(segments);
+    expect(entry.watchCapture?.measuredValues.maxDepthMeters).toBe(18.7);
+    expect(entry.watchCapture?.measuredValues.averageDepthMeters).toBeUndefined();
+  });
+
+  it('preserves scuba safety stop metadata and uses scuba payload values for watch measured values', () => {
+    const safetyStop = {
+      status: 'completed' as const,
+      required: true,
+      completed: true,
+      targetDepthMeters: 5,
+      minDepthMeters: 3,
+      maxDepthMeters: 6,
+      durationSeconds: 180,
+      startedAt: 1781352420,
+      completedAt: 1781352600,
+      remainingSeconds: 0,
+      timeInZoneSeconds: 180,
+    };
+    const session: WatchSession = {
+      localSessionId: 'scuba-watch-session-1',
+      schemaVersion: 1,
+      diveMode: 'scuba',
+      startedAt: 1781352000,
+      endedAt: 1781352900,
+      maxDepthMeters: 8,
+      averageDepthMeters: 4,
+      waterTemperatureCelsius: 20,
+      samples: [
+        {
+          localSessionId: 'scuba-watch-session-1',
+          timestamp: 1781352300,
+          depthMeters: 12,
+          waterTemperatureCelsius: 19,
+        },
+      ],
+      scuba: {
+        gasLabel: 'Nitrox 32',
+        maxDepthMeters: 30.2,
+        averageDepthMeters: 18.4,
+        waterTemperatureCelsius: 23.1,
+        latestAscentRateMetersPerMinute: 4.2,
+        maxAscentRateMetersPerMinute: 7.8,
+        safetyStop,
+      },
+    };
+
+    const entry = watchSessionToDiveLogEntry({
+      session,
+      now: 1781353000,
+    });
+
+    expect(entry.watchCapture?.session.scuba?.safetyStop).toEqual(safetyStop);
+    expect(entry.watchCapture?.measuredValues).toMatchObject({
+      maxDepthMeters: 30.2,
+      averageDepthMeters: 18.4,
+      waterTemperatureCelsius: 23.1,
+    });
+    expect(entry.manual.measuredValues.gasLabel).toBe('Nitrox 32');
+  });
 });

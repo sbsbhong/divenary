@@ -8,7 +8,7 @@ export const summarizeSession = (session: WatchSession): DiveSessionSummary => {
   const sampleCount = session.samples.length;
   const maxDepthMeters = getSessionMaxDepthMeters(session);
   const averageDepthMeters = getSessionAverageDepthMeters(session);
-  const waterTemperatureCelsius = session.waterTemperatureCelsius ?? averageTemperature(session.samples);
+  const waterTemperatureCelsius = getSessionWaterTemperatureCelsius(session);
   const durationSeconds = getSessionDurationSeconds(session);
 
   return {
@@ -24,12 +24,22 @@ export const getSessionDurationSeconds = (session: Pick<WatchSession, 'endedAt' 
   return session.endedAt === undefined ? undefined : Math.max(0, session.endedAt - session.startedAt);
 };
 
-export const getSessionMaxDepthMeters = (session: Pick<WatchSession, 'maxDepthMeters' | 'samples'>): number | undefined => {
-  return session.maxDepthMeters ?? maxDepth(session.samples);
+export const getSessionMaxDepthMeters = (
+  session: Pick<WatchSession, 'freedive' | 'maxDepthMeters' | 'samples' | 'scuba'>,
+): number | undefined => {
+  return session.scuba?.maxDepthMeters ?? session.freedive?.maxDepthMeters ?? session.maxDepthMeters ?? maxDepth(session.samples);
 };
 
-export const getSessionAverageDepthMeters = (session: Pick<WatchSession, 'averageDepthMeters' | 'samples'>): number | undefined => {
-  return session.averageDepthMeters ?? averageDepth(session.samples);
+export const getSessionAverageDepthMeters = (
+  session: Pick<WatchSession, 'averageDepthMeters' | 'samples' | 'scuba'>,
+): number | undefined => {
+  return session.scuba?.averageDepthMeters ?? session.averageDepthMeters ?? averageDepth(session.samples);
+};
+
+export const getSessionWaterTemperatureCelsius = (
+  session: Pick<WatchSession, 'samples' | 'scuba' | 'waterTemperatureCelsius'>,
+): number | undefined => {
+  return session.scuba?.waterTemperatureCelsius ?? session.waterTemperatureCelsius ?? averageTemperature(session.samples);
 };
 
 const maxDepth = (samples: WatchDepthSample[]): number | undefined => {
