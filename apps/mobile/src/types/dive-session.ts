@@ -1,12 +1,13 @@
 import type {
   WatchDepthSample,
   WatchSession,
+  WatchSessionCommon,
   WatchSyncMessage,
 } from '../../../../packages/contracts/generated/typescript';
 
 export type DiveLogbookSection = 'home' | 'logbook' | 'planning' | 'settings';
 
-export type MobileDiveSession = WatchSession & {
+export type MobileDiveSession = WatchSessionCommon & {
   importKey: string;
   importedAt: number;
   mediaPlaceholders: string[];
@@ -31,4 +32,4 @@ export type DiveSessionFilter = {
   tag?: string;
 };
 
-export type { WatchDepthSample, WatchSession, WatchSyncMessage };
+export type { WatchDepthSample, WatchSession, WatchSessionCommon, WatchSyncMessage };

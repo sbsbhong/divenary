@@ -1,4 +1,4 @@
-import type { WatchDepthSample, WatchSession } from './dive-session';
+import type { WatchDepthSample, WatchSession, WatchSessionCommon } from './dive-session';
 import type { DiveEntryStyle } from './dive-plan';
 
 export type DiveLogSource = 'manual' | 'watch';
@@ -65,7 +65,7 @@ export type DiveLogWatchMeasuredValues = {
 export type DiveLogWatchCapture = {
   importKey: string;
   importedAt: number;
-  session: WatchSession;
+  session: WatchSessionCommon;
   measuredValues: DiveLogWatchMeasuredValues;
   samples: WatchDepthSample[];
 };

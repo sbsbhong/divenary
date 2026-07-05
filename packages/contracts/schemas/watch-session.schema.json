@@ -375,6 +375,37 @@
       }
     ]
   },
+  "oneOf": [
+    {
+      "not": {
+        "required": [
+          "diveMode"
+        ]
+      }
+    },
+    {
+      "properties": {
+        "diveMode": {
+          "const": "freedive"
+        }
+      },
+      "required": [
+        "diveMode",
+        "freedive"
+      ]
+    },
+    {
+      "properties": {
+        "diveMode": {
+          "const": "scuba"
+        }
+      },
+      "required": [
+        "diveMode",
+        "scuba"
+      ]
+    }
+  ],
   "required": [
     "localSessionId",
     "startedAt",

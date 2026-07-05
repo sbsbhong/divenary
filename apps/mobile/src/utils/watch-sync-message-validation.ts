@@ -1,4 +1,4 @@
-import type { WatchDepthSample, WatchSession, WatchSyncMessage } from '../types/dive-session';
+import type { WatchDepthSample, WatchSession, WatchSessionCommon, WatchSyncMessage } from '../types/dive-session';
 
 export type WatchSyncMessageValidationError = {
   message: string;
@@ -209,7 +209,7 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     return failure(joinPath(path, 'samples'), `${joinPath(path, 'samples')} is required`);
   }
 
-  const session: WatchSession = {
+  const session: WatchSessionCommon = {
     localSessionId: localSessionId.value,
     startedAt: startedAt.value,
     samples: samples.value,
@@ -313,7 +313,7 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     return failure(joinPath(path, 'diveMode'), `${joinPath(path, 'diveMode')} is required for nested mode payloads`);
   }
 
-  return { ok: true, value: session };
+  return { ok: true, value: session as WatchSession };
 }
 
 function parseFreeDivePayload(value: unknown, path: string): ValidationResult<FreeDivePayload> {

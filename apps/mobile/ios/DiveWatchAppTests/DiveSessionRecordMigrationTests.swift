@@ -254,6 +254,140 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(session.segments.count, 1)
         XCTAssertEqual(session.maxDepthMeters, 12)
     }
+
+    func testFreediveSyncMessageEncodesOnlyFreedivePayload() throws {
+        let record = DiveSessionRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!,
+            schemaVersion: 2,
+            diveMode: .freedive,
+            siteId: nil,
+            siteName: "Blue Line",
+            sourcePlanLocalId: nil,
+            planTitle: nil,
+            buddyIds: [],
+            gearIds: [],
+            tags: ["watch-capture"],
+            notes: nil,
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
+            syncStatus: .pending,
+            entryLocation: nil,
+            exitLocation: nil,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(120),
+            samples: [
+                EngineTestFixtures.sample(0, depth: 0.4),
+                EngineTestFixtures.sample(30, depth: 12),
+                EngineTestFixtures.sample(60, depth: 0.5)
+            ],
+            payload: .freedive(
+                FreeDiveSession(
+                    id: UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!,
+                    startTime: EngineTestFixtures.date(0),
+                    endTime: EngineTestFixtures.date(120),
+                    totalDurationSeconds: 120,
+                    maxDepthMeters: 12,
+                    diveCount: 1,
+                    longestDiveDurationSeconds: 60,
+                    segments: [
+                        FreeDiveSegment(
+                            id: UUID(uuidString: "00000000-0000-0000-0000-00000000F101")!,
+                            index: 1,
+                            startTime: EngineTestFixtures.date(0),
+                            endTime: EngineTestFixtures.date(60),
+                            durationSeconds: 60,
+                            maxDepthMeters: 12,
+                            minDepthMeters: 0.4,
+                            sampleStartIndex: 0,
+                            sampleEndIndex: 2,
+                            descentRateMetersPerSecond: nil,
+                            ascentRateMetersPerSecond: nil
+                        )
+                    ]
+                )
+            )
+        )
+
+        let session = try syncSessionObject(from: record)
+        let freedive = try XCTUnwrap(session["freedive"] as? [String: Any])
+        XCTAssertNil(session["scuba"])
+        XCTAssertEqual(session["diveMode"] as? String, "freedive")
+        XCTAssertEqual((freedive["diveCount"] as? NSNumber)?.intValue, 1)
+        XCTAssertNotNil(freedive["segments"])
+    }
+
+    func testScubaSyncMessageEncodesOnlyScubaPayload() throws {
+        let record = DiveSessionRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000005C01")!,
+            schemaVersion: 2,
+            diveMode: .scuba,
+            siteId: nil,
+            siteName: nil,
+            sourcePlanLocalId: nil,
+            planTitle: nil,
+            buddyIds: [],
+            gearIds: [],
+            tags: ["watch-capture"],
+            notes: nil,
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
+            syncStatus: .pending,
+            entryLocation: nil,
+            exitLocation: nil,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(1200),
+            samples: [
+                EngineTestFixtures.sample(0, depth: 0),
+                EngineTestFixtures.sample(60, depth: 18),
+                EngineTestFixtures.sample(1200, depth: 0.5)
+            ],
+            payload: .scuba(
+                ScubaDiveSession(
+                    id: UUID(uuidString: "00000000-0000-0000-0000-000000005C01")!,
+                    startTime: EngineTestFixtures.date(0),
+                    endTime: EngineTestFixtures.date(1200),
+                    durationSeconds: 1200,
+                    maxDepthMeters: 18,
+                    averageDepthMeters: 9,
+                    waterTemperatureCelsius: 24,
+                    gasLabel: "Air",
+                    latestAscentRateMetersPerMinute: 0,
+                    maxAscentRateMetersPerMinute: 6,
+                    safetyStop: SafetyStopRecord(
+                        status: .completed,
+                        required: true,
+                        completed: true,
+                        targetDepthMeters: 5,
+                        minDepthMeters: 3,
+                        maxDepthMeters: 6,
+                        durationSeconds: 180,
+                        startedAt: EngineTestFixtures.date(1000),
+                        completedAt: EngineTestFixtures.date(1180),
+                        remainingSeconds: 0,
+                        timeInZoneSeconds: 180
+                    )
+                )
+            )
+        )
+
+        let session = try syncSessionObject(from: record)
+        let scuba = try XCTUnwrap(session["scuba"] as? [String: Any])
+        let safetyStop = try XCTUnwrap(scuba["safetyStop"] as? [String: Any])
+        XCTAssertNil(session["freedive"])
+        XCTAssertEqual(session["diveMode"] as? String, "scuba")
+        XCTAssertEqual(safetyStop["status"] as? String, "completed")
+        XCTAssertEqual((safetyStop["timeInZoneSeconds"] as? NSNumber)?.doubleValue, 180)
+    }
+
+    private func syncSessionObject(from record: DiveSessionRecord) throws -> [String: Any] {
+        let data = try record.syncMessageData()
+        let message = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try XCTUnwrap(message["session"] as? [String: Any])
+    }
 }
 
 private final class ManualDepthSensorProvider: DepthSensorProvider {

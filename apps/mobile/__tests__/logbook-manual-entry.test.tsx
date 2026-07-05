@@ -54,6 +54,24 @@ const watchEntry = watchSessionToDiveLogEntry({
     maxDepthMeters: 12,
     averageDepthMeters: 7,
     diveMode: 'scuba',
+    scuba: {
+      gasLabel: 'Air',
+      maxDepthMeters: 12,
+      averageDepthMeters: 7,
+      latestAscentRateMetersPerMinute: 0,
+      maxAscentRateMetersPerMinute: 0,
+      safetyStop: {
+        status: 'notRequired',
+        required: false,
+        completed: false,
+        targetDepthMeters: 5,
+        minDepthMeters: 3,
+        maxDepthMeters: 6,
+        durationSeconds: 180,
+        remainingSeconds: 180,
+        timeInZoneSeconds: 0,
+      },
+    },
     samples: [],
   } satisfies WatchSession,
 });
@@ -70,6 +88,12 @@ const secondPreciseWatchEntry = watchSessionToDiveLogEntry({
     maxDepthMeters: 18.6,
     averageDepthMeters: 8,
     diveMode: 'freedive',
+    freedive: {
+      diveCount: 1,
+      maxDepthMeters: 18.6,
+      longestDiveDurationSeconds: 602,
+      segments: [],
+    },
     samples: [],
   } satisfies WatchSession,
 });

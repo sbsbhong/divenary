@@ -7,7 +7,7 @@ import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
 import type { DiveFieldSource, DiveLogEntry, DiveLogManualMeasuredValues, DiveLogWatchMeasuredValues } from '../../types/dive-log-entry';
-import type { WatchSession } from '../../types/dive-session';
+import type { WatchSession, WatchSessionCommon } from '../../types/dive-session';
 import {
   formatDate,
   formatDepth,
@@ -152,7 +152,7 @@ function WatchModeMetadata(props: { entry: DiveLogEntry }): React.JSX.Element | 
   return null;
 }
 
-function WatchFreediveMetadata(props: { session: WatchSession }): React.JSX.Element {
+function WatchFreediveMetadata(props: { session: WatchSessionCommon }): React.JSX.Element {
   const { t } = useTranslation();
   const freedive = props.session.freedive!;
   const recentSegments = [...freedive.segments]
@@ -192,7 +192,7 @@ function WatchFreediveMetadata(props: { session: WatchSession }): React.JSX.Elem
   );
 }
 
-function WatchScubaMetadata(props: { session: WatchSession }): React.JSX.Element {
+function WatchScubaMetadata(props: { session: WatchSessionCommon }): React.JSX.Element {
   const { t } = useTranslation();
   const safetyStop = props.session.scuba!.safetyStop;
   const facts = compactFacts([

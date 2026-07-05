@@ -43,6 +43,7 @@ struct SummaryView: View {
                 }
 
                 modeSummarySection
+                commonMetricsSection
 
                 InstrumentCard(accent: DiveWatchTheme.secondary) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -112,6 +113,26 @@ struct SummaryView: View {
         }
     }
 
+    private var commonMetricsSection: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                MetricCard(title: String(localized: "Duration"), value: DiveFormatters.duration(summary.durationSeconds), compact: true)
+                MetricCard(title: String(localized: "Max Depth"), value: DiveFormatters.depth(summary.maxDepthMeters), compact: true)
+            }
+
+            InstrumentCard {
+                VStack(spacing: 6) {
+                    SummaryRow(title: String(localized: "Average depth"), value: DiveFormatters.depth(summary.averageDepthMeters))
+                    SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(summary.averageWaterTemperatureCelsius))
+                    SummaryRow(
+                        title: String(localized: "Ascent reminder max"),
+                        value: DiveFormatters.ascentRate(summary.maxAscentRateMetersPerMinute)
+                    )
+                }
+            }
+        }
+    }
+
     @ViewBuilder
     private var modeSummarySection: some View {
         switch session.payload {
@@ -172,9 +193,7 @@ private struct SafetyStopSummarySection: View {
 
                 SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
                 SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))
-                if safetyStop.timeInZoneSeconds > 0 {
-                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
-                }
+                SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
                 SummaryRow(title: String(localized: "Required"), value: localizedBoolean(safetyStop.required))
                 SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
 

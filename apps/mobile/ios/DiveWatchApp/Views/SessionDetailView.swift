@@ -52,15 +52,7 @@ struct SessionDetailView: View {
 
                 modeDetailSection
 
-                InstrumentCard(accent: DiveWatchTheme.secondary) {
-                    VStack(spacing: 6) {
-                        SummaryRow(title: String(localized: "Gas"), value: session.gasLabel ?? String(localized: "Not set"))
-                        SummaryRow(title: String(localized: "Site"), value: session.siteName ?? String(localized: "Not set"))
-                        SummaryRow(title: String(localized: "Rating"), value: DiveFormatters.rating(session.rating))
-                        SummaryRow(title: String(localized: "Visibility"), value: session.visibilityRating.map(String.init) ?? String(localized: "Not set"))
-                        SummaryRow(title: String(localized: "Water"), value: session.waterCondition.label)
-                    }
-                }
+                metadataSection
 
                 InstrumentCard {
                     VStack(alignment: .leading, spacing: 5) {
@@ -82,6 +74,20 @@ struct SessionDetailView: View {
         }
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .navigationTitle("Details")
+    }
+
+    private var metadataSection: some View {
+        InstrumentCard(accent: DiveWatchTheme.secondary) {
+            VStack(spacing: 6) {
+                if session.diveMode == .scuba {
+                    SummaryRow(title: String(localized: "Gas"), value: session.gasLabel ?? String(localized: "Not set"))
+                }
+                SummaryRow(title: String(localized: "Site"), value: session.siteName ?? String(localized: "Not set"))
+                SummaryRow(title: String(localized: "Rating"), value: DiveFormatters.rating(session.rating))
+                SummaryRow(title: String(localized: "Visibility"), value: session.visibilityRating.map(String.init) ?? String(localized: "Not set"))
+                SummaryRow(title: String(localized: "Water"), value: session.waterCondition.label)
+            }
+        }
     }
 
     @ViewBuilder

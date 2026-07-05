@@ -308,15 +308,33 @@ describe('WatchConnectivity native source contract', () => {
     const detail = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SessionDetailView.swift');
     const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
     const envelope = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncEnvelope.swift');
+    const recordTests = readRepoFile('apps/mobile/ios/DiveWatchAppTests/DiveSessionRecordMigrationTests.swift');
+    const schema = readRepoFile('packages/contracts/schemas/watch-session.schema.json');
+    const schemaJson = JSON.parse(schema) as { oneOf?: Array<{ required?: string[] }> };
+    const schemaModeBranches = JSON.stringify(schemaJson.oneOf ?? []);
+    const generatedTypes = readRepoFile('packages/contracts/generated/typescript/index.ts');
     const sessionPayloadBlock = record.slice(
       record.indexOf('private struct RecordWatchSessionPayload'),
       record.indexOf('private struct RecordWatchFreeDivePayload'),
     );
+    const summarySafetyStopBlock = summary.slice(
+      summary.indexOf('private struct SafetyStopSummarySection'),
+      summary.indexOf('private struct StarRatingControl'),
+    );
+    const detailMetadataBlock = detail.slice(
+      detail.indexOf('private var metadataSection'),
+      detail.indexOf('@ViewBuilder'),
+    );
 
     expect(summary).toContain('Free Session Summary');
     expect(summary).toContain('Safety Stop Summary');
+    expect(summary).toContain('commonMetricsSection');
+    expect(summarySafetyStopBlock).toContain('SummaryRow(title: String(localized: "Time in zone")');
+    expect(summarySafetyStopBlock).not.toContain('if safetyStop.timeInZoneSeconds > 0');
     expect(detail).toContain('Free Segment List');
     expect(detail).toContain('Safety Stop Result');
+    expect(detailMetadataBlock).toContain('if session.diveMode == .scuba');
+    expect(detailMetadataBlock).toContain('SummaryRow(title: String(localized: "Gas")');
     expect(envelope).toContain('try session.syncMessageData()');
     expect(record).toContain('func syncMessageData(type: String = "sessionEnded") throws -> Data');
     expect(sessionPayloadBlock).toContain('let freedive: RecordWatchFreeDivePayload?');
@@ -328,6 +346,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(sessionPayloadBlock).toContain('case .scuba(let scubaSession):');
     expect(sessionPayloadBlock).toContain('freedive = nil');
     expect(sessionPayloadBlock).toContain('scuba = RecordWatchScubaPayload(session: scubaSession)');
+    expect(recordTests).toContain('testFreediveSyncMessageEncodesOnlyFreedivePayload');
+    expect(recordTests).toContain('testScubaSyncMessageEncodesOnlyScubaPayload');
+    expect(generatedTypes).toContain('export interface WatchSessionCommon');
+    expect(generatedTypes).toContain('diveMode: "freedive"; freedive: FreeDivePayload; scuba?: never');
+    expect(generatedTypes).toContain('diveMode: "scuba"; scuba: ScubaPayload; freedive?: never');
+    expect(generatedTypes).not.toContain('[k: string]: unknown');
+    expect(schemaModeBranches).toContain('"required":["diveMode","freedive"]');
+    expect(schemaModeBranches).toContain('"required":["diveMode","scuba"]');
   });
 
   it('keeps watch recording state in mode-specific engines', () => {

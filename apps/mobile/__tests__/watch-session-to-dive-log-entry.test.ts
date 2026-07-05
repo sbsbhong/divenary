@@ -20,6 +20,25 @@ describe('watchSessionToDiveLogEntry', () => {
     maxDepthMeters: 12.4,
     averageDepthMeters: 7.1,
     waterTemperatureCelsius: 24.5,
+    scuba: {
+      gasLabel: 'Air',
+      maxDepthMeters: 12.4,
+      averageDepthMeters: 7.1,
+      waterTemperatureCelsius: 24.5,
+      latestAscentRateMetersPerMinute: 0,
+      maxAscentRateMetersPerMinute: 0,
+      safetyStop: {
+        status: 'notRequired',
+        required: false,
+        completed: false,
+        targetDepthMeters: 5,
+        minDepthMeters: 3,
+        maxDepthMeters: 6,
+        durationSeconds: 180,
+        remainingSeconds: 180,
+        timeInZoneSeconds: 0,
+      },
+    },
     samples: [
       {
         localSessionId: 'watch-session-1',
