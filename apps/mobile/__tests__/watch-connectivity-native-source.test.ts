@@ -242,6 +242,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(gauge).toContain('deepBlueGradient');
     expect(gauge).toContain('visibleRange');
     expect(gauge).toContain('clampedTop');
+    expect(gauge).toContain('guard maxScaleMeters.isFinite else { return 1 }');
+    expect(gauge).toContain('private func sanitizedDepth(_ depth: Double) -> Double');
+    expect(gauge).toContain('guard depth.isFinite else { return 0 }');
     expect(recording).toContain('safetyStopActive: recorder.safetyStopActive');
     expect(recording).toContain('displayedMaxDepthMeters');
     expect(recording).toContain('ceil(max(currentDepthMeters, displayedMaxDepthMeters) / 10) * 10');

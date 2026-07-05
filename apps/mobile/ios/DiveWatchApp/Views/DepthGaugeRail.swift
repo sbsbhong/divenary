@@ -59,7 +59,8 @@ struct DepthGaugeRail: View {
     }
 
     private var scaleUpperBound: Double {
-        max(maxScaleMeters, 1)
+        guard maxScaleMeters.isFinite else { return 1 }
+        return max(maxScaleMeters, 1)
     }
 
     private var tickValues: [Double] {
@@ -70,11 +71,11 @@ struct DepthGaugeRail: View {
             baseTicks = [0, 10, 20, scaleUpperBound]
         }
 
-        return Array(Set(baseTicks.map { min(max($0, 0), scaleUpperBound) })).sorted()
+        return Array(Set(baseTicks.map(sanitizedDepth))).sorted()
     }
 
     private func yPosition(for depth: Double, height: CGFloat) -> CGFloat {
-        let clampedDepth = min(max(depth, 0), scaleUpperBound)
+        let clampedDepth = sanitizedDepth(depth)
         let position = CGFloat(clampedDepth / scaleUpperBound) * height
         return min(max(position, 6), height - 6)
     }
@@ -98,13 +99,13 @@ struct DepthGaugeRail: View {
     }
 
     private func tickLabel(for depth: Double) -> String {
-        "\(Int(depth.rounded()))"
+        "\(Int(sanitizedDepth(depth).rounded()))"
     }
 
     private func stopZoneBox(_ zone: ClosedRange<Double>, height: CGFloat) -> some View {
         let visibleRange = (
-            lower: max(zone.lowerBound, 0),
-            upper: min(zone.upperBound, scaleUpperBound)
+            lower: sanitizedDepth(zone.lowerBound),
+            upper: sanitizedDepth(zone.upperBound)
         )
         let hasVisibleOverlap = visibleRange.lower < visibleRange.upper
         let shallowY = rawYPosition(for: visibleRange.lower, height: height)
@@ -153,8 +154,13 @@ struct DepthGaugeRail: View {
     }
 
     private func rawYPosition(for depth: Double, height: CGFloat) -> CGFloat {
-        let clampedDepth = min(max(depth, 0), scaleUpperBound)
+        let clampedDepth = sanitizedDepth(depth)
         return CGFloat(clampedDepth / scaleUpperBound) * height
+    }
+
+    private func sanitizedDepth(_ depth: Double) -> Double {
+        guard depth.isFinite else { return 0 }
+        return min(max(depth, 0), scaleUpperBound)
     }
 }
 
