@@ -45,7 +45,7 @@ Depth sample은 `localSessionId`, Unix-second `timestamp`, `depthMeters`를 requ
 Mobile import 동작은 다음과 같다.
 
 - `src/types/dive-session.ts`는 generated TypeScript contract type을 import한다.
-- `src/utils/watch-sync-message-validation.ts`는 원시 JSON string이나 `unknown` value가 `WatchSyncMessage` contract를 만족하는지 실행 시점에 검증한다. Mode와 nested payload가 맞지 않거나 `freedive`와 `scuba` payload가 동시에 있는 session은 import 전에 거부한다.
+- `src/utils/watch-sync-message-validation.ts`는 원시 JSON string이나 `unknown` value가 `WatchSyncMessage` contract를 만족하는지 실행 시점에 검증한다. Mode와 nested payload가 맞지 않거나 `freedive`와 `scuba` payload가 동시에 있는 session은 import 전에 거부한다. 다만 pre-upgrade watch가 이미 보낸 schema v1/unknown flat session 중 `diveMode`는 있지만 nested payload가 없는 payload는 import 전에 compatibility payload를 합성한다. Freedive는 one-segment payload로, scuba는 unknown safety stop 상태로 보강해 pending inbox 항목이 invalid로 acknowledge되어 유실되지 않게 한다.
 - `src/utils/watch-fixtures.ts`는 `packages/contracts/fixtures/metadata-rich-watch-sync-message.json`을 import하고 validator를 통과한 message만 앱 fixture로 export한다.
 - `src/native/watch-connectivity.ts`는 iOS native `WatchConnectivityModule`에서 전달되는 raw JSON payload를 React Native event와 drain method로 받고, 무효 payload drop acknowledge와 import 완료 acknowledge를 구분한다. 또한 planned dive update와 linked watch status query를 노출한다.
 - `src/states/watch-connectivity-sync.tsx`는 pending native payload를 drain하고 새 event를 구독한 뒤, validator를 통과한 payload를 repository import로 넘긴다. 저장에 성공한 WatchConnectivity 수신 항목은 mobile top-level `syncStatus`를 `synced`로 보정하고, raw watch capture 안의 원본 `session.syncStatus`는 보존한다. 새 entry를 자동 import한 경우 root navigation으로 imported entry를 전달해 safe-area 안쪽 toast를 띄우고, 사용자는 toast의 로그 작성 action으로 해당 Logbook detail route를 열거나 닫을 수 있다. Settings opt-in이 켜져 있고 앱이 foreground가 아니면 Notifee local notification도 요청한다.
@@ -82,7 +82,7 @@ Watch sync notification 동작은 다음과 같다.
 - Supabase upload 없음.
 - 인증된 사용자 연결 없음.
 - Generated Swift contract는 현재 watch target에 compile되지 않음.
-- Legacy watch sessions는 record adapter를 통해 새 mode-aware payload로 동기화될 수 있다. 기존 freedive log는 하나의 segment로 보존되고, 기존 scuba log의 safety stop 상태는 unknown 또는 not required로 취급한다.
+- Legacy watch sessions는 record adapter 또는 mobile runtime compatibility path를 통해 새 mode-aware payload로 동기화될 수 있다. 기존 freedive log는 하나의 segment로 보존되고, 기존 scuba log의 safety stop 상태는 unknown 또는 not required로 취급한다.
 
 ## 관련 문서
 

@@ -124,6 +124,7 @@ describe('watch sync message validation', () => {
       type: 'sessionEnded',
       session: {
         localSessionId: 'freedive-missing-payload',
+        schemaVersion: 2,
         diveMode: 'freedive',
         startedAt: 1781352000,
         samples: [{ localSessionId: 'freedive-missing-payload', timestamp: 1781352000, depthMeters: 0 }],
@@ -137,6 +138,48 @@ describe('watch sync message validation', () => {
     expect(result.error.message).toContain('session.freedive');
   });
 
+  it('normalizes legacy flat freedive payloads with diveMode before strict mode validation', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'legacy-flat-freedive',
+        schemaVersion: 1,
+        diveMode: 'freedive',
+        startedAt: 1781352000,
+        endedAt: 1781352060,
+        maxDepthMeters: 12.4,
+        averageDepthMeters: 5.8,
+        samples: [
+          { localSessionId: 'legacy-flat-freedive', timestamp: 1781352000, depthMeters: 0 },
+          { localSessionId: 'legacy-flat-freedive', timestamp: 1781352010, depthMeters: 12.4 },
+          { localSessionId: 'legacy-flat-freedive', timestamp: 1781352060, depthMeters: 0.4 },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.diveMode).toBe('freedive');
+    expect(result.message.session.freedive).toMatchObject({
+      diveCount: 1,
+      maxDepthMeters: 12.4,
+      longestDiveDurationSeconds: 60,
+    });
+    expect(result.message.session.freedive?.segments).toHaveLength(1);
+    expect(result.message.session.freedive?.segments[0]).toMatchObject({
+      index: 1,
+      startedAt: 1781352000,
+      endedAt: 1781352060,
+      durationSeconds: 60,
+      maxDepthMeters: 12.4,
+      minDepthMeters: 0,
+      sampleStartIndex: 0,
+      sampleEndIndex: 2,
+    });
+  });
+
   it('accepts scuba sessions with safety stop record', () => {
     const result = parseWatchSyncMessageValue(scubaSafetyStopFixture);
 
@@ -147,6 +190,53 @@ describe('watch sync message validation', () => {
     expect(result.message.session.diveMode).toBe('scuba');
     expect(result.message.session.scuba?.safetyStop.status).toBe('completed');
     expect(result.message.session.scuba?.safetyStop.timeInZoneSeconds).toBe(180);
+  });
+
+  it('normalizes legacy flat scuba payloads with diveMode before strict mode validation', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'legacy-flat-scuba',
+        schemaVersion: 1,
+        diveMode: 'scuba',
+        gasLabel: 'Air',
+        startedAt: 1781352000,
+        endedAt: 1781353200,
+        maxDepthMeters: 18.6,
+        averageDepthMeters: 9.4,
+        waterTemperatureCelsius: 24,
+        samples: [
+          { localSessionId: 'legacy-flat-scuba', timestamp: 1781352000, depthMeters: 0, waterTemperatureCelsius: 24 },
+          { localSessionId: 'legacy-flat-scuba', timestamp: 1781352600, depthMeters: 18.6, waterTemperatureCelsius: 23 },
+          { localSessionId: 'legacy-flat-scuba', timestamp: 1781353200, depthMeters: 0.6, waterTemperatureCelsius: 24 },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    expect(result.message.session.diveMode).toBe('scuba');
+    expect(result.message.session.scuba).toMatchObject({
+      gasLabel: 'Air',
+      maxDepthMeters: 18.6,
+      averageDepthMeters: 9.4,
+      waterTemperatureCelsius: 24,
+      latestAscentRateMetersPerMinute: 0,
+      maxAscentRateMetersPerMinute: 0,
+      safetyStop: {
+        status: 'unknown',
+        required: false,
+        completed: false,
+        targetDepthMeters: 5,
+        minDepthMeters: 3,
+        maxDepthMeters: 6,
+        durationSeconds: 180,
+        remainingSeconds: 180,
+        timeInZoneSeconds: 0,
+      },
+    });
   });
 
   it.each([
