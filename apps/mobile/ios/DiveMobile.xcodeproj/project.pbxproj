@@ -36,10 +36,19 @@
 		D905DC1DE35C97E43DD60078 /* DiveWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6359F0F795514043D38F67FB /* DiveWatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
+		FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000001 /* EngineTestFixtures.swift */; };
+		FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
 		20E16BA1C517607E9CCABB8A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5E4C91BDE6F8F1CE9908A029;
+			remoteInfo = DiveWatchApp;
+		};
+		FA3000000000000000000001 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
 			proxyType = 1;
@@ -96,6 +105,9 @@
 		D5B5388708193690CDCF20BB /* DiveSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionStore.swift; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecorder.swift; sourceTree = "<group>"; };
+		FA2000000000000000000001 /* EngineTestFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EngineTestFixtures.swift; sourceTree = "<group>"; };
+		FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreeDiveSessionEngineTests.swift; sourceTree = "<group>"; };
+		FA2000000000000000000003 /* DiveWatchAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DiveWatchAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +124,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA4000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -194,6 +213,7 @@
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
 				16C1CD0EF7BD44D4C334ABC3 /* DiveWatchApp */,
+				FA5000000000000000000001 /* DiveWatchAppTests */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -205,6 +225,7 @@
 			children = (
 				13B07F961A680F5B00A75B9A /* DiveMobile.app */,
 				6359F0F795514043D38F67FB /* DiveWatchApp.app */,
+				FA2000000000000000000003 /* DiveWatchAppTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -271,6 +292,15 @@
 			path = Recording;
 			sourceTree = "<group>";
 		};
+		FA5000000000000000000001 /* DiveWatchAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				FA2000000000000000000001 /* EngineTestFixtures.swift */,
+				FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */,
+			);
+			path = DiveWatchAppTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -315,6 +345,24 @@
 			productReference = 6359F0F795514043D38F67FB /* DiveWatchApp.app */;
 			productType = "com.apple.product-type.application";
 		};
+		FA6000000000000000000001 /* DiveWatchAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA8000000000000000000003 /* Build configuration list for PBXNativeTarget "DiveWatchAppTests" */;
+			buildPhases = (
+				FA4000000000000000000003 /* Sources */,
+				FA4000000000000000000001 /* Frameworks */,
+				FA4000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FA7000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = DiveWatchAppTests;
+			productName = DiveWatchAppTests;
+			productReference = FA2000000000000000000003 /* DiveWatchAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -324,6 +372,9 @@
 				LastUpgradeCheck = 1210;
 				TargetAttributes = {
 					13B07F861A680F5B00A75B9A = {
+						LastSwiftMigration = 1120;
+					};
+					FA6000000000000000000001 = {
 						LastSwiftMigration = 1120;
 					};
 				};
@@ -344,6 +395,7 @@
 			targets = (
 				13B07F861A680F5B00A75B9A /* DiveMobile */,
 				5E4C91BDE6F8F1CE9908A029 /* DiveWatchApp */,
+				FA6000000000000000000001 /* DiveWatchAppTests */,
 			);
 		};
 /* End PBXProject section */
@@ -365,6 +417,13 @@
 			files = (
 				C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */,
 				72F99C297E562922D87444A0 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA4000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -499,6 +558,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		FA4000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */,
+				FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -507,6 +575,12 @@
 			name = DiveWatchApp;
 			target = 5E4C91BDE6F8F1CE9908A029 /* DiveWatchApp */;
 			targetProxy = 20E16BA1C517607E9CCABB8A /* PBXContainerItemProxy */;
+		};
+		FA7000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DiveWatchApp;
+			target = 5E4C91BDE6F8F1CE9908A029 /* DiveWatchApp */;
+			targetProxy = FA3000000000000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -790,6 +864,61 @@
 			};
 			name = Release;
 		};
+		FA8000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.example.DiveMobile.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		FA8000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.example.DiveMobile.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "";
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -816,6 +945,15 @@
 			buildConfigurations = (
 				F85BD7A3A832F215EEE52819 /* Release */,
 				D2388F5831CBB4A9A7F5AE22 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FA8000000000000000000003 /* Build configuration list for PBXNativeTarget "DiveWatchAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA8000000000000000000002 /* Release */,
+				FA8000000000000000000001 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
