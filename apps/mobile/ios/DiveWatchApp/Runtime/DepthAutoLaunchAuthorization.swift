@@ -8,8 +8,8 @@ final class DepthAutoLaunchAuthorization: ObservableObject {
     func refresh() {
         WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus { status, error in
             Task { @MainActor in
-                if let error {
-                    self.statusText = error.localizedDescription
+                if error != nil {
+                    self.statusText = String(localized: "Auto launch status unavailable")
                 } else {
                     self.statusText = Self.displayText(for: status)
                 }

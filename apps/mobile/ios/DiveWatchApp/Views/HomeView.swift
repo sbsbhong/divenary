@@ -14,7 +14,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     HomeHeader(
                         sessionCount: store.sessions.count,
-                        sensorAvailable: sensorAvailability.isWaterSubmersionAvailable,
+                        sensorReadiness: sensorAvailability.readiness,
                         autoLaunchStatus: autoLaunchAuthorization.statusText
                     )
 
@@ -32,7 +32,7 @@ struct HomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(!sensorAvailability.isWaterSubmersionAvailable)
+                    .disabled(!sensorAvailability.canStartRealDive)
 
                     NavigationLink {
                         RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .real)
@@ -49,12 +49,13 @@ struct HomeView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .disabled(!sensorAvailability.isWaterSubmersionAvailable)
+                    .disabled(!sensorAvailability.canStartRealDive)
 
                     if !store.plannedDives.isEmpty {
                         PlannedDivesSection(
                             plannedDives: store.plannedDives,
                             selectedPlanLocalId: plan.sourcePlanLocalId,
+                            isSelectionEnabled: sensorAvailability.canSelectPlannedDives,
                             onSelect: apply(plannedDive:)
                         )
                     }
@@ -223,6 +224,7 @@ private final class DiveAutoStartMonitor: ObservableObject {
 private struct PlannedDivesSection: View {
     let plannedDives: [WatchPlannedDive]
     let selectedPlanLocalId: String?
+    let isSelectionEnabled: Bool
     let onSelect: (WatchPlannedDive) -> Void
 
     var body: some View {
@@ -253,6 +255,9 @@ private struct PlannedDivesSection: View {
                         }
 
                         Button {
+                            guard isSelectionEnabled else {
+                                return
+                            }
                             onSelect(plannedDive)
                         } label: {
                             Label(
@@ -261,6 +266,7 @@ private struct PlannedDivesSection: View {
                             )
                         }
                         .buttonStyle(DiveActionButtonStyle(kind: selectedPlanLocalId == plannedDive.localId ? .primary : .secondary))
+                        .disabled(!isSelectionEnabled)
                     }
 
                     if plannedDive.id != plannedDives.last?.id {
@@ -269,6 +275,7 @@ private struct PlannedDivesSection: View {
                 }
             }
         }
+        .opacity(isSelectionEnabled ? 1 : 0.48)
     }
 }
 
@@ -293,7 +300,7 @@ private struct PlannedDiveMetric: View {
 
 private struct HomeHeader: View {
     let sessionCount: Int
-    let sensorAvailable: Bool
+    let sensorReadiness: DepthSensorReadiness
     let autoLaunchStatus: String
 
     var body: some View {
@@ -301,18 +308,33 @@ private struct HomeHeader: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
                     StatusPill(
-                        title: sensorAvailable ? String(localized: "Sensor ready") : String(localized: "Ultra required"),
-                        color: sensorAvailable ? DiveWatchTheme.secondary : DiveWatchTheme.danger
+                        title: sensorReadiness.statusTitle,
+                        color: sensorReadiness == .ready ? DiveWatchTheme.secondary : DiveWatchTheme.danger
                     )
                     StatusPill(title: "\(sessionCount)", color: DiveWatchTheme.primary)
                 }
 
-                Text(autoLaunchStatus)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.68)
+                if sensorReadiness == .ready {
+                    Text(autoLaunchStatus)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.68)
+                }
             }
+        }
+    }
+}
+
+private extension DepthSensorReadiness {
+    var statusTitle: String {
+        switch self {
+        case .ready:
+            return String(localized: "Sensor ready")
+        case .simulatorRequiresRealWatch:
+            return String(localized: "Real Watch required")
+        case .unsupportedDevice:
+            return String(localized: "Ultra required")
         }
     }
 }

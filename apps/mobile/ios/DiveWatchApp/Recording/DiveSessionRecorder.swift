@@ -27,7 +27,7 @@ final class DiveSessionRecorder: ObservableObject {
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
 
-    init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode) {
+    init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode = .real) {
         self.sensorProvider = sensorProvider
         self.captureMode = captureMode
     }

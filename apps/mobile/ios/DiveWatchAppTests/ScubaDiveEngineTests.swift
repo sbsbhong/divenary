@@ -98,3 +98,44 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertFalse(session.safetyStop.completed)
     }
 }
+
+final class DepthSensorAvailabilityTests: XCTestCase {
+    func testSimulatorWithoutWaterSubmersionRequiresRealWatchAndDisablesRealDiveSelection() {
+        let availability = DepthSensorAvailability(
+            isWaterSubmersionAvailable: false,
+            authorizationStatusDescription: "notDetermined",
+            waterResistanceDescription: "unknown",
+            isRunningInSimulator: true
+        )
+
+        XCTAssertEqual(availability.readiness, .simulatorRequiresRealWatch)
+        XCTAssertFalse(availability.canStartRealDive)
+        XCTAssertFalse(availability.canSelectPlannedDives)
+    }
+
+    func testUnsupportedDeviceDisablesRealDiveSelection() {
+        let availability = DepthSensorAvailability(
+            isWaterSubmersionAvailable: false,
+            authorizationStatusDescription: "notDetermined",
+            waterResistanceDescription: "unknown",
+            isRunningInSimulator: false
+        )
+
+        XCTAssertEqual(availability.readiness, .unsupportedDevice)
+        XCTAssertFalse(availability.canStartRealDive)
+        XCTAssertFalse(availability.canSelectPlannedDives)
+    }
+
+    func testSupportedSensorAllowsManualRealDiveStartBeforeSubmersion() {
+        let availability = DepthSensorAvailability(
+            isWaterSubmersionAvailable: true,
+            authorizationStatusDescription: "authorized",
+            waterResistanceDescription: "wr100",
+            isRunningInSimulator: false
+        )
+
+        XCTAssertEqual(availability.readiness, .ready)
+        XCTAssertTrue(availability.canStartRealDive)
+        XCTAssertTrue(availability.canSelectPlannedDives)
+    }
+}

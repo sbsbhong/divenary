@@ -83,6 +83,7 @@
       }
     },
     "%lld m" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -359,6 +360,7 @@
       }
     },
     "Buddy" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -454,6 +456,22 @@
         }
       }
     },
+    "Crown-controlled sample dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown-controlled sample dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운으로 조절하는 샘플 다이브"
+          }
+        }
+      }
+    },
     "Current" : {
       "localizations" : {
         "en" : {
@@ -471,6 +489,7 @@
       }
     },
     "Current depth" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -486,23 +505,8 @@
         }
       }
     },
-    "Crown-controlled sample dive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crown-controlled sample dive"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "크라운으로 조절하는 샘플 다이브"
-          }
-        }
-      }
-    },
     "CURRENT DEPTH" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -519,6 +523,7 @@
       }
     },
     "Current dive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -550,22 +555,6 @@
         }
       }
     },
-    "Depth gauge" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Depth gauge"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "수심계"
-          }
-        }
-      }
-    },
     "Demo" : {
       "localizations" : {
         "en" : {
@@ -578,6 +567,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "데모"
+          }
+        }
+      }
+    },
+    "Depth gauge" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth gauge"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심계"
           }
         }
       }
@@ -610,6 +615,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "삭제"
+          }
+        }
+      }
+    },
+    "Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브"
           }
         }
       }
@@ -679,6 +700,7 @@
       }
     },
     "Dive Plan" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -695,6 +717,7 @@
       }
     },
     "DIVE PLAN" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -744,6 +767,7 @@
       }
     },
     "Dive Watch" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -760,6 +784,7 @@
       }
     },
     "Does not replace a certified dive computer." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -840,6 +865,7 @@
       }
     },
     "End to save session." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -954,6 +980,7 @@
       }
     },
     "Freedive training reference only." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -986,6 +1013,7 @@
       }
     },
     "Gas label" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1083,6 +1111,7 @@
       }
     },
     "logs" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1323,6 +1352,7 @@
       }
     },
     "PLAN DETAILS" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1355,6 +1385,7 @@
       }
     },
     "PLANNED MAX" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1465,6 +1496,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "평가"
+          }
+        }
+      }
+    },
+    "Real Watch required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Real Watch required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실기기 필요"
           }
         }
       }
@@ -1826,22 +1873,6 @@
         }
       }
     },
-    "Sensor ready" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Sensor ready"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "센서 준비됨"
-          }
-        }
-      }
-    },
     "Selected Plan" : {
       "localizations" : {
         "en" : {
@@ -1858,7 +1889,24 @@
         }
       }
     },
+    "Sensor ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sensor ready"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "센서 준비됨"
+          }
+        }
+      }
+    },
     "Session time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1891,6 +1939,7 @@
       }
     },
     "Set the plan, then start." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1972,6 +2021,7 @@
       }
     },
     "Start Planned Dive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2196,6 +2246,7 @@
       }
     },
     "Surface rest" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2324,6 +2375,7 @@
       }
     },
     "Timer paused" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2372,22 +2424,6 @@
         }
       }
     },
-    "UNEXECUTED PLANS" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "UNEXECUTED PLANS"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "미실행 계획"
-          }
-        }
-      }
-    },
     "Ultra required" : {
       "localizations" : {
         "en" : {
@@ -2400,6 +2436,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Ultra 필요"
+          }
+        }
+      }
+    },
+    "UNEXECUTED PLANS" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UNEXECUTED PLANS"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "미실행 계획"
           }
         }
       }
@@ -2470,6 +2522,7 @@
       }
     },
     "Watch assistant" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

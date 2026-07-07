@@ -39,7 +39,6 @@
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
 		D905DC1DE35C97E43DD60078 /* DiveWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6359F0F795514043D38F67FB /* DiveWatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
-		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 		FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000001 /* EngineTestFixtures.swift */; };
 		FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */; };
 		FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */; };
@@ -49,6 +48,7 @@
 		FA1000000000000000000008 /* SafetyStopController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000008 /* SafetyStopController.swift */; };
 		FA1000000000000000000009 /* ScubaDiveEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000009 /* ScubaDiveEngineTests.swift */; };
 		FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* ScubaDiveEngine.swift */; };
+		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -278,15 +278,6 @@
 			path = Storage;
 			sourceTree = "<group>";
 		};
-		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				3B4392A12AC88292D35C810B /* Pods-DiveMobile.debug.xcconfig */,
-				5709B34CF0A7D63546082F79 /* Pods-DiveMobile.release.xcconfig */,
-			);
-			path = Pods;
-			sourceTree = "<group>";
-		};
 		B30000000000000000000001 /* Runtime */ = {
 			isa = PBXGroup;
 			children = (
@@ -294,6 +285,15 @@
 			);
 			name = Runtime;
 			path = Runtime;
+			sourceTree = "<group>";
+		};
+		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				3B4392A12AC88292D35C810B /* Pods-DiveMobile.debug.xcconfig */,
+				5709B34CF0A7D63546082F79 /* Pods-DiveMobile.release.xcconfig */,
+			);
+			path = Pods;
 			sourceTree = "<group>";
 		};
 		C2D0DFFB26398A6FE9F151FC /* Views */ = {
