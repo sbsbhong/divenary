@@ -38,7 +38,7 @@ describe('LocalDiveLogRepository', () => {
       localId: 'watch:repo-watch-session-1:1781352600',
       createdAt: 1781354000,
       updatedAt: 1781354000,
-      syncStatus: 'synced',
+      syncStatus: 'pending',
       manual: {
         site: {
           name: 'Repository Reef',
@@ -126,7 +126,7 @@ describe('LocalDiveLogRepository', () => {
       localId: importedEntry.localId,
       createdAt: importedEntry.createdAt,
       updatedAt: 1781354000,
-      syncStatus: 'synced',
+      syncStatus: 'pending',
       manual: {
         site: { siteId: 'manual-site', name: 'Manual Reef' },
         buddyIds: ['manual-buddy'],
@@ -164,6 +164,7 @@ describe('LocalDiveLogRepository', () => {
       },
     });
     expect(reimportedEntry.watchCapture?.session.siteName).toBe('Watch Updated Reef');
+    expect(reimportedEntry.watchCapture?.session.syncStatus).toBe('synced');
     expect(reimportedEntry.watchCapture?.session.notes).toBe('Watch context should not overwrite manual edit.');
     expect(reimportedEntry.watchCapture?.measuredValues).toMatchObject({
       maxDepthMeters: 14,

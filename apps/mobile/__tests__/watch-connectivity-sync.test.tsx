@@ -5,7 +5,7 @@ import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-r
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
-import { WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
+import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const queryClients: QueryClient[] = [];
@@ -71,7 +71,7 @@ describe('WatchConnectivitySyncProvider', () => {
       depthMeters: 13.2,
       waterTemperatureCelsius: 24.1,
     });
-    expect(entries[0].syncStatus).toBe('synced');
+    expect(entries[0].syncStatus).toBe('pending');
     expect(entries[0].watchCapture?.session.syncStatus).toBe('pending');
     expect(queryClient.getQueryData(diveLogbookQueryKeys.list(repository))).toEqual(entries);
   });
@@ -137,10 +137,10 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const [entry] = await repository.list();
-    expect(entry.syncStatus).toBe('synced');
+    expect(entry.syncStatus).toBe('pending');
     expect(notifyImportedEntry).toHaveBeenCalledWith(expect.objectContaining({
       localId: entry.localId,
-      syncStatus: 'synced',
+      syncStatus: 'pending',
     }));
   });
 
@@ -182,8 +182,66 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(entries[0].watchCapture?.session.localSessionId).toBe('fixture-rich-session');
     expect(onImportedEntry).toHaveBeenCalledWith(expect.objectContaining({
       localId: entries[0].localId,
-      syncStatus: 'synced',
+      syncStatus: 'pending',
     }));
+  });
+
+  it('counts every acknowledged duplicate demo payload while keeping repository rows deduped', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const fixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        localSessionId: 'demo-duplicate-session',
+        captureMode: 'demo',
+        endedAt: 1781357600,
+        samples: metadataRichFixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'demo-duplicate-session',
+        })),
+      },
+    };
+
+    const summary = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [
+        {
+          payloadId: 'demo-payload-1',
+          payloadJson: JSON.stringify(fixture),
+          localSessionId: 'demo-duplicate-session',
+          receivedAt: 1781357600,
+        },
+        {
+          payloadId: 'demo-payload-2',
+          payloadJson: JSON.stringify(fixture),
+          localSessionId: 'demo-duplicate-session',
+          receivedAt: 1781357601,
+        },
+      ],
+      acknowledgePayloads,
+      acknowledgeImportedPayloads,
+    });
+
+    const entries = await repository.list();
+    expect(summary).toEqual({ receivedCount: 2, importedCount: 2 });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      syncStatus: 'pending',
+      watchCapture: {
+        session: {
+          localSessionId: 'demo-duplicate-session',
+          captureMode: 'demo',
+        },
+      },
+    });
+    expect(queryClient.getQueryData(diveLogbookQueryKeys.list(repository))).toEqual(entries);
+    expect(acknowledgePayloads).not.toHaveBeenCalled();
+    expect(acknowledgeImportedPayloads).toHaveBeenNthCalledWith(1, ['demo-payload-1']);
+    expect(acknowledgeImportedPayloads).toHaveBeenNthCalledWith(2, ['demo-payload-2']);
   });
 
   it('enriches planned watch logs and completes the source mobile plan', async () => {
@@ -346,7 +404,7 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const [entry] = await repository.list();
-    expect(entry.syncStatus).toBe('synced');
+    expect(entry.syncStatus).toBe('pending');
     expect(entry.manual.title).toBe('Plan save fails');
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['plan-save-fails-payload']);
     const originalPlan = await planRepository.get('plan-save-fails');
@@ -358,7 +416,7 @@ describe('WatchConnectivitySyncProvider', () => {
     );
   });
 
-  it('does not complete a source plan when the final synced log save fails', async () => {
+  it('does not complete a source plan when the final imported log save fails', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const planRepository = new LocalDivePlanRepository([
       {

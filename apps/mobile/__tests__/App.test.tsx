@@ -274,7 +274,7 @@ describe('App navigation', () => {
     expect(renderer!.root.findByType(Menu)).toBeTruthy();
   });
 
-  test('shows a tappable toast for automatic watch imports and opens the synced log', async () => {
+  test('shows a tappable toast for automatic watch imports and opens the imported log', async () => {
     const fixture = {
       ...metadataRichFixture,
       session: {
@@ -313,7 +313,7 @@ describe('App navigation', () => {
     const importedToastEntry = (await defaultDiveLogRepository.list()).find(
       entry => entry.watchCapture?.session.localSessionId === 'app-toast-session',
     );
-    expect(importedToastEntry?.syncStatus).toBe('synced');
+    expect(importedToastEntry?.syncStatus).toBe('pending');
 
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
     expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('로그 작성');

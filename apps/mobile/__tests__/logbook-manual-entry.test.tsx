@@ -162,6 +162,29 @@ scubaEntry.manual = {
   },
 };
 
+const watchScubaPressureEditEntry: DiveLogEntry = {
+  ...watchEntry,
+  localId: 'watch:scuba-pressure-edit:1781352600',
+  syncStatus: 'pending',
+  manual: {
+    ...watchEntry.manual,
+    site: { name: 'Watch Pressure Edit Reef' },
+    measuredValues: {
+      ...watchEntry.manual.measuredValues,
+      pressure: { unit: 'bar', start: 200 },
+    },
+  },
+  watchCapture: {
+    ...watchEntry.watchCapture!,
+    importKey: 'scuba-pressure-edit:1781352600',
+    session: {
+      ...watchEntry.watchCapture!.session,
+      localSessionId: 'scuba-pressure-edit',
+      siteName: 'Watch Pressure Edit Reef',
+    },
+  },
+};
+
 const hybridWatchEntry: DiveLogEntry = {
   ...watchEntry,
   localId: 'watch-entry-hybrid',
@@ -848,6 +871,39 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'logbook-list-status-Manual Reef' }).props.label).toBe('Local');
   });
 
+  test('shows current watch imports as pending cloud sync and keeps synced filter empty', async () => {
+    const syncedWatchEntry: DiveLogEntry = {
+      ...watchEntry,
+      localId: 'watch:visible-synced-as-pending:1781352600',
+      syncStatus: 'synced',
+      manual: {
+        ...watchEntry.manual,
+        site: { name: 'Visible Pending Reef' },
+      },
+      watchCapture: {
+        ...watchEntry.watchCapture!,
+        importKey: 'visible-synced-as-pending:1781352600',
+        session: {
+          ...watchEntry.watchCapture!.session,
+          localSessionId: 'visible-synced-as-pending',
+          siteName: 'Visible Pending Reef',
+        },
+      },
+    };
+    const repository = new LocalDiveLogRepository([syncedWatchEntry]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'logbook-list-status-Visible Pending Reef' }).props.label).toBe('Pending');
+
+    await press(root, 'logbook-filter-synced');
+    expect(root.findAllByProps({ testID: 'logbook-list-item-Visible Pending Reef' })).toHaveLength(0);
+    expect(root.findByProps({ testID: 'logbook-empty-state' })).toBeTruthy();
+
+    await press(root, 'logbook-filter-pending');
+    expect(root.findByProps({ testID: 'logbook-list-item-Visible Pending Reef' })).toBeTruthy();
+  });
+
   test('delegates log detail opening to the app route when provided', async () => {
     const onOpenEntry = jest.fn();
     const repository = new LocalDiveLogRepository([manualEntry]);
@@ -1080,7 +1136,7 @@ describe('Logbook manual entry flow', () => {
     expect(entries[0]).toMatchObject({
       localId: 'watch:watch-entry-1:1781352600',
       source: 'watch',
-      syncStatus: 'synced',
+      syncStatus: 'pending',
       manual: {
         site: { name: 'Edited Watch Reef' },
         notes: 'Reviewed on mobile.',
@@ -1296,6 +1352,24 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gas-label-EAN32' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gear-bcd-1,computer-1' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-water-condition-mild' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-mode-value-pressure-200bar->70bar' })).toBeTruthy();
+  });
+
+  test('editing a watch-sourced scuba log saves end pressure and detail displays both pressures', async () => {
+    const repository = new LocalDiveLogRepository([watchScubaPressureEditEntry]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-list-item-Watch Pressure Edit Reef');
+    await press(root, 'log-entry-detail-edit');
+    await changeNumber(root, 'log-entry-editor-pressure-end', 70);
+    await press(root, 'log-entry-editor-save');
+
+    const [savedEntry] = await repository.list();
+    expect(savedEntry.manual.measuredValues.pressure).toEqual({ unit: 'bar', start: 200, end: 70 });
+
+    await press(root, 'logbook-list-item-Watch Pressure Edit Reef');
+    expect(root.findByProps({ testID: 'log-entry-detail-source' }).props.label).toBe('Watch');
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-pressure-200bar->70bar' })).toBeTruthy();
   });
 });

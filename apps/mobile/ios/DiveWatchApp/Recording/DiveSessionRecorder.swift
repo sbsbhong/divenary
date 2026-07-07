@@ -155,6 +155,10 @@ final class DiveSessionRecorder: ObservableObject {
         isRecording = false
     }
 
+    func setDemoDepthMeters(_ depthMeters: Double) {
+        (sensorProvider as? DemoDepthSensorProvider)?.setDepthMeters(depthMeters)
+    }
+
     private func append(_ sample: DepthSample) {
         let previousSample = samples.last
         samples.append(sample)

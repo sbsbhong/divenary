@@ -1,16 +1,16 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
-Updated: 2026-07-05
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
+Updated: 2026-07-07
 
 ## 요약
 
-이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity/auto-launch/underwater sensor 검증은 아직 남아 있다.
+이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, watch debug controls, surface-gated end action, mobile cloud-pending status mapping, pressure metadata 표시, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐고, 실기기 WatchConnectivity/auto-launch/underwater sensor 검증과 실제 cloud sync 구현은 아직 남아 있다.
 
 ## 현재 상태
 
-모바일 앱은 `DiveLogRepository`와 `DivePlanRepository` 경계를 갖고 AsyncStorage 기반 persistent repository를 기본으로 사용한다. 모바일은 원시 watch sync JSON을 실행 시점에 검증한 뒤 `WatchSyncMessage`로 좁혀 import할 수 있다. Watch 앱 source는 `apps/mobile/ios/DiveWatchApp`로 이관됐고, `apps/mobile/ios/DiveMobile.xcodeproj`의 embedded companion target으로 관리된다. Watch 앱은 sync-ready JSON encoder, 로컬 저장 흐름, WatchConnectivity `transferUserInfo` enqueue, reachable `sendMessage`, activation/reachability 기반 pending retry, acknowledgement 기반 local sync status 갱신을 갖는다. 모바일 iOS app도 WatchConnectivity userInfo/message를 durable inbox에 저장한 뒤 React Native로 넘기는 receiver와 JS acknowledge 경로를 갖는다. `diveMode`는 현재 contract, generated TypeScript/Swift, runtime validator, 모바일 Logbook/Planbook UI, watch mode model에서 `scuba`와 `freedive`만 active mode로 둔다. Watch freedive는 한 session 안에 여러 `FreeDiveSegment`를 저장하고, scuba는 rule-based `SafetyStopController`와 mode-aware log payload를 갖는다. Watch 실기기 recording path는 `RealDepthSensorProvider`가 `CMWaterSubmersionManager`를 사용하고, fake sample은 명시적인 `DemoDepthSensorProvider`/`captureMode: demo` 경로로 분리됐다. 모바일은 Notifee 기반 watch sync notification service와 Settings opt-in을 갖고, Home은 provider-neutral 위치 조건 interface와 mock provider를 갖는다. 다만 entitlement, background delivery, 사용자-facing retry/backoff policy, 실기기 underwater sensor/auto-launch 검증은 아직 완료되지 않았다. Supabase, 인증, cloud backup은 아직 구현되어 있지 않다.
+모바일 앱은 `DiveLogRepository`와 `DivePlanRepository` 경계를 갖고 AsyncStorage 기반 persistent repository를 기본으로 사용한다. 모바일은 원시 watch sync JSON을 실행 시점에 검증한 뒤 `WatchSyncMessage`로 좁혀 import할 수 있다. Watch 앱 source는 `apps/mobile/ios/DiveWatchApp`로 이관됐고, `apps/mobile/ios/DiveMobile.xcodeproj`의 embedded companion target으로 관리된다. Watch 앱은 sync-ready JSON encoder, 로컬 저장 흐름, WatchConnectivity `transferUserInfo` enqueue, reachable `sendMessage`, activation/reachability 기반 pending retry, acknowledgement 기반 local sync status 갱신을 갖는다. 모바일 iOS app도 WatchConnectivity userInfo/message를 durable inbox에 저장한 뒤 React Native로 넘기는 receiver와 JS acknowledge 경로를 갖는다. `diveMode`는 현재 contract, generated TypeScript/Swift, runtime validator, 모바일 Logbook/Planbook UI, watch mode model에서 `scuba`와 `freedive`만 active mode로 둔다. Watch freedive는 한 session 안에 여러 `FreeDiveSegment`를 저장하고, scuba는 rule-based `SafetyStopController`와 mode-aware log payload를 갖는다. Watch 실기기 recording path는 `RealDepthSensorProvider`가 `CMWaterSubmersionManager`를 사용하고, fake sample은 명시적인 `DemoDepthSensorProvider`/`captureMode: demo` 경로로 분리됐다. `DiveWatchAppDebug`는 같은 target/bundle identity의 shared debug scheme으로 DEBUG 전용 `Test Freedive`/`Test Scuba` controls를 연다. 모바일은 Notifee 기반 watch sync notification service와 Settings opt-in을 갖고, Home은 provider-neutral 위치 조건 interface와 mock provider를 갖는다. Cloud sync는 아직 없으므로 imported watch log는 local save와 watch acknowledgement 뒤에도 visible cloud status를 `pending`으로 유지한다. 다만 entitlement, background delivery, 사용자-facing retry/backoff policy, 실기기 underwater sensor/auto-launch 검증은 아직 완료되지 않았다. Supabase, 인증, cloud backup은 아직 구현되어 있지 않다.
 
 ## 상세
 
@@ -38,6 +38,15 @@ Updated: 2026-07-05
    - Root `yarn watch:build`는 `@repo/mobile`의 watch build script로 위임한다.
    - 별도 watch workspace는 더 이상 active source로 취급하지 않는다.
    - 관련 문서: [Watch 앱 구조](watch-app.md), [모바일 구조](mobile.md), [Monorepo 구조](monorepo.md)
+
+4. Watch debug/demo sync logbook UX
+   - `DiveWatchAppDebug` shared scheme은 같은 watch target과 bundle identity를 유지하면서 `DIVE_WATCH_DEBUG_CONTROLS=1` 환경에서 DEBUG 전용 `Test Freedive`와 `Test Scuba` controls를 연다.
+   - Demo/debug recording은 Digital Crown controlled depth와 생성된 수온 sample을 쓰며, sync payload는 기존 `captureMode: demo`를 사용한다.
+   - Watch recording 화면은 full-height left depth gauge와 오른쪽 live value 구조를 사용하고, `End Dive`는 `<= 1.0m`에서 3초 안정된 뒤에만 보이며 `>= 1.2m`에서 다시 숨는다.
+   - Air-only safety stop reminder는 10m arm, 5m target, 3-6m displayed zone, 2.7-6.3m counting zone, 180초 duration, counting zone 밖 연속 30초 reset으로 구현됐다. Too-deep 상태는 전용 safety-stop UI 대신 일반 scuba live instrument로 돌아간다.
+   - Mobile logbook은 future cloud sync가 없으므로 imported watch log를 visible `pending`으로 표시하고, WatchConnectivity import acknowledgement와 cloud sync vocabulary를 분리한다.
+   - Status badge는 low-chroma chip으로 낮추고, edited watch-sourced scuba log의 pressure start/end 표시를 지원한다.
+   - 관련 문서: [Watch 앱 구조](watch-app.md), [동기화 흐름 구조](sync-flow.md), [다이브 로그 도메인](../domains/dive-log.md), [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)
 
 실기기 검증 전에 구현된 다음 항목은 다음과 같다.
 
@@ -80,6 +89,7 @@ Updated: 2026-07-05
 
 6. 모바일 로그 상세와 리뷰 고도화
    - 로그 작성과 수정의 기본 흐름 이후 depth/temperature profile, provenance 표시, mode별 summary, 검색과 filter UX를 다듬는 영역이다.
+   - 2026-07-07 기준 imported watch log의 cloud-pending status 표시, demo marker, mode별 section, edited watch-sourced pressure start/end 표시의 기본 동작은 구현됐다.
    - Watch 측정값은 원본 출처를 보존하고 인증된 장비값처럼 표현하지 않는다.
    - 관련 문서: [모바일 구조](mobile.md), [다이브 로그 도메인](../domains/dive-log.md)
 
@@ -96,6 +106,7 @@ Updated: 2026-07-05
 9. Auth와 Supabase 기반
    - Local-first 모델이 안정된 뒤 Supabase Auth, user-owned table, RLS, generated database type, remote repository를 설계한다.
    - Mobile code는 direct SQL을 사용하지 않고 repository 경계 뒤에서 remote storage를 다룬다.
+   - 현재 visible cloud sync status는 backend 부재를 반영해 non-local log를 `pending`으로 표시한다. 실제 cloud sync가 들어오면 이 mapping과 `synced`/`failed` 표시 정책을 다시 결정해야 한다.
    - 관련 문서: [Supabase 구조](supabase.md), [모바일 로그북 로드맵](mobile-logbook-roadmap.md)
 
 10. 출시 전 안전과 실기기 검증 체크리스트

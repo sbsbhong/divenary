@@ -19,10 +19,10 @@ const pillStyles = tva({
   base: 'self-start overflow-hidden rounded-full px-3 py-1 text-xs font-semibold uppercase',
   variants: {
     tone: {
-      primary: 'bg-primary text-primary-foreground',
-      secondary: 'bg-secondary text-secondary-foreground',
-      success: 'bg-primary text-primary-foreground',
-      warning: 'bg-secondary text-primary',
+      primary: 'bg-primary/10 text-primary',
+      secondary: 'bg-secondary/60 text-muted-foreground',
+      success: 'bg-primary/10 text-primary',
+      warning: 'bg-primary/10 text-primary',
       danger: 'bg-destructive/10 text-destructive',
       muted: 'bg-muted text-muted-foreground',
     },

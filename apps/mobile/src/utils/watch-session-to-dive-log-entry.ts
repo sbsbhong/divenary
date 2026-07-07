@@ -22,7 +22,7 @@ export const watchSessionToDiveLogEntry = (options: WatchSessionToDiveLogEntryOp
   return {
     localId,
     source: 'watch',
-    syncStatus: 'synced',
+    syncStatus: 'pending',
     createdAt: timestamp,
     updatedAt: timestamp,
     manual: {

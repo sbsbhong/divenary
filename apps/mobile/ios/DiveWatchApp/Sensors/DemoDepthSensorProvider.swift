@@ -5,12 +5,20 @@ final class DemoDepthSensorProvider: DepthSensorProvider {
 
     private var timer: Timer?
     private var elapsedSeconds: TimeInterval = 0
+    private var controlledDepthMeters: Double = 0
 
     private let sampleIntervalSeconds: TimeInterval = 1
-    private let cycleDurationSeconds: TimeInterval = 120
-    private let maxDepthMeters: Double = 13.5
+    private let maximumControlledDepthMeters: Double = 60
     private let surfacePressureKPa: Double = 101.325
     private let pressureIncreasePerMeterKPa: Double = 9.80665
+
+    func setDepthMeters(_ depthMeters: Double) {
+        controlledDepthMeters = sanitizedDepth(depthMeters)
+
+        if timer != nil {
+            emitSample()
+        }
+    }
 
     func start() {
         guard timer == nil else { return }
@@ -30,10 +38,10 @@ final class DemoDepthSensorProvider: DepthSensorProvider {
     }
 
     private func emitSample() {
-        let phase = (elapsedSeconds.truncatingRemainder(dividingBy: cycleDurationSeconds)) / cycleDurationSeconds
-        let depthMeters = depth(for: phase)
+        let phase = elapsedSeconds / max(sampleIntervalSeconds, 1)
+        let depthMeters = controlledDepthMeters
         let pressureKPa = surfacePressureKPa + depthMeters * pressureIncreasePerMeterKPa
-        let waterTemperatureCelsius = max(23.0, min(25.0, 24.6 - depthMeters * 0.08 + sin(phase * 2 * .pi) * 0.15))
+        let waterTemperatureCelsius = max(21.0, min(26.0, 25.2 - depthMeters * 0.05 + sin(phase * 0.3) * 0.12))
 
         onSample?(
             DepthSample(
@@ -44,21 +52,11 @@ final class DemoDepthSensorProvider: DepthSensorProvider {
         )
     }
 
-    private func depth(for phase: Double) -> Double {
-        if phase < 0.35 {
-            return maxDepthMeters * easeInOut(phase / 0.35)
+    private func sanitizedDepth(_ depthMeters: Double) -> Double {
+        guard depthMeters.isFinite else {
+            return 0
         }
 
-        if phase < 0.65 {
-            let holdPhase = (phase - 0.35) / 0.30
-            return maxDepthMeters + sin(holdPhase * 2 * .pi) * 0.35
-        }
-
-        return maxDepthMeters * (1 - easeInOut((phase - 0.65) / 0.35))
-    }
-
-    private func easeInOut(_ value: Double) -> Double {
-        let clamped = max(0, min(1, value))
-        return 0.5 - 0.5 * cos(clamped * .pi)
+        return min(max(0, depthMeters), maximumControlledDepthMeters)
     }
 }

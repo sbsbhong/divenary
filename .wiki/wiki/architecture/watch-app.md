@@ -1,18 +1,20 @@
 # Watch 앱 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
-Updated: 2026-07-05
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07
+Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
+Updated: 2026-07-07
 
 ## 요약
 
-`apps/mobile/ios/DiveWatchApp`는 현재 동작하는 SwiftUI watchOS companion 앱 source를 담는다. Xcode project는 `apps/mobile/ios/DiveMobile.xcodeproj`이고, watch target과 scheme은 `DiveWatchApp`이다. Watch 기록은 공통 session shell과 `freedive`/`scuba` mode-specific payload로 나뉘며, freedive 세션은 여러 dive segment를 담을 수 있고 scuba는 rule-based safety stop reminder 상태를 기록한다. 실기기 기록 경로는 `CMWaterSubmersionManager` 기반 real sensor provider를 사용하고, fake sample은 명시적인 demo mode에서만 쓴다.
+`apps/mobile/ios/DiveWatchApp`는 현재 동작하는 SwiftUI watchOS companion 앱 source를 담는다. Xcode project는 `apps/mobile/ios/DiveMobile.xcodeproj`이고, watch target과 기본 scheme은 `DiveWatchApp`이다. `DiveWatchAppDebug`는 같은 target과 bundle identity를 쓰는 shared debug scheme이며, DEBUG 환경에서만 watch Home의 테스트 시작 control을 연다. Watch 기록은 공통 session shell과 `freedive`/`scuba` mode-specific payload로 나뉘며, freedive 세션은 여러 dive segment를 담을 수 있고 scuba는 rule-based safety stop reminder 상태를 기록한다. 실기기 기록 경로는 `CMWaterSubmersionManager` 기반 real sensor provider를 사용하고, fake sample은 명시적인 demo/debug mode에서만 쓴다.
 
 ## 현재 상태
 
 현재 watch 앱 source는 `apps/mobile/ios/DiveWatchApp`이다. App entry는 `DiveSessionStore`를 만들고 `HomeView`를 render한다. 저장 model은 `DiveSessionRecord`이며 legacy `DiveSession`은 decode 후 record로 adapter된다.
 
 Watch 앱은 더 이상 별도 Yarn workspace나 standalone Xcode project를 사용하지 않는다. iPhone app 설치와 함께 배포될 companion embed 구조를 유지하기 위해 watch target membership은 `apps/mobile/ios/DiveMobile.xcodeproj`에서 관리한다.
+
+`DiveWatchAppDebug` scheme은 debug controls를 노출하기 위한 실행 환경만 다르게 둔다. 별도 watch target을 만들지 않고, bundle identifier, signing, provisioning, entitlement도 바꾸지 않는다.
 
 ## 상세
 
@@ -27,16 +29,20 @@ Watch 앱은 더 이상 별도 Yarn workspace나 standalone Xcode project를 사
 
 현재 watch flow는 다음과 같다.
 
-1. Home은 로그 브라우저보다 launchpad 역할을 우선한다. `scuba`와 `freedive`만 active mode로 두고, 스쿠버 시작과 프리 세션 시작을 주요 action으로 보여준다. 스쿠버 시작 copy는 stop reminder 범위로 제한한다. Watch Home은 watch-side plan 생성/편집을 제공하지 않고, 모바일에서 전달된 실행하지 않은 planned dive를 선택해 현재 plan에 반영한다. 사용자가 선택한 mode는 `UserDefaults`에 선호 다이빙 형태로 저장되고, 아직 선택한 적이 없거나 제거된 legacy mode를 읽으면 `.scuba`를 fallback으로 사용한다.
+1. Home은 로그 브라우저보다 launchpad 역할을 우선한다. `scuba`와 `freedive`만 active mode로 두고, 스쿠버 시작과 프리 세션 시작을 주요 action으로 보여준다. 스쿠버 시작 copy는 stop reminder 범위로 제한한다. Watch Home은 watch-side plan 생성/편집을 제공하지 않고, 모바일에서 전달된 실행하지 않은 planned dive를 선택해 현재 plan에 반영한다. DEBUG build에서 `DIVE_WATCH_DEBUG_CONTROLS=1`이면 `Test Freedive`와 `Test Scuba` 버튼이 추가되며, 이 버튼은 `.debugTest` recording mode로 들어간다. 사용자가 선택한 mode는 `UserDefaults`에 선호 다이빙 형태로 저장되고, 아직 선택한 적이 없거나 제거된 legacy mode를 읽으면 `.scuba`를 fallback으로 사용한다.
 2. Home은 `RealDepthSensorProvider`를 통해 자동 시작을 감시한다. 수심 sample이 3m 이상이면 현재 pre-dive plan으로 `RecordingView`를 열어 기록을 시작한다. 이 동작은 기록 편의를 위한 trigger이며 safety 판단이 아니다.
-3. `RecordingView`가 나타나면 기록이 자동으로 시작된다. 일반 real recording은 `RealDepthSensorProvider`를 사용하고, 명시적인 demo action만 `DemoDepthSensorProvider`를 사용한다. 저장 record와 sync payload에는 `captureMode`가 남아 모바일 review에서도 demo capture를 구분할 수 있다.
+3. `RecordingView`가 나타나면 기록이 자동으로 시작된다. 일반 real recording은 `RealDepthSensorProvider`를 사용하고, 명시적인 demo/debug action만 `DemoDepthSensorProvider`를 사용한다. Demo/debug recording은 Digital Crown으로 controlled depth를 조절하고, provider가 수심 기반 압력과 생성된 수온 sample을 만든다. 저장 record와 sync payload에는 기존 `captureMode: demo`가 남아 모바일 review에서도 demo capture를 구분할 수 있다. Debug/test 전용 enum은 sync contract에 추가하지 않는다.
 4. Recorder는 sample, current depth, max depth, water temperature, elapsed time을 공통으로 추적하고, mode별 상태 전이는 pure Swift engine에 위임한다. `FreeDiveSessionEngine`은 sustained descent와 surface confirmation threshold로 segment 시작/종료를 결정한다. `ScubaDiveEngine`은 sample summary와 ascent rate를 추적하고 `SafetyStopController`를 통해 stop reminder 상태를 갱신한다. SwiftUI는 snapshot을 렌더링한다.
 5. Freedive recording 화면은 surface ready, active segment, surface interval, summary 상태를 구분한다. Active segment에서는 현재 수심과 현재 dive time이 가장 크고, surface interval에서는 수면 휴식 시간이 가장 크다. 같은 freedive session 안에서 두 번째 하강은 새 `FreeDiveSegment`를 만들며 새 session을 만들지 않는다.
-6. Scuba recording 화면은 수심 최우선 계기판형으로 현재 수심, 경과 시간, 최대 수심, 상승 속도 참고값, 수온을 보여준다. Safety stop이 active/paused/completed 상태면 safety stop instrument가 live screen을 차지하고, 3-6m stop zone과 현재 수심을 `DepthGaugeRail`에도 표시한다. Stop zone 이탈은 설명 문구 대신 경고성 visual band로 표시한다.
+6. Recording 화면은 full-height left depth gauge와 오른쪽 live value 영역을 기본 구조로 삼고, live metric을 card처럼 반복하지 않는다. Scuba recording 화면은 수심 최우선 계기판형으로 현재 수심, 경과 시간, 최대 수심, 상승 속도 참고값, 수온을 보여준다. Safety stop이 active, paused-too-shallow, completed 상태면 safety stop instrument가 live screen을 차지하고, 3-6m stop zone과 현재 수심을 `DepthGaugeRail`에도 표시한다. Too-deep 상태는 전용 safety-stop UI에서 빠져 일반 scuba live instrument를 보여준다. Stop zone 이탈은 설명 문구 대신 경고성 visual band로 표시한다.
 7. 기록을 끝내면 post-dive rating, exertion, visibility를 별점 컨트롤로 남기고, water condition과 note field가 있는 summary를 보여준다. Summary와 detail은 freedive segment list와 scuba safety stop 상태를 mode별로 보여준다.
 8. 저장된 세션은 `UserDefaults`의 `savedDiveSessions` key에 저장되고 list/detail view에서 확인한다.
 9. `DiveSessionStore`는 저장 시 `WatchSyncTransport`를 통해 `DiveSessionRecord.syncMessageData()` 결과를 WatchConnectivity `transferUserInfo` envelope로 enqueue한다. `WCSession.isReachable`이면 같은 payload를 `sendMessage`로도 보낸다. activation 완료와 reachability 변경 시 아직 `synced`가 아닌 저장 세션을 다시 enqueue한다. WatchConnectivity transfer 오류가 나면 저장된 세션의 `syncStatus`를 `failed`로 갱신하고, 모바일 앱이 repository import 뒤 보낸 `watchSyncAcknowledgement`를 받으면 `synced`로 갱신한다.
 10. 모바일 계획에서 시작한 세션은 `plan-<localId>` tag로 source plan을 보존하고, 저장 후 해당 planned dive를 watch Home에서 숨긴다.
+
+`End Dive` 버튼은 active depth에서 숨긴다. 수심이 `<= 1.0m`로 3초 이상 안정되면 버튼이 보이고, 다시 `>= 1.2m`로 내려가면 버튼을 숨겨 수중에서 실수로 종료하지 않도록 한다. 이 gate는 기록 UX 제어일 뿐 안전 판단이 아니다.
+
+Scuba safety-stop reminder의 현재 rule constant는 max depth 10m에서 arm, target 5m, displayed zone 3-6m, counting zone 2.7-6.3m, duration 180초, counting zone 밖 연속 30초 뒤 reset이다. 이는 non-certified reminder/timer이며 감압, 조직 loading, gas safety, 상승 허가 계산이 아니다.
 
 모바일에서 전달된 planned dive는 `watchPlannedDives` envelope의 JSON으로 수신된다. `WatchSyncTransport`는 `didReceiveApplicationContext`와 `didReceiveMessage` 양쪽에서 이를 처리하고, `WCSession` activation 완료 시 `receivedApplicationContext`도 다시 읽는다. `DiveSessionStore`는 `savedWatchPlannedDives`와 `executedWatchPlanIds`를 `UserDefaults`에 저장한다. 실행 전 planned dive는 watch Home에서 선택하며, 실행된 plan id는 이후 planned dive 목록에서 제외한다.
 

@@ -72,6 +72,32 @@ struct HomeView: View {
                     }
                     .buttonStyle(.plain)
 
+                    if showsDebugControls {
+                        NavigationLink {
+                            RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .debugTest)
+                        } label: {
+                            StartSessionCard(
+                                title: "Test Freedive",
+                                subtitle: String(localized: "Debug depth control"),
+                                systemImage: "digitalcrown.arrow.clockwise",
+                                accent: DiveWatchTheme.primary
+                            )
+                        }
+                        .buttonStyle(.plain)
+
+                        NavigationLink {
+                            RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .debugTest)
+                        } label: {
+                            StartSessionCard(
+                                title: "Test Scuba",
+                                subtitle: String(localized: "Debug depth control"),
+                                systemImage: "digitalcrown.arrow.clockwise",
+                                accent: DiveWatchTheme.secondary
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     if let latestSession = store.sessions.first {
                         LatestSessionCard(session: latestSession)
                     }
@@ -109,6 +135,14 @@ struct HomeView: View {
                 autoStartMonitor.stopMonitoring()
             }
         }
+    }
+
+    private var showsDebugControls: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.environment["DIVE_WATCH_DEBUG_CONTROLS"] == "1"
+        #else
+        false
+        #endif
     }
 
     private var scubaStartSubtitle: String {

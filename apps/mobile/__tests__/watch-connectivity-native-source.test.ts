@@ -187,7 +187,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(record).toContain('enum DiveCaptureMode: String, Codable, Equatable');
     expect(record).toContain('let captureMode: DiveCaptureMode');
     expect(record).toContain('captureMode = session.captureMode.rawValue');
-    expect(recorder).toContain('init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode)');
+    expect(recorder).toContain('init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode = .real)');
     expect(recorder).toContain('captureMode: captureMode');
     expect(recording).toContain('enum WatchRecordingMode');
     expect(recording).toContain('case real');
@@ -207,6 +207,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(watchInfoPlist).toContain('<key>WKBackgroundModes</key>');
     expect(watchInfoPlist).toContain('<string>underwater-depth</string>');
     expect(watchInfoPlist).toContain('<key>NSMotionUsageDescription</key>');
+  });
+
+  it('provides a shared debug watch scheme without changing the target identity', () => {
+    const debugScheme = readRepoFile('apps/mobile/ios/DiveMobile.xcodeproj/xcshareddata/xcschemes/DiveWatchAppDebug.xcscheme');
+
+    expect(debugScheme).toContain('DiveWatchApp.app');
+    expect(debugScheme).toContain('DIVE_WATCH_DEBUG_CONTROLS');
+    expect(debugScheme).not.toContain('PRODUCT_BUNDLE_IDENTIFIER');
   });
 
   it('refreshes the watch home view with a top pull gesture', () => {
@@ -306,6 +314,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(gauge).toContain('deepBlueGradient');
     expect(gauge).toContain('visibleRange');
     expect(gauge).toContain('clampedTop');
+    expect(gauge).toContain('maxHeight: .infinity');
     expect(gauge).toContain('guard maxScaleMeters.isFinite else { return 1 }');
     expect(gauge).toContain('private func sanitizedDepth(_ depth: Double) -> Double');
     expect(gauge).toContain('guard depth.isFinite else { return 0 }');
@@ -320,6 +329,7 @@ describe('WatchConnectivity native source contract', () => {
 
   it('keeps mode-specific live instruments honest about depth, stop state, and safety calculation scope', () => {
     const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const demoProvider = readRepoFile('apps/mobile/ios/DiveWatchApp/Sensors/DemoDepthSensorProvider.swift');
     const watchUiCheck = readRepoFile('apps/mobile/scripts/check-watch-ui-language.mjs');
     const safetyStopRouting = recording.slice(
       recording.indexOf('private var shouldShowSafetyStopInstrument'),
@@ -329,13 +339,35 @@ describe('WatchConnectivity native source contract', () => {
       recording.indexOf('private struct FreeDiveActiveInstrument'),
       recording.indexOf('private struct FreeSurfaceIntervalInstrument'),
     );
+    const freeSurfaceReadyInstrument = recording.slice(
+      recording.indexOf('private struct FreeSurfaceReadyInstrument'),
+      recording.indexOf('private struct FreeDiveActiveInstrument'),
+    );
+    const freeSurfaceIntervalInstrument = recording.slice(
+      recording.indexOf('private struct FreeSurfaceIntervalInstrument'),
+      recording.indexOf('private struct FreeDiveSummaryInstrument'),
+    );
+    const freeDiveSummaryInstrument = recording.slice(
+      recording.indexOf('private struct FreeDiveSummaryInstrument'),
+      recording.indexOf('private struct ScubaLiveInstrument'),
+    );
     const safetyStopInstrument = recording.slice(
       recording.indexOf('private struct SafetyStopInstrument'),
       recording.indexOf('private struct LiveInstrumentMetric'),
     );
 
-    expect(safetyStopRouting).toContain('case .active, .pausedTooDeep, .pausedTooShallow, .completed:');
-    expect(safetyStopRouting).toContain('case .armed, .unknown, .notRequired, .skippedOrIncomplete:');
+    expect(safetyStopRouting).toContain('case .active, .pausedTooShallow, .completed:');
+    expect(safetyStopRouting).toContain('case .pausedTooDeep, .armed, .unknown, .notRequired, .skippedOrIncomplete:');
+    expect(recording).toContain('case debugTest');
+    expect(recording).toContain('digitalCrownRotation');
+    expect(recording).toContain('SurfaceEndDiveGate');
+    expect(recording).toContain('surfaceEndGate.isVisible');
+    expect(recording).toContain('recordingMode.usesCrownDepthControl');
+    expect(recording).toContain('InstrumentDepthLayout');
+    expect(recording).not.toContain('case .active, .pausedTooDeep, .pausedTooShallow, .completed:');
+    expect(freeSurfaceReadyInstrument).toContain('InstrumentDepthLayout(');
+    expect(freeSurfaceIntervalInstrument).toContain('InstrumentDepthLayout(');
+    expect(freeDiveSummaryInstrument).toContain('InstrumentDepthLayout(');
     expect(freeDiveActiveInstrument).toContain('DepthGaugeRail(');
     expect(freeDiveActiveInstrument).toContain('max(30, ceil(max(currentDepthMeters, maxDepthMeters) / 10) * 10)');
     expect(freeDiveActiveInstrument).toContain('String(localized: "Ascent")');
@@ -357,6 +389,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(watchUiCheck).toContain('감압 완료');
     expect(watchUiCheck).toContain('deco clear');
     expect(watchUiCheck).toContain('ceiling clear');
+    expect(demoProvider).toContain('func setDepthMeters');
+    expect(demoProvider).toContain('waterTemperatureCelsius');
+    expect(demoProvider).not.toContain('private func depth(for phase');
   });
 
   it('provides watch previews for live freedive and scuba safety stop states', () => {

@@ -195,7 +195,7 @@ async function importWatchConnectivityPayload({
   }
 
   const entries = await repository.importWatchMessages([result.message]);
-  const { importedEntry, syncedEntries } = await markWatchConnectivityImportSynced(
+  const { importedEntry, entries: importedEntries } = await markWatchConnectivityImported(
     repository,
     planRepository,
     queryClient,
@@ -204,7 +204,7 @@ async function importWatchConnectivityPayload({
     payload,
     queryScope,
   );
-  queryClient.setQueryData(diveLogbookQueryKeys.list(repository, queryScope), syncedEntries);
+  queryClient.setQueryData(diveLogbookQueryKeys.list(repository, queryScope), importedEntries);
   queryClient.invalidateQueries({ queryKey: diveLogbookQueryKeys.all(repository, queryScope) });
   await acknowledgePayload(payload, acknowledgeImportedPayloads);
   await notifyImportedEntrySafely(importedEntry, notifyImportedEntry);
@@ -237,7 +237,7 @@ async function acknowledgePayload(
   await acknowledgePayloads([payload.payloadId]);
 }
 
-async function markWatchConnectivityImportSynced(
+async function markWatchConnectivityImported(
   repository: DiveLogRepository,
   planRepository: DivePlanRepository,
   queryClient: QueryClient,
@@ -245,7 +245,7 @@ async function markWatchConnectivityImportSynced(
   message: WatchSyncMessage,
   payload: WatchConnectivityPayload,
   queryScope?: string,
-): Promise<{ importedEntry?: DiveLogEntry; syncedEntries: DiveLogEntry[] }> {
+): Promise<{ importedEntry?: DiveLogEntry; entries: DiveLogEntry[] }> {
   const importedEntry = entries.find(entry => {
     const session = entry.watchCapture?.session;
     return (
@@ -255,28 +255,28 @@ async function markWatchConnectivityImportSynced(
   });
 
   if (!importedEntry) {
-    return { syncedEntries: entries };
+    return { entries };
   }
 
   const sourcePlan = await findSourcePlan(planRepository, message);
   const enrichedEntry = sourcePlan ? enrichWatchLogWithSourcePlan(importedEntry, sourcePlan) : importedEntry;
 
-  const syncedEntry = await repository.save({
+  const savedEntry = await repository.save({
     ...enrichedEntry,
-    syncStatus: 'synced',
+    syncStatus: 'pending',
     updatedAt: payload.receivedAt ?? Date.now() / 1000,
   });
 
   if (sourcePlan) {
-    await completeSourcePlanSafely(planRepository, queryClient, sourcePlan, syncedEntry, message, payload, queryScope);
+    await completeSourcePlanSafely(planRepository, queryClient, sourcePlan, savedEntry, message, payload, queryScope);
   }
 
-  const syncedEntries = await repository.list();
-  const currentImportedEntry = syncedEntries.find(entry => entry.localId === syncedEntry.localId) ?? syncedEntry;
+  const currentEntries = await repository.list();
+  const currentImportedEntry = currentEntries.find(entry => entry.localId === savedEntry.localId) ?? savedEntry;
 
   return {
     importedEntry: currentImportedEntry,
-    syncedEntries,
+    entries: currentEntries,
   };
 }
 

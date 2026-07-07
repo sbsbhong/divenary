@@ -397,17 +397,27 @@ function applyModeMeasuredValue<Field extends ModeSpecificMeasuredField>(
   draftKey: keyof LogEntryFormValues,
   value: DiveLogManualMeasuredValues[Field],
 ): void {
-  if (!entry.watchCapture || isDirty(dirtyFields, draftKey)) {
+  const previousValue = entry.manual.measuredValues[field];
+  const pressureChanged =
+    field === 'pressure' && !arePressureValuesEqual(previousValue as DivePressureValues | undefined, value as DivePressureValues | undefined);
+
+  if (!entry.watchCapture || isDirty(dirtyFields, draftKey) || pressureChanged) {
     measuredValues[field] = value;
     provenance[field] = 'manual';
     return;
   }
 
-  const previousValue = entry.manual.measuredValues[field];
-
   if (previousValue !== undefined) {
     measuredValues[field] = previousValue;
   }
+}
+
+function arePressureValuesEqual(left: DivePressureValues | undefined, right: DivePressureValues | undefined): boolean {
+  return (
+    (left?.unit ?? 'bar') === (right?.unit ?? 'bar') &&
+    left?.start === right?.start &&
+    left?.end === right?.end
+  );
 }
 
 function applyModeSpecificValues(

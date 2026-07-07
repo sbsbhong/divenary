@@ -118,4 +118,16 @@ describe('Apple design system mapping', () => {
     expect(source).not.toMatch(/accent="(success|warning)"/);
     expect(source).not.toMatch(/tone="(success|warning)"/);
   });
+
+  test('keeps status pills low-chroma instead of primary filled button styling', () => {
+    const source = readSource('src', 'components', 'ui', 'instrument.tsx');
+    const statusPillStyles = source.slice(
+      source.indexOf('const pillStyles'),
+      source.indexOf('export function StatusPill'),
+    );
+
+    expect(statusPillStyles).not.toContain('bg-primary text-primary-foreground');
+    expect(statusPillStyles).not.toContain('bg-secondary text-secondary-foreground');
+    expect(statusPillStyles).toContain('bg-primary/10');
+  });
 });

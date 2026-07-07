@@ -21,6 +21,7 @@ import {
 import { supportedLanguages, type SupportedLanguage } from '../../i18n';
 import { useAppPreferences } from '../../states/app-preferences';
 import type { MobileDiveSession } from '../../types/dive-session';
+import { toVisibleRecentSessionSyncStatus } from '../../utils/dive-log-sync-status';
 import { formatDate, formatDepth, formatDuration, formatTemperature } from '../../utils/dive-formatters';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
 
@@ -40,7 +41,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   const recentMaxDepthMeters = recentSession ? getSessionMaxDepthMeters(recentSession) : undefined;
   const recentDurationSeconds = recentSession ? getSessionDurationSeconds(recentSession) : undefined;
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const syncStatus = recentSession?.syncStatus ?? 'pending';
+  const syncStatus = toVisibleRecentSessionSyncStatus(recentSession?.syncStatus);
   const conditionsProvider = props.conditionsProvider ?? mockHomeConditionsProvider;
   const [conditionsSnapshot, setConditionsSnapshot] = React.useState<HomeConditionsSnapshot>({ status: 'loading' });
   const scrollViewRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);

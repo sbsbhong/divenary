@@ -139,3 +139,40 @@ final class DepthSensorAvailabilityTests: XCTestCase {
         XCTAssertTrue(availability.canSelectPlannedDives)
     }
 }
+
+final class SurfaceEndDiveGateTests: XCTestCase {
+    func testEndButtonStaysHiddenUntilSurfaceDepthIsStableForThreeSeconds() {
+        var gate = SurfaceEndDiveGate()
+
+        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(0))
+        XCTAssertFalse(gate.isVisible)
+
+        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(2.9))
+        XCTAssertFalse(gate.isVisible)
+
+        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(3))
+        XCTAssertTrue(gate.isVisible)
+    }
+
+    func testEndButtonHidesWhenDepthReturnsPastHysteresis() {
+        var gate = SurfaceEndDiveGate()
+
+        gate.update(depthMeters: 0.8, at: EngineTestFixtures.date(0))
+        gate.update(depthMeters: 0.8, at: EngineTestFixtures.date(3))
+        XCTAssertTrue(gate.isVisible)
+
+        gate.update(depthMeters: 1.2, at: EngineTestFixtures.date(4))
+        XCTAssertFalse(gate.isVisible)
+    }
+}
+
+final class WatchRecordingModeTests: XCTestCase {
+    func testDebugTestUsesDemoCaptureModeForExistingSyncContract() {
+        XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
+    }
+
+    func testDemoAndDebugUseDemoDepthProvider() {
+        XCTAssertTrue(WatchRecordingMode.demo.sensorProvider() is DemoDepthSensorProvider)
+        XCTAssertTrue(WatchRecordingMode.debugTest.sensorProvider() is DemoDepthSensorProvider)
+    }
+}

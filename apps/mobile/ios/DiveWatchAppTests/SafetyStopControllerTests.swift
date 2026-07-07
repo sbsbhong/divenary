@@ -130,6 +130,41 @@ final class SafetyStopControllerTests: XCTestCase {
         XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
     }
 
+    func testOutsideCountingZoneForLessThanResetThresholdPreservesTimer() {
+        var controller = activeControllerWithTenSecondsCredited()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(20, depth: 6.8))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(49, depth: 6.8))
+
+        XCTAssertEqual(controller.record.status, .pausedTooDeep)
+        XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 10, accuracy: 0.01)
+        XCTAssertEqual(controller.record.startedAt, EngineTestFixtures.date(2))
+    }
+
+    func testOutsideCountingZoneForResetThresholdRestartsTimer() {
+        var controller = activeControllerWithTenSecondsCredited()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(20, depth: 6.8))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(50, depth: 6.8))
+
+        XCTAssertEqual(controller.record.status, .pausedTooDeep)
+        XCTAssertEqual(controller.record.remainingSeconds, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 0, accuracy: 0.01)
+        XCTAssertNil(controller.record.startedAt)
+    }
+
+    func testReEnteringZoneAfterResetStartsCountdownFromBeginning() {
+        var controller = activeControllerWithTenSecondsCredited()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(20, depth: 6.8))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(50, depth: 6.8))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(55, depth: 5))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(65, depth: 5))
+
+        XCTAssertEqual(controller.record.status, .active)
+        XCTAssertEqual(controller.record.startedAt, EngineTestFixtures.date(55))
+        XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 10, accuracy: 0.01)
+    }
+
     func testStatusTextDoesNotExposeBannedSafetyPhrases() {
         let labels = SafetyStopStatus.allCases.map(\.displayText)
         let joined = labels.joined(separator: " ")
@@ -144,6 +179,12 @@ final class SafetyStopControllerTests: XCTestCase {
         var controller = SafetyStopController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(0, depth: 12))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(2, depth: 5))
+        return controller
+    }
+
+    private func activeControllerWithTenSecondsCredited() -> SafetyStopController {
+        var controller = activeController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 5))
         return controller
     }
 }

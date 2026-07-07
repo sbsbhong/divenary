@@ -16,6 +16,7 @@ import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DiveSessionFilter } from '../../types/dive-session';
 import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
+import { toVisibleCloudSyncStatus, type VisibleCloudSyncStatus } from '../../utils/dive-log-sync-status';
 import { formatDate, formatDepth, formatDuration } from '../../utils/dive-formatters';
 import { diveLogEntryToMobileSession } from '../../states/use-dive-logbook';
 import { LogEntryDetail } from './log-entry-detail';
@@ -43,7 +44,6 @@ type LogbookScreenProps = {
 };
 
 type SyncFilter = 'all' | 'synced' | 'pending';
-type VisibleSyncStatus = 'localOnly' | 'synced' | 'pending' | 'failed';
 type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
@@ -64,7 +64,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       return props.entries;
     }
 
-    return props.entries.filter(entry => toVisibleSyncStatus(entry.syncStatus) === syncFilter);
+    return props.entries.filter(entry => toVisibleCloudSyncStatus(entry.syncStatus) === syncFilter);
   }, [props.entries, syncFilter]);
   const [selectedId, setSelectedId] = React.useState(visibleEntries[0]?.localId);
   const selectedEntry = visibleEntries.find(entry => entry.localId === selectedId);
@@ -262,14 +262,22 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               />
             </Input>
             <HStack space="xs" className="rounded-full bg-muted p-1">
-              <SelectorPill className="flex-1" label={t('logbook.all')} selected={syncFilter === 'all'} onPress={() => setSyncFilter('all')} />
               <SelectorPill
+                testID="logbook-filter-all"
+                className="flex-1"
+                label={t('logbook.all')}
+                selected={syncFilter === 'all'}
+                onPress={() => setSyncFilter('all')}
+              />
+              <SelectorPill
+                testID="logbook-filter-synced"
                 className="flex-1"
                 label={t('logbook.synced')}
                 selected={syncFilter === 'synced'}
                 onPress={() => setSyncFilter('synced')}
               />
               <SelectorPill
+                testID="logbook-filter-pending"
                 className="flex-1"
                 label={t('logbook.pending')}
                 selected={syncFilter === 'pending'}
@@ -365,7 +373,7 @@ function SessionListItem(props: {
 }): React.JSX.Element {
   const session = diveLogEntryToMobileSession(props.entry);
   const listMetrics = getListMetrics(props.entry);
-  const status = toVisibleSyncStatus(props.entry.syncStatus);
+  const status = toVisibleCloudSyncStatus(props.entry.syncStatus);
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const tags = session.tags?.length ? session.tags.join(', ') : t('logbook.noTags');
@@ -437,7 +445,7 @@ function toTestIdValue(value: string): string {
   return value.replace(/\s+/g, '');
 }
 
-const syncStatusTone = (status: VisibleSyncStatus): InstrumentTone => {
+const syncStatusTone = (status: VisibleCloudSyncStatus): InstrumentTone => {
   if (status === 'synced') {
     return 'primary';
   }
@@ -447,16 +455,4 @@ const syncStatusTone = (status: VisibleSyncStatus): InstrumentTone => {
   }
 
   return status === 'localOnly' ? 'muted' : 'secondary';
-};
-
-const toVisibleSyncStatus = (syncStatus: DiveLogEntry['syncStatus']): VisibleSyncStatus => {
-  if (syncStatus === 'localOnly') {
-    return 'localOnly';
-  }
-
-  if (syncStatus === 'synced' || syncStatus === 'failed') {
-    return syncStatus;
-  }
-
-  return 'pending';
 };

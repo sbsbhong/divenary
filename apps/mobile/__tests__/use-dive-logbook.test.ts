@@ -1,6 +1,11 @@
 import { diveLogEntryToMobileSession } from '../src/states/use-dive-logbook';
-import type { DiveLogEntry } from '../src/types/dive-log-entry';
+import type { DiveLogEntry, DiveLogSyncStatus } from '../src/types/dive-log-entry';
 import { createBlankDiveLogEntry } from '../src/utils/create-dive-log-entry';
+import {
+  toMobileSessionSyncStatus,
+  toVisibleCloudSyncStatus,
+  toVisibleRecentSessionSyncStatus,
+} from '../src/utils/dive-log-sync-status';
 
 describe('diveLogEntryToMobileSession', () => {
   it('overlays manual context onto watch-backed compatibility sessions', () => {
@@ -94,6 +99,37 @@ describe('diveLogEntryToMobileSession', () => {
     });
   });
 
+  it.each(['pending', 'synced', 'failed'] as const)(
+    'maps non-local entry sync status %s to visible cloud-pending mobile session state',
+    syncStatus => {
+      expect(diveLogEntryToMobileSession(createWatchBackedEntry(syncStatus)).syncStatus).toBe('pending');
+    },
+  );
+
+  it('keeps local-only manual entries out of visible cloud sync status', () => {
+    const entry = createBlankDiveLogEntry({
+      localId: 'manual-local-only',
+      now: 1781351000,
+    });
+
+    expect(diveLogEntryToMobileSession(entry).syncStatus).toBeUndefined();
+  });
+
+  it('centralizes current visible cloud sync status mapping', () => {
+    expect(toVisibleCloudSyncStatus('localOnly')).toBe('localOnly');
+    expect(toVisibleCloudSyncStatus('pending')).toBe('pending');
+    expect(toVisibleCloudSyncStatus('synced')).toBe('pending');
+    expect(toVisibleCloudSyncStatus('failed')).toBe('pending');
+
+    expect(toMobileSessionSyncStatus('localOnly')).toBeUndefined();
+    expect(toMobileSessionSyncStatus('synced')).toBe('pending');
+
+    expect(toVisibleRecentSessionSyncStatus(undefined)).toBe('pending');
+    expect(toVisibleRecentSessionSyncStatus('pending')).toBe('pending');
+    expect(toVisibleRecentSessionSyncStatus('synced')).toBe('pending');
+    expect(toVisibleRecentSessionSyncStatus('failed')).toBe('pending');
+  });
+
   it('falls back to the raw watch note when a watch-backed entry has no manual note', () => {
     const entry: DiveLogEntry = {
       localId: 'watch:session-raw-note:1781352600',
@@ -175,3 +211,40 @@ describe('diveLogEntryToMobileSession', () => {
     expect(diveLogEntryToMobileSession(entry).notes).toBe('Watch quick note after summary');
   });
 });
+
+function createWatchBackedEntry(syncStatus: DiveLogSyncStatus): DiveLogEntry {
+  return {
+    localId: `watch:session-${syncStatus}:1781352600`,
+    source: 'watch',
+    syncStatus,
+    createdAt: 1781353000,
+    updatedAt: 1781354000,
+    manual: {
+      site: { name: 'Visible Status Reef' },
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      observedMarineLife: [],
+      measuredValues: {},
+    },
+    mobile: {
+      mediaPlaceholders: [],
+    },
+    watchCapture: {
+      importKey: `session-${syncStatus}:1781352600`,
+      importedAt: 1781353000,
+      session: {
+        localSessionId: `session-${syncStatus}`,
+        startedAt: 1781352000,
+        endedAt: 1781352600,
+        samples: [],
+      },
+      measuredValues: {
+        startedAt: 1781352000,
+        endedAt: 1781352600,
+      },
+      samples: [],
+    },
+    provenance: {},
+  };
+}

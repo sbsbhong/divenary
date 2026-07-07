@@ -1,9 +1,9 @@
 # 열린 질문
 
-Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Pre-Karpathy: 열린 질문](../../raw/questions/open-questions.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
-Updated: 2026-07-05
-Last reviewed: 2026-07-05
+Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07
+Raw: [Pre-Karpathy: 열린 질문](../../raw/questions/open-questions.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
+Updated: 2026-07-07
+Last reviewed: 2026-07-07
 
 ## 요약
 
@@ -18,11 +18,12 @@ Last reviewed: 2026-07-05
 - Watch sync notification은 Notifee와 Settings opt-in으로 구현됐지만, background/killed 상태에서 WatchConnectivity 수신 뒤 local repository 저장과 local notification 표시가 실제 기기에서 어떻게 동작하는지는 검증되지 않았다.
 - Settings의 기기 관리는 공개 `WCSession` 상태를 표시하지만, 사용자가 설정한 Apple Watch 이름을 읽는 공개 API는 아직 확인되지 않았다. 현재 native fallback 이름은 `Apple Watch`다.
 - Supabase schema, RLS policy, auth, repository, cloud backup은 구현되지 않았다.
+- 현재 모바일 Logbook은 cloud sync 부재를 반영해 imported watch log를 visible `pending`으로 표시한다. 실제 cloud sync가 들어오면 `pending`/`synced`/`failed` 표시 정책, retry UI, local acknowledgement와 remote sync의 연결 방식을 다시 설계해야 한다.
 - 모바일 Logbook, Planbook, 설정 선호는 AsyncStorage 기반 versioned JSON store에 저장된다. 다만 version 1 이후의 schema migration behavior와 guest data retention 정책은 아직 추가 설계가 필요하다.
 - `scuba`/`freedive` 두 모드 축소는 contract, generated type, validator, 모바일 UI, watch mode model에 구현됐고 Logbook/Planbook은 v2 storage key reset을 사용한다. Legacy local v1 데이터 retention/마이그레이션 정책은 future production 전환 전에는 여전히 별도 결정이 필요하다.
 - Home 위치 조건 UI는 provider-neutral interface와 static mock provider로 구현됐지만, 실제 API adapter와 위치 권한 정책은 아직 구현되지 않았다.
 - Generated Swift contract는 존재하지만 현재 `DiveWatchApp` target에서 참조되지 않는다.
-- v1 Air-only safety stop trigger/countdown/copy의 watch implementation은 rule-based reminder 범위로 들어갔다. 다만 이 값들이 실제 underwater sensor에서 충분히 안정적인지, haptic/젖은 화면/시야 조건에서 사용자에게 적절한지는 지원 hardware 수동 검증이 필요하다.
+- v1 Air-only safety stop trigger/countdown/copy의 watch implementation은 rule-based reminder 범위로 들어갔다. 현재 값은 10m arm, 5m target, 3-6m displayed zone, 2.7-6.3m counting zone, 180초 duration, counting zone 밖 연속 30초 reset이다. 다만 이 값들이 실제 underwater sensor에서 충분히 안정적인지, haptic/젖은 화면/시야 조건에서 사용자에게 적절한지는 지원 hardware 수동 검증이 필요하다.
 - `CMWaterSubmersionManager` temperature update는 depth update와 독립적이다. 현재 watch sample model은 temperature를 non-optional로 요구하므로, 첫 temperature update 전 fallback 값을 쓰는 구조를 실제 review 품질 기준에 맞게 재검토해야 한다.
 - Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, depth sensor sampling/background 검증, 수심 필터, CNS table, Bühlmann coefficient source, mandatory deco 처리, tank transmitter, export format은 별도 제품 질문으로 남아 있다.
 

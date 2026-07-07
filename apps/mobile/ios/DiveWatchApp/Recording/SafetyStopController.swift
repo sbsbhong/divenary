@@ -9,12 +9,14 @@ struct SafetyStopConfiguration: Equatable {
     var countingMaxDepthMeters: Double = 6.3
     var durationSeconds: TimeInterval = 180
     var stableTransitionDuration: TimeInterval = 2
+    var outOfZoneResetSeconds: TimeInterval = 30
 }
 
 struct SafetyStopController {
     private let configuration: SafetyStopConfiguration
     private var lastSample: DepthSample?
     private var startedAt: Date?
+    private var outsideZoneStartedAt: Date?
     private var completedAt: Date?
     private var remainingSeconds: TimeInterval
     private var timeInZoneSeconds: TimeInterval = 0
@@ -60,6 +62,7 @@ struct SafetyStopController {
 
         switch zoneStatus(for: sample.depthMeters) {
         case .inside:
+            outsideZoneStartedAt = nil
             if startedAt == nil {
                 startedAt = sample.timestamp
             }
@@ -72,13 +75,9 @@ struct SafetyStopController {
                 completedAt = sample.timestamp.addingTimeInterval(-(elapsed - creditedElapsed))
             }
         case .tooDeep:
-            if startedAt != nil {
-                status = .pausedTooDeep
-            }
+            updateOutsideZoneState(status: .pausedTooDeep, sample: sample)
         case .tooShallow:
-            if startedAt != nil {
-                status = .pausedTooShallow
-            }
+            updateOutsideZoneState(status: .pausedTooShallow, sample: sample)
         }
     }
 
@@ -90,6 +89,24 @@ struct SafetyStopController {
     private func elapsedSinceLastSample(to sample: DepthSample) -> TimeInterval {
         guard let lastSample else { return 0 }
         return max(0, sample.timestamp.timeIntervalSince(lastSample.timestamp))
+    }
+
+    private mutating func updateOutsideZoneState(status nextStatus: SafetyStopStatus, sample: DepthSample) {
+        guard startedAt != nil || outsideZoneStartedAt != nil else { return }
+
+        if outsideZoneStartedAt == nil {
+            outsideZoneStartedAt = sample.timestamp
+        }
+
+        status = nextStatus
+
+        guard let outsideZoneStartedAt else { return }
+        let elapsedOutsideZone = max(0, sample.timestamp.timeIntervalSince(outsideZoneStartedAt))
+        guard elapsedOutsideZone >= configuration.outOfZoneResetSeconds else { return }
+
+        remainingSeconds = configuration.durationSeconds
+        timeInZoneSeconds = 0
+        startedAt = nil
     }
 
     private func zoneStatus(for depth: Double) -> ZoneStatus {

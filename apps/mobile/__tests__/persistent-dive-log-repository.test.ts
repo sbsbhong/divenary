@@ -98,8 +98,9 @@ describe('PersistentDiveLogRepository', () => {
     expect(reimportedEntry.localId).toBe(importedEntry.localId);
     expect(reimportedEntry.manual.site.name).toBe('Edited Reef');
     expect(reimportedEntry.manual.notes).toBe('Keep mobile edits.');
-    expect(reimportedEntry.syncStatus).toBe('synced');
+    expect(reimportedEntry.syncStatus).toBe('pending');
     expect(reimportedEntry.watchCapture?.session.siteName).toBe('Updated Watch Reef');
+    expect(reimportedEntry.watchCapture?.session.syncStatus).toBe('synced');
     expect(reimportedEntry.watchCapture?.measuredValues.maxDepthMeters).toBe(18);
   });
 

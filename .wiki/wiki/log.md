@@ -1,5 +1,22 @@
 # Wiki Log
 
+## [2026-07-07] ingest | Watch debug demo sync logbook UX
+- Added: Watch debug demo sync logbook UX raw source
+- Updated: Watch 앱 구조
+- Updated: 동기화 흐름 구조
+- Updated: 다이브 로그 도메인
+- Updated: 안전 규칙
+- Updated: Mobile/Watch UI 언어
+- Updated: 구현 우선순위 기록
+- Updated: 열린 질문
+- Updated: Diving App / Open Questions
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 결정: 같은 target을 쓰는 `DiveWatchAppDebug` scheme, DEBUG-only `Test Freedive`/`Test Scuba`, 기존 `captureMode: demo`, Crown-controlled demo/debug depth, surface-gated end button
+  - 구현: safety-stop constant, too-deep routing, future cloud sync와 분리된 local WatchConnectivity acknowledgement, 현재 visible cloud status pending, low-chroma status chip, pressure start/end metadata 표시
+- 요약:
+  - Watch debug/demo UX와 mobile logbook sync/status 표시를 문서화했다. Native import acknowledgement는 local save 확인이고 cloud sync가 아니며, Air-only safety stop과 pressure metadata는 non-certified logging/reminder 범위로 유지한다.
+
 ## [2026-07-05] ingest | Watch real-device readiness and explicit demo mode
 - Added: Watch real-device readiness and explicit demo mode raw source
 - Updated: Watch 앱 구조

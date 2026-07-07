@@ -55,13 +55,13 @@ describe('watchSessionToDiveLogEntry', () => {
     ],
   };
 
-  it.each(['pending', 'synced', 'failed'] as const)('marks imported mobile log synced while preserving raw watch status %s', syncStatus => {
+  it.each(['pending', 'synced', 'failed'] as const)('marks imported mobile log cloud-pending while preserving raw watch status %s', syncStatus => {
     const entry = watchSessionToDiveLogEntry({
       session: { ...baseSession, syncStatus },
       now: 1781353000,
     });
 
-    expect(entry.syncStatus).toBe('synced');
+    expect(entry.syncStatus).toBe('pending');
     expect(entry.watchCapture?.session.syncStatus).toBe(syncStatus);
   });
 
@@ -109,7 +109,7 @@ describe('watchSessionToDiveLogEntry', () => {
     expect(entry.localId).toBe('watch:watch-session-1:1781352600');
     expect(entry.watchCapture?.importKey).toBe('watch-session-1:1781352600');
     expect(entry.source).toBe('watch');
-    expect(entry.syncStatus).toBe('synced');
+    expect(entry.syncStatus).toBe('pending');
     expect(entry.createdAt).toBe(1781353000);
     expect(entry.updatedAt).toBe(1781353000);
     expect(entry.watchCapture?.session).toBe(baseSession);

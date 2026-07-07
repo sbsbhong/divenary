@@ -1,18 +1,18 @@
 # Diving App / Open Questions
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md)
-Updated: 2026-07-05
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
+Updated: 2026-07-07
 Status: Draft / Needs Validation
 Owner: local product/dev agent
-Last reviewed: 2026-07-05
+Last reviewed: 2026-07-07
 Change policy: open questions can be updated when decisions have source-backed rationale
 Related pages: [Diving App / Immutable Algorithm Reference](../algorithms/diving-app-algorithm-reference.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md); [Diving App / Product Roadmap](../project/diving-app-product-roadmap.md)
 Slug: diving-app-open-questions
 
 ## 요약
 
-이 문서는 Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 아직 결정해야 할 질문을 저장한다. v1 Air-only safety stop reminder의 기본 trigger/countdown/copy와 `CMWaterSubmersionManager` 기반 real sensor provider는 watch implementation에 들어갔지만, 실제 underwater sensor behavior, auto-launch, store-level Ultra-only filtering, 사용자 설정 정책은 아직 지원 hardware와 배포 채널에서 검증해야 한다.
+이 문서는 Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 아직 결정해야 할 질문을 저장한다. v1 Air-only safety stop reminder의 기본 trigger/countdown/reset/copy와 `CMWaterSubmersionManager` 기반 real sensor provider는 watch implementation에 들어갔지만, 실제 underwater sensor behavior, auto-launch, store-level Ultra-only filtering, 사용자 설정 정책은 아직 지원 hardware와 배포 채널에서 검증해야 한다.
 
 ## 질문
 
@@ -20,7 +20,7 @@ Slug: diving-app-open-questions
 2. v2를 Air+Nitrox no-decompression mode로 시작할지, Nitrox만 v2의 차별 기능으로 둘지? v1은 Air-only safety stop까지 포함한다.
 3. Apple Watch Ultra의 depth sensor sampling rate, auto-launch prompt, background execution behavior를 실제 기기에서 어떻게 검증할지?
 4. 수심 센서값 이상치 제거 필터와 temperature fallback 정책을 어떤 방식으로 구현할지?
-5. v1 Air-only safety stop 기본값은 10m arm threshold, 5m/180초 target, 3-6m displayed zone으로 구현됐다. 이 값을 사용자 설정이나 plan override로 얼마나 열지, 실제 센서 노이즈에서 pause/resume과 이탈 marker가 충분히 안정적인지는 실기기 검증 뒤 결정해야 한다.
+5. v1 Air-only safety stop 기본값은 10m arm threshold, 5m/180초 target, 3-6m displayed zone, 2.7-6.3m counting zone, counting zone 밖 연속 30초 reset으로 구현됐다. Too-deep 상태는 전용 safety-stop UI 대신 일반 scuba live instrument로 돌아간다. 이 값을 사용자 설정이나 plan override로 얼마나 열지, 실제 센서 노이즈에서 pause/resume/reset과 이탈 marker가 충분히 안정적인지는 실기기 검증 뒤 결정해야 한다.
 6. CNS table은 NOAA 원표 기반으로 내장할지, 검증된 라이브러리 기반으로 둘지?
 7. Bühlmann ZHL-16C coefficients는 어떤 canonical source에서 고정할지?
 8. v2에서 mandatory deco 상황 발생 시 계속 계산할지, `deco obligation 발생 / 즉시 보수 절차` 중심으로 제한할지?

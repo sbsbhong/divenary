@@ -8,10 +8,11 @@ import {
   useDiveLogEntriesQuery,
   useSaveDiveLogEntryMutation,
 } from './use-dive-logbook-queries';
-import type { DiveLogEntry, DiveLogSyncStatus } from '../types/dive-log-entry';
+import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DiveSessionFilter, MobileDiveSession } from '../types/dive-session';
 import { importPendingWatchConnectivityPayloads, type WatchConnectivityImportSummary } from './watch-connectivity-sync';
 import { firstNonBlankText } from '../utils/notes';
+import { toMobileSessionSyncStatus } from '../utils/dive-log-sync-status';
 
 type UseDiveLogbookOptions = {
   repository?: DiveLogRepository;
@@ -127,7 +128,7 @@ export const diveLogEntryToMobileSession = (entry: DiveLogEntry): MobileDiveSess
       rating: entry.manual.rating,
       diveMode: entry.manual.measuredValues.diveMode ?? entry.watchCapture.session.diveMode,
       gasLabel: entry.manual.measuredValues.gasLabel ?? entry.watchCapture.session.gasLabel,
-      syncStatus: toWatchSyncStatus(entry.syncStatus),
+      syncStatus: toMobileSessionSyncStatus(entry.syncStatus),
       importKey: entry.watchCapture.importKey,
       importedAt: entry.watchCapture.importedAt,
       mediaPlaceholders: entry.mobile.mediaPlaceholders,
@@ -155,14 +156,10 @@ export const diveLogEntryToMobileSession = (entry: DiveLogEntry): MobileDiveSess
     tags: entry.manual.tags,
     notes: entry.manual.notes,
     rating: entry.manual.rating,
-    syncStatus: toWatchSyncStatus(entry.syncStatus),
+    syncStatus: toMobileSessionSyncStatus(entry.syncStatus),
     samples: [],
     importKey: entry.localId,
     importedAt: entry.createdAt,
     mediaPlaceholders: entry.mobile.mediaPlaceholders,
   };
-};
-
-const toWatchSyncStatus = (syncStatus: DiveLogSyncStatus): MobileDiveSession['syncStatus'] => {
-  return syncStatus === 'localOnly' ? undefined : syncStatus;
 };
