@@ -211,10 +211,20 @@ describe('WatchConnectivity native source contract', () => {
 
   it('provides a shared debug watch scheme without changing the target identity', () => {
     const debugScheme = readRepoFile('apps/mobile/ios/DiveMobile.xcodeproj/xcshareddata/xcschemes/DiveWatchAppDebug.xcscheme');
+    const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
+    const debugVisibilityBlock = home.slice(
+      home.indexOf('private var showsDebugControls: Bool'),
+      home.indexOf('private var scubaStartSubtitle'),
+    );
 
     expect(debugScheme).toContain('DiveWatchApp.app');
     expect(debugScheme).toContain('DIVE_WATCH_DEBUG_CONTROLS');
     expect(debugScheme).not.toContain('PRODUCT_BUNDLE_IDENTIFIER');
+    expect(debugVisibilityBlock).toContain('#if DEBUG');
+    expect(debugVisibilityBlock).toContain('true');
+    expect(debugVisibilityBlock).not.toContain('ProcessInfo.processInfo.environment');
+    expect(home).toContain('title: "Test Freedive"');
+    expect(home).toContain('title: "Test Scuba"');
   });
 
   it('refreshes the watch home view with a top pull gesture', () => {
@@ -324,6 +334,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('stopZone: safetyStop.minDepthMeters...safetyStop.maxDepthMeters');
     expect(recording).toContain('targetDepthMeters: safetyStop.targetDepthMeters');
     expect(recording).toContain('DepthGaugeRail');
+    expect(recording).toContain('GeometryReader { proxy in');
+    expect(recording).toContain('let availableInstrumentHeight =');
+    expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)');
+    expect(recording).toContain('.toolbar(.hidden, for: .navigationBar)');
     expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
   });
 

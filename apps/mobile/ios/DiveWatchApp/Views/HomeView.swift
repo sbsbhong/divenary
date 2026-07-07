@@ -139,7 +139,7 @@ struct HomeView: View {
 
     private var showsDebugControls: Bool {
         #if DEBUG
-        ProcessInfo.processInfo.environment["DIVE_WATCH_DEBUG_CONTROLS"] == "1"
+        true
         #else
         false
         #endif

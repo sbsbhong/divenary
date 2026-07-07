@@ -167,34 +167,51 @@ struct RecordingView: View {
     }
 
     private var recordingContent: some View {
-        VStack(spacing: 5) {
-            if let markerTitle = recordingMode.markerTitle {
-                HStack {
+        GeometryReader { proxy in
+            let availableInstrumentHeight = max(96, proxy.size.height - recordingBottomReserveHeight)
+
+            ZStack(alignment: .topLeading) {
+                liveInstrument
+                    .frame(width: proxy.size.width, height: availableInstrumentHeight, alignment: .topLeading)
+                    .layoutPriority(1)
+
+                if let markerTitle = recordingMode.markerTitle {
                     StatusPill(title: markerTitle, color: DiveWatchTheme.secondary)
+                        .padding(.top, 2)
+                        .padding(.leading, recordingMarkerLeadingPadding)
+                }
+
+                VStack(spacing: 5) {
                     Spacer(minLength: 0)
+
+                    if surfaceEndGate.isVisible {
+                        Button(role: .destructive) {
+                            completedSession = recorder.stopSession()
+                        } label: {
+                            Label("End Dive", systemImage: "stop.fill")
+                        }
+                        .buttonStyle(CompactDiveEndButtonStyle())
+                    }
+
+                    DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
                 }
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
             }
-
-            liveInstrument
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .padding(.top, 16)
-                .layoutPriority(1)
-
-            if surfaceEndGate.isVisible {
-                Button(role: .destructive) {
-                    completedSession = recorder.stopSession()
-                } label: {
-                    Label("End Dive", systemImage: "stop.fill")
-                }
-                .buttonStyle(CompactDiveEndButtonStyle())
-            }
-
-            DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
         }
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .padding(.top, 4)
+        .padding(.top, 2)
         .padding(.bottom, 6)
         .background(DiveWatchTheme.background.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var recordingBottomReserveHeight: CGFloat {
+        surfaceEndGate.isVisible ? 78 : 22
+    }
+
+    private var recordingMarkerLeadingPadding: CGFloat {
+        71
     }
 
     @ViewBuilder
@@ -399,6 +416,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 content
             }
+            .padding(.top, 30)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
