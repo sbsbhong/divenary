@@ -52,6 +52,9 @@ web_modules/
 .env.test
 .env.production
 
+# Local mobile development environment
+.env.development
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache
