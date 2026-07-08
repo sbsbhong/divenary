@@ -168,50 +168,47 @@ struct RecordingView: View {
 
     private var recordingContent: some View {
         GeometryReader { proxy in
-            let availableInstrumentHeight = max(96, proxy.size.height - recordingBottomReserveHeight)
-
-            ZStack(alignment: .topLeading) {
+            VStack(spacing: recordingVerticalSpacing) {
                 liveInstrument
-                    .frame(width: proxy.size.width, height: availableInstrumentHeight, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .layoutPriority(1)
 
-                if let markerTitle = recordingMode.markerTitle {
-                    StatusPill(title: markerTitle, color: DiveWatchTheme.secondary)
-                        .padding(.top, 2)
-                        .padding(.leading, recordingMarkerLeadingPadding)
-                }
+                recordingControls
 
-                VStack(spacing: 5) {
-                    Spacer(minLength: 0)
-
-                    if surfaceEndGate.isVisible {
-                        Button(role: .destructive) {
-                            completedSession = recorder.stopSession()
-                        } label: {
-                            Label("End Dive", systemImage: "stop.fill")
-                        }
-                        .buttonStyle(CompactDiveEndButtonStyle())
-                    }
-
-                    DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
-                }
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .bottom)
+                recordingDisclaimer
             }
-            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)
+            .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .padding(.top, 2)
-        .padding(.bottom, 6)
+        .padding(.horizontal, recordingHorizontalPadding)
+        .padding(.bottom, 5)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var recordingBottomReserveHeight: CGFloat {
-        surfaceEndGate.isVisible ? 78 : 22
+    @ViewBuilder
+    private var recordingControls: some View {
+        if surfaceEndGate.isVisible {
+            Button(role: .destructive) {
+                completedSession = recorder.stopSession()
+            } label: {
+                Label("End Dive", systemImage: "stop.fill")
+            }
+            .buttonStyle(CompactDiveEndButtonStyle())
+            .padding(.top, 2)
+        }
     }
 
-    private var recordingMarkerLeadingPadding: CGFloat {
-        71
+    private var recordingDisclaimer: some View {
+        DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
+            .padding(.top, surfaceEndGate.isVisible ? 4 : 0)
+    }
+
+    private var recordingVerticalSpacing: CGFloat {
+        surfaceEndGate.isVisible ? 8 : 6
+    }
+
+    private var recordingHorizontalPadding: CGFloat {
+        4
     }
 
     @ViewBuilder
@@ -416,7 +413,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
             VStack(alignment: .leading, spacing: 8) {
                 content
             }
-            .padding(.top, 30)
+            .padding(.top, 24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

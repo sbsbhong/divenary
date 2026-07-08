@@ -335,8 +335,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('targetDepthMeters: safetyStop.targetDepthMeters');
     expect(recording).toContain('DepthGaugeRail');
     expect(recording).toContain('GeometryReader { proxy in');
-    expect(recording).toContain('let availableInstrumentHeight =');
-    expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .topLeading)');
+    expect(recording).toContain('VStack(spacing: recordingVerticalSpacing)');
+    expect(recording).toContain('recordingControls');
+    expect(recording).toContain('recordingDisclaimer');
+    expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)');
+    expect(recording).not.toContain('ZStack(alignment: .topLeading)');
+    expect(recording).not.toContain('availableInstrumentHeight');
+    expect(recording).not.toContain('recordingBottomReserveHeight');
+    expect(recording).not.toContain('recordingMarkerLeadingPadding');
     expect(recording).toContain('.toolbar(.hidden, for: .navigationBar)');
     expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
   });
