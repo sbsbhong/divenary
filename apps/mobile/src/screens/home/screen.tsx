@@ -6,18 +6,29 @@ import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
-import { BellIcon, CalendarDaysIcon, ChevronRightIcon, GlobeIcon, Icon, MapPinIcon, SunIcon, WavesIcon } from '../../components/ui/icon';
+import {
+  AlertCircleIcon,
+  BellIcon,
+  CalendarDaysIcon,
+  ChevronRightIcon,
+  GlobeIcon,
+  Icon,
+  MapPinIcon,
+  RepeatIcon,
+  SettingsIcon,
+  SunIcon,
+  WavesIcon,
+} from '../../components/ui/icon';
 import { Menu, MenuItem, MenuItemLabel } from '../../components/ui/menu';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScrollView } from '../../components/ui/scroll-view';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
-import {
-  mockHomeConditionsProvider,
-  type HomeConditionsProvider,
-  type HomeConditionsSnapshot,
-} from '../../conditions/home-conditions';
+import { type HomeConditionsProvider, type HomeConditionsSnapshot } from '../../conditions/home-conditions';
+import { type LocationService } from '../../conditions/location-service';
+import { createOpenMeteoHomeConditionsProvider } from '../../conditions/open-meteo-home-conditions-provider';
+import { useHomeConditions } from '../../conditions/use-home-conditions';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n';
 import { useAppPreferences } from '../../states/app-preferences';
 import type { MobileDiveSession } from '../../types/dive-session';
@@ -33,6 +44,8 @@ type HomeScreenProps = {
   isRefreshing?: boolean;
   reselectToken?: number;
   conditionsProvider?: HomeConditionsProvider;
+  locationService?: LocationService;
+  openSettings?: () => Promise<void>;
 };
 
 export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
@@ -42,36 +55,18 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   const recentDurationSeconds = recentSession ? getSessionDurationSeconds(recentSession) : undefined;
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const syncStatus = toVisibleRecentSessionSyncStatus(recentSession?.syncStatus);
-  const conditionsProvider = props.conditionsProvider ?? mockHomeConditionsProvider;
-  const [conditionsSnapshot, setConditionsSnapshot] = React.useState<HomeConditionsSnapshot>({ status: 'loading' });
+  const conditionsProvider = React.useMemo(
+    () => props.conditionsProvider ?? createOpenMeteoHomeConditionsProvider(),
+    [props.conditionsProvider],
+  );
+  const conditionsController = useHomeConditions({
+    locale,
+    conditionsProvider,
+    locationService: props.locationService,
+    openSettings: props.openSettings,
+  });
   const scrollViewRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
-
-  React.useEffect(() => {
-    let isMounted = true;
-
-    setConditionsSnapshot({ status: 'loading' });
-    conditionsProvider
-      .getCurrentConditions({ locale })
-      .then(snapshot => {
-        if (isMounted) {
-          setConditionsSnapshot(snapshot);
-        }
-      })
-      .catch(error => {
-        if (isMounted) {
-          setConditionsSnapshot({
-            status: 'error',
-            source: 'mock',
-            errorMessage: error instanceof Error ? error.message : undefined,
-          });
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [conditionsProvider, locale]);
 
   React.useEffect(() => {
     const reselectToken = props.reselectToken ?? 0;
@@ -106,7 +101,12 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           </HStack>
         </VStack>
 
-        <HomeConditionsBand snapshot={conditionsSnapshot} locale={locale} />
+        <HomeConditionsBand
+          snapshot={conditionsController.snapshot}
+          locale={locale}
+          onRetry={conditionsController.retry}
+          onOpenSettings={conditionsController.openSettings}
+        />
 
         <DiveSummaryCard>
           <DiveSummaryCard.Header
@@ -225,7 +225,12 @@ function getLanguageLabel(language: SupportedLanguage, t: ReturnType<typeof useT
   return language === 'ko' ? t('settings.language.korean') : t('settings.language.english');
 }
 
-function HomeConditionsBand(props: { snapshot: HomeConditionsSnapshot; locale: string }): React.JSX.Element {
+function HomeConditionsBand(props: {
+  snapshot: HomeConditionsSnapshot;
+  locale: string;
+  onRetry: () => void;
+  onOpenSettings: () => Promise<void>;
+}): React.JSX.Element {
   const { t } = useTranslation();
   const snapshot = props.snapshot;
 
@@ -239,16 +244,64 @@ function HomeConditionsBand(props: { snapshot: HomeConditionsSnapshot; locale: s
     );
   }
 
-  if (snapshot.status !== 'ready') {
+  if (snapshot.status === 'permissionDenied') {
     return (
       <DiveSummaryCard>
-        <VStack space="xs">
-          <Text testID="home-conditions-unavailable" className="text-base font-semibold text-card-foreground">
-            {t('home.conditions.unavailable')}
-          </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {t('home.conditions.unavailableBody')}
-          </Text>
+        <VStack space="md">
+          <HStack space="sm" className="items-start">
+            <Box className="mt-0.5 h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <Icon as={AlertCircleIcon} size="sm" className="text-primary" />
+            </Box>
+            <VStack space="xs" className="flex-1">
+              <Text testID="home-conditions-permission-denied" className="text-base font-semibold text-card-foreground">
+                {t('home.conditions.permissionDenied')}
+              </Text>
+              <Text testID="home-conditions-permission-denied-body" className="text-sm leading-5 text-muted-foreground">
+                {t('home.conditions.permissionDeniedBody')}
+              </Text>
+            </VStack>
+          </HStack>
+          <HStack space="sm">
+            <InstrumentButton
+              testID="home-conditions-open-settings-action"
+              label={t('home.conditions.openSettings')}
+              icon={SettingsIcon}
+              className="flex-1"
+              onPress={props.onOpenSettings}
+            />
+            <InstrumentButton
+              testID="home-conditions-retry-action"
+              label={t('home.conditions.tryAgain')}
+              icon={RepeatIcon}
+              className="flex-1"
+              onPress={props.onRetry}
+            />
+          </HStack>
+        </VStack>
+      </DiveSummaryCard>
+    );
+  }
+
+  if (snapshot.status !== 'ready') {
+    const isError = snapshot.status === 'error';
+
+    return (
+      <DiveSummaryCard>
+        <VStack space="md">
+          <VStack space="xs">
+            <Text testID="home-conditions-unavailable" className="text-base font-semibold text-card-foreground">
+              {t(isError ? 'home.conditions.apiError' : 'home.conditions.unavailable')}
+            </Text>
+            <Text className="text-sm leading-5 text-muted-foreground">
+              {t(isError ? 'home.conditions.apiErrorBody' : 'home.conditions.unavailableBody')}
+            </Text>
+          </VStack>
+          <InstrumentButton
+            testID="home-conditions-retry-action"
+            label={t('home.conditions.tryAgain')}
+            icon={RepeatIcon}
+            onPress={props.onRetry}
+          />
         </VStack>
       </DiveSummaryCard>
     );
@@ -306,7 +359,7 @@ function HomeConditionsBand(props: { snapshot: HomeConditionsSnapshot; locale: s
         <Text testID="home-conditions-updated" size="xs" className="text-muted-foreground">
           {t('home.conditions.updatedAt', {
             time: formatConditionsTime(snapshot.updatedAt, props.locale),
-          })}
+          })} · {t('home.conditions.attribution')}
         </Text>
       </VStack>
     </DiveSummaryCard>
