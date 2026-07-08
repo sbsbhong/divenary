@@ -489,6 +489,21 @@ describe('WatchConnectivity native source contract', () => {
     expect(recorder).not.toContain('private func updateSafetyStop');
   });
 
+  it('drops non-finite watch samples before they can poison persisted scuba sessions', () => {
+    const sample = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DepthSample.swift');
+    const recorder = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/DiveSessionRecorder.swift');
+    const freeEngine = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/FreeDiveSessionEngine.swift');
+    const scubaEngine = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/ScubaDiveEngine.swift');
+
+    expect(sample).toContain('var isValidRecordingSample: Bool');
+    expect(sample).toContain('depthMeters.isFinite');
+    expect(sample).toContain('pressureKPa.isFinite');
+    expect(sample).toContain('waterTemperatureCelsius.isFinite');
+    expect(recorder).toContain('guard sample.isValidRecordingSample else');
+    expect(freeEngine).toContain('guard sample.isValidRecordingSample else');
+    expect(scubaEngine).toContain('guard sample.isValidRecordingSample else');
+  });
+
   it('uses app-store style stars for post-dive rating fields', () => {
     const summary = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SummaryView.swift');
 

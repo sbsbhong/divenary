@@ -160,6 +160,10 @@ final class DiveSessionRecorder: ObservableObject {
     }
 
     private func append(_ sample: DepthSample) {
+        guard sample.isValidRecordingSample else {
+            return
+        }
+
         let previousSample = samples.last
         samples.append(sample)
         currentDepth = sample.depthMeters

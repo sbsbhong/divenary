@@ -97,6 +97,18 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertFalse(session.safetyStop.required)
         XCTAssertFalse(session.safetyStop.completed)
     }
+
+    func testEngineIgnoresNonFiniteSamplesBeforeAverages() throws {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
+        engine.append(EngineTestFixtures.sample(0, depth: 0))
+        engine.append(EngineTestFixtures.sample(60, depth: .nan))
+        engine.append(EngineTestFixtures.sample(120, depth: 0.4))
+        let session = engine.finish(at: EngineTestFixtures.date(180))
+
+        XCTAssertEqual(session.maxDepthMeters, 0.4)
+        XCTAssertEqual(session.averageDepthMeters, 0.2)
+        XCTAssertNoThrow(try JSONEncoder().encode(session))
+    }
 }
 
 final class DepthSensorAvailabilityTests: XCTestCase {

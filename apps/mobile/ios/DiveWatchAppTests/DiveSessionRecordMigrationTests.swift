@@ -60,6 +60,24 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(record.summary.maxDepthMeters, 0.9, accuracy: 0.001)
     }
 
+    @MainActor
+    func testScubaRecorderDropsNonFiniteSamplesBeforePersistence() async throws {
+        let sensorProvider = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider, captureMode: .demo)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0))
+        sensorProvider.emit(EngineTestFixtures.sample(60, depth: .nan))
+        sensorProvider.emit(EngineTestFixtures.sample(120, depth: 0.4))
+        await Task.yield()
+
+        let record = try XCTUnwrap(recorder.stopSession())
+
+        XCTAssertEqual(record.samples.map(\.depthMeters), [0, 0.4])
+        XCTAssertTrue(record.samples.allSatisfy(\.isValidRecordingSample))
+        XCTAssertNoThrow(try JSONEncoder().encode([record]))
+    }
+
     func testOldFreediveSessionAdaptsToOneSegment() {
         let samples = [
             EngineTestFixtures.sample(0, depth: 0),

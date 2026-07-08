@@ -71,6 +71,10 @@ struct FreeDiveSessionEngine {
     }
 
     mutating func append(_ sample: DepthSample) {
+        guard sample.isValidRecordingSample else {
+            return
+        }
+
         guard state != .summary else {
             return
         }

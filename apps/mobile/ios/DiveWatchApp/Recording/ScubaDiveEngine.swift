@@ -25,6 +25,10 @@ struct ScubaDiveEngine {
     }
 
     mutating func append(_ sample: DepthSample) {
+        guard sample.isValidRecordingSample else {
+            return
+        }
+
         let previous = samples.last
         samples.append(sample)
         maxDepthMeters = max(maxDepthMeters, sample.depthMeters)

@@ -20,4 +20,12 @@ struct DepthSample: Codable, Identifiable {
         self.pressureKPa = pressureKPa
         self.waterTemperatureCelsius = waterTemperatureCelsius
     }
+
+    var isValidRecordingSample: Bool {
+        depthMeters.isFinite
+            && pressureKPa.isFinite
+            && waterTemperatureCelsius.isFinite
+            && depthMeters >= 0
+            && pressureKPa >= 0
+    }
 }
