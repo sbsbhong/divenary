@@ -12,6 +12,7 @@ type UseHomeConditionsOptions = {
 
 export type HomeConditionsController = {
   snapshot: HomeConditionsSnapshot;
+  isRefreshing: boolean;
   retry: () => void;
   openSettings: () => Promise<void>;
 };
@@ -20,53 +21,72 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
   const locationService = options.locationService ?? defaultLocationService;
   const openSettings = options.openSettings ?? defaultOpenSettings;
   const [snapshot, setSnapshot] = React.useState<HomeConditionsSnapshot>({ status: 'loading' });
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const snapshotRef = React.useRef<HomeConditionsSnapshot>({ status: 'loading' });
   const requestId = React.useRef(0);
 
-  const loadConditions = React.useCallback(async () => {
+  const updateSnapshot = React.useCallback((nextSnapshot: HomeConditionsSnapshot) => {
+    snapshotRef.current = nextSnapshot;
+    setSnapshot(nextSnapshot);
+  }, []);
+
+  const loadConditions = React.useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     const currentRequestId = requestId.current + 1;
     requestId.current = currentRequestId;
-    setSnapshot({ status: 'loading' });
+    const shouldKeepReadySnapshot = mode === 'refresh' && snapshotRef.current.status === 'ready';
 
-    const location = await locationService.getCurrentLocation();
-
-    if (requestId.current !== currentRequestId) {
-      return;
-    }
-
-    if (location.status === 'permissionDenied') {
-      setSnapshot({ status: 'permissionDenied', source: 'openMeteo' });
-      return;
-    }
-
-    if (location.status === 'unavailable') {
-      setSnapshot({
-        status: 'unavailable',
-        source: 'openMeteo',
-        errorMessage: location.errorMessage,
-      });
-      return;
+    if (shouldKeepReadySnapshot) {
+      setIsRefreshing(true);
+    } else {
+      updateSnapshot({ status: 'loading' });
     }
 
     try {
-      const nextSnapshot = await options.conditionsProvider.getCurrentConditions({
-        latitude: location.coordinates.latitude,
-        longitude: location.coordinates.longitude,
-        locale: options.locale,
-      });
+      const location = await locationService.getCurrentLocation();
 
-      if (requestId.current === currentRequestId) {
-        setSnapshot(nextSnapshot);
+      if (requestId.current !== currentRequestId) {
+        return;
       }
-    } catch (error) {
-      if (requestId.current === currentRequestId) {
-        setSnapshot({
-          status: 'error',
+
+      if (location.status === 'permissionDenied') {
+        updateSnapshot({ status: 'permissionDenied', source: 'openMeteo' });
+        return;
+      }
+
+      if (location.status === 'unavailable') {
+        updateSnapshot({
+          status: 'unavailable',
           source: 'openMeteo',
-          errorMessage: error instanceof Error ? error.message : undefined,
+          errorMessage: location.errorMessage,
         });
+        return;
+      }
+
+      try {
+        const nextSnapshot = await options.conditionsProvider.getCurrentConditions({
+          latitude: location.coordinates.latitude,
+          longitude: location.coordinates.longitude,
+          locale: options.locale,
+        });
+
+        if (requestId.current === currentRequestId) {
+          updateSnapshot(nextSnapshot);
+        }
+      } catch (error) {
+        if (requestId.current === currentRequestId) {
+          updateSnapshot({
+            status: 'error',
+            source: 'openMeteo',
+            errorMessage: error instanceof Error ? error.message : undefined,
+          });
+        }
+      }
+    } finally {
+      if (requestId.current === currentRequestId) {
+        setIsRefreshing(false);
       }
     }
-  }, [locationService, options.conditionsProvider, options.locale]);
+  }, [locationService, options.conditionsProvider, options.locale, updateSnapshot]);
 
   React.useEffect(() => {
     void loadConditions();
@@ -89,11 +109,12 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
   }, [loadConditions]);
 
   const retry = React.useCallback(() => {
-    void loadConditions();
+    void loadConditions('refresh');
   }, [loadConditions]);
 
   return {
     snapshot,
+    isRefreshing,
     retry,
     openSettings,
   };

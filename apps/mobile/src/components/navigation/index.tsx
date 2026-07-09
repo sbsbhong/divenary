@@ -349,6 +349,7 @@ export default function RootNavigation(): React.JSX.Element {
                         onOpenLogbook={openLogbook}
                         onOpenPlanning={openPlanning}
                         onRefresh={logbook.refresh}
+                        isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
                         reselectToken={reselectTokens.home}
                       />

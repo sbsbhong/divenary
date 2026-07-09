@@ -55,6 +55,8 @@ const renderHome = async (
     onOpenPlanning?: jest.Mock;
     openSettings?: () => Promise<void>;
     preferencesStorage?: AppPreferencesStorage;
+    sessions?: React.ComponentProps<typeof HomeScreen>['sessions'];
+    isLoading?: boolean;
   } = {},
 ) => {
   const provider: HomeConditionsProvider = {
@@ -67,7 +69,8 @@ const renderHome = async (
     renderer = ReactTestRenderer.create(
       <AppPreferencesProvider storage={options.preferencesStorage}>
         <HomeScreen
-          sessions={[]}
+          sessions={options.sessions ?? []}
+          isLoading={options.isLoading}
           conditionsProvider={provider}
           locationService={locationService}
           openSettings={options.openSettings}
@@ -137,6 +140,94 @@ describe('Home conditions interface', () => {
     expect(root.findByProps({ testID: 'home-conditions-water-tile' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-conditions-water-tile-icon' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-conditions-water-temperature' }).props.children).toBe('22.80 °C');
+  });
+
+  it('shows a latest log empty state instead of unknown latest metrics', async () => {
+    const { renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      source: 'mock',
+      updatedAt: 1782444300,
+    });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'home-latest-empty-state' })).toBeTruthy();
+    expect(root.findAllByProps({ testID: 'home-latest-date' })).toHaveLength(0);
+  });
+
+  it('shows a latest log skeleton while logbook data is loading', async () => {
+    const { renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      source: 'mock',
+      updatedAt: 1782444300,
+    }, { isLoading: true });
+
+    expect(renderer.root.findByProps({ testID: 'home-latest-loading-state' })).toBeTruthy();
+  });
+
+  it('refreshes ready conditions with visible in-flight feedback', async () => {
+    let resolveRefresh: (snapshot: HomeConditionsSnapshot) => void = () => undefined;
+    const provider: HomeConditionsProvider = {
+      getCurrentConditions: jest.fn()
+        .mockResolvedValueOnce({
+          status: 'ready',
+          cityName: 'Jeju City',
+          localTime: 1782444600,
+          airTemperatureCelsius: 24.2,
+          source: 'mock',
+          updatedAt: 1782444300,
+        })
+        .mockImplementationOnce(
+          () =>
+            new Promise<HomeConditionsSnapshot>(resolve => {
+              resolveRefresh = resolve;
+            }),
+        ),
+    };
+    const locationService = createGrantedLocationService();
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AppPreferencesProvider>
+          <HomeScreen
+            sessions={[]}
+            conditionsProvider={provider}
+            locationService={locationService}
+            onOpenLogbook={jest.fn()}
+            onOpenPlanning={jest.fn()}
+            onRefresh={jest.fn()}
+          />
+        </AppPreferencesProvider>,
+      );
+      mountedRenderers.push(renderer);
+      await flushPromises();
+      await flushPromises();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.root.findByProps({ testID: 'home-conditions-refresh-action' }).props.onPress();
+      await flushPromises();
+    });
+
+    expect(renderer!.root.findByProps({ testID: 'home-conditions-refreshing' })).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      resolveRefresh({
+        status: 'ready',
+        cityName: 'Busan',
+        localTime: 1782448200,
+        airTemperatureCelsius: 25.1,
+        source: 'mock',
+        updatedAt: 1782448200,
+      });
+      await flushPromises();
+    });
   });
 
   it('hides water temperature metrics for non-coastal snapshots', async () => {

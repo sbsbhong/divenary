@@ -22,6 +22,7 @@ import {
 import { Menu, MenuItem, MenuItemLabel } from '../../components/ui/menu';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScrollView } from '../../components/ui/scroll-view';
+import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
@@ -41,6 +42,7 @@ type HomeScreenProps = {
   onOpenLogbook: () => void;
   onOpenPlanning: () => void;
   onRefresh: () => void | Promise<void>;
+  isLoading?: boolean;
   isRefreshing?: boolean;
   reselectToken?: number;
   conditionsProvider?: HomeConditionsProvider;
@@ -103,29 +105,25 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
 
         <HomeConditionsBand
           snapshot={conditionsController.snapshot}
+          isRefreshing={conditionsController.isRefreshing}
           locale={locale}
           onRetry={conditionsController.retry}
           onOpenSettings={conditionsController.openSettings}
         />
 
-        <DiveSummaryCard>
-          <DiveSummaryCard.Header
-            eyebrow={t('home.latestWatchImport')}
-            title={recentSession?.siteName ?? t('home.importWatchDive')}
-            right={<StatusPill label={t(`status.${syncStatus}`, { defaultValue: syncStatus })} tone="secondary" />}
+        {props.isLoading ? (
+          <LatestLogLoadingCard />
+        ) : recentSession ? (
+          <LatestLogCard
+            session={recentSession}
+            locale={locale}
+            syncStatus={syncStatus}
+            recentMaxDepthMeters={recentMaxDepthMeters}
+            recentDurationSeconds={recentDurationSeconds}
           />
-          <DiveSummaryCard.Body>
-            <DiveSummaryCard.Metric
-              label={t('home.date')}
-              value={formatDate(recentSession?.startedAt, locale, t('formatters.unknownDate'))}
-            />
-            <SessionProfile samples={recentSession?.samples ?? []} kind="depth" title={t('home.depthProfile')} />
-            <HStack space="md">
-              <MetricTile label={t('home.maxDepth')} value={formatDepth(recentMaxDepthMeters)} />
-              <MetricTile label={t('home.bottomTime')} value={formatOptionalDuration(recentDurationSeconds)} />
-            </HStack>
-          </DiveSummaryCard.Body>
-        </DiveSummaryCard>
+        ) : (
+          <LatestLogEmptyCard />
+        )}
 
         <Alert testID="home-reminder-alert" className="rounded-2xl border-border bg-card px-4 py-4">
           <Box testID="home-reminder-alert-icon" className="mt-0.5 h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
@@ -225,8 +223,65 @@ function getLanguageLabel(language: SupportedLanguage, t: ReturnType<typeof useT
   return language === 'ko' ? t('settings.language.korean') : t('settings.language.english');
 }
 
+function LatestLogLoadingCard(): React.JSX.Element {
+  return (
+    <DiveSummaryCard>
+      <VStack testID="home-latest-loading-state" space="md">
+        <Skeleton className="h-4 w-28 rounded-full" />
+        <Skeleton className="h-7 w-44 rounded-full" />
+        <SkeletonText _lines={3} className="h-4 rounded-full" />
+      </VStack>
+    </DiveSummaryCard>
+  );
+}
+
+function LatestLogEmptyCard(): React.JSX.Element {
+  const { t } = useTranslation();
+
+  return (
+    <DiveSummaryCard>
+      <VStack testID="home-latest-empty-state" space="md">
+        <DiveSummaryCard.Header eyebrow={t('home.latestLog')} title={t('home.noRecentLog')} />
+        <Text className="text-sm leading-5 text-muted-foreground">{t('home.noRecentLogBody')}</Text>
+      </VStack>
+    </DiveSummaryCard>
+  );
+}
+
+function LatestLogCard(props: {
+  session: MobileDiveSession;
+  locale: string;
+  syncStatus: ReturnType<typeof toVisibleRecentSessionSyncStatus>;
+  recentMaxDepthMeters: number | undefined;
+  recentDurationSeconds: number | undefined;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+
+  return (
+    <DiveSummaryCard>
+      <DiveSummaryCard.Header
+        eyebrow={t('home.latestLog')}
+        title={props.session.siteName ?? t('home.noRecentLog')}
+        right={<StatusPill label={t(`status.${props.syncStatus}`, { defaultValue: props.syncStatus })} tone="secondary" />}
+      />
+      <DiveSummaryCard.Body>
+        <DiveSummaryCard.Metric
+          label={t('home.date')}
+          value={formatDate(props.session.startedAt, props.locale, t('formatters.unknownDate'))}
+        />
+        <SessionProfile samples={props.session.samples ?? []} kind="depth" title={t('home.depthProfile')} />
+        <HStack space="md">
+          <MetricTile label={t('home.maxDepth')} value={formatDepth(props.recentMaxDepthMeters)} />
+          <MetricTile label={t('home.bottomTime')} value={formatOptionalDuration(props.recentDurationSeconds)} />
+        </HStack>
+      </DiveSummaryCard.Body>
+    </DiveSummaryCard>
+  );
+}
+
 function HomeConditionsBand(props: {
   snapshot: HomeConditionsSnapshot;
+  isRefreshing: boolean;
   locale: string;
   onRetry: () => void;
   onOpenSettings: () => Promise<void>;
@@ -326,8 +381,23 @@ function HomeConditionsBand(props: {
               </Text>
             </VStack>
           </HStack>
-          <StatusPill label={t(`home.conditions.sources.${snapshot.source ?? 'mock'}`)} tone="secondary" />
+          <HStack space="xs" className="items-center">
+            <StatusPill label={t(`home.conditions.sources.${snapshot.source ?? 'mock'}`)} tone="secondary" />
+            <InstrumentButton
+              testID="home-conditions-refresh-action"
+              label={props.isRefreshing ? t('home.conditions.refreshing') : t('home.conditions.refresh')}
+              icon={RepeatIcon}
+              disabled={props.isRefreshing}
+              className="min-h-9 px-3 py-1"
+              onPress={props.onRetry}
+            />
+          </HStack>
         </HStack>
+        {props.isRefreshing ? (
+          <Text testID="home-conditions-refreshing" size="xs" className="font-semibold text-primary">
+            {t('home.conditions.refreshing')}
+          </Text>
+        ) : null}
 
         <HStack space="md">
           <ConditionMetricTile
