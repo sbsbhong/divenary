@@ -492,13 +492,13 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
               />
             </Input>
           </Box>
-          <Box testID={`${testID}-center-unit-column`} style={styles.unitColumn} className="items-start justify-center">
-            {unitLabel ? (
+          {unitLabel ? (
+            <Box testID={`${testID}-center-unit-column`} style={styles.unitColumn} className="items-start justify-center">
               <Text testID={`${testID}-unit`} className="text-sm font-semibold text-foreground">
                 {unitLabel}
               </Text>
-            ) : null}
-          </Box>
+            </Box>
+          ) : null}
         </HStack>
       ) : (
         <HStack testID={`${testID}-center-row`} className="w-full items-baseline justify-center">
@@ -513,13 +513,13 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
               {formatNumber(displayValue, step)}
             </Text>
           </Box>
-          <Box testID={`${testID}-center-unit-column`} style={styles.unitColumn} className="items-start justify-center">
-            {unitLabel ? (
+          {unitLabel ? (
+            <Box testID={`${testID}-center-unit-column`} style={styles.unitColumn} className="items-start justify-center">
               <Text testID={`${testID}-unit`} className="text-sm font-semibold text-foreground">
                 {unitLabel}
               </Text>
-            ) : null}
-          </Box>
+            </Box>
+          ) : null}
         </HStack>
       )}
     </Pressable>

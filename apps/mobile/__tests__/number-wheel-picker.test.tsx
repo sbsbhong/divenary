@@ -97,6 +97,25 @@ describe('NumberWheelPicker', () => {
     expect(valueColumn.props.className).toEqual(expect.stringContaining('items-center'));
   });
 
+  it('does not reserve a hidden unit column for unitless repetition wheels', async () => {
+    const onChange = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <NumberWheelPicker value={8} min={0} max={200} step={1} onChange={onChange} testID="repetition-picker" />,
+      );
+    });
+    renderers.push(renderer!);
+
+    const root = renderer!.root;
+    const optionValueColumn = root.findByProps({ testID: 'repetition-picker-option-7-value-column' });
+
+    expect(root.findAllByProps({ testID: 'repetition-picker-center-unit-column' })).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'repetition-picker-option-7-unit-column' })).toHaveLength(0);
+    expect(optionValueColumn.props.className).toEqual(expect.stringContaining('items-center'));
+  });
+
   it('renders multiple numeric columns in one shared wheel box', async () => {
     const onColumnChange = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;

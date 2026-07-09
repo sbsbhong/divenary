@@ -244,6 +244,8 @@ export function WheelOptionContent(props: {
   const opacity = React.useRef(new Animated.Value(presentation.opacity)).current;
   const hasMountedRef = React.useRef(false);
   const centerHiddenClassName = props.hideWhenCentered && props.distanceFromCenter === 0 ? ' opacity-0' : '';
+  const valueColumnClassName = props.unitLabel ? 'items-end justify-center' : 'items-center justify-center';
+  const valueColumnStyle = props.unitLabel ? coreStyles.valueColumn : coreStyles.singleValueColumn;
 
   React.useEffect(() => {
     if (!hasMountedRef.current) {
@@ -272,7 +274,7 @@ export function WheelOptionContent(props: {
       testID={`${props.testIDPrefix}-content`}
       style={[coreStyles.item, coreStyles.optionContent, { opacity, transform: [{ scale }] }]}
     >
-      <Box testID={`${props.testIDPrefix}-value-column`} style={[coreStyles.valueColumn, props.valueColumnStyle]} className="items-end justify-center">
+      <Box testID={`${props.testIDPrefix}-value-column`} style={[valueColumnStyle, props.valueColumnStyle]} className={valueColumnClassName}>
         <Text
           testID={`${props.testIDPrefix}-value`}
           numberOfLines={1}
@@ -328,6 +330,10 @@ export const coreStyles = StyleSheet.create({
   },
   unitColumn: {
     width: 52,
+  },
+  singleValueColumn: {
+    flex: 1,
+    paddingRight: 0,
   },
   valueColumn: {
     flex: 1,

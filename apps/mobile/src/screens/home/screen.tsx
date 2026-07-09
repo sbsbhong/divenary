@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, AlertIcon, AlertText } from '../../components/ui/alert';
 import { Box } from '../../components/ui/box';
-import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
+import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '../../components/ui/button';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
@@ -290,13 +290,7 @@ function HomeConditionsBand(props: {
   const snapshot = props.snapshot;
 
   if (snapshot.status === 'loading' || snapshot.status === 'idle') {
-    return (
-      <DiveSummaryCard>
-        <Text testID="home-conditions-loading" className="text-base font-semibold text-card-foreground">
-          {t('home.conditions.loading')}
-        </Text>
-      </DiveSummaryCard>
-    );
+    return <HomeConditionsLoadingCard />;
   }
 
   if (snapshot.status === 'permissionDenied') {
@@ -382,57 +376,101 @@ function HomeConditionsBand(props: {
             </VStack>
           </HStack>
           <HStack space="xs" className="items-center">
-            <StatusPill label={t(`home.conditions.sources.${snapshot.source ?? 'mock'}`)} tone="secondary" />
-            <InstrumentButton
+            <Button
               testID="home-conditions-refresh-action"
-              label={props.isRefreshing ? t('home.conditions.refreshing') : t('home.conditions.refresh')}
-              icon={RepeatIcon}
+              accessibilityLabel={props.isRefreshing ? t('home.conditions.refreshing') : t('home.conditions.refresh')}
+              accessibilityState={{ busy: props.isRefreshing, disabled: props.isRefreshing }}
+              variant="secondary"
+              size="icon"
               disabled={props.isRefreshing}
-              className="min-h-9 px-3 py-1"
-              onPress={props.onRetry}
-            />
+              className="rounded-full bg-muted"
+              onPress={props.onRetry}>
+              {props.isRefreshing ? (
+                <ButtonSpinner testID="home-conditions-refresh-spinner" color="#0a84ff" />
+              ) : (
+                <ButtonIcon as={RepeatIcon} className="text-primary" />
+              )}
+            </Button>
           </HStack>
         </HStack>
         {props.isRefreshing ? (
-          <Text testID="home-conditions-refreshing" size="xs" className="font-semibold text-primary">
-            {t('home.conditions.refreshing')}
-          </Text>
-        ) : null}
+          <HomeConditionsMetricsSkeleton />
+        ) : (
+          <>
+            <HStack space="md">
+              <ConditionMetricTile
+                testID="home-conditions-air-tile"
+                label={t('home.conditions.airTemperature')}
+                value={formatTemperature(snapshot.airTemperatureCelsius)}
+                valueTestID="home-conditions-air-temperature"
+                icon={SunIcon}
+                tone="muted"
+              />
+              {showsWaterTemperature ? (
+                <ConditionMetricTile
+                  testID="home-conditions-water-tile"
+                  label={t('home.conditions.waterTemperature')}
+                  value={formatTemperature(snapshot.waterTemperatureCelsius)}
+                  valueTestID="home-conditions-water-temperature"
+                  icon={WavesIcon}
+                  tone="primary"
+                />
+              ) : (
+                <VStack className="flex-1 justify-center rounded-2xl bg-muted px-4 py-4">
+                  <Text testID="home-conditions-water-unavailable" className="text-sm leading-5 text-muted-foreground">
+                    {t('home.conditions.waterUnavailable')}
+                  </Text>
+                </VStack>
+              )}
+            </HStack>
 
-        <HStack space="md">
-          <ConditionMetricTile
-            testID="home-conditions-air-tile"
-            label={t('home.conditions.airTemperature')}
-            value={formatTemperature(snapshot.airTemperatureCelsius)}
-            valueTestID="home-conditions-air-temperature"
-            icon={SunIcon}
-            tone="muted"
-          />
-          {showsWaterTemperature ? (
-            <ConditionMetricTile
-              testID="home-conditions-water-tile"
-              label={t('home.conditions.waterTemperature')}
-              value={formatTemperature(snapshot.waterTemperatureCelsius)}
-              valueTestID="home-conditions-water-temperature"
-              icon={WavesIcon}
-              tone="primary"
-            />
-          ) : (
-            <VStack className="flex-1 justify-center rounded-2xl bg-muted px-4 py-4">
-              <Text testID="home-conditions-water-unavailable" className="text-sm leading-5 text-muted-foreground">
-                {t('home.conditions.waterUnavailable')}
-              </Text>
-            </VStack>
-          )}
-        </HStack>
-
-        <Text testID="home-conditions-updated" size="xs" className="text-muted-foreground">
-          {t('home.conditions.updatedAt', {
-            time: formatConditionsTime(snapshot.updatedAt, props.locale),
-          })} · {t('home.conditions.attribution')}
-        </Text>
+            <Text testID="home-conditions-updated" size="xs" className="text-muted-foreground">
+              {t('home.conditions.updatedAt', {
+                time: formatConditionsTime(snapshot.updatedAt, props.locale),
+              })}
+            </Text>
+          </>
+        )}
       </VStack>
     </DiveSummaryCard>
+  );
+}
+
+function HomeConditionsLoadingCard(): React.JSX.Element {
+  return (
+    <DiveSummaryCard>
+      <VStack testID="home-conditions-loading" space="md">
+        <HStack className="items-start justify-between" space="md">
+          <HStack space="sm" className="flex-1 items-start">
+            <Skeleton className="mt-0.5 h-9 w-9 rounded-full" />
+            <VStack space="xs" className="flex-1">
+              <Skeleton className="h-6 w-32 rounded-full" />
+              <Skeleton className="h-4 w-16 rounded-full" />
+            </VStack>
+          </HStack>
+          <Skeleton className="h-9 w-9 rounded-full" />
+        </HStack>
+        <HomeConditionsMetricsSkeleton />
+      </VStack>
+    </DiveSummaryCard>
+  );
+}
+
+function HomeConditionsMetricsSkeleton(): React.JSX.Element {
+  return (
+    <VStack testID="home-conditions-refreshing-skeleton" space="md">
+      <HStack space="md">
+        <VStack className="flex-1 rounded-2xl bg-muted px-4 py-4">
+          <Skeleton className="h-4 w-16 rounded-full" />
+          <Skeleton className="mt-5 h-8 w-24 rounded-full" />
+        </VStack>
+        <VStack className="flex-1 rounded-2xl bg-primary/10 px-4 py-4">
+          <Skeleton className="h-4 w-16 rounded-full" />
+          <Skeleton className="mt-5 h-8 w-24 rounded-full" />
+        </VStack>
+      </HStack>
+      <Skeleton className="h-4 w-36 rounded-full" />
+    </VStack>
   );
 }
 

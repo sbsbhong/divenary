@@ -142,6 +142,26 @@ describe('Home conditions interface', () => {
     expect(root.findByProps({ testID: 'home-conditions-water-temperature' }).props.children).toBe('22.80 °C');
   });
 
+  it('omits provider badges and attribution copy from ready conditions', async () => {
+    const { renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      waterTemperatureCelsius: 22.8,
+      isCoastal: true,
+      source: 'openMeteo',
+      updatedAt: 1782444300,
+    });
+    const providerLabels = renderer.root.findAll(node => {
+      const children = node.props.children;
+      return typeof children === 'string' && children.includes('Open-Meteo');
+    });
+
+    expect(providerLabels).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'home-conditions-updated' }).props.children).toBe('오후 12:25 업데이트');
+  });
+
   it('shows a latest log empty state instead of unknown latest metrics', async () => {
     const { renderer } = await renderHome({
       status: 'ready',
@@ -215,7 +235,12 @@ describe('Home conditions interface', () => {
       await flushPromises();
     });
 
-    expect(renderer!.root.findByProps({ testID: 'home-conditions-refreshing' })).toBeTruthy();
+    const refreshButton = renderer!.root.findByProps({ testID: 'home-conditions-refresh-action' });
+
+    expect(refreshButton.props.accessibilityState).toEqual({ busy: true, disabled: true });
+    expect(renderer!.root.findByProps({ testID: 'home-conditions-refresh-spinner' })).toBeTruthy();
+    expect(renderer!.root.findByProps({ testID: 'home-conditions-refreshing-skeleton' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'home-conditions-air-temperature' })).toHaveLength(0);
 
     await ReactTestRenderer.act(async () => {
       resolveRefresh({
