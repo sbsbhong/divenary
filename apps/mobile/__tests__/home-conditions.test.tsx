@@ -3,9 +3,12 @@ import ReactTestRenderer from 'react-test-renderer';
 import i18n from '../src/i18n';
 import HomeScreen from '../src/screens/home/screen';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
+import type { AppPreferencesStorage } from '../src/states/app-preferences-storage';
 import type { HomeConditionsProvider, HomeConditionsSnapshot } from '../src/conditions/home-conditions';
+import type { LocationService } from '../src/conditions/location-service';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+const mountedRenderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
 jest.mock('react-native-reanimated', () => {
   const createAnimation = () => {
@@ -30,34 +33,71 @@ jest.mock('react-native-reanimated', () => {
   };
 });
 
-const renderHome = async (snapshot: HomeConditionsSnapshot) => {
+const grantedLocation = {
+  status: 'granted' as const,
+  coordinates: {
+    latitude: 33.5,
+    longitude: 126.5,
+    horizontalAccuracyMeters: 50,
+    capturedAt: 1783512000,
+  },
+};
+
+const createGrantedLocationService = (): LocationService => ({
+  getCurrentLocation: jest.fn(async () => grantedLocation),
+});
+
+const renderHome = async (
+  snapshot: HomeConditionsSnapshot,
+  options: {
+    locationService?: LocationService;
+    onOpenLogbook?: jest.Mock;
+    onOpenPlanning?: jest.Mock;
+    openSettings?: () => Promise<void>;
+    preferencesStorage?: AppPreferencesStorage;
+  } = {},
+) => {
   const provider: HomeConditionsProvider = {
     getCurrentConditions: jest.fn(async () => snapshot),
   };
+  const locationService = options.locationService ?? createGrantedLocationService();
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
   await ReactTestRenderer.act(async () => {
     renderer = ReactTestRenderer.create(
-      <AppPreferencesProvider>
+      <AppPreferencesProvider storage={options.preferencesStorage}>
         <HomeScreen
           sessions={[]}
           conditionsProvider={provider}
-          onOpenLogbook={jest.fn()}
-          onOpenPlanning={jest.fn()}
+          locationService={locationService}
+          openSettings={options.openSettings}
+          onOpenLogbook={options.onOpenLogbook ?? jest.fn()}
+          onOpenPlanning={options.onOpenPlanning ?? jest.fn()}
           onRefresh={jest.fn()}
         />
       </AppPreferencesProvider>,
     );
+    mountedRenderers.push(renderer);
+    await flushPromises();
     await flushPromises();
   });
 
   return {
+    locationService,
     provider,
     renderer: renderer!,
   };
 };
 
 describe('Home conditions interface', () => {
+  afterEach(() => {
+    ReactTestRenderer.act(() => {
+      for (const renderer of mountedRenderers.splice(0)) {
+        renderer.unmount();
+      }
+    });
+  });
+
   beforeEach(async () => {
     const asyncStorageMock = jest.requireMock('@react-native-async-storage/async-storage') as {
       __resetAsyncStorageMock: () => void;
@@ -83,7 +123,11 @@ describe('Home conditions interface', () => {
     });
     const root = renderer.root;
 
-    expect(provider.getCurrentConditions).toHaveBeenCalledWith(expect.objectContaining({ locale: 'ko' }));
+    expect(provider.getCurrentConditions).toHaveBeenCalledWith(expect.objectContaining({
+      latitude: 33.5,
+      longitude: 126.5,
+      locale: 'ko',
+    }));
     expect(root.findByProps({ testID: 'home-conditions-city' }).props.children).toBe('Jeju City');
     expect(root.findByProps({ testID: 'home-conditions-location-icon' }).props.className).toEqual(expect.stringContaining('bg-primary/10'));
     expect(root.findByProps({ testID: 'home-conditions-local-time' }).props.children).toMatch(/\d{1,2}:\d{2}/);
@@ -120,27 +164,11 @@ describe('Home conditions interface', () => {
       status: 'unavailable',
       source: 'mock',
     };
-    const provider: HomeConditionsProvider = {
-      getCurrentConditions: jest.fn(async () => unavailableSnapshot),
-    };
-    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
-
-    await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(
-        <AppPreferencesProvider>
-          <HomeScreen
-            sessions={[]}
-            conditionsProvider={provider}
-            onOpenLogbook={onOpenLogbook}
-            onOpenPlanning={onOpenPlanning}
-            onRefresh={jest.fn()}
-          />
-        </AppPreferencesProvider>,
-      );
-      await flushPromises();
+    const { renderer } = await renderHome(unavailableSnapshot, {
+      onOpenLogbook,
+      onOpenPlanning,
     });
-
-    const root = renderer!.root;
+    const root = renderer.root;
 
     expect(root.findByProps({ testID: 'home-conditions-unavailable' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-reminder-alert' })).toBeTruthy();
@@ -158,5 +186,70 @@ describe('Home conditions interface', () => {
 
     expect(onOpenLogbook).toHaveBeenCalledTimes(1);
     expect(onOpenPlanning).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows Korean permission denied copy with settings and retry actions', async () => {
+    const openSettings = jest.fn(async () => undefined);
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn()
+        .mockResolvedValueOnce({ status: 'permissionDenied' as const })
+        .mockResolvedValueOnce(grantedLocation),
+    };
+    const { provider, renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      source: 'openMeteo',
+      updatedAt: 1782444300,
+    }, {
+      locationService,
+      openSettings,
+    });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('위치 권한이 필요합니다.');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toContain('위치 권한');
+
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'home-conditions-open-settings-action' }).props.onPress();
+    });
+
+    expect(openSettings).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'home-conditions-retry-action' }).props.onPress();
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(locationService.getCurrentLocation).toHaveBeenCalledTimes(2);
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows English permission denied copy', async () => {
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn(async () => ({ status: 'permissionDenied' as const })),
+    };
+    const preferencesStorage: AppPreferencesStorage = {
+      load: jest.fn(async () => ({
+        themePreference: 'system' as const,
+        language: 'en' as const,
+        watchSyncNotificationsEnabled: false,
+      })),
+      save: jest.fn(async () => undefined),
+    };
+    const { renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      source: 'openMeteo',
+      updatedAt: 1782444300,
+    }, { locationService, preferencesStorage });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('Location permission needed');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toContain('location permission');
   });
 });

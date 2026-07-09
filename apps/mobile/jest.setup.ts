@@ -76,3 +76,19 @@ jest.mock('@notifee/react-native', () => {
     },
   };
 });
+
+jest.mock('@react-native-community/geolocation', () => {
+  const geolocation = {
+    getCurrentPosition: jest.fn(),
+    requestAuthorization: jest.fn(),
+    setRNConfiguration: jest.fn(),
+    watchPosition: jest.fn(() => 1),
+    clearWatch: jest.fn(),
+    stopObserving: jest.fn(),
+  };
+
+  return {
+    __esModule: true,
+    default: geolocation,
+  };
+});
