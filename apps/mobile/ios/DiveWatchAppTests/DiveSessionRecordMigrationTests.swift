@@ -81,8 +81,9 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     @MainActor
     func testStoreSavesDebugFreediveWhenCompanionTransportFails() throws {
         let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
         let transport = StubWatchSyncTransport(enqueueStatus: .failed)
-        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport)
+        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
         let record = Self.debugFreediveRecord()
 
         store.save(record)
@@ -92,16 +93,18 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
         XCTAssertEqual(transport.enqueuedSessions.map(\.id), [record.id])
 
-        let persisted = try persistedSessions(in: userDefaults)
+        let persisted = try persistedSessions(at: storageURL)
         XCTAssertEqual(persisted.map(\.id), [record.id])
         XCTAssertEqual(persisted.first?.syncStatus, .failed)
+        XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
     }
 
     @MainActor
     func testStoreSavesDebugScubaWhenCompanionTransportFails() throws {
         let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
         let transport = StubWatchSyncTransport(enqueueStatus: .failed)
-        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport)
+        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
         let record = Self.debugScubaRecord()
 
         store.save(record)
@@ -111,16 +114,18 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
         XCTAssertEqual(transport.enqueuedSessions.map(\.id), [record.id])
 
-        let persisted = try persistedSessions(in: userDefaults)
+        let persisted = try persistedSessions(at: storageURL)
         XCTAssertEqual(persisted.map(\.id), [record.id])
         XCTAssertEqual(persisted.first?.syncStatus, .failed)
+        XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
     }
 
     @MainActor
     func testStoreSanitizesNonFiniteDebugScubaValuesBeforePersistenceAndSync() throws {
         let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
         let transport = StubWatchSyncTransport(enqueueStatus: .pending)
-        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport)
+        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
         let record = Self.debugScubaRecordWithNonFiniteDerivedValues()
 
         let sanitized = record.sanitizedForPersistence()
@@ -130,10 +135,84 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         store.save(record)
 
         let enqueued = try XCTUnwrap(transport.enqueuedSessions.first)
-        let persisted = try XCTUnwrap(persistedSessions(in: userDefaults).first)
+        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
         assertScubaPayloadIsJSONSafe(enqueued)
         assertScubaPayloadIsJSONSafe(persisted)
         XCTAssertNoThrow(try persisted.syncMessageData())
+    }
+
+    @MainActor
+    func testStoreSanitizesRealScubaValuesBeforePersistenceAndSync() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
+        let record = Self.realScubaRecordWithNonFiniteDerivedValuesAndMetadata()
+
+        store.save(record)
+
+        let enqueued = try XCTUnwrap(transport.enqueuedSessions.first)
+        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
+        for sanitized in [enqueued, persisted] {
+            XCTAssertEqual(sanitized.captureMode, .real)
+            XCTAssertNil(sanitized.entryLocation)
+            XCTAssertNil(sanitized.exitLocation)
+            XCTAssertEqual(sanitized.samples.count, 3)
+            assertScubaPayloadIsJSONSafe(sanitized)
+            XCTAssertNoThrow(try sanitized.syncMessageData())
+        }
+
+        let session = try syncSessionObject(from: persisted)
+        XCTAssertEqual(session["captureMode"] as? String, "real")
+        XCTAssertNil(session["entryLocation"])
+        XCTAssertNil(session["exitLocation"])
+        XCTAssertNotNil(session["scuba"])
+    }
+
+    @MainActor
+    func testStorePersistsLargeSessionOutsideUserDefaultsLimit() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
+        let record = Self.largeDebugScubaRecord(sampleCount: 8_000)
+        let encodedRecord = try JSONEncoder().encode([record.sanitizedForPersistence()])
+
+        XCTAssertGreaterThan(encodedRecord.count, 1_048_576)
+
+        store.save(record)
+
+        XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
+        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
+        XCTAssertEqual(persisted.id, record.id)
+        XCTAssertEqual(persisted.samples.count, record.samples.count)
+
+        let reloaded = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL
+        )
+        XCTAssertEqual(reloaded.sessions.first?.id, record.id)
+        XCTAssertEqual(reloaded.sessions.first?.samples.count, record.samples.count)
+    }
+
+    @MainActor
+    func testStoreMigratesLegacyUserDefaultsRecordsToFileStorage() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let record = Self.debugScubaRecord()
+        let legacyData = try JSONEncoder().encode([record])
+        userDefaults.set(legacyData, forKey: "savedDiveSessionRecords")
+
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL
+        )
+
+        XCTAssertEqual(store.sessions.map(\DiveSessionRecord.id), [record.id])
+        XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
+        XCTAssertEqual((try persistedSessions(at: storageURL)).map(\DiveSessionRecord.id), [record.id])
     }
 
     func testFreediveSanitizerMakesNonFiniteDerivedValuesJSONSafe() throws {
@@ -494,8 +573,14 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         return userDefaults
     }
 
-    private func persistedSessions(in userDefaults: UserDefaults) throws -> [DiveSessionRecord] {
-        let data = try XCTUnwrap(userDefaults.data(forKey: "savedDiveSessionRecords"))
+    private func makeIsolatedRecordsStorageURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("DiveWatchAppTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("savedDiveSessionRecords.json")
+    }
+
+    private func persistedSessions(at storageURL: URL) throws -> [DiveSessionRecord] {
+        let data = try Data(contentsOf: storageURL)
         return try JSONDecoder().decode([DiveSessionRecord].self, from: data)
     }
 
@@ -625,6 +710,53 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         )
     }
 
+    private static func largeDebugScubaRecord(sampleCount: Int) -> DiveSessionRecord {
+        let base = debugScubaRecord()
+        let samples = (0..<sampleCount).map { index in
+            EngineTestFixtures.sample(TimeInterval(index), depth: Double(index % 30))
+        }
+
+        return DiveSessionRecord(
+            id: base.id,
+            schemaVersion: base.schemaVersion,
+            captureMode: base.captureMode,
+            diveMode: base.diveMode,
+            siteId: base.siteId,
+            siteName: base.siteName,
+            sourcePlanLocalId: base.sourcePlanLocalId,
+            planTitle: base.planTitle,
+            buddyIds: base.buddyIds,
+            gearIds: base.gearIds,
+            tags: base.tags,
+            notes: base.notes,
+            rating: base.rating,
+            perceivedExertion: base.perceivedExertion,
+            visibilityRating: base.visibilityRating,
+            waterCondition: base.waterCondition,
+            syncStatus: base.syncStatus,
+            entryLocation: base.entryLocation,
+            exitLocation: base.exitLocation,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(TimeInterval(sampleCount - 1)),
+            samples: samples,
+            payload: .scuba(
+                ScubaDiveSession(
+                    id: base.id,
+                    startTime: EngineTestFixtures.date(0),
+                    endTime: EngineTestFixtures.date(TimeInterval(sampleCount - 1)),
+                    durationSeconds: TimeInterval(sampleCount - 1),
+                    maxDepthMeters: 29,
+                    averageDepthMeters: 14.5,
+                    waterTemperatureCelsius: 24,
+                    gasLabel: "Air",
+                    latestAscentRateMetersPerMinute: 0,
+                    maxAscentRateMetersPerMinute: 60,
+                    safetyStop: .legacyUnknown
+                )
+            )
+        )
+    }
+
     private static func debugScubaRecordWithNonFiniteDerivedValues() -> DiveSessionRecord {
         let base = debugScubaRecord()
         return DiveSessionRecord(
@@ -677,6 +809,45 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
                     )
                 )
             )
+        )
+    }
+
+    private static func realScubaRecordWithNonFiniteDerivedValuesAndMetadata() -> DiveSessionRecord {
+        let base = debugScubaRecordWithNonFiniteDerivedValues()
+        return DiveSessionRecord(
+            id: base.id,
+            schemaVersion: base.schemaVersion,
+            captureMode: .real,
+            diveMode: base.diveMode,
+            siteId: base.siteId,
+            siteName: base.siteName,
+            sourcePlanLocalId: base.sourcePlanLocalId,
+            planTitle: base.planTitle,
+            buddyIds: base.buddyIds,
+            gearIds: base.gearIds,
+            tags: base.tags,
+            notes: base.notes,
+            rating: base.rating,
+            perceivedExertion: base.perceivedExertion,
+            visibilityRating: base.visibilityRating,
+            waterCondition: base.waterCondition,
+            syncStatus: base.syncStatus,
+            entryLocation: WatchLocation(
+                latitude: .nan,
+                longitude: 126.9780,
+                horizontalAccuracyMeters: .infinity,
+                capturedAt: nil
+            ),
+            exitLocation: WatchLocation(
+                latitude: 37.5665,
+                longitude: .infinity,
+                horizontalAccuracyMeters: .nan,
+                capturedAt: nil
+            ),
+            startedAt: base.startedAt,
+            endedAt: base.endedAt,
+            samples: base.samples + [EngineTestFixtures.sample(90, depth: .nan)],
+            payload: base.payload
         )
     }
 

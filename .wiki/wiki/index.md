@@ -33,7 +33,7 @@
 | [모바일 구조](architecture/mobile.md) | `apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Gluestack UI v4/NativeWind styling stack을 사용한다. | 2026-06-28 |
 | [Monorepo 구조](architecture/monorepo.md) | 이 저장소는 Turborepo로 관리되는 Yarn 1 workspace monorepo다. 앱 workspace는 `apps/` 아래에 있고, 공유 package는 `packages/` 아래에 있다. | 2026-06-28 |
 | [Supabase 구조](architecture/supabase.md) | 현재 저장소에는 구현된 Supabase 영역이 없다. | 2026-06-28 |
-| [동기화 흐름 구조](architecture/sync-flow.md) | WatchConnectivity import acknowledgement는 local repository 저장/수신 확인이며 future cloud sync와 분리된다. Cloud sync가 없으므로 imported watch log의 visible cloud status는 현재 `pending`이고, demo capture도 같은 import/ack/dedupe 경로를 탄다. | 2026-07-07 |
+| [동기화 흐름 구조](architecture/sync-flow.md) | WatchConnectivity import acknowledgement는 local repository 저장/수신 확인이며 future cloud sync와 분리된다. Watch session record는 1MB UserDefaults 제한을 피하기 위해 file storage에 저장되고, demo capture도 같은 import/ack/dedupe 경로를 탄다. | 2026-07-09 |
 | [Watch 앱 구조](architecture/watch-app.md) | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. 같은 target/bundle identity의 `DiveWatchAppDebug` scheme은 DEBUG 전용 테스트 controls를 열고, demo/debug recording은 기존 `captureMode: demo`, Crown-controlled depth, full-height depth gauge, surface-gated end action을 사용한다. | 2026-07-07 |
 
 ## domains

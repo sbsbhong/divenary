@@ -648,3 +648,9 @@
 ## [2026-06-28] ingest | 동기화 흐름 구조
 - Updated: planned dive application context delivery
 - Updated: planned dive context breakpoint hardening
+
+## [2026-07-09] ingest | 동기화 흐름 구조
+- Updated: watch session persistence sanitizer
+
+## [2026-07-09] ingest | 동기화 흐름 구조
+- Updated: watch session file storage

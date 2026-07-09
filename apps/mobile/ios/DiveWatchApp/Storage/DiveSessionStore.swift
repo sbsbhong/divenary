@@ -14,11 +14,20 @@ final class DiveSessionStore: ObservableObject {
     private static let preferredDiveModeStorageKey = "preferredDiveMode"
     private let syncTransport: WatchSyncTransporting
     private let userDefaults: UserDefaults
+    private let fileManager: FileManager
+    private let recordsStorageURL: URL
     private var executedPlanIds = Set<String>()
 
-    init(userDefaults: UserDefaults = .standard, syncTransport: WatchSyncTransporting = WatchSyncTransport()) {
+    init(
+        userDefaults: UserDefaults = .standard,
+        syncTransport: WatchSyncTransporting = WatchSyncTransport(),
+        recordsStorageURL: URL? = nil,
+        fileManager: FileManager = .default
+    ) {
         self.userDefaults = userDefaults
         self.syncTransport = syncTransport
+        self.fileManager = fileManager
+        self.recordsStorageURL = recordsStorageURL ?? Self.defaultRecordsStorageURL(fileManager: fileManager)
         preferredDiveMode = Self.loadPreferredDiveMode(from: userDefaults)
         load()
         loadPlannedDives()
@@ -41,9 +50,10 @@ final class DiveSessionStore: ObservableObject {
     }
 
     func save(_ session: DiveSessionRecord) {
-        let syncStatus = syncTransport.enqueue(session: session)
-        sessions.insert(session.withSyncStatus(syncStatus), at: 0)
-        if let sourcePlanLocalId = session.resolvedSourcePlanLocalId {
+        let safeSession = session.sanitizedForPersistence()
+        let syncStatus = syncTransport.enqueue(session: safeSession)
+        sessions.insert(safeSession.withSyncStatus(syncStatus), at: 0)
+        if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
         persist()
@@ -82,7 +92,7 @@ final class DiveSessionStore: ObservableObject {
             return
         }
 
-        sessions[index] = sessions[index].withSyncStatus(syncStatus)
+        sessions[index] = sessions[index].withSyncStatus(syncStatus).sanitizedForPersistence()
         persist()
     }
 
@@ -90,16 +100,14 @@ final class DiveSessionStore: ObservableObject {
         var didUpdate = false
 
         for index in sessions.indices {
-            let session = sessions[index]
+            let session = sessions[index].sanitizedForPersistence()
             guard session.syncStatus != .synced else {
                 continue
             }
 
             let syncStatus = syncTransport.enqueue(session: session)
-            if syncStatus != session.syncStatus {
-                sessions[index] = session.withSyncStatus(syncStatus)
-                didUpdate = true
-            }
+            sessions[index] = session.withSyncStatus(syncStatus).sanitizedForPersistence()
+            didUpdate = true
         }
 
         if didUpdate {
@@ -108,10 +116,27 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func load() {
+        if fileManager.fileExists(atPath: recordsStorageURL.path) {
+            do {
+                let data = try Data(contentsOf: recordsStorageURL)
+                sessions = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
+                    .map { $0.sanitizedForPersistence() }
+                    .sorted { $0.startedAt > $1.startedAt }
+            } catch {
+                sessions = []
+                try? fileManager.removeItem(at: recordsStorageURL)
+            }
+            return
+        }
+
         if let data = userDefaults.data(forKey: storageKey) {
             do {
                 sessions = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
+                    .map { $0.sanitizedForPersistence() }
                     .sorted { $0.startedAt > $1.startedAt }
+                if persist() {
+                    userDefaults.removeObject(forKey: storageKey)
+                }
             } catch {
                 sessions = []
                 userDefaults.removeObject(forKey: storageKey)
@@ -128,8 +153,9 @@ final class DiveSessionStore: ObservableObject {
             let legacySessions = try JSONDecoder().decode([DiveSession].self, from: legacyData)
             sessions = legacySessions
                 .map(DiveSessionRecord.init(legacySession:))
+                .map { $0.sanitizedForPersistence() }
                 .sorted { $0.startedAt > $1.startedAt }
-            persist()
+            _ = persist()
         } catch {
             sessions = []
         }
@@ -154,12 +180,20 @@ final class DiveSessionStore: ObservableObject {
         }
     }
 
-    private func persist() {
+    @discardableResult
+    private func persist() -> Bool {
         do {
             let data = try JSONEncoder().encode(sessions)
-            userDefaults.set(data, forKey: storageKey)
+            try fileManager.createDirectory(
+                at: recordsStorageURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            try data.write(to: recordsStorageURL, options: .atomic)
+            userDefaults.removeObject(forKey: storageKey)
+            return true
         } catch {
             assertionFailure("Failed to save dive sessions: \(error)")
+            return false
         }
     }
 
@@ -178,6 +212,14 @@ final class DiveSessionStore: ObservableObject {
 
     private static func loadPreferredDiveMode(from userDefaults: UserDefaults) -> DiveMode {
         DiveMode.defaultingRemovedDiveModeToScuba(userDefaults.string(forKey: preferredDiveModeStorageKey))
+    }
+
+    private static func defaultRecordsStorageURL(fileManager: FileManager) -> URL {
+        let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return baseURL
+            .appendingPathComponent("DiveWatchApp", isDirectory: true)
+            .appendingPathComponent("savedDiveSessionRecords.json")
     }
 }
 

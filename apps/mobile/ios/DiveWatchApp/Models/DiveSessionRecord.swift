@@ -331,8 +331,230 @@ extension DiveSessionRecord {
     }
 
     func syncMessageData(type: String = "sessionEnded") throws -> Data {
-        let message = RecordWatchSyncMessagePayload(type: type, session: RecordWatchSessionPayload(session: self))
+        let message = RecordWatchSyncMessagePayload(
+            type: type,
+            session: RecordWatchSessionPayload(session: sanitizedForPersistence())
+        )
         return try JSONEncoder().encode(message)
+    }
+
+    func sanitizedForPersistence() -> DiveSessionRecord {
+        let safeStartedAt = startedAt.jsonSafe(defaultingTo: Date(timeIntervalSince1970: 0))
+        let safeEndedAt = endedAt?.jsonSafeOptional()
+        let safeSamples = samples.filter(\.isValidRecordingSample)
+        let sampleStats = DiveSampleStats(samples: safeSamples)
+
+        return DiveSessionRecord(
+            id: id,
+            schemaVersion: schemaVersion,
+            captureMode: captureMode,
+            diveMode: diveMode,
+            siteId: siteId,
+            siteName: siteName,
+            sourcePlanLocalId: sourcePlanLocalId,
+            planTitle: planTitle,
+            buddyIds: buddyIds,
+            gearIds: gearIds,
+            tags: tags,
+            notes: notes,
+            rating: rating,
+            perceivedExertion: perceivedExertion,
+            visibilityRating: visibilityRating,
+            waterCondition: waterCondition,
+            syncStatus: syncStatus,
+            entryLocation: entryLocation?.jsonSafeLocation(),
+            exitLocation: exitLocation?.jsonSafeLocation(),
+            startedAt: safeStartedAt,
+            endedAt: safeEndedAt,
+            samples: safeSamples,
+            payload: payload.sanitizedForPersistence(
+                sampleStats: sampleStats,
+                fallbackStart: safeStartedAt,
+                fallbackEnd: safeEndedAt
+            )
+        )
+    }
+}
+
+private struct DiveSampleStats {
+    let maxDepthMeters: Double
+    let averageDepthMeters: Double
+    let averageWaterTemperatureCelsius: Double?
+    let latestAscentRateMetersPerMinute: Double
+    let maxAscentRateMetersPerMinute: Double
+
+    init(samples: [DepthSample]) {
+        maxDepthMeters = samples.map(\.depthMeters).max() ?? 0
+        averageDepthMeters = samples.isEmpty
+            ? 0
+            : samples.reduce(0) { $0 + $1.depthMeters } / Double(samples.count)
+        let temperatures = samples.map(\.waterTemperatureCelsius)
+        averageWaterTemperatureCelsius = temperatures.isEmpty
+            ? nil
+            : temperatures.reduce(0, +) / Double(temperatures.count)
+        latestAscentRateMetersPerMinute = Self.ascentRate(from: samples.dropLast().last, to: samples.last)
+        maxAscentRateMetersPerMinute = samples.indices.dropFirst().reduce(0) { maxRate, index in
+            max(maxRate, Self.ascentRate(from: samples[index - 1], to: samples[index]))
+        }
+    }
+
+    private static func ascentRate(from previous: DepthSample?, to current: DepthSample?) -> Double {
+        guard let previous, let current else { return 0 }
+        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
+        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
+        return (previous.depthMeters - current.depthMeters) / elapsed * 60
+    }
+}
+
+private extension DiveSessionPayload {
+    func sanitizedForPersistence(
+        sampleStats: DiveSampleStats,
+        fallbackStart: Date,
+        fallbackEnd: Date?
+    ) -> DiveSessionPayload {
+        switch self {
+        case .freedive(let session):
+            let safeStart = session.startTime.jsonSafe(defaultingTo: fallbackStart)
+            let safeEnd = session.endTime?.jsonSafeOptional() ?? fallbackEnd
+            let safeSegments = session.segments.map {
+                $0.sanitizedForPersistence(fallbackStart: safeStart, fallbackEnd: safeEnd)
+            }
+            let durationFallback = safeEnd.map { max(0, $0.timeIntervalSince(safeStart)) } ?? 0
+            let maxDepthFallback = max(sampleStats.maxDepthMeters, safeSegments.map(\.maxDepthMeters).max() ?? 0)
+            let longestFallback = safeSegments.map(\.durationSeconds).max() ?? durationFallback
+
+            return .freedive(
+                FreeDiveSession(
+                    id: session.id,
+                    startTime: safeStart,
+                    endTime: safeEnd,
+                    totalDurationSeconds: session.totalDurationSeconds.finiteNonNegative(defaultingTo: durationFallback),
+                    maxDepthMeters: session.maxDepthMeters.finiteNonNegative(defaultingTo: maxDepthFallback),
+                    diveCount: max(0, session.diveCount),
+                    longestDiveDurationSeconds: session.longestDiveDurationSeconds.finiteNonNegative(defaultingTo: longestFallback),
+                    segments: safeSegments
+                )
+            )
+        case .scuba(let session):
+            let safeStart = session.startTime.jsonSafe(defaultingTo: fallbackStart)
+            let safeEnd = session.endTime?.jsonSafeOptional() ?? fallbackEnd
+            let durationFallback = safeEnd.map { max(0, $0.timeIntervalSince(safeStart)) } ?? 0
+
+            return .scuba(
+                ScubaDiveSession(
+                    id: session.id,
+                    startTime: safeStart,
+                    endTime: safeEnd,
+                    durationSeconds: session.durationSeconds.finiteNonNegative(defaultingTo: durationFallback),
+                    maxDepthMeters: session.maxDepthMeters.finiteNonNegative(defaultingTo: sampleStats.maxDepthMeters),
+                    averageDepthMeters: session.averageDepthMeters.finiteNonNegative(defaultingTo: sampleStats.averageDepthMeters),
+                    waterTemperatureCelsius: session.waterTemperatureCelsius.finite(defaultingTo: sampleStats.averageWaterTemperatureCelsius),
+                    gasLabel: session.gasLabel,
+                    latestAscentRateMetersPerMinute: session.latestAscentRateMetersPerMinute.finiteNonNegative(defaultingTo: sampleStats.latestAscentRateMetersPerMinute),
+                    maxAscentRateMetersPerMinute: session.maxAscentRateMetersPerMinute.finiteNonNegative(defaultingTo: sampleStats.maxAscentRateMetersPerMinute),
+                    safetyStop: session.safetyStop.sanitizedForPersistence()
+                )
+            )
+        }
+    }
+}
+
+private extension FreeDiveSegment {
+    func sanitizedForPersistence(fallbackStart: Date, fallbackEnd: Date?) -> FreeDiveSegment {
+        let safeStart = startTime.jsonSafe(defaultingTo: fallbackStart)
+        let safeEnd = endTime?.jsonSafeOptional() ?? fallbackEnd
+        let durationFallback = safeEnd.map { max(0, $0.timeIntervalSince(safeStart)) } ?? 0
+
+        return FreeDiveSegment(
+            id: id,
+            index: max(0, index),
+            startTime: safeStart,
+            endTime: safeEnd,
+            durationSeconds: durationSeconds.finiteNonNegative(defaultingTo: durationFallback),
+            maxDepthMeters: maxDepthMeters.finiteNonNegative(defaultingTo: 0),
+            minDepthMeters: minDepthMeters.finiteNonNegative(defaultingTo: 0),
+            sampleStartIndex: max(0, sampleStartIndex),
+            sampleEndIndex: max(0, sampleEndIndex),
+            descentRateMetersPerSecond: descentRateMetersPerSecond.finite(),
+            ascentRateMetersPerSecond: ascentRateMetersPerSecond.finite()
+        )
+    }
+}
+
+private extension SafetyStopRecord {
+    func sanitizedForPersistence() -> SafetyStopRecord {
+        let fallback = SafetyStopRecord.legacyUnknown
+        let safeMinDepth = minDepthMeters.finiteNonNegative(defaultingTo: fallback.minDepthMeters)
+        let safeMaxDepth = max(
+            safeMinDepth,
+            maxDepthMeters.finiteNonNegative(defaultingTo: fallback.maxDepthMeters)
+        )
+        let safeTargetDepth = targetDepthMeters
+            .finiteNonNegative(defaultingTo: fallback.targetDepthMeters)
+            .clamped(to: safeMinDepth...safeMaxDepth)
+
+        return SafetyStopRecord(
+            status: status,
+            required: required,
+            completed: completed,
+            targetDepthMeters: safeTargetDepth,
+            minDepthMeters: safeMinDepth,
+            maxDepthMeters: safeMaxDepth,
+            durationSeconds: durationSeconds.finiteNonNegative(defaultingTo: fallback.durationSeconds),
+            startedAt: startedAt?.jsonSafeOptional(),
+            completedAt: completedAt?.jsonSafeOptional(),
+            remainingSeconds: remainingSeconds.finiteNonNegative(defaultingTo: fallback.remainingSeconds),
+            timeInZoneSeconds: timeInZoneSeconds.finiteNonNegative(defaultingTo: fallback.timeInZoneSeconds)
+        )
+    }
+}
+
+private extension WatchLocation {
+    func jsonSafeLocation() -> WatchLocation? {
+        guard latitude.isFinite, longitude.isFinite else {
+            return nil
+        }
+
+        return WatchLocation(
+            latitude: latitude,
+            longitude: longitude,
+            horizontalAccuracyMeters: horizontalAccuracyMeters.finite(),
+            capturedAt: capturedAt?.jsonSafeOptional()
+        )
+    }
+}
+
+private extension Date {
+    func jsonSafe(defaultingTo fallback: Date) -> Date {
+        timeIntervalSince1970.isFinite ? self : fallback
+    }
+
+    func jsonSafeOptional() -> Date? {
+        timeIntervalSince1970.isFinite ? self : nil
+    }
+}
+
+private extension Double {
+    func finiteNonNegative(defaultingTo fallback: Double) -> Double {
+        guard isFinite else {
+            return max(0, fallback)
+        }
+
+        return max(0, self)
+    }
+
+    func clamped(to range: ClosedRange<Double>) -> Double {
+        min(max(self, range.lowerBound), range.upperBound)
+    }
+}
+
+private extension Optional where Wrapped == Double {
+    func finite(defaultingTo fallback: Double? = nil) -> Double? {
+        guard let value = self else {
+            return nil
+        }
+
+        return value.isFinite ? value : fallback
     }
 }
 
