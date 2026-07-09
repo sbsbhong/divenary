@@ -82,6 +82,71 @@ describe('watch sync message validation', () => {
     expect(result.message.session.captureMode).toBe('demo');
   });
 
+  it('accepts unsupported watch depth metadata for review-only imports', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'unsupported-depth-session',
+        schemaVersion: 2,
+        startedAt: 1781352000,
+        endedAt: 1781352600,
+        maxDepthMeters: 42.3,
+        unsupportedDepth: {
+          exceeded: true,
+          limitMeters: 40,
+          maxDepthMeters: 42.3,
+          firstExceededAt: 1781352300,
+        },
+        samples: [
+          { localSessionId: 'unsupported-depth-session', timestamp: 1781352000, depthMeters: 0 },
+          { localSessionId: 'unsupported-depth-session', timestamp: 1781352300, depthMeters: 42.3 },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const session = result.message.session as typeof result.message.session & {
+      unsupportedDepth?: {
+        exceeded: boolean;
+        limitMeters: number;
+        maxDepthMeters?: number;
+        firstExceededAt?: number;
+      };
+    };
+    expect(session.unsupportedDepth).toEqual({
+      exceeded: true,
+      limitMeters: 40,
+      maxDepthMeters: 42.3,
+      firstExceededAt: 1781352300,
+    });
+  });
+
+  it('rejects malformed unsupported watch depth metadata', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'bad-unsupported-depth-session',
+        schemaVersion: 2,
+        startedAt: 1781352000,
+        unsupportedDepth: {
+          exceeded: 'yes',
+          limitMeters: 40,
+          reason: 'too deep',
+        },
+        samples: [{ localSessionId: 'bad-unsupported-depth-session', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected malformed unsupportedDepth to be invalid');
+    }
+    expect(result.error.message).toContain('session.unsupportedDepth.reason');
+  });
+
   it('rejects unknown capture mode values', () => {
     const result = parseWatchSyncMessageValue({
       type: 'sessionEnded',
@@ -227,6 +292,85 @@ describe('watch sync message validation', () => {
     expect(result.message.session.diveMode).toBe('scuba');
     expect(result.message.session.scuba?.safetyStop.status).toBe('completed');
     expect(result.message.session.scuba?.safetyStop.timeInZoneSeconds).toBe(180);
+  });
+
+  it('accepts recommended-only safety stop metadata', () => {
+    const baseResult = parseWatchSyncMessageValue(scubaSafetyStopFixture);
+    expect(baseResult.ok).toBe(true);
+    if (!baseResult.ok) {
+      throw new Error(baseResult.error.message);
+    }
+    if (!baseResult.message.session.scuba) {
+      throw new Error('expected scuba safety stop fixture');
+    }
+    const baseMessage = baseResult.message;
+    const baseScuba = baseResult.message.session.scuba;
+
+    const result = parseWatchSyncMessageValue({
+      ...baseMessage,
+      session: {
+        ...baseMessage.session,
+        localSessionId: 'recommended-safety-stop-session',
+        scuba: {
+          ...baseScuba,
+          safetyStop: {
+            ...baseScuba.safetyStop,
+            recommendationType: 'recommended',
+          },
+        },
+        samples: baseMessage.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'recommended-safety-stop-session',
+        })),
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(result.error.message);
+    }
+    const safetyStop = result.message.session.scuba?.safetyStop as NonNullable<typeof result.message.session.scuba>['safetyStop'] & {
+      recommendationType?: 'recommended';
+    };
+    expect(safetyStop.recommendationType).toBe('recommended');
+  });
+
+  it('rejects unknown safety stop recommendation types', () => {
+    const baseResult = parseWatchSyncMessageValue(scubaSafetyStopFixture);
+    expect(baseResult.ok).toBe(true);
+    if (!baseResult.ok) {
+      throw new Error(baseResult.error.message);
+    }
+    if (!baseResult.message.session.scuba) {
+      throw new Error('expected scuba safety stop fixture');
+    }
+    const baseMessage = baseResult.message;
+    const baseScuba = baseResult.message.session.scuba;
+
+    const result = parseWatchSyncMessageValue({
+      ...baseMessage,
+      session: {
+        ...baseMessage.session,
+        localSessionId: 'bad-safety-stop-recommendation-session',
+        scuba: {
+          ...baseScuba,
+          safetyStop: {
+            ...baseScuba.safetyStop,
+            recommendationType: 'mandatory',
+          },
+        },
+        samples: baseMessage.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'bad-safety-stop-recommendation-session',
+        })),
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected unknown safety stop recommendation type to be invalid');
+    }
+    expect(result.error.message).toContain('session.scuba.safetyStop.recommendationType');
   });
 
   it('normalizes legacy flat scuba payloads with diveMode before strict mode validation', () => {

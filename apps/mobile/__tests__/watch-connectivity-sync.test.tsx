@@ -186,6 +186,107 @@ describe('WatchConnectivitySyncProvider', () => {
     }));
   });
 
+  it('imports live event payloads without payload ids and skips durable acknowledgement calls', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    let listener: ((payload: { payloadJson: string; localSessionId?: string; receivedAt?: number }) => void) | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={async () => []}
+            acknowledgePayloads={acknowledgePayloads}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            subscribeToPayloads={handler => {
+              listener = handler;
+              return { remove: jest.fn() };
+            }}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      listener?.({
+        payloadJson: JSON.stringify(metadataRichFixture),
+        localSessionId: 'fixture-rich-session',
+        receivedAt: 1781355000,
+      });
+      await flushPromises();
+    });
+
+    expect(await repository.list()).toHaveLength(1);
+    expect(acknowledgePayloads).not.toHaveBeenCalled();
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
+  });
+
+  it('keeps open watch imports and later ended imports under explicit import keys', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const openFixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        localSessionId: 'open-to-ended-session',
+        siteName: 'Open To Ended Reef',
+        endedAt: undefined,
+        samples: metadataRichFixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'open-to-ended-session',
+        })),
+      },
+    };
+    const endedFixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        localSessionId: 'open-to-ended-session',
+        siteName: 'Open To Ended Reef',
+        endedAt: 1781357600,
+        samples: metadataRichFixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'open-to-ended-session',
+        })),
+      },
+    };
+
+    const summary = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [
+        {
+          payloadId: 'open-payload',
+          payloadJson: JSON.stringify(openFixture),
+          localSessionId: 'open-to-ended-session',
+          receivedAt: 1781355000,
+        },
+        {
+          payloadId: 'ended-payload',
+          payloadJson: JSON.stringify(endedFixture),
+          localSessionId: 'open-to-ended-session',
+          receivedAt: 1781357600,
+        },
+      ],
+      acknowledgePayloads: jest.fn(),
+      acknowledgeImportedPayloads,
+    });
+
+    const entries = await repository.list();
+    expect(summary).toEqual({ receivedCount: 2, importedCount: 2 });
+    expect(entries.map(entry => entry.watchCapture?.importKey).sort()).toEqual([
+      'open-to-ended-session:1781357600',
+      'open-to-ended-session:open',
+    ]);
+    expect(acknowledgeImportedPayloads).toHaveBeenNthCalledWith(1, ['open-payload']);
+    expect(acknowledgeImportedPayloads).toHaveBeenNthCalledWith(2, ['ended-payload']);
+  });
+
   it('counts every acknowledged duplicate demo payload while keeping repository rows deduped', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();

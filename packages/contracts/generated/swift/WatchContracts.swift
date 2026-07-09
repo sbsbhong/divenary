@@ -79,11 +79,12 @@ public struct WatchSession: Codable {
     public let startedAt: Double
     public let syncStatus: SyncStatus?
     public let tags: [String]?
+    public let unsupportedDepth: UnsupportedDepthRecord?
     public let visibilityRating: Int?
     public let waterCondition: WaterCondition?
     public let waterTemperatureCelsius: Double?
 
-    public init(averageDepthMeters: Double?, buddyIds: [String]?, captureMode: CaptureMode?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
+    public init(averageDepthMeters: Double?, buddyIds: [String]?, captureMode: CaptureMode?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, unsupportedDepth: UnsupportedDepthRecord?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
         self.averageDepthMeters = averageDepthMeters
         self.buddyIds = buddyIds
         self.captureMode = captureMode
@@ -109,6 +110,7 @@ public struct WatchSession: Codable {
         self.startedAt = startedAt
         self.syncStatus = syncStatus
         self.tags = tags
+        self.unsupportedDepth = unsupportedDepth
         self.visibilityRating = visibilityRating
         self.waterCondition = waterCondition
         self.waterTemperatureCelsius = waterTemperatureCelsius
@@ -159,6 +161,7 @@ public extension WatchSession {
         startedAt: Double? = nil,
         syncStatus: SyncStatus?? = nil,
         tags: [String]?? = nil,
+        unsupportedDepth: UnsupportedDepthRecord?? = nil,
         visibilityRating: Int?? = nil,
         waterCondition: WaterCondition?? = nil,
         waterTemperatureCelsius: Double?? = nil
@@ -189,6 +192,7 @@ public extension WatchSession {
             startedAt: startedAt ?? self.startedAt,
             syncStatus: syncStatus ?? self.syncStatus,
             tags: tags ?? self.tags,
+            unsupportedDepth: unsupportedDepth ?? self.unsupportedDepth,
             visibilityRating: visibilityRating ?? self.visibilityRating,
             waterCondition: waterCondition ?? self.waterCondition,
             waterTemperatureCelsius: waterTemperatureCelsius ?? self.waterTemperatureCelsius
@@ -542,6 +546,7 @@ public struct SafetyStopRecord: Codable {
     public let completedAt: Double?
     public let durationSeconds: Double
     public let maxDepthMeters, minDepthMeters: Double
+    public let recommendationType: RecommendationType?
     public let remainingSeconds: Double
     public let safetyStopRecordRequired: Bool
     /// Unix timestamp in seconds
@@ -551,17 +556,18 @@ public struct SafetyStopRecord: Codable {
     public let timeInZoneSeconds: Double
 
     public enum CodingKeys: String, CodingKey {
-        case completed, completedAt, durationSeconds, maxDepthMeters, minDepthMeters, remainingSeconds
+        case completed, completedAt, durationSeconds, maxDepthMeters, minDepthMeters, recommendationType, remainingSeconds
         case safetyStopRecordRequired = "required"
         case startedAt, status, targetDepthMeters, timeInZoneSeconds
     }
 
-    public init(completed: Bool, completedAt: Double?, durationSeconds: Double, maxDepthMeters: Double, minDepthMeters: Double, remainingSeconds: Double, safetyStopRecordRequired: Bool, startedAt: Double?, status: Status, targetDepthMeters: Double, timeInZoneSeconds: Double) {
+    public init(completed: Bool, completedAt: Double?, durationSeconds: Double, maxDepthMeters: Double, minDepthMeters: Double, recommendationType: RecommendationType?, remainingSeconds: Double, safetyStopRecordRequired: Bool, startedAt: Double?, status: Status, targetDepthMeters: Double, timeInZoneSeconds: Double) {
         self.completed = completed
         self.completedAt = completedAt
         self.durationSeconds = durationSeconds
         self.maxDepthMeters = maxDepthMeters
         self.minDepthMeters = minDepthMeters
+        self.recommendationType = recommendationType
         self.remainingSeconds = remainingSeconds
         self.safetyStopRecordRequired = safetyStopRecordRequired
         self.startedAt = startedAt
@@ -595,6 +601,7 @@ public extension SafetyStopRecord {
         durationSeconds: Double? = nil,
         maxDepthMeters: Double? = nil,
         minDepthMeters: Double? = nil,
+        recommendationType: RecommendationType?? = nil,
         remainingSeconds: Double? = nil,
         safetyStopRecordRequired: Bool? = nil,
         startedAt: Double?? = nil,
@@ -608,6 +615,7 @@ public extension SafetyStopRecord {
             durationSeconds: durationSeconds ?? self.durationSeconds,
             maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters,
             minDepthMeters: minDepthMeters ?? self.minDepthMeters,
+            recommendationType: recommendationType ?? self.recommendationType,
             remainingSeconds: remainingSeconds ?? self.remainingSeconds,
             safetyStopRecordRequired: safetyStopRecordRequired ?? self.safetyStopRecordRequired,
             startedAt: startedAt ?? self.startedAt,
@@ -626,6 +634,10 @@ public extension SafetyStopRecord {
     }
 }
 
+public enum RecommendationType: String, Codable {
+    case recommended = "recommended"
+}
+
 public enum Status: String, Codable {
     case active = "active"
     case armed = "armed"
@@ -641,6 +653,63 @@ public enum SyncStatus: String, Codable {
     case failed = "failed"
     case pending = "pending"
     case synced = "synced"
+}
+
+// MARK: - UnsupportedDepthRecord
+public struct UnsupportedDepthRecord: Codable {
+    public let exceeded: Bool
+    /// Unix timestamp in seconds
+    public let firstExceededAt: Double?
+    public let limitMeters: Double
+    public let maxDepthMeters: Double?
+
+    public init(exceeded: Bool, firstExceededAt: Double?, limitMeters: Double, maxDepthMeters: Double?) {
+        self.exceeded = exceeded
+        self.firstExceededAt = firstExceededAt
+        self.limitMeters = limitMeters
+        self.maxDepthMeters = maxDepthMeters
+    }
+}
+
+// MARK: UnsupportedDepthRecord convenience initializers and mutators
+
+public extension UnsupportedDepthRecord {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(UnsupportedDepthRecord.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        exceeded: Bool? = nil,
+        firstExceededAt: Double?? = nil,
+        limitMeters: Double? = nil,
+        maxDepthMeters: Double?? = nil
+    ) -> UnsupportedDepthRecord {
+        return UnsupportedDepthRecord(
+            exceeded: exceeded ?? self.exceeded,
+            firstExceededAt: firstExceededAt ?? self.firstExceededAt,
+            limitMeters: limitMeters ?? self.limitMeters,
+            maxDepthMeters: maxDepthMeters ?? self.maxDepthMeters
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
 }
 
 public enum WaterCondition: String, Codable {

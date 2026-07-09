@@ -9,9 +9,11 @@ import { HStack } from '../../components/ui/hstack';
 import { Input, InputField } from '../../components/ui/input';
 import { Text } from '../../components/ui/text';
 import { Textarea, TextareaInput } from '../../components/ui/textarea';
+import { VStack } from '../../components/ui/vstack';
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { WatchSession } from '../../types/dive-session';
+import { SUPPORTED_WATCH_DEPTH_LIMIT_METERS } from '../../utils/unsupported-depth';
 import { BadgeListField, type BadgeListFieldHandle } from '../common/form/badge-list-field';
 import { DepthWheelField, DurationWheelField } from '../common/form/compound-number-wheel-fields';
 import { DateTimeField } from '../common/form/date-time-field';
@@ -224,16 +226,24 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
             control={form.control}
             name="maxDepthMeters"
             render={({ field }) => (
-              <DepthWheelField
-                className="flex-1"
-                label={t('logbook.maxDepthMeters')}
-                valueMeters={field.value}
-                onChange={field.onChange}
-                maxMeters={60}
-                required
-                error={errors.maxDepthMeters?.message}
-                testID="log-entry-editor-max-depth"
-              />
+              <VStack space="xs" className="flex-1">
+                <DepthWheelField
+                  label={t('logbook.maxDepthMeters')}
+                  valueMeters={field.value}
+                  onChange={field.onChange}
+                  maxMeters={60}
+                  required
+                  error={errors.maxDepthMeters?.message}
+                  testID="log-entry-editor-max-depth"
+                />
+                {field.value !== undefined && field.value > SUPPORTED_WATCH_DEPTH_LIMIT_METERS ? (
+                  <Text
+                    testID="log-entry-editor-unsupported-depth-warning"
+                    className="rounded-xl bg-muted px-3 py-2 text-xs font-semibold leading-4 text-muted-foreground">
+                    {t('logbook.unsupportedDepthWarning')}
+                  </Text>
+                ) : null}
+              </VStack>
             )}
           />
         </HStack>

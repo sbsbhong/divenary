@@ -73,6 +73,7 @@
       "safetyStop": {
         "status": "completed",
         "required": true,
+        "recommendationType": "recommended",
         "completed": true,
         "targetDepthMeters": 5,
         "minDepthMeters": 3,

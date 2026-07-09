@@ -17,6 +17,7 @@ import {
   formatTemperature,
 } from '../../utils/dive-formatters';
 import { firstNonBlankText } from '../../utils/notes';
+import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
 
 type LogEntryDetailProps = {
   entry: DiveLogEntry;
@@ -33,6 +34,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const averageDepth = getMeasuredValue(props.entry, 'averageDepthMeters');
   const waterTemperature = getMeasuredValue(props.entry, 'waterTemperatureCelsius');
   const duration = getMeasuredValue(props.entry, 'durationSeconds');
+  const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
   const tags = props.entry.manual.tags.length ? props.entry.manual.tags.join(', ') : t('logbook.none');
   const buddies = props.entry.manual.buddyIds.length ? props.entry.manual.buddyIds.join(', ') : t('logbook.none');
   const marineLife = props.entry.manual.observedMarineLife.length ? props.entry.manual.observedMarineLife.join(', ') : t('logbook.none');
@@ -95,6 +97,13 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
             valueTestID="log-entry-detail-duration-value"
           />
         </HStack>
+        {unsupportedDepth ? (
+          <Text
+            testID="log-entry-detail-unsupported-depth-warning"
+            className="rounded-xl bg-muted px-4 py-3 text-sm font-semibold leading-5 text-muted-foreground">
+            {t('logbook.unsupportedDepthWarning')}
+          </Text>
+        ) : null}
         {props.entry.watchCapture?.samples.length ? (
           <>
             <SessionProfile

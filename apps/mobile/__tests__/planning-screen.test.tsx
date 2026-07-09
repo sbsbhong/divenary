@@ -232,6 +232,32 @@ describe('Planning screen planbook flow', () => {
     expect(root.findByProps({ testID: 'planning-detail-planned-value-pressure-3000psi->900psi' })).toBeTruthy();
   });
 
+  it('allows planned depths above 40m while showing watch support warnings', async () => {
+    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
+    const renderer = await renderPlanning(repository);
+    const root = renderer.root;
+
+    await press(root, 'planning-create-action');
+    await changeText(root, 'planning-editor-plan-title', 'Deep Review Plan');
+    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
+    await changeText(root, 'planning-editor-site-name', 'Forty Two Plan Reef');
+    await press(root, 'planning-editor-mode-scuba');
+    await changeNumber(root, 'planning-editor-planned-max-depth', 42);
+    await changeNumber(root, 'planning-editor-planned-duration', 45);
+
+    expect(root.findByProps({ testID: 'planning-editor-unsupported-depth-warning' }).props.children).toContain(
+      'Outside Apple Watch v1 supported depth',
+    );
+    await press(root, 'planning-editor-save-planned');
+
+    const [savedPlan] = await repository.list();
+    expect(savedPlan.plannedValues.plannedMaxDepthMeters).toBe(42);
+    await press(root, 'planning-plan-row-Forty Two Plan Reef');
+    expect(root.findByProps({ testID: 'planning-detail-unsupported-depth-warning' }).props.children).toContain(
+      'Outside Apple Watch v1 supported depth',
+    );
+  });
+
   it('blocks saving a planned dive until required fields are valid', async () => {
     const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
     const renderer = await renderPlanning(repository);

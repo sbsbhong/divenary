@@ -202,6 +202,44 @@ const hybridWatchEntry: DiveLogEntry = {
   },
 };
 
+const unsupportedDepthWatchEntry = watchSessionToDiveLogEntry({
+  now: 1781353000,
+  session: {
+    localSessionId: 'watch-entry-unsupported-depth',
+    schemaVersion: 2,
+    siteName: 'Unsupported Watch Reef',
+    syncStatus: 'pending',
+    startedAt: 1781352000,
+    endedAt: 1781352600,
+    maxDepthMeters: 12,
+    averageDepthMeters: 7,
+    diveMode: 'scuba',
+    scuba: {
+      gasLabel: 'Air',
+      maxDepthMeters: 12,
+      averageDepthMeters: 7,
+      latestAscentRateMetersPerMinute: 0,
+      maxAscentRateMetersPerMinute: 0,
+      safetyStop: {
+        status: 'notRequired',
+        required: false,
+        completed: false,
+        targetDepthMeters: 5,
+        minDepthMeters: 3,
+        maxDepthMeters: 6,
+        durationSeconds: 180,
+        remainingSeconds: 180,
+        timeInZoneSeconds: 0,
+      },
+    },
+    samples: [
+      { localSessionId: 'watch-entry-unsupported-depth', timestamp: 1781352000, depthMeters: 0 },
+      { localSessionId: 'watch-entry-unsupported-depth', timestamp: 1781352300, depthMeters: 41.8 },
+      { localSessionId: 'watch-entry-unsupported-depth', timestamp: 1781352600, depthMeters: 0.4 },
+    ],
+  } satisfies WatchSession,
+});
+
 type HarnessProps = {
   repository: LocalDiveLogRepository;
   pendingDraft?: {
@@ -663,6 +701,32 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'logbook-list-item-Blue Corner' })).toBeTruthy();
   });
 
+  test('allows manual depths above 40m while showing watch support warnings', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781351000 });
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-create-action');
+    await fillManualDraft(root, {
+      'log-entry-editor-site-name': 'Forty Two Reef',
+      'log-entry-editor-max-depth': '42.3',
+    });
+
+    expect(root.findByProps({ testID: 'log-entry-editor-unsupported-depth-warning' }).props.children).toContain(
+      'Outside Apple Watch v1 supported depth',
+    );
+    await press(root, 'log-entry-editor-save');
+
+    const [savedEntry] = await repository.list();
+    expect(savedEntry.manual.measuredValues.maxDepthMeters).toBe(42.3);
+    expect(root.findByProps({ testID: 'logbook-list-unsupported-depth-Forty Two Reef' }).props.label).toBe('Outside watch support');
+
+    await press(root, 'logbook-list-item-Forty Two Reef');
+    expect(root.findByProps({ testID: 'log-entry-detail-unsupported-depth-warning' }).props.children).toContain(
+      'Outside Apple Watch v1 supported depth',
+    );
+  });
+
   test('blocks saving a manual log until required fields are valid', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781351000 });
     const renderer = await renderLogbook(repository);
@@ -933,6 +997,18 @@ describe('Logbook manual entry flow', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'logbook-list-status-Manual Reef' }).props.label).toBe('Local');
+  });
+
+  test('marks imported watch logs above the supported watch depth even when summary fields are lower', async () => {
+    const repository = new LocalDiveLogRepository([unsupportedDepthWatchEntry]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'logbook-list-unsupported-depth-Unsupported Watch Reef' }).props.label).toBe('Outside watch support');
+    await press(root, 'logbook-list-item-Unsupported Watch Reef');
+    expect(root.findByProps({ testID: 'log-entry-detail-unsupported-depth-warning' }).props.children).toContain(
+      'Outside Apple Watch v1 supported depth',
+    );
   });
 
   test('shows current watch imports as pending cloud sync and keeps synced filter empty', async () => {

@@ -14,6 +14,7 @@ import { NumericSliderField } from '../common/form/numeric-slider-field';
 import { PressureFields } from '../common/form/pressure-fields';
 import { StarRatingField } from '../common/form/star-rating-field';
 import type { PlanFormValues } from './plan-form-schema';
+import { SUPPORTED_WATCH_DEPTH_LIMIT_METERS } from '../../utils/unsupported-depth';
 
 type PlanModeFieldsProps = {
   control: Control<PlanFormValues>;
@@ -40,16 +41,24 @@ export function PlanModeFields(props: PlanModeFieldsProps): React.JSX.Element {
           control={props.control}
           name="plannedMaxDepthMeters"
           render={({ field }) => (
-            <DepthWheelField
-              className="flex-1"
-              label={t('planning.plannedMaxDepthMeters', { defaultValue: 'Planned max (m)' })}
-              valueMeters={field.value}
-              onChange={field.onChange}
-              maxMeters={60}
-              required
-              error={props.errors.plannedMaxDepthMeters?.message}
-              testID="planning-editor-planned-max-depth"
-            />
+            <VStack space="xs" className="flex-1">
+              <DepthWheelField
+                label={t('planning.plannedMaxDepthMeters', { defaultValue: 'Planned max (m)' })}
+                valueMeters={field.value}
+                onChange={field.onChange}
+                maxMeters={60}
+                required
+                error={props.errors.plannedMaxDepthMeters?.message}
+                testID="planning-editor-planned-max-depth"
+              />
+              {field.value !== undefined && field.value > SUPPORTED_WATCH_DEPTH_LIMIT_METERS ? (
+                <Text
+                  testID="planning-editor-unsupported-depth-warning"
+                  className="rounded-xl bg-muted px-3 py-2 text-xs font-semibold leading-4 text-muted-foreground">
+                  {t('planning.unsupportedDepthWarning')}
+                </Text>
+              ) : null}
+            </VStack>
           )}
         />
         <Controller

@@ -1,8 +1,8 @@
 # 다이빙 용어
 
-Sources: pre-Karpathy wiki page, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Pre-Karpathy: 다이빙 용어](../../raw/domains/diving-glossary.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: pre-Karpathy wiki page, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Pre-Karpathy: 다이빙 용어](../../raw/domains/diving-glossary.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 
 ## 요약
 
@@ -15,14 +15,15 @@ Updated: 2026-07-08
 ## 상세
 
 - Dive log: 레크리에이션 다이빙 세션의 과거 기록.
-- Watch capture: watch에서 기록한 세션 데이터. 현재 앱에서는 mock depth sample 기반 흐름이 사용된다.
+- Watch capture: watch에서 기록한 세션 데이터. Real sensor provider와 명시적 demo/debug provider를 구분하며, demo capture는 실측 로그와 다르게 표시해야 한다.
 - Depth sample: meter 단위 depth와 timestamp를 가진 측정값. Shared contract에서는 optional pressure와 water temperature를 포함할 수 있다.
 - Bottom time: 확인용 elapsed session duration. 감압 계산이 아니다.
 - Max depth: 세션에서 기록된 가장 깊은 depth sample.
 - Average depth: 기록된 depth sample의 arithmetic average.
 - Water temperature: sample에 붙거나 review summary로 계산되는 temperature value.
 - Ascent-rate reminder: depth sample 변화에서 파생되는 non-certified assistant state.
-- Supported depth cap: Apple Watch 기반 v1에서 앱이 지원 대상으로 다루는 최대 수심. 현재 기준은 40m 이하이며, 40m보다 깊은 수심은 Apple Watch 동작 검증과 제품 책임 범위 결정 전까지 지원 범위가 아니다.
+- Supported depth cap: Apple Watch 기반 v1에서 앱이 지원 대상으로 다루는 최대 수심. 현재 기준은 40m 이하이며, 40m보다 깊은 수심은 값 자체를 삭제하지 않고 unsupported-depth warning/marker와 함께 보존한다.
+- Unsupported depth: 기록 또는 계획 값이 Apple Watch 기반 v1 지원 범위인 40m를 넘는 상태. 이 marker는 지원 범위 밖임을 알리는 review/planning metadata이지 수중 행동 지시가 아니다.
 - Safety stop: 얕은 수심에서 머무르도록 권장하는 레크리에이션 스쿠버 리마인더. 현재 앱의 v1 safety stop은 감압 의무가 아니라 non-certified reminder/timer다.
 - Safety-stop assistant: shallow-depth stop window 주변의 non-certified reminder state. Mandatory safety guidance가 아니다.
 - Recommended stop: 현재 v1 safety stop처럼 권장으로 표시하는 정지 상태. UI는 보조적인 권장 색과 문구를 사용한다.

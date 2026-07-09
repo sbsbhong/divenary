@@ -32,6 +32,7 @@ export interface WatchSessionCommon {
   maxDepthMeters?: number;
   averageDepthMeters?: number;
   waterTemperatureCelsius?: number;
+  unsupportedDepth?: UnsupportedDepthRecord;
   freedive?: FreeDivePayload;
   scuba?: ScubaPayload;
   samples: WatchDepthSample[];
@@ -58,6 +59,19 @@ export interface WatchLocation {
    * Unix timestamp in seconds
    */
   capturedAt?: number;
+}
+/**
+ * This interface was referenced by `WatchSession`'s JSON-Schema
+ * via the `definition` "unsupportedDepthRecord".
+ */
+export interface UnsupportedDepthRecord {
+  exceeded: boolean;
+  limitMeters: number;
+  maxDepthMeters?: number;
+  /**
+   * Unix timestamp in seconds
+   */
+  firstExceededAt?: number;
 }
 /**
  * This interface was referenced by `WatchSession`'s JSON-Schema
@@ -120,6 +134,7 @@ export interface SafetyStopRecord {
     | "completed"
     | "skippedOrIncomplete";
   required: boolean;
+  recommendationType?: "recommended";
   completed: boolean;
   targetDepthMeters: number;
   minDepthMeters: number;

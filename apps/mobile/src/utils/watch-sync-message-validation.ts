@@ -46,11 +46,13 @@ const sessionKeys = [
   'maxDepthMeters',
   'averageDepthMeters',
   'waterTemperatureCelsius',
+  'unsupportedDepth',
   'freedive',
   'scuba',
   'samples',
 ] as const;
 const locationKeys = ['latitude', 'longitude', 'horizontalAccuracyMeters', 'capturedAt'] as const;
+const unsupportedDepthKeys = ['exceeded', 'limitMeters', 'maxDepthMeters', 'firstExceededAt'] as const;
 const freeDiveKeys = ['diveCount', 'maxDepthMeters', 'longestDiveDurationSeconds', 'segments'] as const;
 const freeDiveSegmentKeys = [
   'segmentId',
@@ -77,6 +79,7 @@ const scubaKeys = [
 const safetyStopKeys = [
   'status',
   'required',
+  'recommendationType',
   'completed',
   'targetDepthMeters',
   'minDepthMeters',
@@ -87,6 +90,7 @@ const safetyStopKeys = [
   'remainingSeconds',
   'timeInZoneSeconds',
 ] as const;
+const safetyStopRecommendationTypes = ['recommended'] as const;
 const safetyStopStatuses = [
   'unknown',
   'notRequired',
@@ -104,6 +108,7 @@ type FreeDivePayload = NonNullable<WatchSession['freedive']>;
 type FreeDiveSegment = FreeDivePayload['segments'][number];
 type ScubaPayload = NonNullable<WatchSession['scuba']>;
 type SafetyStopRecord = ScubaPayload['safetyStop'];
+type UnsupportedDepthRecord = NonNullable<WatchSessionCommon['unsupportedDepth']>;
 
 export function parseWatchSyncMessageJson(rawJson: string): WatchSyncMessageParseResult {
   try {
@@ -287,6 +292,12 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     assignOptional(session, key, result.value);
   }
 
+  const unsupportedDepth = readObject(objectResult.value, 'unsupportedDepth', path, parseUnsupportedDepthRecord);
+  if (!unsupportedDepth.ok) {
+    return unsupportedDepth;
+  }
+  assignOptional(session, 'unsupportedDepth', unsupportedDepth.value);
+
   const freedive = readObject(objectResult.value, 'freedive', path, parseFreeDivePayload);
   if (!freedive.ok) {
     return freedive;
@@ -399,6 +410,7 @@ function buildLegacyScubaPayload(session: WatchSessionCommon): ScubaPayload {
     safetyStop: {
       status: 'unknown',
       required: false,
+      recommendationType: 'recommended',
       completed: false,
       targetDepthMeters: 5,
       minDepthMeters: 3,
@@ -408,6 +420,53 @@ function buildLegacyScubaPayload(session: WatchSessionCommon): ScubaPayload {
       timeInZoneSeconds: 0,
     },
   };
+}
+
+function parseUnsupportedDepthRecord(value: unknown, path: string): ValidationResult<UnsupportedDepthRecord> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, unsupportedDepthKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const exceeded = readBoolean(objectResult.value, 'exceeded', path, { required: true });
+  if (!exceeded.ok) {
+    return exceeded;
+  }
+  if (exceeded.value === undefined) {
+    return failure(joinPath(path, 'exceeded'), `${joinPath(path, 'exceeded')} is required`);
+  }
+
+  const limitMeters = readNumber(objectResult.value, 'limitMeters', path, { required: true, min: 0 });
+  if (!limitMeters.ok) {
+    return limitMeters;
+  }
+  if (limitMeters.value === undefined) {
+    return failure(joinPath(path, 'limitMeters'), `${joinPath(path, 'limitMeters')} is required`);
+  }
+
+  const unsupportedDepth: UnsupportedDepthRecord = {
+    exceeded: exceeded.value,
+    limitMeters: limitMeters.value,
+  };
+
+  const maxDepthMeters = readNumber(objectResult.value, 'maxDepthMeters', path, { min: 0 });
+  if (!maxDepthMeters.ok) {
+    return maxDepthMeters;
+  }
+  assignOptional(unsupportedDepth, 'maxDepthMeters', maxDepthMeters.value);
+
+  const firstExceededAt = readNumber(objectResult.value, 'firstExceededAt', path);
+  if (!firstExceededAt.ok) {
+    return firstExceededAt;
+  }
+  assignOptional(unsupportedDepth, 'firstExceededAt', firstExceededAt.value);
+
+  return { ok: true, value: unsupportedDepth };
 }
 
 function segmentEndTime(session: WatchSessionCommon): number {
@@ -709,6 +768,12 @@ function parseSafetyStopRecord(value: unknown, path: string): ValidationResult<S
     remainingSeconds: 0,
     timeInZoneSeconds: 0,
   };
+
+  const recommendationType = readEnum(objectResult.value, 'recommendationType', safetyStopRecommendationTypes, path);
+  if (!recommendationType.ok) {
+    return recommendationType;
+  }
+  assignOptional(safetyStop, 'recommendationType', recommendationType.value);
 
   for (const key of ['targetDepthMeters', 'minDepthMeters', 'maxDepthMeters'] as const) {
     const result = readNumber(objectResult.value, key, path, { required: true });

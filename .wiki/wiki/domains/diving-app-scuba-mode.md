@@ -1,11 +1,11 @@
 # Diving App / Scuba Mode
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 Status: Draft / Needs Validation / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-07-08
+Last reviewed: 2026-07-09
 Change policy: scuba requirements require explicit safety review
 Related pages: [Diving App / Immutable Algorithm Reference](../algorithms/diving-app-algorithm-reference.md); [Diving App / State Management](../architecture/diving-app-state-management.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md); [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotiable-safety-rules.md)
 Slug: diving-app-scuba-mode
@@ -16,7 +16,7 @@ Scuba mode는 사용자가 다이브 컴퓨터로 인식할 수 있으므로 가
 
 ## 현재 상태
 
-현재 앱은 certified dive computer가 아니며 감압 판단, 생명-critical underwater instruction, 의료 판단을 제공하지 않는다. v1의 스쿠버 범위는 Apple Watch가 공식적으로 다루는 40m 이하에서 Air-only gauge/log와 rule-based safety-stop 리마인더까지 포함하고, v2 이상의 스쿠버 계산 기능은 별도 검증 기준으로 다룬다. Watch implementation은 `SafetyStopController`와 `ScubaDiveEngine`으로 reminder state를 testable logic에 둔다. 40m보다 깊은 수심은 Apple Watch sensor 동작과 제품 책임 범위를 별도 검토하기 전까지 지원하지 않는다.
+현재 앱은 certified dive computer가 아니며 감압 판단, 생명-critical underwater instruction, 의료 판단을 제공하지 않는다. v1의 스쿠버 범위는 Apple Watch가 공식적으로 다루는 40m 이하에서 Air-only gauge/log와 rule-based safety-stop 리마인더까지 포함하고, v2 이상의 스쿠버 계산 기능은 별도 검증 기준으로 다룬다. Watch implementation은 `SafetyStopController`와 `ScubaDiveEngine`으로 reminder state를 testable logic에 둔다. 40m보다 깊은 수심은 지원 범위로 취급하지 않지만, 앱은 로그/계획/review 값을 삭제하지 않고 unsupported-depth warning과 함께 보존한다.
 
 ## 필수 역할
 
@@ -66,7 +66,7 @@ else:
 
 v1 스쿠버는 40m 이하 Apple Watch 기반 Air-only로 시작한다. Safety stop은 스쿠버 앱의 기본 사용성을 위해 포함하되, 감압 모델이나 tissue state 기반 판단이 아니라 rule-based 리마인더와 타이머로 제한한다. 현재 기본값은 max depth threshold 도달 후 stop reminder를 arm하고, 5m/180초 target과 3-6m displayed zone을 사용한다. Countdown은 stop zone 안에서만 줄고, 너무 깊거나 얕으면 pause된다. Safety stop은 권장 리마인더이고 decompression stop 또는 감압 정지와 같은 말로 쓰지 않는다.
 
-현재 코드에는 safety stop record의 `required` field가 남아 있지만, v1 제품 의미는 의무 정지가 아니라 권장 리마인더다. 다음 설계에서는 `recommended`, `advisory`, `mandatory/decompression` 같은 용어와 contract migration 필요성을 검토해야 한다.
+현재 코드에는 safety stop record의 `required` field가 compatibility field로 남아 있지만, v1 제품 의미는 의무 정지가 아니라 권장 리마인더다. 새 payload는 optional `recommendationType: "recommended"`를 사용할 수 있고, user-facing summary/detail은 required wording 대신 recommendation wording을 사용한다. 다음 고위험 설계에서는 `recommended`, `advisory`, `mandatory/decompression` 같은 용어와 contract migration 필요성을 다시 검토해야 한다.
 
 v1 safety stop에서 허용한다.
 
@@ -87,7 +87,7 @@ v1 safety stop에서 하지 않는다.
 - Nitrox/FO2, ppO2, CNS, tissue loading 기반 계산
 - mandatory deco obligation 처리
 - safety stop을 decompression stop 또는 감압 정지와 같은 의미로 표시
-- 40m보다 깊은 Apple Watch 수심 값을 지원 범위처럼 처리
+- 40m보다 깊은 Apple Watch 수심 값을 warning 없이 지원 범위처럼 처리
 
 ## 경고 우선순위
 

@@ -1,18 +1,18 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 
 ## 요약
 
-이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, watch debug controls, surface-gated end action, mobile cloud-pending status mapping, pressure metadata 표시, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐다. 실기기 WatchConnectivity/auto-launch/underwater sensor 검증, Apple Watch 기반 40m 수심 제한 반영, safety stop 권장/필수 색상 분리, decompression stop 용어/모델 설계, 실제 cloud sync 구현은 아직 남아 있다.
+이 문서는 현재 앱에서 나중에 다시 확인해야 할 구현 우선순위를 기록한다. 모바일 영구 저장소, Watch-mobile sync contract 검증 경로, WatchConnectivity PoC, watch app mobile migration, 두 모드 계약/UX reset, watch freedive 다중 segment, scuba safety stop reminder, 명시적 demo capture mode, watch debug controls, surface-gated end action, mobile cloud-pending status mapping, pressure metadata 표시, 실제 depth provider code boundary, watch sync notification, Home 위치 조건 mock interface는 완료됐다. 40m 초과 수심은 기록/계획 값을 보존하되 unsupported warning을 붙이는 정책으로 구현됐고, v1 safety stop은 recommendation metadata와 user-facing copy로 권장 리마인더 의미를 분리했다. 실기기 WatchConnectivity/auto-launch/underwater sensor 검증, 연결 끊김 뒤 재연결 sync crash 재현/수정, decompression stop 용어/모델 설계, 실제 cloud sync 구현은 아직 남아 있다.
 
 ## 현재 상태
 
 모바일 앱은 `DiveLogRepository`와 `DivePlanRepository` 경계를 갖고 AsyncStorage 기반 persistent repository를 기본으로 사용한다. 모바일은 원시 watch sync JSON을 실행 시점에 검증한 뒤 `WatchSyncMessage`로 좁혀 import할 수 있다. Watch 앱 source는 `apps/mobile/ios/DiveWatchApp`로 이관됐고, `apps/mobile/ios/DiveMobile.xcodeproj`의 embedded companion target으로 관리된다. Watch 앱은 sync-ready JSON encoder, 로컬 저장 흐름, WatchConnectivity `transferUserInfo` enqueue, reachable `sendMessage`, activation/reachability 기반 pending retry, acknowledgement 기반 local sync status 갱신을 갖는다. 모바일 iOS app도 WatchConnectivity userInfo/message를 durable inbox에 저장한 뒤 React Native로 넘기는 receiver와 JS acknowledge 경로를 갖는다. `diveMode`는 현재 contract, generated TypeScript/Swift, runtime validator, 모바일 Logbook/Planbook UI, watch mode model에서 `scuba`와 `freedive`만 active mode로 둔다. Watch freedive는 한 session 안에 여러 `FreeDiveSegment`를 저장하고, scuba는 rule-based `SafetyStopController`와 mode-aware log payload를 갖는다. Watch 실기기 recording path는 `RealDepthSensorProvider`가 `CMWaterSubmersionManager`를 사용하고, fake sample은 명시적인 `DemoDepthSensorProvider`/`captureMode: demo` 경로로 분리됐다. `DiveWatchAppDebug`는 같은 target/bundle identity의 shared debug scheme으로 DEBUG 전용 `Test Freedive`/`Test Scuba` controls를 연다. 모바일은 Notifee 기반 watch sync notification service와 Settings opt-in을 갖고, Home은 provider-neutral 위치 조건 interface와 mock provider를 갖는다. Cloud sync는 아직 없으므로 imported watch log는 local save와 watch acknowledgement 뒤에도 visible cloud status를 `pending`으로 유지한다. 다만 entitlement, background delivery, 사용자-facing retry/backoff policy, 실기기 underwater sensor/auto-launch 검증은 아직 완료되지 않았다. Supabase, 인증, cloud backup은 아직 구현되어 있지 않다.
 
-새 pending work로 Apple Watch 기반 지원 수심을 40m 이하로 제한하는 구현, safety stop 권장 상태와 mandatory/decompression 상태의 색상/용어 분리, decompression stop data model과 UI copy 설계를 추가한다. 현재 모바일 Logbook/Planbook form validation은 최대 수심 60m를 허용하므로 다음 구현에서 40m 기준으로 낮추거나, 40m 초과 기록을 명시적인 out-of-scope/unsupported 상태로 다루는 정책을 결정해야 한다.
+Apple Watch 기반 v1 지원 수심은 40m 이하로 남기되, 모바일 Logbook/Planbook과 watch import는 40m 초과 값을 삭제하거나 clamp하지 않는다. 대신 모바일 입력/detail/list와 watch recording surface에서 restrained unsupported-depth warning을 표시하고, sync contract에는 optional `unsupportedDepth` metadata를 둔다. Safety stop은 기존 `safetyStop.required` field를 compatibility 때문에 유지하면서 optional `recommendationType: "recommended"`를 추가했고, UI copy에서는 필수 정지처럼 읽히는 표현을 피한다. 다음 큰 pending work는 decompression stop data model과 UI copy 설계, 그리고 실기기 disconnect/reconnect sync crash 검증이다.
 
 ## 상세
 
@@ -74,16 +74,19 @@ Updated: 2026-07-08
 
 그 밖에 후속으로 확인할 우선순위는 다음과 같다.
 
-4. Apple Watch 기반 40m 수심 제한 반영
+4. Apple Watch 기반 40m 지원 범위와 unsupported-depth 표시
    - Apple Watch 기반 v1 지원 수심은 40m 이하로 제한한다.
-   - 40m보다 깊은 수심은 Apple Watch sensor가 어떤 값을 내거나 기능을 중단하는지, 앱이 raw sample을 저장할지, out-of-scope marker만 남길지 검증과 제품 결정을 거친 뒤 다룬다.
-   - 현재 모바일 Logbook form validation은 `apps/mobile/src/screens/logbook/log-entry-form-schema.ts`에서 max depth 60m를 허용하고, Planbook form validation도 `apps/mobile/src/screens/planning/plan-form-schema.ts`에서 planned max depth 60m를 허용한다. 다음 구현에서는 40m cap, copy, test fixture, migration 영향을 함께 정리해야 한다.
+   - 40m보다 깊은 값은 수동 로그, 계획, watch import에서 reject하거나 clamp하지 않고 원본 값을 보존한다.
+   - 모바일 Logbook/Planbook 입력과 detail은 40m 초과 시 restrained warning을 보여준다. Logbook list는 imported watch session의 unsupported-depth marker를 낮은 채도 chip으로 표시한다.
+   - Watch recording은 현재 수심이 40m를 넘는 동안 `Outside supported depth` warning을 보여준다. 이 문구는 수중 지시나 certified warning이 아니라 지원 범위 밖 상태 표시다.
+   - Watch sync contract에는 optional `unsupportedDepth` metadata가 추가됐고, mobile helper는 해당 metadata가 없더라도 samples/summary에서 40m 초과 여부를 derive할 수 있다.
    - 관련 문서: [안전 규칙](../domains/safety-rules.md), [Diving App / Scuba Mode](../domains/diving-app-scuba-mode.md), [열린 질문](../questions/open-questions.md)
 
 5. Safety stop 권장/필수 색상과 contract 용어 분리
    - Safety 영역 또는 safety-stop trigger를 벗어난 경우 세이프티 스톱을 권장하는 현재 동작은 유지한다.
    - v1 safety stop은 권장 리마인더 색상과 문구를 사용하고, mandatory/decompression 상태는 별도 고위험 색상과 문구를 사용해야 한다.
-   - 현재 contract와 Swift model에는 `safetyStop.required`가 남아 있어 사용자가 필수 정지로 오해할 수 있다. 다음 구현에서는 field rename, compatibility adapter, UI label, fixture migration을 검토해야 한다.
+   - 현재 contract와 Swift model에는 `safetyStop.required`가 compatibility field로 남아 있다. 새 payload는 optional `recommendationType: "recommended"`를 함께 보낼 수 있고, watch summary/detail은 `Required`가 아니라 recommendation wording을 표시한다.
+   - 향후 mandatory/decompression 상태가 들어오면 `safetyStop.required`와 섞지 않고 별도 field/entity, source provenance, severity를 설계해야 한다.
    - 관련 문서: [다이빙 용어](../domains/diving-glossary.md), [안전 규칙](../domains/safety-rules.md), [다이브 로그 도메인](../domains/dive-log.md)
 
 6. Decompression stop 용어와 data model 설계
@@ -96,6 +99,7 @@ Updated: 2026-07-08
    - watch 로컬 세션이 실제 paired iPhone으로 전달되는지 지원 hardware에서 검증해야 한다.
    - Durable native inbox, reachable live message, JS acknowledge, 모바일 수신 성공 시 `synced` 표시, watch acknowledgement status 갱신은 구현됐지만, 사용자-facing retry/backoff policy와 manual retry UI는 아직 없다.
    - 모바일과 watch 연결이 끊긴 상태에서 watch로 다이빙 기록을 만든 뒤 다시 연결하고 앱에서 동기화를 시도하면 crash가 발생하는 사례가 보고됐다. 실기기 검증 전에 자동 watch 동기화가 기본으로 동작해야 하고, 자동 동기화가 실패하더라도 Logbook의 `워치 동기화` 버튼으로 같은 기록이 정상 import되어야 한다.
+   - 자동 drain과 Logbook 수동 drain이 같은 pending 기록을 import하는 경로는 missing `payloadId` live event와 open-session to ended-session dedupe test로 일부 보강됐다. 실제 disconnect/reconnect crash는 지원 hardware에서 재현한 뒤 수정해야 한다.
    - entitlement, background delivery, 장시간 retry behavior, 실기기 pairing은 simulator만으로 검증됐다고 쓰면 안 된다.
    - 관련 문서: [Watch 앱 구조](watch-app.md), [동기화 흐름 구조](sync-flow.md)
 

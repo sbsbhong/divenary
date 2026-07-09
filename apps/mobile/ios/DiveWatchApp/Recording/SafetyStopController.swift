@@ -143,7 +143,7 @@ extension SafetyStopStatus: CaseIterable {
         case .unknown:
             return String(localized: "Stop status unavailable")
         case .notRequired:
-            return String(localized: "Stop not required")
+            return String(localized: "No reminder recorded")
         case .armed:
             return String(localized: "Stop reminder armed")
         case .active:

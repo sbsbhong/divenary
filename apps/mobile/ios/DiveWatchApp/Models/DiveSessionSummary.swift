@@ -125,7 +125,8 @@ extension DiveSessionRecord {
             startedAt: startedAt,
             endedAt: endedAt,
             samples: samples,
-            payload: payload
+            payload: payload,
+            unsupportedDepth: unsupportedDepth
         )
     }
 
@@ -153,7 +154,8 @@ extension DiveSessionRecord {
             startedAt: startedAt,
             endedAt: endedAt,
             samples: samples,
-            payload: payload
+            payload: payload,
+            unsupportedDepth: unsupportedDepth
         )
     }
 }

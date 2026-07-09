@@ -427,6 +427,47 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('#Preview("Stop Complete")');
   });
 
+  it('marks watch sessions that exceed the 40m supported-depth boundary without dropping samples', () => {
+    const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const generatedTypes = readRepoFile('packages/contracts/generated/typescript/index.ts');
+    const generatedSwift = readRepoFile('packages/contracts/generated/swift/WatchContracts.swift');
+
+    expect(record).toContain('enum DiveDepthSupport');
+    expect(record).toContain('static let supportedWatchDepthLimitMeters = 40.0');
+    expect(record).toContain('struct UnsupportedDepthRecord: Codable, Equatable');
+    expect(record).toContain('let unsupportedDepth: UnsupportedDepthRecord?');
+    expect(record).toContain('firstExceededAt');
+    expect(record).toContain('samples.first { $0.depthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters }');
+    expect(record).toContain('unsupportedDepth = RecordUnsupportedDepthPayload(record: session.unsupportedDepth)');
+    expect(record).toContain('let unsupportedDepth: RecordUnsupportedDepthPayload?');
+    expect(record).not.toContain('filter { $0.depthMeters <= DiveDepthSupport.supportedWatchDepthLimitMeters }');
+    expect(recording).toContain('UnsupportedDepthWarning');
+    expect(recording).toContain('currentDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters');
+    expect(recording).toContain('String(localized: "Outside supported depth")');
+    expect(generatedTypes).toContain('unsupportedDepth?: UnsupportedDepthRecord');
+    expect(generatedTypes).toContain('export interface UnsupportedDepthRecord');
+    expect(generatedSwift).toContain('public struct UnsupportedDepthRecord');
+  });
+
+  it('keeps v1 safety stop data recommendation-only in watch user-facing source and payloads', () => {
+    const summary = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SummaryView.swift');
+    const detail = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SessionDetailView.swift');
+    const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
+    const controller = readRepoFile('apps/mobile/ios/DiveWatchApp/Recording/SafetyStopController.swift');
+
+    expect(summary).not.toContain('String(localized: "Required")');
+    expect(detail).not.toContain('String(localized: "Required")');
+    expect(record).toContain('enum SafetyStopRecommendationType: String, Codable, Equatable');
+    expect(record).toContain('case recommended');
+    expect(record).toContain('let recommendationType: SafetyStopRecommendationType');
+    expect(record).toContain('recommendationType: .recommended');
+    expect(record).toContain('let recommendationType: String');
+    expect(record).toContain('recommendationType = record.recommendationType.rawValue');
+    expect(controller).not.toContain('String(localized: "Stop not required")');
+    expect(controller).toContain('String(localized: "No reminder recorded")');
+  });
+
   it('summarizes and syncs watch sessions with mode-specific payloads', () => {
     const summary = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SummaryView.swift');
     const detail = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SessionDetailView.swift');

@@ -7,6 +7,7 @@ import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DivePlan } from '../../types/dive-plan';
 import { formatDate, formatDepth, formatPressure } from '../../utils/dive-formatters';
+import { getUnsupportedDepthForPlan } from '../../utils/unsupported-depth';
 
 type PlanDetailProps = {
   plan: DivePlan;
@@ -123,6 +124,7 @@ function ModeFacts(props: { plan: DivePlan }): React.JSX.Element {
   const { t } = useTranslation();
   const values = props.plan.plannedValues;
   const pressureValue = formatPressure(values.plannedPressure);
+  const unsupportedDepth = getUnsupportedDepthForPlan(props.plan);
   const facts = [
     { id: 'planned-max', label: t('planning.plannedMax', { defaultValue: 'Planned max' }), value: formatDepth(values.plannedMaxDepthMeters) },
     values.plannedDurationMinutes !== undefined
@@ -146,6 +148,13 @@ function ModeFacts(props: { plan: DivePlan }): React.JSX.Element {
           </Text>
         </HStack>
       ))}
+      {unsupportedDepth ? (
+        <Text
+          testID="planning-detail-unsupported-depth-warning"
+          className="rounded-xl bg-card px-3 py-2 text-xs font-semibold leading-4 text-muted-foreground">
+          {t('planning.unsupportedDepthWarning')}
+        </Text>
+      ) : null}
     </VStack>
   );
 }

@@ -5,6 +5,35 @@ enum DiveCaptureMode: String, Codable, Equatable {
     case demo
 }
 
+enum DiveDepthSupport {
+    static let supportedWatchDepthLimitMeters = 40.0
+}
+
+struct UnsupportedDepthRecord: Codable, Equatable {
+    let exceeded: Bool
+    let limitMeters: Double
+    let maxDepthMeters: Double?
+    let firstExceededAt: Date?
+
+    static func from(samples: [DepthSample], payload: DiveSessionPayload) -> UnsupportedDepthRecord? {
+        let sampleMaxDepthMeters = samples.map(\.depthMeters).max() ?? 0
+        let maxDepthMeters = max(sampleMaxDepthMeters, payload.maxDepthMeters)
+
+        guard maxDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters else {
+            return nil
+        }
+
+        let firstExceededAt = samples.first { $0.depthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters }?.timestamp
+
+        return UnsupportedDepthRecord(
+            exceeded: true,
+            limitMeters: DiveDepthSupport.supportedWatchDepthLimitMeters,
+            maxDepthMeters: maxDepthMeters,
+            firstExceededAt: firstExceededAt
+        )
+    }
+}
+
 struct DiveSessionRecord: Codable, Identifiable {
     let id: UUID
     let schemaVersion: Int
@@ -28,6 +57,7 @@ struct DiveSessionRecord: Codable, Identifiable {
     let startedAt: Date
     let endedAt: Date?
     let samples: [DepthSample]
+    let unsupportedDepth: UnsupportedDepthRecord?
     let payload: DiveSessionPayload
 
     init(
@@ -53,7 +83,8 @@ struct DiveSessionRecord: Codable, Identifiable {
         startedAt: Date,
         endedAt: Date?,
         samples: [DepthSample],
-        payload: DiveSessionPayload
+        payload: DiveSessionPayload,
+        unsupportedDepth: UnsupportedDepthRecord? = nil
     ) {
         self.id = id
         self.schemaVersion = schemaVersion
@@ -77,6 +108,7 @@ struct DiveSessionRecord: Codable, Identifiable {
         self.startedAt = startedAt
         self.endedAt = endedAt
         self.samples = samples
+        self.unsupportedDepth = unsupportedDepth ?? UnsupportedDepthRecord.from(samples: samples, payload: payload)
         self.payload = payload
     }
 
@@ -103,6 +135,7 @@ struct DiveSessionRecord: Codable, Identifiable {
         case startedAt
         case endedAt
         case samples
+        case unsupportedDepth
         case payload
     }
 
@@ -131,7 +164,8 @@ struct DiveSessionRecord: Codable, Identifiable {
             startedAt: try container.decode(Date.self, forKey: .startedAt),
             endedAt: try container.decodeIfPresent(Date.self, forKey: .endedAt),
             samples: try container.decode([DepthSample].self, forKey: .samples),
-            payload: try container.decode(DiveSessionPayload.self, forKey: .payload)
+            payload: try container.decode(DiveSessionPayload.self, forKey: .payload),
+            unsupportedDepth: try container.decodeIfPresent(UnsupportedDepthRecord.self, forKey: .unsupportedDepth)
         )
     }
 }
@@ -217,6 +251,7 @@ struct ScubaDiveSession: Codable, Equatable {
 struct SafetyStopRecord: Codable, Equatable {
     let status: SafetyStopStatus
     let required: Bool
+    let recommendationType: SafetyStopRecommendationType
     let completed: Bool
     let targetDepthMeters: Double
     let minDepthMeters: Double
@@ -227,9 +262,71 @@ struct SafetyStopRecord: Codable, Equatable {
     let remainingSeconds: TimeInterval
     let timeInZoneSeconds: TimeInterval
 
+    init(
+        status: SafetyStopStatus,
+        required: Bool,
+        recommendationType: SafetyStopRecommendationType = .recommended,
+        completed: Bool,
+        targetDepthMeters: Double,
+        minDepthMeters: Double,
+        maxDepthMeters: Double,
+        durationSeconds: TimeInterval,
+        startedAt: Date?,
+        completedAt: Date?,
+        remainingSeconds: TimeInterval,
+        timeInZoneSeconds: TimeInterval
+    ) {
+        self.status = status
+        self.required = required
+        self.recommendationType = recommendationType
+        self.completed = completed
+        self.targetDepthMeters = targetDepthMeters
+        self.minDepthMeters = minDepthMeters
+        self.maxDepthMeters = maxDepthMeters
+        self.durationSeconds = durationSeconds
+        self.startedAt = startedAt
+        self.completedAt = completedAt
+        self.remainingSeconds = remainingSeconds
+        self.timeInZoneSeconds = timeInZoneSeconds
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case status
+        case required
+        case recommendationType
+        case completed
+        case targetDepthMeters
+        case minDepthMeters
+        case maxDepthMeters
+        case durationSeconds
+        case startedAt
+        case completedAt
+        case remainingSeconds
+        case timeInZoneSeconds
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            status: try container.decode(SafetyStopStatus.self, forKey: .status),
+            required: try container.decode(Bool.self, forKey: .required),
+            recommendationType: try container.decodeIfPresent(SafetyStopRecommendationType.self, forKey: .recommendationType) ?? .recommended,
+            completed: try container.decode(Bool.self, forKey: .completed),
+            targetDepthMeters: try container.decode(Double.self, forKey: .targetDepthMeters),
+            minDepthMeters: try container.decode(Double.self, forKey: .minDepthMeters),
+            maxDepthMeters: try container.decode(Double.self, forKey: .maxDepthMeters),
+            durationSeconds: try container.decode(TimeInterval.self, forKey: .durationSeconds),
+            startedAt: try container.decodeIfPresent(Date.self, forKey: .startedAt),
+            completedAt: try container.decodeIfPresent(Date.self, forKey: .completedAt),
+            remainingSeconds: try container.decode(TimeInterval.self, forKey: .remainingSeconds),
+            timeInZoneSeconds: try container.decode(TimeInterval.self, forKey: .timeInZoneSeconds)
+        )
+    }
+
     static let legacyUnknown = SafetyStopRecord(
         status: .unknown,
         required: false,
+        recommendationType: .recommended,
         completed: false,
         targetDepthMeters: 5,
         minDepthMeters: 3,
@@ -240,6 +337,10 @@ struct SafetyStopRecord: Codable, Equatable {
         remainingSeconds: 180,
         timeInZoneSeconds: 0
     )
+}
+
+enum SafetyStopRecommendationType: String, Codable, Equatable {
+    case recommended
 }
 
 enum SafetyStopStatus: String, Codable, Equatable {
@@ -343,6 +444,11 @@ extension DiveSessionRecord {
         let safeEndedAt = endedAt?.jsonSafeOptional()
         let safeSamples = samples.filter(\.isValidRecordingSample)
         let sampleStats = DiveSampleStats(samples: safeSamples)
+        let safePayload = payload.sanitizedForPersistence(
+            sampleStats: sampleStats,
+            fallbackStart: safeStartedAt,
+            fallbackEnd: safeEndedAt
+        )
 
         return DiveSessionRecord(
             id: id,
@@ -367,11 +473,8 @@ extension DiveSessionRecord {
             startedAt: safeStartedAt,
             endedAt: safeEndedAt,
             samples: safeSamples,
-            payload: payload.sanitizedForPersistence(
-                sampleStats: sampleStats,
-                fallbackStart: safeStartedAt,
-                fallbackEnd: safeEndedAt
-            )
+            payload: safePayload,
+            unsupportedDepth: UnsupportedDepthRecord.from(samples: safeSamples, payload: safePayload)
         )
     }
 }
@@ -407,6 +510,15 @@ private struct DiveSampleStats {
 }
 
 private extension DiveSessionPayload {
+    var maxDepthMeters: Double {
+        switch self {
+        case .freedive(let session):
+            return session.maxDepthMeters
+        case .scuba(let session):
+            return session.maxDepthMeters
+        }
+    }
+
     func sanitizedForPersistence(
         sampleStats: DiveSampleStats,
         fallbackStart: Date,
@@ -496,6 +608,7 @@ private extension SafetyStopRecord {
         return SafetyStopRecord(
             status: status,
             required: required,
+            recommendationType: recommendationType,
             completed: completed,
             targetDepthMeters: safeTargetDepth,
             minDepthMeters: safeMinDepth,
@@ -589,6 +702,7 @@ private struct RecordWatchSessionPayload: Encodable {
     let maxDepthMeters: Double
     let averageDepthMeters: Double
     let waterTemperatureCelsius: Double?
+    let unsupportedDepth: RecordUnsupportedDepthPayload?
     let samples: [RecordWatchDepthSamplePayload]
     let freedive: RecordWatchFreeDivePayload?
     let scuba: RecordWatchScubaPayload?
@@ -620,6 +734,7 @@ private struct RecordWatchSessionPayload: Encodable {
         maxDepthMeters = summary.maxDepthMeters
         averageDepthMeters = summary.averageDepthMeters
         waterTemperatureCelsius = summary.averageWaterTemperatureCelsius
+        unsupportedDepth = RecordUnsupportedDepthPayload(record: session.unsupportedDepth)
         samples = session.samples.map { RecordWatchDepthSamplePayload(sessionId: session.id.uuidString, sample: $0) }
 
         switch session.payload {
@@ -630,6 +745,24 @@ private struct RecordWatchSessionPayload: Encodable {
             freedive = nil
             scuba = RecordWatchScubaPayload(session: scubaSession)
         }
+    }
+}
+
+private struct RecordUnsupportedDepthPayload: Encodable {
+    let exceeded: Bool
+    let limitMeters: Double
+    let maxDepthMeters: Double?
+    let firstExceededAt: Double?
+
+    init?(record: UnsupportedDepthRecord?) {
+        guard let record else {
+            return nil
+        }
+
+        exceeded = record.exceeded
+        limitMeters = record.limitMeters
+        maxDepthMeters = record.maxDepthMeters
+        firstExceededAt = record.firstExceededAt?.timeIntervalSince1970
     }
 }
 
@@ -698,6 +831,7 @@ private struct RecordWatchScubaPayload: Encodable {
 private struct RecordWatchSafetyStopPayload: Encodable {
     let status: String
     let required: Bool
+    let recommendationType: String
     let completed: Bool
     let targetDepthMeters: Double
     let minDepthMeters: Double
@@ -711,6 +845,7 @@ private struct RecordWatchSafetyStopPayload: Encodable {
     init(record: SafetyStopRecord) {
         status = record.status.rawValue
         required = record.required
+        recommendationType = record.recommendationType.rawValue
         completed = record.completed
         targetDepthMeters = record.targetDepthMeters
         minDepthMeters = record.minDepthMeters

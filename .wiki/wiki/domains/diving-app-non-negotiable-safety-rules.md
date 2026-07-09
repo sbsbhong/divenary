@@ -1,11 +1,11 @@
 # Diving App / Non-Negotiable Safety Rules
 
-Sources: user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 Status: Reference / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-07-08
+Last reviewed: 2026-07-09
 Change policy: rules can only be relaxed with explicit review and documented rationale
 Related pages: [Diving App / Safety UX and Legal Notes](diving-app-safety-ux-legal-notes.md); [Diving App / State Management](../architecture/diving-app-state-management.md); [Diving App / Scuba Mode](diving-app-scuba-mode.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md); [Diving App / Product Roadmap](../project/diving-app-product-roadmap.md)
 Slug: diving-app-non-negotiable-safety-rules
@@ -38,7 +38,7 @@ Slug: diving-app-non-negotiable-safety-rules
 | 14 | critical warning은 단순 toast로 끝내지 않고 persistent 상태로 유지한다. | 수중에서는 일시적 메시지를 놓칠 수 있다. | haptic + visual + persistent state, resolved log. | Warning hierarchy tests. | `critical warning active` |
 | 15 | 수중에서 앱이 죽거나 센서가 끊기면 보수적인 fallback UX를 제공한다. | 계산값보다 사용자가 상태 이상을 아는 것이 중요하다. | gauge fallback, warning copy, event persist. | Watch reboot/crash/dropout tests. | `sensor unavailable / use conservative procedures` |
 | 16 | v1 Air-only safety stop을 감압 의무나 상승 안전 보장처럼 표현하지 않는다. | v1 safety stop은 스쿠버 앱의 기본 참고 기능이지만 NDL/ceiling/tissue state를 계산하지 않는다. | reminder/timer copy만 사용하고 `required stop`, `safe to ascend`, `no decompression required` 표현을 금지한다. | v1 safety-stop copy review, countdown pause/resume tests. | `safety stop reminder / verify with training and backup instruments` |
-| 17 | Apple Watch 기반 v1 수심 지원을 40m 이하로 제한한다. | 40m보다 깊은 수심에서 Apple Watch sensor behavior와 제품 책임 범위가 검증되지 않았다. | Logbook/Planbook validation, watch runtime, import review에서 40m 초과를 정상 지원처럼 표시하지 않는다. | Depth cap validation, unsupported-depth import/review tests. | `unsupported depth / review source` |
+| 17 | Apple Watch 기반 v1 수심 지원을 40m 이하로 제한한다. | 40m보다 깊은 수심에서 Apple Watch sensor behavior와 제품 책임 범위가 검증되지 않았다. | Logbook/Planbook/watch import는 40m 초과 값을 보존하되 warning/marker 없이 정상 지원처럼 표시하지 않는다. Watch runtime도 40m 초과 중 unsupported-depth warning을 보여준다. | Depth cap validation, unsupported-depth import/review tests. | `unsupported depth / review source` |
 | 18 | Safety stop과 decompression stop을 같은 용어, 색상, data model로 합치지 않는다. | 권장 리마인더와 의무 감압 정지는 사용자가 다르게 이해해야 한다. | v1 safety stop은 권장 색상과 copy를 쓰고, mandatory/decompression 상태는 별도 설계 전 노출하지 않는다. | Safety/deco copy guard, contract compatibility tests. | `recommended stop / mandatory decompression stop unavailable` |
 
 ## 관련 문서

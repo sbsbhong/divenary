@@ -28,6 +28,31 @@
         "longitude"
       ]
     },
+    "unsupportedDepthRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "exceeded": {
+          "type": "boolean"
+        },
+        "limitMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxDepthMeters": {
+          "type": "number",
+          "minimum": 0
+        },
+        "firstExceededAt": {
+          "type": "number",
+          "description": "Unix timestamp in seconds"
+        }
+      },
+      "required": [
+        "exceeded",
+        "limitMeters"
+      ]
+    },
     "freeDiveSegment": {
       "type": "object",
       "additionalProperties": false,
@@ -135,6 +160,12 @@
         },
         "required": {
           "type": "boolean"
+        },
+        "recommendationType": {
+          "type": "string",
+          "enum": [
+            "recommended"
+          ]
         },
         "completed": {
           "type": "boolean"
@@ -334,6 +365,9 @@
     },
     "waterTemperatureCelsius": {
       "type": "number"
+    },
+    "unsupportedDepth": {
+      "$ref": "#/definitions/unsupportedDepthRecord"
     },
     "freedive": {
       "$ref": "#/definitions/freeDivePayload"

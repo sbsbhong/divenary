@@ -654,3 +654,18 @@
 
 ## [2026-07-09] ingest | 동기화 흐름 구조
 - Updated: watch session file storage
+
+## [2026-07-09] ingest | pre-device depth safety sync readiness
+- Updated: 구현 우선순위 기록
+- Updated: 동기화 흐름 구조
+- Updated: Watch 앱 구조
+- Updated: 다이브 로그 도메인
+- Updated: 안전 규칙
+- Updated: Diving App / Scuba Mode
+- Updated: Diving App / Non-Negotiable Safety Rules
+- Updated: Diving App / Product Roadmap
+- Updated: Diving App / QA and Test Plan
+- Updated: 다이빙 용어
+- Updated: Mobile/Watch UI 언어
+- Updated: Diving App / Open Questions
+- Updated: 열린 질문

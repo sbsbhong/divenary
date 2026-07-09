@@ -1,11 +1,11 @@
 # Diving App / Product Roadmap
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 Status: Draft / Needs Validation
 Owner: local product/dev agent
-Last reviewed: 2026-07-08
+Last reviewed: 2026-07-09
 Change policy: roadmap can change with documented rationale
 Related pages: [Diving App / Overview](diving-app-overview.md); [Diving App / QA and Test Plan](diving-app-qa-test-plan.md); [Diving App / Non-Negotiable Safety Rules](../domains/diving-app-non-negotiable-safety-rules.md); [Diving App / State Management](../architecture/diving-app-state-management.md)
 Slug: diving-app-product-roadmap
@@ -16,7 +16,7 @@ Slug: diving-app-product-roadmap
 
 ## Roadmap Principle
 
-v1은 Apple Watch 기반 40m 이하 gauge/freedive/log 중심이지만, 스쿠버 앱으로서의 최소 의미를 위해 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함한다. 이 v1 safety stop은 NDL, ceiling, tissue loading, no-fly, gas remaining과 연결하지 않는 비인증 참고 기능이다. 40m보다 깊은 수심은 Apple Watch sensor behavior와 책임 범위 검토 뒤 별도 결정한다. v2부터 사용자가 사실상 dive computer로 받아들일 수 있으므로 algorithm validation과 state recovery가 release gate가 된다. v3는 가스 연동 신뢰성이 release gate가 된다. v4는 MVP 범위가 아니며 별도 제품/검증/책임 범위로 다룬다.
+v1은 Apple Watch 기반 40m 이하 gauge/freedive/log 중심이지만, 스쿠버 앱으로서의 최소 의미를 위해 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함한다. 이 v1 safety stop은 NDL, ceiling, tissue loading, no-fly, gas remaining과 연결하지 않는 비인증 참고 기능이다. 40m보다 깊은 값은 로그/계획/review에서 보존할 수 있지만 unsupported warning 없이 정상 지원 범위처럼 표시하지 않는다. v2부터 사용자가 사실상 dive computer로 받아들일 수 있으므로 algorithm validation과 state recovery가 release gate가 된다. v3는 가스 연동 신뢰성이 release gate가 된다. v4는 MVP 범위가 아니며 별도 제품/검증/책임 범위로 다룬다.
 
 ## 단계
 
@@ -70,6 +70,7 @@ v1 release blockers:
 - post-surface 30초 timer 검증 전 출시 금지
 - v1 Air-only safety-stop trigger와 countdown pause/resume 검증 전 출시 금지
 - safety-stop copy가 certified dive computer나 감압 판단처럼 읽히지 않는지 검토 전 출시 금지
+- 40m 초과 값이 warning/marker 없이 정상 지원처럼 보이는 상태로 출시 금지
 - Watch 단독 로그 저장 검증 전 출시 금지
 
 ## v2: Recreational Scuba No-Decompression

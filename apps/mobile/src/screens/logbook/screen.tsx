@@ -19,6 +19,7 @@ import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { toVisibleCloudSyncStatus, type VisibleCloudSyncStatus } from '../../utils/dive-log-sync-status';
 import { formatDate, formatDepth, formatDuration } from '../../utils/dive-formatters';
+import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
 import { diveLogEntryToMobileSession } from '../../states/use-dive-logbook';
 import { LogEntryDetail } from './log-entry-detail';
 import { LogEntryEditor } from './log-entry-editor';
@@ -400,6 +401,7 @@ function SessionListItem(props: {
   const title = props.entry.manual.title ?? siteName;
   const maxDepthLabel = formatDepth(listMetrics.maxDepthMeters);
   const durationLabel = formatListDuration(listMetrics.durationSeconds);
+  const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
 
   return (
     <Pressable
@@ -428,6 +430,13 @@ function SessionListItem(props: {
               label={t(`status.${status}`, { defaultValue: status })}
               tone={syncStatusTone(status)}
             />
+            {unsupportedDepth ? (
+              <StatusPill
+                testID={`logbook-list-unsupported-depth-${siteName}`}
+                label={t('logbook.unsupportedDepthMarker')}
+                tone="muted"
+              />
+            ) : null}
             <Text testID={`logbook-list-max-depth-${siteName}-${toTestIdValue(maxDepthLabel)}`} className="text-lg font-semibold text-card-foreground">
               {maxDepthLabel}
             </Text>

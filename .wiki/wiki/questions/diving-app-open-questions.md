@@ -1,18 +1,18 @@
 # Diving App / Open Questions
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
+Updated: 2026-07-09
 Status: Draft / Needs Validation
 Owner: local product/dev agent
-Last reviewed: 2026-07-08
+Last reviewed: 2026-07-09
 Change policy: open questions can be updated when decisions have source-backed rationale
 Related pages: [Diving App / Immutable Algorithm Reference](../algorithms/diving-app-algorithm-reference.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md); [Diving App / Product Roadmap](../project/diving-app-product-roadmap.md)
 Slug: diving-app-open-questions
 
 ## 요약
 
-이 문서는 Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 아직 결정해야 할 질문을 저장한다. v1 Air-only safety stop reminder의 기본 trigger/countdown/reset/copy와 `CMWaterSubmersionManager` 기반 real sensor provider는 watch implementation에 들어갔지만, 실제 underwater sensor behavior, auto-launch, store-level Ultra-only filtering, 사용자 설정 정책, 40m 수심 제한 반영, safety stop 권장/필수 색상 분리, decompression stop 용어와 data model은 아직 검증하거나 설계해야 한다.
+이 문서는 Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 아직 결정해야 할 질문을 저장한다. v1 Air-only safety stop reminder의 기본 trigger/countdown/reset/copy, `CMWaterSubmersionManager` 기반 real sensor provider, 40m 초과 값 보존+unsupported warning 정책, v1 recommendation-only safety stop metadata는 implementation에 들어갔다. 실제 underwater sensor behavior, auto-launch, store-level Ultra-only filtering, 사용자 설정 정책, long-term safety stop field migration, decompression stop 용어와 data model은 아직 검증하거나 설계해야 한다.
 
 ## 질문
 
@@ -26,9 +26,9 @@ Slug: diving-app-open-questions
 8. v2에서 mandatory deco 상황 발생 시 계속 계산할지, `deco obligation 발생 / 즉시 보수 절차` 중심으로 제한할지?
 9. 무선 탱크 압력 송신기 지원 가능성은 어떤 하드웨어/프로토콜에 의존하는지?
 10. 로그 export format은 UDDF, Subsurface-compatible format, CSV, JSON 중 무엇을 지원할지?
-11. Apple Watch 기반 v1 수심 제한 40m를 어디에서 강제할지? Logbook/Planbook form validation, watch runtime, sync contract validator, imported sample handling, review copy를 함께 결정해야 한다.
-12. 40m보다 깊은 sample이나 수동 기록을 앱이 reject할지, 저장하되 unsupported marker를 붙일지, 별도 외부 장비 source가 생길 때만 허용할지?
-13. v1 safety stop의 권장 리마인더 색상과 future mandatory/decompression stop 색상을 어떻게 분리할지? 현재 `safetyStop.required` field를 rename/migrate할지?
+11. 40m 초과 unsupported-depth warning이 실제 수중 watch 화면에서 충분히 눈에 띄지만 과도한 지시처럼 보이지 않는지?
+12. v1 safety stop의 `safetyStop.required` compatibility field를 장기적으로 rename/migrate할지, 아니면 future mandatory/decompression entity만 별도로 추가할지?
+13. future mandatory/decompression stop 색상과 severity를 v1 recommendation-only safety stop과 어떻게 분리할지?
 14. Decompression stop을 추가할 때 safety stop과 별도 entity로 둘지, 외부 dive computer import의 사실 기록으로만 저장할지, 앱이 직접 계산하는 고위험 기능으로 둘지?
 
 ## 검증 TODO

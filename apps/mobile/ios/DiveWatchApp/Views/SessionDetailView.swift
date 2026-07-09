@@ -229,7 +229,7 @@ private struct SafetyStopResultSection: View {
 
                 VStack(spacing: 6) {
                     SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
-                    SummaryRow(title: String(localized: "Required"), value: localizedBoolean(safetyStop.required))
+                    SummaryRow(title: String(localized: "Recommendation"), value: String(localized: "Recommended reminder"))
                     SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
                     SummaryRow(title: String(localized: "Target / zone"), value: targetZoneText)
                     SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))

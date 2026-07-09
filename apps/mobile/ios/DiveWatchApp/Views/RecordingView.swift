@@ -411,12 +411,34 @@ private struct InstrumentDepthLayout<Content: View>: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
+                UnsupportedDepthWarning(currentDepthMeters: currentDepthMeters)
+
                 content
             }
             .padding(.top, 24)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+    }
+}
+
+private struct UnsupportedDepthWarning: View {
+    let currentDepthMeters: Double
+
+    var body: some View {
+        if currentDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters {
+            Text(String(localized: "Outside supported depth"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(1)
+                .minimumScaleFactor(0.68)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
+                )
+        }
     }
 }
 
