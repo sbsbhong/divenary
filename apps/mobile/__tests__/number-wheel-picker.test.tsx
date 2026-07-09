@@ -78,6 +78,25 @@ describe('NumberWheelPicker', () => {
     expect(renderer!.root.findByProps({ testID: 'depth-picker-value' }).props.children).toBe('15');
   });
 
+  it('centers a unitless single-column value for repetition fields', async () => {
+    const onChange = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <NumberWheelPicker value={8} min={0} max={200} step={1} onChange={onChange} testID="repetition-picker" />,
+      );
+    });
+    renderers.push(renderer!);
+
+    const value = renderer!.root.findByProps({ testID: 'repetition-picker-value' });
+    const valueColumn = renderer!.root.findByProps({ testID: 'repetition-picker-center-value-column' });
+
+    expect(value.props.children).toBe('8');
+    expect(value.props.className).toEqual(expect.stringContaining('text-center'));
+    expect(valueColumn.props.className).toEqual(expect.stringContaining('items-center'));
+  });
+
   it('renders multiple numeric columns in one shared wheel box', async () => {
     const onColumnChange = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;

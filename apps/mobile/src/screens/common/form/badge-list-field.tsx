@@ -19,11 +19,17 @@ type BadgeListFieldProps = {
   className?: string;
 };
 
-export function BadgeListField(props: BadgeListFieldProps): React.JSX.Element {
+export type BadgeListFieldHandle = {
+  commitPending: () => string[];
+};
+
+export const BadgeListField = React.forwardRef<BadgeListFieldHandle, BadgeListFieldProps>(
+function BadgeListField(props, ref): React.JSX.Element {
   const [pendingValue, setPendingValue] = React.useState('');
+  const pendingValueRef = React.useRef('');
 
   const commitTokens = React.useCallback(
-    (tokens: string[]) => {
+    (tokens: string[], options: { clearPending?: boolean } = {}) => {
       const nextValues = [...props.values];
 
       for (const token of tokens) {
@@ -33,29 +39,43 @@ export function BadgeListField(props: BadgeListFieldProps): React.JSX.Element {
         }
       }
 
+      if (options.clearPending) {
+        pendingValueRef.current = '';
+        setPendingValue('');
+      }
+
       props.onChange(nextValues);
+      return nextValues;
     },
     [props],
   );
 
+  const commitPending = React.useCallback(() => {
+    return commitTokens([pendingValueRef.current], { clearPending: true });
+  }, [commitTokens]);
+
+  React.useImperativeHandle(ref, () => ({ commitPending }), [commitPending]);
+
   const handleChangeText = React.useCallback(
     (text: string) => {
       if (!text.includes(',')) {
+        pendingValueRef.current = text;
         setPendingValue(text);
         return;
       }
 
       const parts = text.split(',');
       commitTokens(parts.slice(0, -1));
-      setPendingValue(parts[parts.length - 1] ?? '');
+      const nextPendingValue = parts[parts.length - 1] ?? '';
+      pendingValueRef.current = nextPendingValue;
+      setPendingValue(nextPendingValue);
     },
     [commitTokens],
   );
 
   const handleSubmitEditing = React.useCallback(() => {
-    commitTokens([pendingValue]);
-    setPendingValue('');
-  }, [commitTokens, pendingValue]);
+    commitPending();
+  }, [commitPending]);
 
   const removeValue = React.useCallback(
     (value: string) => {
@@ -76,7 +96,7 @@ export function BadgeListField(props: BadgeListFieldProps): React.JSX.Element {
         {props.values.length ? (
           <HStack space="xs" className="flex-wrap">
             {props.values.map((value, index) => {
-              const badgeTone = getBadgeTone(index);
+              const badgeTone = primaryBadgeTone;
 
               return (
               <HStack
@@ -107,6 +127,7 @@ export function BadgeListField(props: BadgeListFieldProps): React.JSX.Element {
             value={pendingValue}
             onChangeText={handleChangeText}
             onSubmitEditing={handleSubmitEditing}
+            onBlur={commitPending}
             placeholder={props.placeholder}
           />
         </Input>
@@ -114,14 +135,6 @@ export function BadgeListField(props: BadgeListFieldProps): React.JSX.Element {
     </EditorField>
   );
 }
+);
 
-function getBadgeTone(index: number): { container: string; text: string } {
-  const tones = [
-    { container: 'border-primary/20 bg-primary/10', text: 'text-primary' },
-    { container: 'border-secondary bg-secondary', text: 'text-secondary-foreground' },
-    { container: 'border-accent bg-accent', text: 'text-accent-foreground' },
-    { container: 'border-border bg-muted', text: 'text-foreground' },
-  ];
-
-  return tones[index % tones.length];
-}
+const primaryBadgeTone = { container: 'border-primary/20 bg-primary/10', text: 'text-primary' };

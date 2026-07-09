@@ -750,6 +750,46 @@ describe('Logbook manual entry flow', () => {
     expect(savedEntry.manual.buddyIds).toEqual(['Alex']);
   });
 
+  test('commits the final comma-separated badge token before saving', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781354000 });
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-create-action');
+    await changeDateTime(root, 'log-entry-editor-started-at', new Date('2026-06-20T09:30:00'));
+    await changeText(root, 'log-entry-editor-site-name', 'Badge Save Reef');
+    await changeNumber(root, 'log-entry-editor-duration', 45 * 60);
+    await changeNumber(root, 'log-entry-editor-max-depth', 18);
+    await changeText(root, 'log-entry-editor-buddies-input', 'Mina, Alex');
+    await press(root, 'log-entry-editor-save');
+
+    const [savedEntry] = await repository.list();
+    expect(savedEntry.manual.buddyIds).toEqual(['Mina', 'Alex']);
+  });
+
+  test('commits the final badge token on blur and styles every badge as primary', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781354000 });
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-create-action');
+    await changeText(root, 'log-entry-editor-tags-input', 'reef, training');
+
+    await ReactTestRenderer.act(async () => {
+      root
+        .findAllByProps({ testID: 'log-entry-editor-tags-input' })
+        .find(match => typeof match.props.onBlur === 'function')!
+        .props.onBlur();
+    });
+
+    expect(root.findByProps({ testID: 'log-entry-editor-tags-badge-reef' }).props.className).toEqual(
+      expect.stringContaining('bg-primary/10'),
+    );
+    expect(root.findByProps({ testID: 'log-entry-editor-tags-badge-training' }).props.className).toEqual(
+      expect.stringContaining('bg-primary/10'),
+    );
+  });
+
   test('saves star ratings from the logbook editor', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781351000 });
     const renderer = await renderLogbook(repository);

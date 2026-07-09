@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { createPressable } from '@gluestack-ui/core/pressable/creator';
-import { Pressable as RNPressable } from 'react-native';
+import { Keyboard, Pressable as RNPressable } from 'react-native';
 
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import { withStyleContext } from '@gluestack-ui/utils/nativewind-utils';
@@ -23,10 +23,19 @@ type IPressableProps = Omit<
 const Pressable = React.forwardRef<
   React.ComponentRef<typeof UIPressable>,
   IPressableProps
->(function Pressable({ className, ...props }, ref) {
+>(function Pressable({ className, onPress, ...props }, ref) {
+  const handlePress = React.useCallback<NonNullable<IPressableProps['onPress']>>(
+    event => {
+      Keyboard.dismiss();
+      onPress?.(event);
+    },
+    [onPress],
+  );
+
   return (
     <UIPressable
       {...props}
+      onPress={onPress ? handlePress : undefined}
       ref={ref}
       className={pressableStyle({
         class: className,

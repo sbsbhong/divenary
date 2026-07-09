@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
-import type { LayoutChangeEvent } from 'react-native';
+import { Keyboard, type LayoutChangeEvent } from 'react-native';
 import { Controller, useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
@@ -14,7 +14,7 @@ import { VStack } from '../../components/ui/vstack';
 import type { DiveEntryStyle, DivePlan, DivePlanStatus } from '../../types/dive-plan';
 import type { WatchSession } from '../../types/dive-session';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
-import { BadgeListField } from '../common/form/badge-list-field';
+import { BadgeListField, type BadgeListFieldHandle } from '../common/form/badge-list-field';
 import { DateTimeField } from '../common/form/date-time-field';
 import { EditorField } from '../common/form/editor-field';
 import { planFormSchema, planFormValuesToPlan, planToPlanFormValues, type PlanFormValues } from './plan-form-schema';
@@ -47,6 +47,9 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
   const mode = props.mode ?? 'create';
   const errors = form.formState.errors;
   const bodyOffsetRef = React.useRef(0);
+  const buddiesRef = React.useRef<BadgeListFieldHandle>(null);
+  const gearIdsRef = React.useRef<BadgeListFieldHandle>(null);
+  const tagsRef = React.useRef<BadgeListFieldHandle>(null);
 
   const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {
     bodyOffsetRef.current = event.nativeEvent.layout.y;
@@ -77,17 +80,27 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
     [props],
   );
 
+  const flushPendingBadgeFields = React.useCallback(() => {
+    form.setValue('buddies', buddiesRef.current?.commitPending() ?? form.getValues('buddies'), { shouldDirty: true });
+    form.setValue('gearIds', gearIdsRef.current?.commitPending() ?? form.getValues('gearIds'), { shouldDirty: true });
+    form.setValue('tags', tagsRef.current?.commitPending() ?? form.getValues('tags'), { shouldDirty: true });
+  }, [form]);
+
   const save = React.useCallback(
     (status: DivePlanStatus) =>
-      form.handleSubmit(async values => {
+      {
+        Keyboard.dismiss();
+        flushPendingBadgeFields();
+        return form.handleSubmit(async values => {
         setLocalSaveFailed(false);
         try {
           await props.onSave(planFormValuesToPlan(basePlan, values, status));
         } catch {
           setLocalSaveFailed(true);
         }
-      }, handleInvalidSubmit)(),
-    [basePlan, form, handleInvalidSubmit, props],
+        }, handleInvalidSubmit)();
+      },
+    [basePlan, flushPendingBadgeFields, form, handleInvalidSubmit, props],
   );
 
   return (
@@ -212,6 +225,7 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
             name="buddies"
             render={({ field }) => (
               <BadgeListField
+                ref={buddiesRef}
                 label={t('logbook.buddyNames', { defaultValue: 'Buddies' })}
                 values={field.value}
                 onChange={field.onChange}
@@ -227,6 +241,7 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
             name="gearIds"
             render={({ field }) => (
               <BadgeListField
+                ref={gearIdsRef}
                 label={t('logbook.gear', { defaultValue: 'Gear' })}
                 values={field.value}
                 onChange={field.onChange}
@@ -243,6 +258,7 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
           name="tags"
           render={({ field }) => (
             <BadgeListField
+              ref={tagsRef}
               label={t('logbook.tags', { defaultValue: 'Tags' })}
               values={field.value}
               onChange={field.onChange}

@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
-import type { LayoutChangeEvent } from 'react-native';
+import { Keyboard, type LayoutChangeEvent } from 'react-native';
 import { Controller, useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
@@ -12,7 +12,7 @@ import { Textarea, TextareaInput } from '../../components/ui/textarea';
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { WatchSession } from '../../types/dive-session';
-import { BadgeListField } from '../common/form/badge-list-field';
+import { BadgeListField, type BadgeListFieldHandle } from '../common/form/badge-list-field';
 import { DepthWheelField, DurationWheelField } from '../common/form/compound-number-wheel-fields';
 import { DateTimeField } from '../common/form/date-time-field';
 import { EditorField } from '../common/form/editor-field';
@@ -52,6 +52,9 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
   const mode = props.mode ?? 'create';
   const errors = form.formState.errors;
   const bodyOffsetRef = React.useRef(0);
+  const buddiesRef = React.useRef<BadgeListFieldHandle>(null);
+  const tagsRef = React.useRef<BadgeListFieldHandle>(null);
+  const marineLifeRef = React.useRef<BadgeListFieldHandle>(null);
 
   const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {
     bodyOffsetRef.current = event.nativeEvent.layout.y;
@@ -82,15 +85,25 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
     [props],
   );
 
-  const save = form.handleSubmit(async values => {
-    setLocalSaveFailed(false);
-    try {
-      await props.onSave(logEntryFormValuesToEntry(props.entry, values, form.formState.dirtyFields as LogEntryDirtyFields));
-    } catch {
-      setLocalSaveFailed(true);
-      // Keep the draft in place while React Query exposes the mutation error state.
-    }
-  }, handleInvalidSubmit);
+  const flushPendingBadgeFields = React.useCallback(() => {
+    form.setValue('buddies', buddiesRef.current?.commitPending() ?? form.getValues('buddies'), { shouldDirty: true });
+    form.setValue('tags', tagsRef.current?.commitPending() ?? form.getValues('tags'), { shouldDirty: true });
+    form.setValue('observedMarineLife', marineLifeRef.current?.commitPending() ?? form.getValues('observedMarineLife'), { shouldDirty: true });
+  }, [form]);
+
+  const save = React.useCallback(() => {
+    Keyboard.dismiss();
+    flushPendingBadgeFields();
+    return form.handleSubmit(async values => {
+      setLocalSaveFailed(false);
+      try {
+        await props.onSave(logEntryFormValuesToEntry(props.entry, values, form.formState.dirtyFields as LogEntryDirtyFields));
+      } catch {
+        setLocalSaveFailed(true);
+        // Keep the draft in place while React Query exposes the mutation error state.
+      }
+    }, handleInvalidSubmit)();
+  }, [flushPendingBadgeFields, form, handleInvalidSubmit, props]);
 
   return (
     <DiveSummaryCard accent="primary">
@@ -230,6 +243,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
           name="buddies"
           render={({ field }) => (
             <BadgeListField
+              ref={buddiesRef}
               label={t('logbook.buddyNames')}
               values={field.value}
               onChange={field.onChange}
@@ -244,6 +258,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
           name="tags"
           render={({ field }) => (
             <BadgeListField
+              ref={tagsRef}
               label={t('logbook.tags')}
               values={field.value}
               onChange={field.onChange}
@@ -258,6 +273,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
           name="observedMarineLife"
           render={({ field }) => (
             <BadgeListField
+              ref={marineLifeRef}
               label={t('logbook.observedMarineLife')}
               values={field.value}
               onChange={field.onChange}

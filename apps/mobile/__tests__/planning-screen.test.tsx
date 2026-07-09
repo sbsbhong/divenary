@@ -347,6 +347,23 @@ describe('Planning screen planbook flow', () => {
     expect(savedPlan.tags).toEqual(['reef', 'training']);
   });
 
+  it('commits the final plan badge token before saving', async () => {
+    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
+    const renderer = await renderPlanning(repository);
+    const root = renderer.root;
+
+    await press(root, 'planning-create-action');
+    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
+    await changeText(root, 'planning-editor-site-name', 'Plan Badge Reef');
+    await changeNumber(root, 'planning-editor-planned-max-depth', 20);
+    await changeNumber(root, 'planning-editor-planned-duration', 40);
+    await changeText(root, 'planning-editor-tags-input', 'reef, line');
+    await press(root, 'planning-editor-save-planned');
+
+    const [savedPlan] = await repository.list();
+    expect(savedPlan.tags).toEqual(['reef', 'line']);
+  });
+
   it('saves plan visibility and difficulty as star ratings', async () => {
     const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
     const renderer = await renderPlanning(repository);

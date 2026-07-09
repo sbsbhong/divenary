@@ -457,6 +457,10 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
     actions: { changeDraft, commitDraft, openInput },
     meta: { inputRef },
   } = useNumberWheelPicker('NumberWheelPicker.CenterInputTrigger');
+  const valueColumnStyle = unitLabel ? styles.valueColumn : styles.singleValueColumn;
+  const valueColumnClassName = unitLabel ? 'items-end justify-center' : 'items-center justify-center';
+  const valueTextClassName = unitLabel ? 'text-2xl font-semibold text-foreground' : 'text-center text-2xl font-semibold text-foreground';
+  const inputTextClassName = unitLabel ? 'text-right text-2xl font-semibold text-foreground' : 'text-center text-2xl font-semibold text-foreground';
 
   return (
     <Pressable
@@ -470,7 +474,7 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
     >
       {isEditing ? (
         <HStack testID={`${testID}-center-row`} className="w-full items-center justify-center">
-          <Box testID={`${testID}-center-value-column`} style={styles.valueColumn} className="items-end justify-center">
+          <Box testID={`${testID}-center-value-column`} style={valueColumnStyle} className={valueColumnClassName}>
             <Input className="h-10 w-full rounded-none border-0 bg-transparent px-0 shadow-none">
               <InputField
                 ref={inputRef}
@@ -484,7 +488,7 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
                 selectTextOnFocus
                 autoFocus
                 editable={!disabled}
-                className="text-right text-2xl font-semibold text-foreground"
+                className={inputTextClassName}
               />
             </Input>
           </Box>
@@ -498,13 +502,13 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
         </HStack>
       ) : (
         <HStack testID={`${testID}-center-row`} className="w-full items-baseline justify-center">
-          <Box testID={`${testID}-center-value-column`} style={styles.valueColumn} className="items-end justify-center">
+          <Box testID={`${testID}-center-value-column`} style={valueColumnStyle} className={valueColumnClassName}>
             <Text
               testID={`${testID}-value`}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.75}
-              className="text-2xl font-semibold text-foreground"
+              className={valueTextClassName}
             >
               {formatNumber(displayValue, step)}
             </Text>
@@ -538,6 +542,10 @@ const styles = StyleSheet.create({
   },
   contentContainer: {},
   scroller: {},
+  singleValueColumn: {
+    flex: 1,
+    paddingRight: 0,
+  },
   unitColumn: coreStyles.unitColumn,
   valueColumn: coreStyles.valueColumn,
   wheel: {},
