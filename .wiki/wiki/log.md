@@ -1,5 +1,19 @@
 # Wiki Log
 
+## [2026-07-08] ingest | Depth cap, safety stop color, decompression stop terminology pending work
+- Updated: Diving App / Product Roadmap
+- Updated: Diving App / QA and Test Plan
+- Updated: 구현 우선순위 기록
+- Updated: Diving App / Non-Negotiable Safety Rules
+- Updated: Diving App / Safety UX and Legal Notes
+- Updated: Diving App / Scuba Mode
+- Updated: 다이브 로그 도메인
+- Updated: 다이빙 용어
+- Updated: 안전 규칙
+- Updated: Mobile/Watch UI 언어
+- Updated: Diving App / Open Questions
+- Updated: 열린 질문
+
 ## [2026-07-07] ingest | Watch debug demo sync logbook UX
 - Added: Watch debug demo sync logbook UX raw source
 - Updated: Watch 앱 구조

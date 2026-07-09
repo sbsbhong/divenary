@@ -1,28 +1,28 @@
 # Diving App / Product Roadmap
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md)
-Updated: 2026-06-28
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
+Updated: 2026-07-08
 Status: Draft / Needs Validation
 Owner: local product/dev agent
-Last reviewed: 2026-06-28
+Last reviewed: 2026-07-08
 Change policy: roadmap can change with documented rationale
 Related pages: [Diving App / Overview](diving-app-overview.md); [Diving App / QA and Test Plan](diving-app-qa-test-plan.md); [Diving App / Non-Negotiable Safety Rules](../domains/diving-app-non-negotiable-safety-rules.md); [Diving App / State Management](../architecture/diving-app-state-management.md)
 Slug: diving-app-product-roadmap
 
 ## 요약
 
-추천 제품 범위는 v1 → v2 → v3 → v4 순서다. v1은 Gauge + Freedive + Log에 Air-only 레크리에이션 스쿠버 safety-stop 리마인더를 포함한다. 스쿠버 계산과 gas integration은 검증 조건을 통과한 뒤 단계적으로 다룬다.
+추천 제품 범위는 v1 → v2 → v3 → v4 순서다. v1은 Apple Watch 기반 40m 이하 Gauge + Freedive + Log에 Air-only 레크리에이션 스쿠버 safety-stop 리마인더를 포함한다. 스쿠버 계산, decompression stop, gas integration은 검증 조건을 통과한 뒤 단계적으로 다룬다.
 
 ## Roadmap Principle
 
-v1은 gauge/freedive/log 중심이지만, 스쿠버 앱으로서의 최소 의미를 위해 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함한다. 이 v1 safety stop은 NDL, ceiling, tissue loading, no-fly, gas remaining과 연결하지 않는 비인증 참고 기능이다. v2부터 사용자가 사실상 dive computer로 받아들일 수 있으므로 algorithm validation과 state recovery가 release gate가 된다. v3는 가스 연동 신뢰성이 release gate가 된다. v4는 MVP 범위가 아니며 별도 제품/검증/책임 범위로 다룬다.
+v1은 Apple Watch 기반 40m 이하 gauge/freedive/log 중심이지만, 스쿠버 앱으로서의 최소 의미를 위해 Air-only 레크리에이션 스쿠버 safety-stop 리마인더와 타이머를 포함한다. 이 v1 safety stop은 NDL, ceiling, tissue loading, no-fly, gas remaining과 연결하지 않는 비인증 참고 기능이다. 40m보다 깊은 수심은 Apple Watch sensor behavior와 책임 범위 검토 뒤 별도 결정한다. v2부터 사용자가 사실상 dive computer로 받아들일 수 있으므로 algorithm validation과 state recovery가 release gate가 된다. v3는 가스 연동 신뢰성이 release gate가 된다. v4는 MVP 범위가 아니며 별도 제품/검증/책임 범위로 다룬다.
 
 ## 단계
 
 | 버전  | 이름                                  | 목표                                | 제품 범위                                                                                                                                      |
 | --- | ----------------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| v1  | Gauge + Freedive + Air Scuba Safety Stop + Log | 스쿠버 앱의 최소 의미를 갖는 Air-only 시작점 | 현재 수심, 최대 수심, 평균 수심, 다이브 시간, 수온, 상승/하강 속도, 프리다이빙 surface interval, 30초 post-surface timer, 목표 수심/시간 알림, 로그/profile, Air-only 스쿠버 gauge mode, 비인증 safety-stop 리마인더/타이머 |
+| v1  | Gauge + Freedive + Air Scuba Safety Stop + Log | 스쿠버 앱의 최소 의미를 갖는 40m 이하 Air-only 시작점 | Apple Watch 기반 40m 이하 현재 수심, 최대 수심, 평균 수심, 다이브 시간, 수온, 상승/하강 속도, 프리다이빙 surface interval, 30초 post-surface timer, 목표 수심/시간 알림, 로그/profile, Air-only 스쿠버 gauge mode, 비인증 safety-stop 리마인더/타이머 |
 | v2  | Recreational Scuba No-Decompression | 레크리에이션 Air/Nitrox 다이브 컴퓨터에 가까운 기능 | Air/Nitrox, ppO2, MOD, Bühlmann ZHL-16C + Gradient Factors, NDL, ceiling, model-integrated safety stop, TTS, CNS, no-fly, repetitive dive tissue carry-over |
 | v3  | Gas-integrated Scuba                | 무선 압력 송신기 또는 수동 입력 기반 가스 관리       | tank pressure, SAC/RMV, gas time remaining, turn pressure, reserve warning, gas planning                                                   |
 | v4  | Technical / Trimix / Deco           | 미래 확장 후보, MVP 제외                  | Trimix, multiple gas switch, accelerated deco, helium tissue loading, END, gas density, mandatory deco planning                            |
@@ -31,7 +31,7 @@ v1은 gauge/freedive/log 중심이지만, 스쿠버 앱으로서의 최소 의�
 
 v1 기능:
 
-- 현재 수심
+- 40m 이하 Apple Watch 기반 현재 수심
 - 최대 수심
 - 평균 수심
 - 다이브 시간
@@ -45,6 +45,7 @@ v1 기능:
 - Air-only 레크리에이션 스쿠버 safety-stop 리마인더/타이머
 - safety-stop countdown pause/resume
 - safety-stop 상태와 이탈 marker
+- 권장 safety stop과 future mandatory/decompression stop의 색상/용어 분리
 
 v1에서 하지 않는다.
 
@@ -54,6 +55,8 @@ v1에서 하지 않는다.
 - decompression ceiling 표시
 - decompression 기반 stop obligation 계산
 - mandatory deco 계산
+- decompression stop 또는 감압 정지를 v1 safety stop과 같은 의미로 표시
+- 40m보다 깊은 Apple Watch 수심을 정상 지원 범위로 표시
 - no-fly 계산
 - gas remaining 계산
 

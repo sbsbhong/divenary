@@ -1,11 +1,11 @@
 # Diving App / QA and Test Plan
 
-Sources: user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28
-Raw: [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md)
-Updated: 2026-06-28
+Sources: user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
+Raw: [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
+Updated: 2026-07-08
 Status: Draft / Needs Validation
 Owner: local product/dev agent
-Last reviewed: 2026-06-28
+Last reviewed: 2026-07-08
 Change policy: test cases can be expanded freely, but safety-critical expected outputs require review
 Related pages: [Diving App / Overview](diving-app-overview.md); [Diving App / Immutable Algorithm Reference](../algorithms/diving-app-algorithm-reference.md); [Diving App / Scuba Mode](../domains/diving-app-scuba-mode.md); [Diving App / Freediving Mode](../domains/diving-app-freediving-mode.md); [Diving App / State Management](../architecture/diving-app-state-management.md); [Diving App / Non-Negotiable Safety Rules](../domains/diving-app-non-negotiable-safety-rules.md); [Diving App / Product Roadmap](diving-app-product-roadmap.md)
 Slug: diving-app-qa-test-plan
@@ -16,7 +16,7 @@ Slug: diving-app-qa-test-plan
 
 ## 현재 상태
 
-현재 저장소에는 Bühlmann tissue model, NDL, ceiling, CNS, OTU, gas remaining 계산 module이 구현되어 있지 않다. v1 Air-only safety stop은 별도 스쿠버 계산 모델이 아니라 rule-based reminder/timer로 검증한다. 이 문서는 구현 전 검증 기준이며, expected output은 canonical source 확정 전까지 Needs Validation 상태다.
+현재 저장소에는 Bühlmann tissue model, NDL, ceiling, CNS, OTU, gas remaining 계산 module이 구현되어 있지 않다. v1 Air-only safety stop은 별도 스쿠버 계산 모델이 아니라 rule-based reminder/timer로 검증한다. Apple Watch 기반 v1은 40m 이하 지원을 기준으로 검증한다. 이 문서는 구현 전 검증 기준이며, expected output은 canonical source 확정 전까지 Needs Validation 상태다.
 
 ## Shared Algorithm Core Tests
 
@@ -43,6 +43,8 @@ Slug: diving-app-qa-test-plan
 | Surface GF | surface GF 계산 검증 | tissue pressure, target pressure, coefficients | surface GF percent | Needs Validation | Subsurface | warning copy는 Safety UX 기준 따름 | yes |
 | NDL binary search | NDL search monotonicity와 boundary 검증 | state, current depth, ascent profile | NDL or max-search marker | Needs Validation | Algorithm Reference; DAN NDL | previous dive state 포함 case 필수 | yes |
 | v1 Air-only safety stop reminder | Air-only safety stop trigger/countdown 검증 | dive type, max/current depth, rate, `Δt` | reminder state and countdown state | Needs Validation | PADI; DAN NDL | 감압 의무가 아니라 reminder로만 표시 | yes |
+| v1 Apple Watch depth cap | 40m 이하 지원 제한 검증 | manual max depth, planned max depth, watch/imported samples around 40m | 40m 초과는 정상 지원처럼 표시하지 않음 | Needs Validation | Apple Watch depth guidance | reject, unsupported marker, or source-specific behavior는 제품 결정 필요 | yes |
+| Safety stop vs decompression stop copy | 권장 safety stop과 mandatory/decompression stop 표현 분리 검증 | safety stop states, future decompression state fixtures | 권장과 필수 색상/문구가 다르고 v1 safety stop은 `필수`로 번역되지 않음 | Needs Validation | Safety UX | `safetyStop.required` field의 사용자-facing 오역 방지 | yes |
 | Model-integrated safety stop requirement | v2 이상 safety stop trigger/countdown 검증 | dive type, gas setting, max/current depth, rate, `Δt`, model state | stop state and countdown state | Needs Validation | PADI; DAN NDL | NDL/ceiling/tissue state와 함께 검증 | yes |
 | Mandatory decompression occurrence | mandatory deco 발생 감지 검증 | state/profile causing ceiling | ceiling/deco obligation state | Needs Validation | DecoTengu; Subsurface | v2 제품 처리 정책 미확정 | yes |
 | TTS | time to surface 계산 검증 | ascent time, stop times, final ascent | TTS | Needs Validation | Subsurface | gas remaining과 결합 case는 v3 | yes |
@@ -62,6 +64,7 @@ Slug: diving-app-qa-test-plan
 | Test area | Required coverage |
 |---|---|
 | Depth sensor sampling | depth sensor sampling 안정성, pressure 값 이상치 처리, pressure spike/flatline 처리 |
+| Supported depth cap | 40m 부근과 40m 초과 상황에서 watch runtime, import, review가 정상 지원처럼 보이지 않는지 확인 |
 | Dive lifecycle | 수심 1m 진입 후 자동 다이브 시작 조건, 수면 복귀 후 자동 다이브 종료 조건 |
 | Underwater interaction | 수중 화면 표시 가독성, water lock/touch 제한, Digital Crown 또는 버튼 기반 조작 가능성 |
 | Warnings | haptic warning 전달성, MOD 초과 critical warning 지속성, ascent rate warning 지속성, ceiling violation warning 지속성, NDL 임박 warning |
@@ -78,11 +81,13 @@ Slug: diving-app-qa-test-plan
 |---|---|
 | Log review | dive log 목록 표시, dive profile chart 표시, current/max/avg depth 표시 |
 | Settings validation | gas setting 관리, FO2 입력 validation, ppO2 limit 설정 validation, GF 설정 validation |
+| Depth validation | Logbook/Planbook 입력에서 Apple Watch 기반 40m cap과 40m 초과 unsupported 정책을 검증 |
 | Watch sync settings | Watch app으로 설정 sync |
 | History and state | previous dive history 관리, no-fly time 표시, surface interval 표시, CNS/OTU 표시 |
 | Import quality | Watch app에서 넘어온 로그 검증, incomplete dive log 처리, corrupted log 처리 |
 | Export | export format 검증, CSV export, JSON export, future UDDF 또는 Subsurface-compatible export 검토 |
 | Safety copy | v1 Air-only safety stop copy, safety copy 표시 위치 검증 |
+| Safety/deco terminology | v1 safety stop 권장 상태가 필수 감압 정지처럼 표시되지 않는지, mandatory/decompression 색상과 분리됐는지 검증 |
 
 ## Cross-device Sync Tests
 

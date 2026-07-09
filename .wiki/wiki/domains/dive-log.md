@@ -1,12 +1,12 @@
 # 다이브 로그 도메인
 
-Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07
-Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
-Updated: 2026-07-07
+Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08
+Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
+Updated: 2026-07-08
 
 ## 요약
 
-Dive log domain은 현재 watch에서 기록한 레크리에이션 세션과 모바일에서 직접 작성한 수동 로그를 과거 기록 확인, 모바일 import, 비중요 계획/기억 화면에 쓰기 위해 model한다. Watch-origin log는 mode별 payload를 보존하며, freedive는 한 session 안의 여러 dive segment를, scuba는 rule-based safety stop reminder 결과를 담을 수 있다. Cloud sync가 아직 없으므로 watch import가 local repository에 저장되고 watch로 acknowledgement를 돌려보내도 모바일 visible cloud status는 `pending`으로 남는다.
+Dive log domain은 현재 watch에서 기록한 레크리에이션 세션과 모바일에서 직접 작성한 수동 로그를 과거 기록 확인, 모바일 import, 비중요 계획/기억 화면에 쓰기 위해 model한다. Watch-origin log는 mode별 payload를 보존하며, freedive는 한 session 안의 여러 dive segment를, scuba는 rule-based safety stop reminder 결과를 담을 수 있다. Cloud sync가 아직 없으므로 watch import가 local repository에 저장되고 watch로 acknowledgement를 돌려보내도 모바일 visible cloud status는 `pending`으로 남는다. Safety stop 기록은 감압 정지 기록과 같은 의미가 아니며, future decompression stop은 별도 설계가 필요하다.
 
 ## 현재 상태
 
@@ -55,7 +55,9 @@ Scuba watch payload는 다음 개념을 포함한다.
 - water temperature
 - latest/max ascent rate
 - `safetyStop`
-- safety stop status, required/completed flags, target/min/max depth, duration, remaining time, time in zone, optional start/completion timestamp
+- safety stop status, current `required`/completed flags, target/min/max depth, duration, remaining time, time in zone, optional start/completion timestamp
+
+현재 `safetyStop.required` field는 v1 권장 리마인더가 arm 되었는지를 나타내는 기존 contract 표현으로만 해석한다. 이 이름은 mandatory decompression stop처럼 읽힐 수 있으므로 다음 contract 작업에서는 `recommended`, `advisory`, `required`, `mandatory`, `decompressionStop`을 어떻게 분리할지 migration을 검토해야 한다. 감압 정지 사실을 저장해야 한다면 safety stop object에 섞지 말고 source provenance와 model/source type을 가진 별도 구조로 설계한다.
 
 Sample metadata는 다음 field를 포함한다.
 
@@ -65,7 +67,7 @@ Sample metadata는 다음 field를 포함한다.
 - optional `pressureKPa`
 - optional `waterTemperatureCelsius`
 
-Review summary는 duration, max depth, average depth, sample count, average water temperature, freedive segment summary, scuba safety stop reminder summary를 포함할 수 있다. 이 값들은 과거 기록 확인용 값이며 감압 계산이나 비상 지침이 아니다.
+Review summary는 duration, max depth, average depth, sample count, average water temperature, freedive segment summary, scuba safety stop reminder summary를 포함할 수 있다. 이 값들은 과거 기록 확인용 값이며 감압 계산이나 비상 지침이 아니다. Apple Watch 기반 v1에서는 40m 이하 수심만 지원 범위로 취급하고, 40m보다 깊은 수심을 future external source나 unsupported marker 없이 정상 지원처럼 표시하지 않는다.
 
 Mobile model은 `WatchSession`과 모바일 최종 로그 항목을 분리한다. `WatchSession`은 watch-to-mobile sync contract로 유지하고, 모바일 로그북은 별도 `DiveLogEntry`를 사용한다.
 

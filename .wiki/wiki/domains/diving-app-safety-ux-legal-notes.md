@@ -1,18 +1,18 @@
 # Diving App / Safety UX and Legal Notes
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md)
-Updated: 2026-06-28
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
+Updated: 2026-07-08
 Status: Reference / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-06-28
+Last reviewed: 2026-07-08
 Change policy: safety wording changes require explicit review
 Related pages: [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotiable-safety-rules.md); [Diving App / Scuba Mode](diving-app-scuba-mode.md); [Diving App / Freediving Mode](diving-app-freediving-mode.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md)
 Slug: diving-app-safety-ux-legal-notes
 
 ## 요약
 
-이 문서는 safety copy, warning hierarchy, liability-related UX를 정리한다. 앱은 훈련, 인증, 전문 다이브 컴퓨터, 백업 수심계, 타이머, 감압표를 대체하지 않는다.
+이 문서는 safety copy, warning hierarchy, liability-related UX를 정리한다. 앱은 훈련, 인증, 전문 다이브 컴퓨터, 백업 수심계, 타이머, 감압표를 대체하지 않는다. v1 safety stop 권장 상태는 mandatory/decompression stop처럼 보이면 안 된다.
 
 ## 필수 메시지
 
@@ -32,6 +32,8 @@ Slug: diving-app-safety-ux-legal-notes
 - `safe`라는 단어를 함부로 쓰지 않는다.
 - `within model limit`, `no mandatory deco obligation currently shown`처럼 제한된 표현을 사용한다.
 - v1 Air-only safety stop은 `reminder`, `timer`, `reference`처럼 제한된 표현을 사용하고, 감압 의무나 상승 안전 보장처럼 표현하지 않는다.
+- Safety stop 권장은 낮은 severity의 reminder 색상을 사용하고, decompression stop 또는 mandatory stop은 별도 설계 전까지 앱 UI에 표시하지 않는다.
+- `required`라는 data field 이름이 있어도 사용자-facing copy에서는 `필수`로 번역하지 않는다. v1 safety stop은 `권장`, `리마인더`, `참고` 표현을 사용한다.
 
 ## 경고 계층
 
@@ -40,6 +42,8 @@ Slug: diving-app-safety-ux-legal-notes
 | Critical | MOD 초과, 상승속도 초과, ceiling violation, 센서/배터리/app failure | haptic + visual + persistent state, dismiss 후에도 상태가 해결될 때까지 유지 |
 | Important | NDL 임박, safety stop 이탈, CNS 높음, gas 부족 | 명확한 단위와 기준 표시, 로그 marker |
 | Context | 저수온, 장시간 노출, 짧은 surface interval, residual load 높음 | 보수성 reminder와 사후 review |
+
+v1 Air-only safety stop 권장 상태는 위 표의 Critical warning처럼 보이면 안 된다. 향후 decompression stop을 추가한다면 safety stop 권장과 같은 chip, 같은 색상, 같은 문구를 재사용하지 않는다.
 
 ## 표현 제한
 

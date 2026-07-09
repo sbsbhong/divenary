@@ -1,12 +1,12 @@
 # Mobile/Watch UI 언어
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07
-Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md)
-Updated: 2026-07-07
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08
+Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
+Updated: 2026-07-08
 
 ## 요약
 
-`diving-app`의 모바일과 watchOS UI는 **iOS grouped base + dive instrument accent**를 공통 방향으로 삼는다. 기본 구조는 Apple 앱처럼 조용하고 정돈된 grouped 화면을 따르고, 다이빙 앱의 성격은 수심, 시간, profile, 상태 같은 계기 요소 한두 곳에만 집중한다. 현재 watch recording은 full-height depth gauge와 compact live values를 중심으로 하고, 모바일 status badge는 low-chroma chip으로 제한한다.
+`diving-app`의 모바일과 watchOS UI는 **iOS grouped base + dive instrument accent**를 공통 방향으로 삼는다. 기본 구조는 Apple 앱처럼 조용하고 정돈된 grouped 화면을 따르고, 다이빙 앱의 성격은 수심, 시간, profile, 상태 같은 계기 요소 한두 곳에만 집중한다. 현재 watch recording은 full-height depth gauge와 compact live values를 중심으로 하고, 모바일 status badge는 low-chroma chip으로 제한한다. Safety stop 권장 상태와 future mandatory/decompression 상태는 색상 severity를 분리한다.
 
 ## 현재 상태
 
@@ -40,6 +40,7 @@ watchOS 앱의 기준은 다음과 같다.
 - `success`, `warning` 같은 별도 강조 색을 브랜드 색처럼 쓰지 않는다.
 - 큰 graph와 큰 숫자를 한 화면에 여러 개 동시에 두지 않는다.
 - safety 관련 copy는 항상 `review`, `reminder`, `non-certified assistant` 범위로 제한한다.
+- v1 safety stop 권장은 보조 caution tone으로 표시하고, mandatory/decompression stop 같은 future 필수 상태와 같은 색상이나 위계로 표시하지 않는다.
 
 ### 모바일 화면 규칙
 
