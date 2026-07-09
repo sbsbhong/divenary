@@ -523,6 +523,30 @@ describe('Logbook manual entry flow', () => {
     expect(refreshControl.props.refreshing).toBe(false);
   });
 
+  test('shows skeleton rows while logbook entries are loading', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+      renderer = ReactTestRenderer.create(
+        <LogbookScreen
+          entries={[]}
+          filter={{ query: '' }}
+          onFilterChange={jest.fn()}
+          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, unavailable: false })}
+          onRefresh={jest.fn()}
+          isLoading
+          onSaveEntry={jest.fn()}
+          onDeleteEntry={jest.fn()}
+        />,
+      );
+    });
+    renderers.push(renderer!);
+
+    expect(renderer!.root.findByProps({ testID: 'logbook-loading-state' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'logbook-empty-state' })).toHaveLength(0);
+  });
+
   test('refreshes when the active logbook tab is selected again', async () => {
     const onRefresh = jest.fn();
 

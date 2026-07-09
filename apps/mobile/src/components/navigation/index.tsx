@@ -47,7 +47,7 @@ import { LogEntryEditor } from '../../screens/logbook/log-entry-editor';
 import LogbookScreen from '../../screens/logbook/screen';
 import { PlanDetail } from '../../screens/planning/plan-detail';
 import { PlanEditor } from '../../screens/planning/plan-editor';
-import PlanningScreen from '../../screens/planning/screen';
+import PlanningScreen, { isPlanReadyForPromotion } from '../../screens/planning/screen';
 import SettingsScreen, { type SettingsRoute } from '../../screens/settings/screen';
 
 export type RootStackParamList = {
@@ -363,6 +363,7 @@ export default function RootNavigation(): React.JSX.Element {
                         onFilterChange={logbook.setFilter}
                         onSyncWatch={logbook.syncWatchPayloads}
                         onRefresh={logbook.refresh}
+                        isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
                         reselectToken={reselectTokens.logbook}
                         onSaveEntry={logbook.saveEntry}
@@ -380,6 +381,7 @@ export default function RootNavigation(): React.JSX.Element {
                         sessions={logbook.sessions}
                         plans={planning.plans}
                         onRefresh={planning.refresh}
+                        isLoading={planning.isLoading}
                         isRefreshing={planning.isRefreshing}
                         reselectToken={reselectTokens.planning}
                         onSavePlan={planning.savePlan}
@@ -389,6 +391,7 @@ export default function RootNavigation(): React.JSX.Element {
                         onCreatePlan={openPlanCreate}
                         onOpenPlan={openPlanDetail}
                         onCreateLogFromPlan={createLogFromPlan}
+                        logEntryIds={logbook.entries.map(entry => entry.localId)}
                         onOpenLogbook={openLogbook}
                         completedPromptPlan={completedPromptPlan}
                         onCompletedPromptLater={() => setCompletedPromptPlan(undefined)}
@@ -428,6 +431,7 @@ export default function RootNavigation(): React.JSX.Element {
               {props => (
                 <PlanningDetailRoute
                   {...props}
+                  logbook={logbook}
                   planning={planning}
                   onCreateLogFromPlan={createLogFromPlan}
                   onPlanCompleted={onPlanCompleted}
@@ -685,12 +689,16 @@ function PlanningCreateRoute(
 
 function PlanningDetailRoute(
   props: NativeStackScreenProps<RootStackParamList, 'planningDetail'> & {
+    logbook: ReturnType<typeof useDiveLogbook>;
     planning: ReturnType<typeof useDivePlans>;
     onCreateLogFromPlan: (plan: DivePlan) => void;
     onPlanCompleted: (plan: DivePlan) => void;
   },
 ): React.JSX.Element {
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
+  const hasExistingConvertedLog = Boolean(
+    plan?.convertedLogLocalId && props.logbook.entries.some(entry => entry.localId === plan.convertedLogLocalId),
+  );
 
   if (!plan) {
     return <MissingRouteScreen navigation={props.navigation} />;
@@ -702,6 +710,19 @@ function PlanningDetailRoute(
         plan={plan}
         onBack={() => props.navigation.goBack()}
         onEdit={nextPlan => props.navigation.navigate('planningEdit', { localId: nextPlan.localId })}
+        onPromote={async nextPlan => {
+          if (!isPlanReadyForPromotion(nextPlan)) {
+            props.navigation.navigate('planningEdit', { localId: nextPlan.localId });
+            return;
+          }
+
+          const savedPlan = await props.planning.savePlan({
+            ...nextPlan,
+            status: 'planned',
+            updatedAt: Date.now() / 1000,
+          });
+          props.navigation.replace('planningDetail', { localId: savedPlan.localId });
+        }}
         onComplete={async nextPlan => {
           const timestamp = Date.now() / 1000;
           const savedPlan = await props.planning.savePlan({
@@ -717,6 +738,7 @@ function PlanningDetailRoute(
           props.navigation.goBack();
         }}
         onCreateLogFromPlan={props.onCreateLogFromPlan}
+        hasExistingConvertedLog={hasExistingConvertedLog}
       />
     </RoutedScrollScreen>
   );

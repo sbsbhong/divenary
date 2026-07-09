@@ -12,17 +12,20 @@ type PlanDetailProps = {
   plan: DivePlan;
   onBack: () => void;
   onEdit: (plan: DivePlan) => void;
+  onPromote?: (plan: DivePlan) => Promise<void>;
   onComplete: (plan: DivePlan) => Promise<void>;
   onDelete?: (localId: string) => Promise<void>;
   onCreateLogFromPlan: (plan: DivePlan) => void;
+  hasExistingConvertedLog?: boolean;
 };
 
 export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const title = props.plan.title ?? props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
-  const canComplete = props.plan.status !== 'completed';
-  const canCreateLog = props.plan.status === 'completed';
+  const canPromote = props.plan.status === 'draft' && props.onPromote !== undefined;
+  const canComplete = props.plan.status === 'planned';
+  const canCreateLog = props.plan.status === 'completed' && !props.hasExistingConvertedLog;
 
   return (
     <DiveSummaryCard accent="primary">
@@ -79,6 +82,19 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
               label={t('planning.createLogFromPlan', { defaultValue: 'Create log from plan' })}
               variant="primary"
               onPress={() => props.onCreateLogFromPlan(props.plan)}
+            />
+          ) : null}
+          {props.plan.status === 'completed' && props.hasExistingConvertedLog ? (
+            <Text testID="planning-detail-log-created" className="text-sm font-semibold text-muted-foreground">
+              {t('planning.logAlreadyCreated', { defaultValue: 'Log already created from this plan.' })}
+            </Text>
+          ) : null}
+          {canPromote ? (
+            <InstrumentButton
+              testID="planning-detail-promote"
+              label={t('planning.promoteToPlan', { defaultValue: 'Promote to plan' })}
+              variant="primary"
+              onPress={() => props.onPromote?.(props.plan)}
             />
           ) : null}
           {canComplete ? (

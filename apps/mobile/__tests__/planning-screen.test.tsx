@@ -30,12 +30,13 @@ type HarnessProps = {
   onCreatePlan?: () => void;
   onOpenPlan?: (plan: DivePlan) => void;
   onCreateLogFromPlan?: (plan: DivePlan) => void;
+  logEntryIds?: string[];
 };
 
 const queryClients: QueryClient[] = [];
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
-function Harness({ repository, onCreateLogFromPlan = jest.fn(), onCreatePlan, onOpenPlan }: HarnessProps): React.JSX.Element {
+function Harness({ repository, onCreateLogFromPlan = jest.fn(), onCreatePlan, onOpenPlan, logEntryIds }: HarnessProps): React.JSX.Element {
   const plans = useDivePlans({ repository, queryScope: 'planning-screen-test' });
 
   return (
@@ -51,6 +52,7 @@ function Harness({ repository, onCreateLogFromPlan = jest.fn(), onCreatePlan, on
       onCreatePlan={onCreatePlan}
       onOpenPlan={onOpenPlan}
       onCreateLogFromPlan={onCreateLogFromPlan}
+      logEntryIds={logEntryIds}
       onOpenLogbook={jest.fn()}
     />
   );
@@ -64,6 +66,7 @@ const renderPlanning = async (
         onCreateLogFromPlan?: (plan: DivePlan) => void;
         onCreatePlan?: () => void;
         onOpenPlan?: (plan: DivePlan) => void;
+        logEntryIds?: string[];
       } = {},
 ) => {
   const props = typeof options === 'function' ? { onCreateLogFromPlan: options } : options;
@@ -85,6 +88,7 @@ const renderPlanning = async (
           onCreateLogFromPlan={props.onCreateLogFromPlan}
           onCreatePlan={props.onCreatePlan}
           onOpenPlan={props.onOpenPlan}
+          logEntryIds={props.logEntryIds}
         />
       </QueryClientProvider>,
     );
@@ -557,6 +561,104 @@ describe('Planning screen planbook flow', () => {
     expect(root.findByProps({ testID: 'planning-create-action' })).toBeTruthy();
     expect(root.findAllByProps({ testID: 'planning-active-create-action' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'planning-empty-create-action' })).toHaveLength(0);
+  });
+
+  it('shows skeleton rows while plans are loading', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+      renderer = ReactTestRenderer.create(
+        <PlanningScreen
+          sessions={[]}
+          plans={[]}
+          isLoading
+          onRefresh={jest.fn()}
+          onSavePlan={jest.fn()}
+          onOpenLogbook={jest.fn()}
+        />,
+      );
+    });
+    renderers.push(renderer!);
+
+    expect(renderer!.root.findByProps({ testID: 'planning-loading-state' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'planning-empty-state' })).toHaveLength(0);
+  });
+
+  it('promotes a draft plan to planned from detail', async () => {
+    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1781357000 * 1000);
+    const repository = new LocalDivePlanRepository([
+      plan({
+        localId: 'draft-ready',
+        status: 'draft',
+        plannedAt: 1781355000,
+        site: { name: 'Draft Ready Reef' },
+        diveMode: 'scuba',
+        plannedValues: {
+          plannedMaxDepthMeters: 18,
+          plannedDurationMinutes: 45,
+        },
+      }),
+    ]);
+    const renderer = await renderPlanning(repository);
+    const root = renderer.root;
+
+    await press(root, 'planning-plan-row-Draft Ready Reef');
+    await press(root, 'planning-detail-promote');
+
+    const [savedPlan] = await repository.list();
+    expect(savedPlan.status).toBe('planned');
+    expect(savedPlan.updatedAt).toBe(1781357000);
+
+    dateNow.mockRestore();
+  });
+
+  it('hides completed-plan log creation while the connected log exists', async () => {
+    const repository = new LocalDivePlanRepository([
+      plan({
+        localId: 'plan-with-log',
+        status: 'completed',
+        completedAt: 1781356000,
+        convertedLogLocalId: 'log-existing',
+        site: { name: 'Linked Log Reef' },
+      }),
+    ]);
+    const renderer = await renderPlanning(repository, { logEntryIds: ['log-existing'] });
+    const root = renderer.root;
+
+    await press(root, 'planning-plan-row-Linked Log Reef');
+
+    expect(root.findAllByProps({ testID: 'planning-detail-create-log' })).toHaveLength(0);
+    expect(root.findByProps({ testID: 'planning-detail-log-created' })).toBeTruthy();
+  });
+
+  it('shows completed-plan log creation again when the connected log is missing', async () => {
+    const onCreateLogFromPlan = jest.fn();
+    const repository = new LocalDivePlanRepository([
+      plan({
+        localId: 'plan-missing-log',
+        status: 'completed',
+        completedAt: 1781356000,
+        convertedLogLocalId: 'log-deleted',
+        site: { name: 'Deleted Log Reef' },
+      }),
+    ]);
+    const renderer = await renderPlanning(repository, { onCreateLogFromPlan, logEntryIds: [] });
+    const root = renderer.root;
+
+    await press(root, 'planning-plan-row-Deleted Log Reef');
+    await press(root, 'planning-detail-create-log');
+
+    expect(onCreateLogFromPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels plan water condition as expected water condition', async () => {
+    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
+    const root = renderer.root;
+
+    await press(root, 'planning-create-action');
+
+    expect(root.findByProps({ testID: 'planning-editor-water-condition-label' }).props.children).toBe('Expected water condition');
   });
 
   it('completes a plan and lets the user choose Later', async () => {

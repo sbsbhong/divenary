@@ -9,6 +9,7 @@ import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/inp
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
+import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { InstrumentTone } from '../../components/ui/theme';
@@ -28,6 +29,7 @@ type LogbookScreenProps = {
   onFilterChange: (filter: DiveSessionFilter) => void;
   onSyncWatch: () => Promise<WatchSyncActionResult>;
   onRefresh: () => void | Promise<void>;
+  isLoading?: boolean;
   isRefreshing?: boolean;
   reselectToken?: number;
   onSaveEntry: (entry: DiveLogEntry) => Promise<DiveLogEntry>;
@@ -307,7 +309,9 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
         ) : null}
 
         {route === 'list' ? (
-          visibleEntries.length === 0 ? (
+          props.isLoading ? (
+            <LogbookLoadingState />
+          ) : visibleEntries.length === 0 ? (
             <EmptyLogbook />
           ) : (
             <VStack space="md">
@@ -364,6 +368,21 @@ function EmptyLogbook(): React.JSX.Element {
         </DiveSummaryCard.Footer>
       </VStack>
     </DiveSummaryCard>
+  );
+}
+
+function LogbookLoadingState(): React.JSX.Element {
+  return (
+    <VStack testID="logbook-loading-state" space="md">
+      {[0, 1, 2].map(index => (
+        <DiveSummaryCard key={index}>
+          <VStack space="sm">
+            <Skeleton className="h-5 w-40 rounded-full" />
+            <SkeletonText _lines={2} className="h-4 rounded-full" />
+          </VStack>
+        </DiveSummaryCard>
+      ))}
+    </VStack>
   );
 }
 

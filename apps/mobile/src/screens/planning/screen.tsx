@@ -8,6 +8,7 @@ import { ArrowRightIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
+import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { InstrumentTone } from '../../components/ui/theme';
@@ -22,6 +23,7 @@ type PlanningScreenProps = {
   sessions: MobileDiveSession[];
   plans?: DivePlan[];
   onRefresh: () => void | Promise<void>;
+  isLoading?: boolean;
   isRefreshing?: boolean;
   reselectToken?: number;
   onSavePlan?: (plan: DivePlan) => Promise<DivePlan>;
@@ -29,6 +31,7 @@ type PlanningScreenProps = {
   onCreatePlan?: () => void;
   onOpenPlan?: (plan: DivePlan) => void;
   onCreateLogFromPlan?: (plan: DivePlan) => void;
+  logEntryIds?: string[];
   onOpenLogbook: () => void;
   completedPromptPlan?: DivePlan;
   onCompletedPromptLater?: () => void;
@@ -58,6 +61,11 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
   const selectedPlan = plans.find(plan => plan.localId === selectedId);
   const activePlan = React.useMemo(() => selectActivePlan(plans), [plans]);
   const completedPromptPlan = props.completedPromptPlan ?? localCompletedPromptPlan;
+  const existingLogIds = React.useMemo(() => new Set(props.logEntryIds ?? []), [props.logEntryIds]);
+  const hasExistingConvertedLog = React.useCallback(
+    (plan: DivePlan) => Boolean(plan.convertedLogLocalId && existingLogIds.has(plan.convertedLogLocalId)),
+    [existingLogIds],
+  );
 
   React.useEffect(() => {
     if (selectedPlan) {
@@ -151,6 +159,24 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
     [savePlan],
   );
 
+  const promotePlan = React.useCallback(
+    async (plan: DivePlan) => {
+      if (!isPlanReadyForPromotion(plan)) {
+        openEdit(plan);
+        return;
+      }
+
+      const savedPlan = await savePlan({
+        ...plan,
+        status: 'planned',
+        updatedAt: Date.now() / 1000,
+      });
+      setRoute('detail');
+      setSelectedId(savedPlan.localId);
+    },
+    [openEdit, savePlan],
+  );
+
   const createLogFromPlan = React.useCallback(
     (plan: DivePlan) => {
       props.onCreateLogFromPlan?.(plan);
@@ -240,9 +266,11 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
             plan={selectedPlan}
             onBack={() => setRoute('list')}
             onEdit={openEdit}
+            onPromote={promotePlan}
             onComplete={completePlan}
             onDelete={props.onDeletePlan ? deletePlan : undefined}
             onCreateLogFromPlan={createLogFromPlan}
+            hasExistingConvertedLog={hasExistingConvertedLog(selectedPlan)}
           />
         ) : null}
 
@@ -272,7 +300,9 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
                   />
                 ))}
               </HStack>
-              {visiblePlans.length ? (
+              {props.isLoading ? (
+                <PlanningLoadingState />
+              ) : visiblePlans.length ? (
                 <VStack space="md">
                   {visiblePlans.map(plan => (
                     <PlanRow key={plan.localId} plan={plan} locale={locale} onPress={() => openDetail(plan)} />
@@ -448,6 +478,31 @@ function EmptyPlanbook(): React.JSX.Element {
         <DiveSummaryCard.Header eyebrow={t('planning.emptyEyebrow', { defaultValue: 'Empty' })} title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />
       </VStack>
     </DiveSummaryCard>
+  );
+}
+
+function PlanningLoadingState(): React.JSX.Element {
+  return (
+    <VStack testID="planning-loading-state" space="md">
+      {[0, 1, 2].map(index => (
+        <DiveSummaryCard key={index}>
+          <VStack space="sm">
+            <Skeleton className="h-5 w-44 rounded-full" />
+            <SkeletonText _lines={2} className="h-4 rounded-full" />
+          </VStack>
+        </DiveSummaryCard>
+      ))}
+    </VStack>
+  );
+}
+
+export function isPlanReadyForPromotion(plan: DivePlan): boolean {
+  return Boolean(
+    plan.plannedAt !== undefined &&
+    plan.diveMode &&
+    plan.site.name?.trim() &&
+    plan.plannedValues.plannedMaxDepthMeters !== undefined &&
+    plan.plannedValues.plannedDurationMinutes !== undefined,
   );
 }
 

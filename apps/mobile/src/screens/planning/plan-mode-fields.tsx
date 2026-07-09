@@ -192,7 +192,10 @@ function WaterConditionPicker(props: {
   const { t } = useTranslation();
 
   return (
-    <EditorField label={t('planning.waterCondition', { defaultValue: 'Water condition' })}>
+    <EditorField
+      label={t('planning.expectedWaterCondition', { defaultValue: 'Expected water condition' })}
+      labelTestID="planning-editor-water-condition-label"
+    >
       <HStack space="xs" className="flex-wrap">
         {waterConditionOptions.map(condition => (
           <SelectorPill
