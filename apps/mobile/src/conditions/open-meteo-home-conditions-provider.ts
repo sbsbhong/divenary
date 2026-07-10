@@ -1,10 +1,17 @@
 import { openMeteoApiKey } from '../config/env';
+import {
+  formatReverseGeocodedCity,
+  reverseGeocodeCoordinates,
+  type ReverseGeocodedPlace,
+  type ReverseGeocodeCoordinatesInput,
+} from '../native/reverse-geocoder';
 import type { HomeConditionsInput, HomeConditionsProvider } from './home-conditions';
 
 type OpenMeteoProviderOptions = {
   apiKey?: string;
   fetcher?: typeof fetch;
   now?: () => number;
+  reverseGeocode?: (input: ReverseGeocodeCoordinatesInput) => Promise<ReverseGeocodedPlace | undefined>;
 };
 
 type OpenMeteoWeatherResponse = {
@@ -36,6 +43,7 @@ export function createOpenMeteoHomeConditionsProvider(
   const apiKey = options.apiKey ?? openMeteoApiKey;
   const fetcher = options.fetcher ?? fetch;
   const now = options.now ?? (() => Date.now() / 1000);
+  const reverseGeocode = options.reverseGeocode ?? reverseGeocodeCoordinates;
 
   return {
     getCurrentConditions: async input => {
@@ -60,11 +68,12 @@ export function createOpenMeteoHomeConditionsProvider(
 
         const marine = await fetchMarine(fetcher, buildMarineUrl(input, apiKey));
         const waterTemperatureCelsius = marine.ok ? marine.waterTemperatureCelsius : undefined;
+        const reverseGeocodedPlace = await fetchReverseGeocodedPlace(reverseGeocode, input);
         const timestamp = now();
 
         return {
           status: 'ready',
-          cityName: formatTimezoneCity(weather.timezone),
+          cityName: formatReverseGeocodedCity(reverseGeocodedPlace) ?? formatTimezoneCity(weather.timezone),
           latitude: input.latitude,
           longitude: input.longitude,
           localTime: timestamp,
@@ -83,6 +92,25 @@ export function createOpenMeteoHomeConditionsProvider(
       }
     },
   };
+}
+
+async function fetchReverseGeocodedPlace(
+  reverseGeocode: (input: ReverseGeocodeCoordinatesInput) => Promise<ReverseGeocodedPlace | undefined>,
+  input: HomeConditionsInput,
+): Promise<ReverseGeocodedPlace | undefined> {
+  if (input.latitude === undefined || input.longitude === undefined) {
+    return undefined;
+  }
+
+  try {
+    return await reverseGeocode({
+      latitude: input.latitude,
+      longitude: input.longitude,
+      ...(input.locale ? { locale: input.locale } : {}),
+    });
+  } catch {
+    return undefined;
+  }
 }
 
 async function fetchJson<T>(fetcher: typeof fetch, url: string): Promise<T> {

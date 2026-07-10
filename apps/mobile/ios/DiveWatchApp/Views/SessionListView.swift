@@ -54,7 +54,7 @@ private struct SessionRow: View {
 
     var body: some View {
         InstrumentCard {
-            HStack(alignment: .center, spacing: 9) {
+            HStack(alignment: .center, spacing: 7) {
                 DepthProfileSparkline(samples: session.samples, color: profileColor)
                     .frame(width: 44, height: 38)
 
@@ -66,19 +66,15 @@ private struct SessionRow: View {
                         .minimumScaleFactor(0.6)
 
                     HStack(spacing: 5) {
-                        StatusPill(title: session.diveMode.label, color: profileColor)
+                        SessionMetadataPill(title: session.diveMode.listBadgeLabel, color: profileColor)
                         if session.captureMode == .demo {
-                            StatusPill(title: String(localized: "Demo"), color: DiveWatchTheme.secondary)
+                            SessionMetadataPill(title: String(localized: "Demo"), color: DiveWatchTheme.secondary)
                         }
-                        Text(session.syncStatus.label)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.62)
+                        SessionSyncStatusPill(syncStatus: session.syncStatus)
                     }
                 }
-
-                Spacer(minLength: 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(1)
 
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(DiveFormatters.depth(summary.maxDepthMeters))
@@ -92,6 +88,7 @@ private struct SessionRow: View {
                         .foregroundStyle(DiveWatchTheme.mutedText)
                         .monospacedDigit()
                 }
+                .frame(width: 62, alignment: .trailing)
             }
         }
     }
@@ -106,5 +103,79 @@ private struct SessionRow: View {
         }
 
         return DiveWatchTheme.primary.opacity(0.78)
+    }
+}
+
+private struct SessionMetadataPill: View {
+    let title: String
+    let color: Color
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .background(
+                Capsule()
+                    .fill(color.opacity(0.16))
+            )
+    }
+}
+
+private struct SessionSyncStatusPill: View {
+    let syncStatus: DiveSyncStatus
+
+    var body: some View {
+        Text(syncStatus.shortLabel)
+            .font(.system(size: 8, weight: .semibold))
+            .foregroundStyle(syncStatus.tint)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 3)
+            .frame(minWidth: 42, minHeight: 16, alignment: .center)
+            .background(
+                Capsule()
+                    .fill(syncStatus.tint.opacity(0.16))
+            )
+            .accessibilityLabel(syncStatus.label)
+    }
+}
+
+private extension DiveMode {
+    var listBadgeLabel: String {
+        switch self {
+        case .scuba:
+            return String(localized: "SC")
+        case .freedive:
+            return String(localized: "FR")
+        }
+    }
+}
+
+private extension DiveSyncStatus {
+    var shortLabel: String {
+        switch self {
+        case .pending:
+            return String(localized: "Sync")
+        case .synced:
+            return String(localized: "Done")
+        case .failed:
+            return String(localized: "Fail")
+        }
+    }
+
+    var tint: Color {
+        switch self {
+        case .pending:
+            return DiveWatchTheme.secondary
+        case .synced:
+            return DiveWatchTheme.primary
+        case .failed:
+            return DiveWatchTheme.danger
+        }
     }
 }

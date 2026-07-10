@@ -9,6 +9,14 @@ const readRepoFile = (path: string) => {
 };
 
 describe('WatchConnectivity native source contract', () => {
+  it('activates the mobile WatchConnectivity inbox during native app launch', () => {
+    const appDelegate = readRepoFile('apps/mobile/ios/DiveMobile/AppDelegate.swift');
+    const module = readRepoFile('apps/mobile/ios/DiveMobile/WatchConnectivityModule.swift');
+
+    expect(appDelegate).toContain('WatchConnectivityInbox.shared.activate()');
+    expect(module).toContain('WatchConnectivityInbox.shared.activate()');
+  });
+
   it('keeps received mobile payloads in a durable inbox until JS acknowledges them', () => {
     const inbox = readRepoFile('apps/mobile/ios/DiveMobile/WatchConnectivityInbox.swift');
     const module = readRepoFile('apps/mobile/ios/DiveMobile/WatchConnectivityModule.swift');
@@ -282,13 +290,24 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('func updatePreferredDiveMode(_ nextDiveMode: DiveMode)');
     expect(store).toContain('private static func loadPreferredDiveMode');
     expect(store).toContain('DiveMode.defaultingRemovedDiveModeToScuba');
-    expect(home).toContain('DiveAutoStartMonitor(sensorProvider: RealDepthSensorProvider())');
+    expect(home).toContain('DiveAutoStartMonitor()');
+    expect(home).toContain('startMonitoringIfAvailable(sensorProvider: RealDepthSensorProvider())');
     expect(home).toContain('activationDepthMeters: Double = 3');
     expect(home).toContain('sample.depthMeters >= activationDepthMeters');
     expect(home).toContain('store.updatePreferredDiveMode(diveMode)');
     expect(home).toContain('store.updatePreferredDiveMode(plan.diveMode)');
     expect(home).toContain('.navigationDestination(item: $automaticDiveStartRequest)');
     expect(home).toContain('RecordingView(store: store, plan: request.plan, recordingMode: .real)');
+  });
+
+  it('does not instantiate the real depth sensor before the watch home view appears', () => {
+    const home = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/HomeView.swift');
+    const homeHeader = home.slice(home.indexOf('struct HomeView: View'), home.indexOf('var body: some View'));
+
+    expect(homeHeader).not.toContain('RealDepthSensorProvider()');
+    expect(homeHeader).not.toContain('DepthSensorAvailability.current');
+    expect(home).toContain('loadInitialSensorAvailability()');
+    expect(home).toContain('startMonitoringIfAvailable(sensorProvider: RealDepthSensorProvider())');
   });
 
   it('keeps active watch dive modes to scuba and freedive with mode-specific live instruments', () => {
@@ -336,7 +355,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('DepthGaugeRail');
     expect(recording).toContain('GeometryReader { proxy in');
     expect(recording).toContain('VStack(spacing: recordingVerticalSpacing)');
-    expect(recording).toContain('recordingControls');
+    expect(recording).toContain('compactEndDiveButton');
+    expect(recording).toContain('.overlay(alignment: .bottomTrailing)');
+    expect(recording).toContain('recordingContentBottomPadding');
     expect(recording).toContain('recordingDisclaimer');
     expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)');
     expect(recording).not.toContain('ZStack(alignment: .topLeading)');
@@ -345,6 +366,33 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).not.toContain('recordingMarkerLeadingPadding');
     expect(recording).toContain('.toolbar(.hidden, for: .navigationBar)');
     expect(watchUiCheck).toContain('ios/DiveWatchApp/Views/DepthGaugeRail.swift');
+  });
+
+  it('renders watch session-list sync status as a bounded readable badge', () => {
+    const sessionList = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/SessionListView.swift');
+
+    expect(sessionList).toContain('SessionSyncStatusPill(syncStatus: session.syncStatus)');
+    expect(sessionList).toContain('private struct SessionSyncStatusPill');
+    expect(sessionList).toContain('syncStatus.shortLabel');
+    expect(sessionList).toContain('syncStatus.tint');
+    expect(sessionList).toContain('.frame(minWidth: 42');
+    expect(sessionList).toContain('.accessibilityLabel(syncStatus.label)');
+    expect(sessionList).not.toContain('Text(session.syncStatus.label)');
+  });
+
+  it('keeps the end-dive action out of the recording screen vertical instrument stack', () => {
+    const recording = readRepoFile('apps/mobile/ios/DiveWatchApp/Views/RecordingView.swift');
+    const contentBlock = recording.slice(
+      recording.indexOf('private var recordingContent: some View'),
+      recording.indexOf('@ViewBuilder\n    private var liveInstrument'),
+    );
+
+    expect(contentBlock).toContain('.overlay(alignment: .bottomTrailing)');
+    expect(contentBlock).toContain('compactEndDiveButton');
+    expect(contentBlock).toContain('recordingContentBottomPadding');
+    expect(contentBlock).not.toContain('recordingControls');
+    expect(recording).toContain('.allowsHitTesting(surfaceEndGate.isVisible)');
+    expect(recording).toContain('.frame(minWidth: 92, minHeight: 28)');
   });
 
   it('keeps mode-specific live instruments honest about depth, stop state, and safety calculation scope', () => {

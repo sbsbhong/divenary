@@ -28,13 +28,13 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다. | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md) | 모바일 영구 저장소, WatchConnectivity PoC, watch debug/demo UX, scuba safety-stop reminder, local import acknowledgement, mobile cloud-pending status, 40m 초과 unsupported-depth 표시, v1 recommendation-only safety stop metadata는 구현됐고, 실기기 검증과 cloud sync는 아직 남아 있다. | 2026-07-09 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md) | 모바일 영구 저장소, WatchConnectivity PoC, watch debug/demo UX, compact end-dive overlay, session-list sync badge, subscribe-before-drain import startup, watch Home sensor init deferral, Home Open-Meteo 위치 조건과 repo-local native reverse geocoder city label, 40m 초과 unsupported-depth 표시, v1 recommendation-only safety stop metadata는 구현됐고, 실기기 검증과 cloud sync는 아직 남아 있다. | 2026-07-10 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md) | 모바일 앱은 로그북의 중심이 되고, watch 앱은 측정 가능한 세션 데이터를 제공하는 캡처 source가 된다. 승인된 방향은 local-first 모바일 로그북을 먼저 만들고, 이후 로그인과 Supabase 동기화를 같은 저장소 경계 위에 붙이는 것이다. | 2026-06-28 |
-| [모바일 구조](architecture/mobile.md) | `apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Gluestack UI v4/NativeWind styling stack을 사용한다. | 2026-06-28 |
+| [모바일 구조](architecture/mobile.md) | `apps/mobile`은 watch 로그와 수동 로그를 다루는 bare React Native 앱이며, embedded watchOS companion target, local-first 저장소, WatchConnectivity event-before-drain import 경계, Open-Meteo 조건 provider, repo-local native reverse geocoder module을 함께 소유한다. | 2026-07-10 |
 | [Monorepo 구조](architecture/monorepo.md) | 이 저장소는 Turborepo로 관리되는 Yarn 1 workspace monorepo다. 앱 workspace는 `apps/` 아래에 있고, 공유 package는 `packages/` 아래에 있다. | 2026-06-28 |
 | [Supabase 구조](architecture/supabase.md) | 현재 저장소에는 구현된 Supabase 영역이 없다. | 2026-06-28 |
-| [동기화 흐름 구조](architecture/sync-flow.md) | WatchConnectivity import acknowledgement는 local repository 저장/수신 확인이며 future cloud sync와 분리된다. Watch session record는 1MB UserDefaults 제한을 피하기 위해 file storage에 저장되고, demo capture도 같은 import/ack/dedupe 경로를 탄다. | 2026-07-09 |
-| [Watch 앱 구조](architecture/watch-app.md) | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Recording은 full-height depth gauge, surface-gated end action, demo capture 분리, 40m 초과 unsupported-depth warning, recommendation-only safety stop wording을 사용한다. | 2026-07-09 |
+| [동기화 흐름 구조](architecture/sync-flow.md) | WatchConnectivity import acknowledgement는 local repository 저장/수신 확인이며 future cloud sync와 분리된다. Watch session record는 file storage에 저장되고, mobile provider는 native event를 먼저 구독한 뒤 durable inbox를 drain한다. | 2026-07-10 |
+| [Watch 앱 구조](architecture/watch-app.md) | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Recording은 full-height depth gauge, compact end-dive overlay, demo capture 분리, 40m 초과 unsupported-depth warning, recommendation-only safety stop wording을 사용하고, Home은 첫 frame 뒤에 sensor availability와 real provider를 초기화한다. | 2026-07-10 |
 
 ## domains
 

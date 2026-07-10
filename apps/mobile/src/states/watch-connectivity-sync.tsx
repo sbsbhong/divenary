@@ -112,6 +112,9 @@ export function WatchConnectivitySyncProvider({
 
   React.useEffect(() => {
     let isMounted = true;
+    const subscription = subscribeToPayloads(payload => {
+      importPayloadSafely(payload);
+    });
 
     drainPendingPayloads()
       .then(payloads => {
@@ -126,10 +129,6 @@ export function WatchConnectivitySyncProvider({
       .catch(error => {
         console.warn('Failed to drain pending watch sync payloads', error);
       });
-
-    const subscription = subscribeToPayloads(payload => {
-      importPayloadSafely(payload);
-    });
 
     return () => {
       isMounted = false;

@@ -587,6 +587,22 @@
         }
       }
     },
+    "Done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료"
+          }
+        }
+      }
+    },
     "Depth gauge" : {
       "localizations" : {
         "en" : {
@@ -926,6 +942,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리다이빙 구간 목록"
+          }
+        }
+      }
+    },
+    "Fail" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fail"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실패"
+          }
+        }
+      }
+    },
+    "FR" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FR"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리"
           }
         }
       }
@@ -1271,6 +1319,9 @@
         }
       }
     },
+    "No reminder recorded" : {
+
+    },
     "No saved sessions" : {
       "localizations" : {
         "en" : {
@@ -1350,6 +1401,9 @@
           }
         }
       }
+    },
+    "Outside supported depth" : {
+
     },
     "Pending sync" : {
       "localizations" : {
@@ -1532,6 +1586,12 @@
         }
       }
     },
+    "Recommendation" : {
+
+    },
+    "Recommended reminder" : {
+
+    },
     "Recommended safety stop reminder · no safety calculation" : {
       "localizations" : {
         "en" : {
@@ -1664,6 +1724,7 @@
       }
     },
     "Required" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1853,6 +1914,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "저장된 세션"
+          }
+        }
+      }
+    },
+    "SC" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SC"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스쿠버"
           }
         }
       }
@@ -2134,6 +2211,7 @@
       }
     },
     "Stop not required" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2290,6 +2368,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "서지"
+          }
+        }
+      }
+    },
+    "Sync" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sync"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동기화"
           }
         }
       }

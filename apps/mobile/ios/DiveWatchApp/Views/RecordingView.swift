@@ -173,11 +173,15 @@ struct RecordingView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .layoutPriority(1)
 
-                recordingControls
-
                 recordingDisclaimer
             }
+            .padding(.bottom, recordingContentBottomPadding)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+            .overlay(alignment: .bottomTrailing) {
+                compactEndDiveButton
+                    .padding(.trailing, 1)
+                    .padding(.bottom, surfaceEndGate.isVisible ? 18 : 0)
+            }
         }
         .padding(.horizontal, recordingHorizontalPadding)
         .padding(.bottom, 5)
@@ -185,26 +189,28 @@ struct RecordingView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    @ViewBuilder
-    private var recordingControls: some View {
-        if surfaceEndGate.isVisible {
-            Button(role: .destructive) {
-                completedSession = recorder.stopSession()
-            } label: {
-                Label("End Dive", systemImage: "stop.fill")
-            }
-            .buttonStyle(CompactDiveEndButtonStyle())
-            .padding(.top, 2)
+    private var compactEndDiveButton: some View {
+        Button(role: .destructive) {
+            completedSession = recorder.stopSession()
+        } label: {
+            Label("End Dive", systemImage: "stop.fill")
         }
+        .buttonStyle(CompactDiveEndButtonStyle())
+        .opacity(surfaceEndGate.isVisible ? 1 : 0)
+        .allowsHitTesting(surfaceEndGate.isVisible)
+        .accessibilityHidden(!surfaceEndGate.isVisible)
     }
 
     private var recordingDisclaimer: some View {
         DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
-            .padding(.top, surfaceEndGate.isVisible ? 4 : 0)
     }
 
     private var recordingVerticalSpacing: CGFloat {
-        surfaceEndGate.isVisible ? 8 : 6
+        6
+    }
+
+    private var recordingContentBottomPadding: CGFloat {
+        surfaceEndGate.isVisible ? 2 : 0
     }
 
     private var recordingHorizontalPadding: CGFloat {
@@ -676,8 +682,8 @@ private struct CompactDiveEndButtonStyle: ButtonStyle {
             .lineLimit(1)
             .minimumScaleFactor(0.75)
             .foregroundStyle(DiveWatchTheme.danger)
-            .padding(.horizontal, 18)
-            .frame(minWidth: 118, minHeight: 34)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 92, minHeight: 28)
             .background(
                 Capsule()
                     .fill(DiveWatchTheme.danger.opacity(configuration.isPressed ? 0.28 : 0.18))

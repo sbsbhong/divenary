@@ -1,5 +1,34 @@
 # Wiki Log
 
+## [2026-07-10] ingest | Watch home launch sensor deferral
+- Added: Watch home launch sensor deferral raw source
+- Updated: Watch 앱 구조
+- Updated: 구현 우선순위 기록
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 실기기 보고: watch 앱 실행 후 system time만 보이고 Home UI가 표시되지 않음
+  - 구현: `DepthSensorAvailability.launchPlaceholder`, `HomeView.loadInitialSensorAvailability()`, `DiveAutoStartMonitor.startMonitoringIfAvailable(sensorProvider:)`
+- 요약:
+  - watch Home 첫 frame이 CoreMotion underwater depth availability check나 `RealDepthSensorProvider` 생성에 막히지 않도록 sensor 초기화를 deferred path로 옮겼다. 실제 underwater sensor, auto-launch, WatchConnectivity 실기기 검증은 별도 후속 항목으로 남는다.
+
+## [2026-07-10] ingest | Watch session UI and sync startup fixes
+- Added: Watch session UI and sync startup fixes raw source
+- Updated: 모바일 구조
+- Updated: Watch 앱 구조
+- Updated: 동기화 흐름 구조
+- Updated: 구현 우선순위 기록
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 실기기 보고: watch session list sync badge clipping, end-dive button 표시 시 recording 화면 압축, watch session 저장 후 mobile sync 실패
+  - 구현: compact session sync badge, compact end-dive overlay, `WatchConnectivitySyncProvider` subscribe-before-drain startup order
+- 요약:
+  - 작은 watch 화면에서 session status와 recording instrument가 사라지거나 줄어드는 문제를 문서화했고, mobile local import acknowledgement 경로의 startup race 보강을 기록했다. 실제 disconnect/reconnect crash 재현과 background delivery 검증은 여전히 실기기 후속 항목이다.
+
+## [2026-07-10] ingest | Mobile native reverse geocoder implementation
+- Updated: 모바일 구조
+- Updated: 구현 우선순위 기록
+- Updated: Knowledge Base Index
+
 ## [2026-07-08] ingest | Depth cap, safety stop color, decompression stop terminology pending work
 - Updated: Diving App / Product Roadmap
 - Updated: Diving App / QA and Test Plan

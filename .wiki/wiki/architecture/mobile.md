@@ -1,12 +1,12 @@
 # 모바일 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28
-Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10
+Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md)
+Updated: 2026-07-10
 
 ## 요약
 
-`apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Gluestack UI v4/NativeWind styling stack을 사용한다.
+`apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Open-Meteo Home 조건 provider, repo-local native reverse geocoder module, Gluestack UI v4/NativeWind styling stack을 사용한다.
 
 ## 현재 상태
 
@@ -20,7 +20,10 @@ Updated: 2026-06-28
 - `src/components/ui/`: 재사용 UI primitive, instrument control, session card, profile chart, tone type.
 - `components/ui/gluestack-ui-provider/`: generated Gluestack provider, color-mode script, token bridge.
 - `global.css`, `tailwind.config.js`: NativeWind/Tailwind entrypoint와 semantic token configuration.
-- `src/conditions/home-conditions.ts`: Home 위치 조건을 위한 provider-neutral type, static mock provider, snapshot model. 실제 API 호출이나 위치 권한 요청은 없다.
+- `src/conditions/home-conditions.ts`: Home 위치 조건을 위한 provider-neutral type, static mock provider, snapshot model.
+- `src/conditions/location-service.ts`: `@react-native-community/geolocation`로 foreground 좌표를 얻는다. 이 package는 reverse geocoding이 아니라 좌표 획득을 담당한다.
+- `src/conditions/open-meteo-home-conditions-provider.ts`: Open-Meteo weather/marine API adapter. 기온과 해안 수온을 가져오고, 도시명은 repo-local native reverse geocoder 결과를 timezone city보다 우선한다.
+- `src/native/reverse-geocoder.ts`: React Native `NativeModules.ReverseGeocoderModule` wrapper. Native module이 없거나 실패하면 `undefined`를 반환해 Open-Meteo timezone fallback을 유지한다.
 - `src/notifications/watch-sync-notification-service.ts`: Notifee permission request, local notification display, notification press bootstrap/event mapping을 다루는 watch sync notification 경계.
 - `src/screens/home`, `src/screens/logbook`, `src/screens/planning`, `src/screens/settings`: route-level 화면 container. Logbook과 Planning 목록은 root navigation callback이 있으면 detail/editor route를 상위로 위임하고, isolated component test에서는 기존 internal route fallback을 유지한다. Settings의 theme, language, device management도 별도 detail route로 열린다.
 - `src/screens/memory`: 이전 memory/share preview source가 남아 있지만 현재 bottom tab route에는 연결되어 있지 않다.
@@ -28,11 +31,13 @@ Updated: 2026-06-28
 - `src/states/app-preferences.tsx`, `src/states/app-preferences-storage.ts`: 앱 표시 선호를 관리하고 `themePreference`, `language`, `watchSyncNotificationsEnabled`를 저장한다.
 - `src/states/use-dive-logbook.ts`: React Query 기반 로그북 hook, search filter, pending WatchConnectivity sync action, 기존 화면을 위한 `MobileDiveSession` 호환 view.
 - `src/states/use-dive-logbook-queries.ts`: `DiveLogRepository`를 호출하는 list/detail/save/delete/watch import query와 mutation hook.
-- `src/states/watch-connectivity-sync.tsx`: iOS native WatchConnectivity payload를 drain/subscribe하고 runtime validator를 통과한 payload만 로그북 repository에 import한다. 저장 성공 payload는 import 완료 acknowledge로 watch에 되돌려 보내고, 무효 payload drop은 native inbox에서만 acknowledge한다. 자동 import로 새 로그가 저장되면 root navigation에 imported entry를 알려 tappable toast를 띄우고, Settings opt-in이 켜진 background/killed 상태에서는 Notifee local notification을 요청할 수 있게 notification service callback을 호출한다.
+- `src/states/watch-connectivity-sync.tsx`: iOS native WatchConnectivity payload event를 먼저 구독한 뒤 durable inbox를 drain하고, runtime validator를 통과한 payload만 로그북 repository에 import한다. 저장 성공 payload는 import 완료 acknowledge로 watch에 되돌려 보내고, 무효 payload drop은 native inbox에서만 acknowledge한다. 자동 import로 새 로그가 저장되면 root navigation에 imported entry를 알려 tappable toast를 띄우고, Settings opt-in이 켜진 background/killed 상태에서는 Notifee local notification을 요청할 수 있게 notification service callback을 호출한다.
 - `src/states/use-dive-plans.ts`, `src/states/use-dive-plan-queries.ts`: React Query 기반 Planbook hook과 list/save/delete mutation. 실행하지 않은 planned 상태의 모바일 계획을 watch companion에 전달한다.
 - `src/native/watch-connectivity.ts`: React Native에서 iOS `WatchConnectivityModule` event, pending drain method, payload acknowledge method, import 완료 acknowledge method, planned dive update, linked watch status query를 typed wrapper로 다룬다.
-- `ios/DiveMobile.xcodeproj`: iPhone app target `DiveMobile`과 embedded watchOS companion target `DiveWatchApp`를 함께 관리한다.
+- `ios/DiveMobile.xcodeproj`: iPhone app target `DiveMobile`과 embedded watchOS companion target `DiveWatchApp`를 함께 관리한다. iPhone target에는 WatchConnectivity bridge와 `CLGeocoder` 기반 `ReverseGeocoderModule`이 포함된다.
+- `ios/DiveMobile/ReverseGeocoderModule.swift`, `ios/DiveMobile/ReverseGeocoderModuleBridge.m`: iOS `CoreLocation.CLGeocoder`를 React Native promise method로 노출한다.
 - `ios/DiveWatchApp`: SwiftUI watchOS companion source. Watch 기록, 로컬 저장, WatchConnectivity enqueue PoC를 담당한다.
+- `android/app/src/main/java/com/divemobile/ReverseGeocoderModule.kt`, `ReverseGeocoderPackage.kt`: Android platform `android.location.Geocoder`를 repo-local React Native package로 노출한다. Autolink 대상 npm package가 아니므로 `MainApplication.kt`에서 수동 등록한다.
 - `src/repositories/`: `DiveLogRepository`/`DivePlanRepository` 인터페이스, in-memory `LocalDiveLogRepository`/`LocalDivePlanRepository`, AsyncStorage 기반 `PersistentDiveLogRepository`/`PersistentDivePlanRepository`, app default repository export.
 - `src/types/dive-log-entry.ts`: 모바일 로그북 항목인 `DiveLogEntry`와 source/provenance/sync status type.
 - `src/types/dive-plan.ts`: 모바일 계획 항목인 `DivePlan`, `DivePlanStatus`, `DiveEntryStyle`, 계획값, checklist type.
@@ -43,7 +48,7 @@ Updated: 2026-06-28
 
 현재 모바일 UI는 네 영역으로 구성된다.
 
-- Home: provider-neutral mock 위치 조건 band, 가장 최근 가져온 watch 세션, 주요 지표, 워치 로그의 상승/세이프티 스톱 리마인더를 리뷰용 상태로 설명하는 카드. 위치 조건 band는 도시명, local time, 기온, 해안 수온을 보여주며 실제 provider나 위치 권한을 사용하지 않는다.
+- Home: 위치 권한이 허용되면 device 좌표를 얻고, Open-Meteo provider로 local time, 기온, 해안 수온을 가져온다. 도시명은 iOS `CLGeocoder` 또는 Android `Geocoder` 기반 repo-local native module 결과를 우선 사용하고, native module이 없거나 실패하면 Open-Meteo timezone city로 fallback한다. 이 band는 dive suitability, tide/current/weather warning, route planning, safety recommendation을 제공하지 않는다.
 - Logbook: manual/watch 로그 목록, 검색, 동기화 상태 filter, 수동 로그 작성과 수정, watch sync action, dive mode별 입력 section, 상세 지표, provenance 표시, 수심 profile, 수온 profile, notes, tags.
 - Planning: persistent Planbook으로 다음 다이브 계획을 작성, 수정, 완료하고 완료된 계획에서 Logbook 초안을 열 수 있다.
 - Settings: 테마, 언어, watch sync notification opt-in 같은 앱 표시 선호와 paired watch 상태를 grouped list로 관리한다.
@@ -68,7 +73,7 @@ Styling rule은 현재 코드 기준으로 다음과 같다.
 
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 
-WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. `WatchConnectivityInbox`는 앱 시작 시 `WCSession`을 activate하고 `didReceiveUserInfo`와 `didReceiveMessage` envelope를 원시 JSON payload로 복원해 `UserDefaults` 기반 durable inbox에 저장한다. `WatchConnectivityModule`은 pending payload drain method, `DiveWatchSyncPayloadReceived` event, mobile-only acknowledge method, imported acknowledge method, planned dive update method, linked watch status method를 React Native에 노출한다. JS provider는 watch payload를 검증한 뒤 기본 `PersistentDiveLogRepository`에 import하고, 저장이 끝난 payload만 imported acknowledge로 처리해 watch에 `watchSyncAcknowledgement`를 돌려보낸다. Imported acknowledge는 `transferUserInfo`를 기본으로 쓰고 watch가 reachable이면 `sendMessage`로도 보낸다. 저장 실패는 acknowledge하지 않으므로 앱 재시작 뒤 다시 drain될 수 있다. 자동 import는 Alert이 아니라 앱 내부 toast로 표시하고, 사용자가 toast를 누르면 해당 Logbook detail screen으로 이동한다. 이 toast는 사용자가 열거나 닫을 때까지 유지된다. Settings opt-in이 켜져 있고 앱이 foreground가 아니면 Notifee local notification도 요청한다. Logbook의 `워치 동기화` action도 pending native inbox를 수동 drain하며, native module이 없으면 새 기록 없음 또는 비지원 상태를 사용자에게 표시한다.
+WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. `WatchConnectivityInbox`는 `AppDelegate` launch와 React Native module init 시 `WCSession`을 activate하고 `didReceiveUserInfo`와 `didReceiveMessage` envelope를 원시 JSON payload로 복원해 `UserDefaults` 기반 durable inbox에 저장한다. `WatchConnectivityModule`은 pending payload drain method, `DiveWatchSyncPayloadReceived` event, mobile-only acknowledge method, imported acknowledge method, planned dive update method, linked watch status method를 React Native에 노출한다. JS provider는 native event subscription을 먼저 열고 durable inbox를 drain한 뒤 watch payload를 검증해 기본 `PersistentDiveLogRepository`에 import한다. 저장이 끝난 payload만 imported acknowledge로 처리해 watch에 `watchSyncAcknowledgement`를 돌려보낸다. Imported acknowledge는 `transferUserInfo`를 기본으로 쓰고 watch가 reachable이면 `sendMessage`로도 보낸다. 저장 실패는 acknowledge하지 않으므로 앱 재시작 뒤 다시 drain될 수 있다. 자동 import는 Alert이 아니라 앱 내부 toast로 표시하고, 사용자가 toast를 누르면 해당 Logbook detail screen으로 이동한다. 이 toast는 사용자가 열거나 닫을 때까지 유지된다. Settings opt-in이 켜져 있고 앱이 foreground가 아니면 Notifee local notification도 요청한다. Logbook의 `워치 동기화` action도 pending native inbox를 수동 drain하며, native module이 없으면 새 기록 없음 또는 비지원 상태를 사용자에게 표시한다.
 
 수동 로그 작성은 `LogbookScreen`의 create action에서 시작하고, 기존 항목 수정은 상세 화면의 edit action에서 같은 editor를 재사용한다. Editor는 공통 field인 date/time, dive mode, site name, duration, max depth, buddy names, tags, observed marine life, notes, rating을 다루고, 새로 선택 가능한 `diveMode`는 scuba와 freedive 두 가지다. Scuba section은 gas label, water condition, visibility rating, perceived exertion을 다루고, freedive section은 repetition count, training focus, perceived exertion을 다룬다. 저장된 수동 로그는 `source: 'manual'`, `syncStatus: 'localOnly'`이며, 비어 있거나 유효하지 않은 수치 field는 `0`이 아니라 `undefined`로 유지한다. Watch 기반 항목을 모바일에서 수정하면 raw watch capture와 `source: 'watch'`를 유지하고, 이미 모바일 repository에 import된 항목의 top-level `syncStatus`는 `synced`로 유지한다.
 
@@ -84,6 +89,7 @@ Home/Memory 같은 preview surface와 summary helper도 알 수 없는 duration/
 - Supabase client 없음.
 - Direct SQL 없음.
 - WatchConnectivity code boundary, companion embed 구조, durable native inbox, JS acknowledge 경로, Logbook import action의 pending inbox drain, mobile-to-watch planned dive 전달, linked watch status 표시, Notifee notification opt-in 경계가 있지만 paired-device delivery, entitlement, background delivery, retry/backoff policy, background/killed notification 표시 검증은 아직 없음.
+- Home city label은 native reverse geocoder 결과가 우선이지만, 실제 표시 품질은 platform geocoder backend와 locale에 의존한다. Native module 실패, Android `Geocoder.isPresent()` false, geocoder 빈 결과에서는 Open-Meteo timezone city로 fallback할 수 있으며, 이 경우 광역 timezone city인 `Seoul`처럼 보일 수 있다.
 - 공개 API 한계로 Settings의 watch name은 사용자가 Watch 앱에서 지정한 이름이 아니라 `Apple Watch` fallback일 수 있다.
 - Logbook/Planbook AsyncStorage key는 two-mode reset을 위해 v2 namespace를 사용한다. App preferences store는 version 1 envelope에 `watchSyncNotificationsEnabled`를 추가하고, 누락된 legacy 값은 `false`로 normalize한다. 향후 schema 변경에는 migration behavior를 추가해야 한다.
 - Certified dive-computer behavior 없음.
@@ -92,7 +98,7 @@ Home/Memory 같은 preview surface와 summary helper도 알 수 없는 duration/
 
 - Watch sync notification: Notifee를 사용하고 Settings에서 사용자가 켤 때 permission을 요청한다. Watch payload가 local repository에 저장된 뒤에만 알림을 요청하며, foreground에서는 사용자가 닫기 전까지 유지되는 toast를 사용한다. 이 알림은 Supabase나 cloud sync 완료를 뜻하지 않는다.
 - Two-mode dive UX: Logbook과 Planning은 `scuba`와 `freedive`만 새로 만들 수 있다. 기존 local v1 Logbook/Planbook 데이터는 v2 key reset으로 분리됐다.
-- Home location conditions: Home 상단에 위치 기반 시간, 도시명, 기온, 해안 수온을 표시할 provider-neutral interface와 UI가 추가됐다. 실제 API adapter는 사용자가 provider를 확정하고 연동하는 후속 작업이다. 기본 후보는 Open-Meteo 계열이다.
+- Home location conditions: Home 상단에 위치 기반 시간, 도시명, 기온, 해안 수온을 표시할 provider-neutral interface와 UI가 있다. 기본 provider는 Open-Meteo weather/marine API를 사용하고, 도시명은 repo-local iOS/Android native reverse geocoder module을 우선 사용한다. 새 npm native dependency는 추가하지 않았다.
 
 iOS project는 `apps/mobile/ios/DiveMobile.xcworkspace`와 `apps/mobile/ios/DiveMobile.xcodeproj`에 있다. Full iPhone app build는 CocoaPods workspace를 사용하고, watch-only CLI build는 `DiveMobile.xcodeproj`의 `DiveWatchApp` scheme을 사용한다. Android native project file은 `apps/mobile/android` 아래에 있다.
 

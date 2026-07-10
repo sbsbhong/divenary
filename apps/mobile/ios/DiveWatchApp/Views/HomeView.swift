@@ -2,10 +2,10 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var store: DiveSessionStore
-    @StateObject private var autoStartMonitor = DiveAutoStartMonitor(sensorProvider: RealDepthSensorProvider())
+    @StateObject private var autoStartMonitor = DiveAutoStartMonitor()
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
-    @State private var sensorAvailability = DepthSensorAvailability.current
+    @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
     @State private var automaticDiveStartRequest: AutomaticDiveStartRequest?
 
     var body: some View {
@@ -124,12 +124,11 @@ struct HomeView: View {
             }
             .onAppear {
                 applyPreferredDiveMode()
-                sensorAvailability = DepthSensorAvailability.current
+                loadInitialSensorAvailability()
                 autoLaunchAuthorization.refresh()
                 autoStartMonitor.onAutoStart = {
                     startAutomaticDive()
                 }
-                autoStartMonitor.startMonitoring()
             }
             .onDisappear {
                 autoStartMonitor.stopMonitoring()
@@ -172,6 +171,19 @@ struct HomeView: View {
         plan.diveMode = store.preferredDiveMode
     }
 
+    private func loadInitialSensorAvailability() {
+        Task { @MainActor in
+            await Task.yield()
+            let availability = DepthSensorAvailability.current
+            sensorAvailability = availability
+            if availability.canStartRealDive {
+                autoStartMonitor.startMonitoringIfAvailable(sensorProvider: RealDepthSensorProvider())
+            } else {
+                autoStartMonitor.stopMonitoring()
+            }
+        }
+    }
+
     private func selectStartMode(_ diveMode: DiveMode) {
         plan.diveMode = diveMode
         store.updatePreferredDiveMode(diveMode)
@@ -207,38 +219,40 @@ private final class DiveAutoStartMonitor: ObservableObject {
 
     var onAutoStart: (() -> Void)?
 
-    private let sensorProvider: DepthSensorProvider
+    private var sensorProvider: DepthSensorProvider?
     private let activationDepthMeters: Double
     private var isMonitoring = false
     private var didTrigger = false
 
-    init(sensorProvider: DepthSensorProvider, activationDepthMeters: Double = 3) {
-        self.sensorProvider = sensorProvider
+    init(activationDepthMeters: Double = 3) {
         self.activationDepthMeters = activationDepthMeters
     }
 
-    func startMonitoring() {
+    func startMonitoringIfAvailable(sensorProvider nextSensorProvider: DepthSensorProvider) {
         guard !isMonitoring else {
             return
         }
 
+        sensorProvider = nextSensorProvider
         isMonitoring = true
         didTrigger = false
-        sensorProvider.onSample = { [weak self] sample in
+        nextSensorProvider.onSample = { [weak self] sample in
             Task { @MainActor in
                 self?.handle(sample)
             }
         }
-        sensorProvider.start()
+        nextSensorProvider.start()
     }
 
     func stopMonitoring() {
         guard isMonitoring else {
+            sensorProvider = nil
             return
         }
 
-        sensorProvider.stop()
-        sensorProvider.onSample = nil
+        sensorProvider?.stop()
+        sensorProvider?.onSample = nil
+        sensorProvider = nil
         isMonitoring = false
     }
 

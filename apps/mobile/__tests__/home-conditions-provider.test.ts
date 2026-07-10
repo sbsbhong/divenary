@@ -92,6 +92,38 @@ describe('Open-Meteo Home conditions provider', () => {
     });
   });
 
+  it('uses reverse geocoded city before Open-Meteo timezone city', async () => {
+    const fetcher = createFetcher(createJsonResponse(weatherResponse), createJsonResponse(marineResponse));
+    const reverseGeocode = jest.fn(async () => ({ cityName: '수원시', locality: '수원시' }));
+    const provider = createOpenMeteoHomeConditionsProvider({
+      fetcher,
+      reverseGeocode,
+      now: () => 1783512000,
+    });
+
+    await expect(provider.getCurrentConditions({ latitude: 37.2636, longitude: 127.0286 })).resolves.toMatchObject({
+      status: 'ready',
+      cityName: '수원시',
+    });
+    expect(reverseGeocode).toHaveBeenCalledWith({ latitude: 37.2636, longitude: 127.0286 });
+  });
+
+  it('falls back to Open-Meteo timezone city when reverse geocoding fails', async () => {
+    const fetcher = createFetcher(createJsonResponse(weatherResponse), createJsonResponse(marineResponse));
+    const provider = createOpenMeteoHomeConditionsProvider({
+      fetcher,
+      reverseGeocode: async () => {
+        throw new Error('reverse geocoder unavailable');
+      },
+      now: () => 1783512000,
+    });
+
+    await expect(provider.getCurrentConditions({ latitude: 33.5, longitude: 126.5 })).resolves.toMatchObject({
+      status: 'ready',
+      cityName: 'Seoul',
+    });
+  });
+
   it('keeps air temperature ready when the Marine API fails', async () => {
     const fetcher = createFetcher(createJsonResponse(weatherResponse), createJsonResponse({ reason: 'marine unavailable' }, false));
     const provider = createOpenMeteoHomeConditionsProvider({ fetcher, now: () => 1783512000 });

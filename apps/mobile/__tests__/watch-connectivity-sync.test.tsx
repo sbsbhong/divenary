@@ -38,6 +38,34 @@ describe('WatchConnectivitySyncProvider', () => {
     jest.restoreAllMocks();
   });
 
+  it('subscribes before draining pending payloads so startup deliveries are not missed', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const startupOrder: string[] = [];
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={async () => {
+              startupOrder.push('drain');
+              return [];
+            }}
+            acknowledgePayloads={jest.fn()}
+            subscribeToPayloads={() => {
+              startupOrder.push('subscribe');
+              return { remove: jest.fn() };
+            }}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    expect(startupOrder.slice(0, 2)).toEqual(['subscribe', 'drain']);
+  });
+
   it('drains pending native payloads and imports valid watch sync JSON', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
