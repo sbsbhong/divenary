@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" role="img" aria-labelledby="apps-title apps-desc">
+  <title id="apps-title">Application runtime architecture</title>
+  <desc id="apps-desc">Markdown-preview SVG export of the Apps page from architecture.drawio.</desc>
+  <defs>
+    <style>
+      svg { background: #ffffff; font-family: Arial, Helvetica, sans-serif; color: #111827; }
+      .canvas { fill: #ffffff; }
+      .box { stroke-width: 2; }
+      .current { fill: #dbeafe; stroke: #2563eb; }
+      .current-soft { fill: #eff6ff; stroke: #60a5fa; }
+      .poc { fill: #fef3c7; stroke: #d97706; }
+      .future { fill: #f3f4f6; stroke: #9ca3af; }
+      .safety { fill: #fff7ed; stroke: #ea580c; }
+      .title-text { font-size: 28px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 17px; font-weight: 600; fill: #374151; }
+      .box-heading { font-size: 20px; font-weight: 700; fill: #111827; }
+      .box-line { font-size: 16px; fill: #1f2937; }
+      .small-line { font-size: 15px; fill: #1f2937; }
+      .arrow-blue { fill: none; stroke: #2563eb; stroke-width: 3; }
+      .arrow-amber { fill: none; stroke: #d97706; stroke-width: 3; }
+      .arrow-gray { fill: none; stroke: #6b7280; stroke-width: 3; }
+      .arrow-orange { fill: none; stroke: #ea580c; stroke-width: 3; }
+      .arrow-label-bg { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1; }
+      .arrow-label { font-size: 13px; font-weight: 700; fill: #374151; }
+    </style>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <rect class="canvas" x="0" y="0" width="1400" height="900"/>
+
+  <g>
+    <rect class="box current" x="40" y="30" width="1320" height="132" rx="18"/>
+    <text x="700" y="65" text-anchor="middle">
+      <tspan class="title-text" x="700">Application runtime boundaries</tspan>
+      <tspan class="subtitle" x="700" dy="29">current mobile review surface and PoC watch companion</tspan>
+      <tspan class="subtitle" x="700" dy="25">Recreational log companion</tspan>
+      <tspan class="subtitle" x="700" dy="25">Not certified dive-computer behavior</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current" x="60" y="178" width="340" height="222" rx="14"/>
+    <text x="85" y="214">
+      <tspan class="box-heading" x="85">React Native mobile app</tspan>
+      <tspan class="box-line" x="85" dy="28">Navigation + screens</tspan>
+      <tspan class="box-line" x="85" dy="24">React Query state hooks</tspan>
+      <tspan class="box-line" x="85" dy="24">AsyncStorage repositories</tspan>
+      <tspan class="box-line" x="85" dy="24">runtime watch payload validation</tspan>
+      <tspan class="small-line" x="85" dy="24">Logbook / Planbook / Settings / Home</tspan>
+      <tspan class="small-line" x="85" dy="24">current</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="500" y="170" width="350" height="230" rx="14"/>
+    <text x="525" y="206">
+      <tspan class="box-heading" x="525">iOS native bridge</tspan>
+      <tspan class="box-line" x="525" dy="28">WatchConnectivityInbox</tspan>
+      <tspan class="box-line" x="525" dy="24">WatchConnectivityModule</tspan>
+      <tspan class="box-line" x="525" dy="24">durable pending inbox</tspan>
+      <tspan class="box-line" x="525" dy="24">planned-dive context publisher</tspan>
+      <tspan class="small-line" x="525" dy="24">linked watch status</tspan>
+      <tspan class="small-line" x="525" dy="24">current / PoC</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="960" y="178" width="350" height="212" rx="14"/>
+    <text x="985" y="214">
+      <tspan class="box-heading" x="985">watchOS companion</tspan>
+      <tspan class="box-line" x="985" dy="28">SwiftUI views</tspan>
+      <tspan class="box-line" x="985" dy="24">recording engines</tspan>
+      <tspan class="box-line" x="985" dy="24">file-backed session store</tspan>
+      <tspan class="box-line" x="985" dy="24">WatchConnectivity transport</tspan>
+      <tspan class="small-line" x="985" dy="24">requires real-device validation</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current" x="485" y="520" width="380" height="160" rx="14"/>
+    <text x="510" y="557">
+      <tspan class="box-heading" x="510">local sync contract</tspan>
+      <tspan class="box-line" x="510" dy="29">WatchSyncMessage</tspan>
+      <tspan class="box-line" x="510" dy="24">WatchSession</tspan>
+      <tspan class="box-line" x="510" dy="24">DepthSample</tspan>
+      <tspan class="small-line" x="510" dy="25">Local import acknowledgement, not cloud sync</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current-soft" x="60" y="535" width="340" height="126" rx="14"/>
+    <text x="85" y="572">
+      <tspan class="box-heading" x="85">Mobile persistence</tspan>
+      <tspan class="box-line" x="85" dy="29">AsyncStorage logs, plans, settings</tspan>
+      <tspan class="box-line" x="85" dy="24">durable pending inbox import review</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current-soft" x="960" y="535" width="350" height="126" rx="14"/>
+    <text x="985" y="572">
+      <tspan class="box-heading" x="985">Watch local persistence</tspan>
+      <tspan class="box-line" x="985" dy="29">file-backed session store</tspan>
+      <tspan class="box-line" x="985" dy="24">sync-ready JSON export</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box future" x="485" y="740" width="380" height="112" rx="14"/>
+    <text x="510" y="777">
+      <tspan class="box-heading" x="510">future / reserved</tspan>
+      <tspan class="box-line" x="510" dy="29">cloud sync and account services</tspan>
+      <tspan class="small-line" x="510" dy="23">outside current app runtime</tspan>
+    </text>
+  </g>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 960 250 H 850"/>
+  <rect class="arrow-label-bg" x="780" y="414" width="196" height="24" rx="6"/>
+  <text class="arrow-label" x="878" y="431" text-anchor="middle">WatchConnectivity payload</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 850 320 H 960"/>
+  <rect class="arrow-label-bg" x="870" y="454" width="238" height="24" rx="6"/>
+  <text class="arrow-label" x="989" y="471" text-anchor="middle">planned dive application context</text>
+
+  <path class="arrow-blue" marker-end="url(#arrow-blue)" d="M 500 285 H 400"/>
+  <rect class="arrow-label-bg" x="355" y="414" width="151" height="24" rx="6"/>
+  <text class="arrow-label" x="430" y="431" text-anchor="middle">import acknowledgement</text>
+
+  <path class="arrow-blue" marker-end="url(#arrow-blue)" d="M 315 400 V 535"/>
+  <rect class="arrow-label-bg" x="186" y="458" width="192" height="24" rx="6"/>
+  <text class="arrow-label" x="282" y="475" text-anchor="middle">read and write local app state</text>
+
+  <path class="arrow-blue" marker-end="url(#arrow-blue)" d="M 390 340 H 485 V 558"/>
+  <rect class="arrow-label-bg" x="392" y="486" width="126" height="24" rx="6"/>
+  <text class="arrow-label" x="455" y="503" text-anchor="middle">runtime validation</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 1135 390 V 535"/>
+  <rect class="arrow-label-bg" x="1080" y="488" width="183" height="24" rx="6"/>
+  <text class="arrow-label" x="1171" y="505" text-anchor="middle">recorded session persistence</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 960 600 H 865"/>
+  <rect class="arrow-label-bg" x="868" y="504" width="154" height="24" rx="6"/>
+  <text class="arrow-label" x="945" y="521" text-anchor="middle">sync-ready JSON shape</text>
+
+  <path class="arrow-gray" marker-end="url(#arrow-gray)" d="M 675 680 V 740"/>
+  <rect class="arrow-label-bg" x="548" y="697" width="254" height="24" rx="6"/>
+  <text class="arrow-label" x="675" y="714" text-anchor="middle">Local import acknowledgement, not cloud sync</text>
+</svg>
