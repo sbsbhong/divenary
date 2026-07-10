@@ -141,7 +141,7 @@ The page should label local mobile repository import acknowledgement separately 
 The external services page separates current local app behavior from future or provider-specific integration boundaries:
 
 - Open-Meteo:
-  - candidate/provider boundary for Home conditions
+  - current / PoC client-side provider boundary for Home conditions
   - not a safety-critical source
 - Supabase/Auth/Cloud Sync:
   - future boundary only

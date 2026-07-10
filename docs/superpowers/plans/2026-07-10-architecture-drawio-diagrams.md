@@ -127,7 +127,11 @@ The acknowledgement flow must be labeled `Local import acknowledgement, not clou
 The `External Services` page should have these groups:
 
 - `Open-Meteo boundary`
+<<<<<<< HEAD
   - `Home conditions provider candidate`
+=======
+  - `current / PoC client-side provider`
+>>>>>>> feature/architecture-drawio-diagrams
   - `weather / marine conditions`
   - `not safety-critical`
 - `Supabase/Auth/Cloud Sync boundary`
@@ -352,7 +356,11 @@ real-device validation
 The SVG must include visible labels for:
 
 ```text
+<<<<<<< HEAD
 Home conditions provider candidate
+=======
+current / PoC client-side provider
+>>>>>>> feature/architecture-drawio-diagrams
 weather / marine conditions
 not safety-critical
 future
@@ -445,6 +453,10 @@ No terminal command is required for this manual visual check.
 - Add: `docs/architecture/architecture-overview.svg`
 - Add: `docs/architecture/architecture-apps.svg`
 - Add: `docs/architecture/architecture-external-services.svg`
+<<<<<<< HEAD
+=======
+- Modify: `docs/superpowers/specs/2026-07-10-architecture-drawio-diagrams-design.md`
+>>>>>>> feature/architecture-drawio-diagrams
 - Add: `docs/superpowers/plans/2026-07-10-architecture-drawio-diagrams.md`
 
 - [ ] **Step 1: Review diff**
@@ -452,17 +464,28 @@ No terminal command is required for this manual visual check.
 Run:
 
 ```bash
+<<<<<<< HEAD
 git diff -- docs/architecture docs/superpowers/plans/2026-07-10-architecture-drawio-diagrams.md
 ```
 
 Expected: diff only includes the architecture diagram package and this implementation plan.
+=======
+git diff -- docs/architecture docs/superpowers/specs/2026-07-10-architecture-drawio-diagrams-design.md docs/superpowers/plans/2026-07-10-architecture-drawio-diagrams.md
+```
+
+Expected: diff only includes the architecture diagram package, the corrected architecture diagram design spec wording, and this implementation plan.
+>>>>>>> feature/architecture-drawio-diagrams
 
 - [ ] **Step 2: Stage documentation artifacts**
 
 Run:
 
 ```bash
+<<<<<<< HEAD
 git add docs/architecture docs/superpowers/plans/2026-07-10-architecture-drawio-diagrams.md
+=======
+git add docs/architecture docs/superpowers/specs/2026-07-10-architecture-drawio-diagrams-design.md docs/superpowers/plans/2026-07-10-architecture-drawio-diagrams.md
+>>>>>>> feature/architecture-drawio-diagrams
 ```
 
 Expected: command exits successfully.
@@ -479,6 +502,10 @@ Expected: output includes only:
 
 ```text
 docs/architecture/README.md
+<<<<<<< HEAD
+=======
+docs/superpowers/specs/2026-07-10-architecture-drawio-diagrams-design.md
+>>>>>>> feature/architecture-drawio-diagrams
 docs/architecture/architecture-apps.svg
 docs/architecture/architecture-external-services.svg
 docs/architecture/architecture-overview.svg

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" role="img" aria-labelledby="overview-title overview-desc">
+  <title id="overview-title">diving-app monorepo architecture overview</title>
+  <desc id="overview-desc">Markdown-preview SVG export of the Overview page from architecture.drawio.</desc>
+  <defs>
+    <style>
+      svg { background: #ffffff; font-family: Arial, Helvetica, sans-serif; color: #111827; }
+      .canvas { fill: #ffffff; }
+      .box { stroke-width: 2; }
+      .current { fill: #dbeafe; stroke: #2563eb; }
+      .current-soft { fill: #eff6ff; stroke: #60a5fa; }
+      .poc { fill: #fef3c7; stroke: #d97706; }
+      .future { fill: #f3f4f6; stroke: #9ca3af; }
+      .safety { fill: #fff7ed; stroke: #ea580c; }
+      .title-text { font-size: 29px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 17px; font-weight: 600; fill: #374151; }
+      .box-heading { font-size: 20px; font-weight: 700; fill: #111827; }
+      .box-line { font-size: 16px; fill: #1f2937; }
+      .small-line { font-size: 15px; fill: #1f2937; }
+      .arrow-blue { fill: none; stroke: #2563eb; stroke-width: 3; }
+      .arrow-amber { fill: none; stroke: #d97706; stroke-width: 3; }
+      .arrow-gray { fill: none; stroke: #6b7280; stroke-width: 3; }
+      .arrow-label-bg { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1; }
+      .arrow-label { font-size: 13px; font-weight: 700; fill: #374151; }
+    </style>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#6b7280"/>
+    </marker>
+  </defs>
+
+  <rect class="canvas" x="0" y="0" width="1400" height="900"/>
+
+  <g>
+    <rect class="box current" x="40" y="30" width="1320" height="132" rx="18"/>
+    <text x="700" y="66" text-anchor="middle">
+      <tspan class="title-text" x="700">diving-app monorepo</tspan>
+      <tspan class="subtitle" x="700" dy="30">Recreational log companion</tspan>
+      <tspan class="subtitle" x="700" dy="25">current / PoC / future / reserved</tspan>
+      <tspan class="subtitle" x="700" dy="25">Not certified dive-computer behavior</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current-soft" x="70" y="190" width="280" height="105" rx="14"/>
+    <text x="95" y="227">
+      <tspan class="box-heading" x="95">Yarn 1 workspaces</tspan>
+      <tspan class="box-line" x="95" dy="29">Turborepo scripts</tspan>
+      <tspan class="small-line" x="95" dy="26">workspace orchestration</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current" x="430" y="178" width="315" height="150" rx="14"/>
+    <text x="455" y="214">
+      <tspan class="box-heading" x="455">apps/mobile</tspan>
+      <tspan class="box-line" x="455" dy="28">React Native app</tspan>
+      <tspan class="box-line" x="455" dy="24">iOS native project</tspan>
+      <tspan class="box-line" x="455" dy="24">Android project</tspan>
+      <tspan class="small-line" x="455" dy="24">current local code</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="830" y="172" width="370" height="160" rx="14"/>
+    <text x="855" y="207">
+      <tspan class="box-heading" x="855">apps/mobile/ios/DiveWatchApp</tspan>
+      <tspan class="box-line" x="855" dy="28">SwiftUI watchOS companion</tspan>
+      <tspan class="box-line" x="855" dy="24">embedded in DiveMobile.xcodeproj</tspan>
+      <tspan class="box-line" x="855" dy="24">PoC</tspan>
+      <tspan class="small-line" x="855" dy="24">requires real-device validation</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box future" x="70" y="425" width="280" height="125" rx="14"/>
+    <text x="95" y="461">
+      <tspan class="box-heading" x="95">packages/shared-utils</tspan>
+      <tspan class="box-line" x="95" dy="28">reserved</tspan>
+      <tspan class="box-line" x="95" dy="24">currently empty</tspan>
+      <tspan class="small-line" x="95" dy="24">future shared helpers</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current" x="430" y="405" width="350" height="165" rx="14"/>
+    <text x="455" y="441">
+      <tspan class="box-heading" x="455">packages/contracts</tspan>
+      <tspan class="box-line" x="455" dy="28">JSON Schema source</tspan>
+      <tspan class="box-line" x="455" dy="24">generated TypeScript</tspan>
+      <tspan class="box-line" x="455" dy="24">generated Swift</tspan>
+      <tspan class="small-line" x="455" dy="24">Local import acknowledgement,</tspan>
+      <tspan class="small-line" x="455" dy="22">not cloud sync</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box future" x="850" y="430" width="310" height="95" rx="14"/>
+    <text x="875" y="467">
+      <tspan class="box-heading" x="875">.wiki</tspan>
+      <tspan class="box-line" x="875" dy="29">durable architecture knowledge</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box future" x="850" y="630" width="310" height="95" rx="14"/>
+    <text x="875" y="667">
+      <tspan class="box-heading" x="875">docs</tspan>
+      <tspan class="box-line" x="875" dy="29">specs, plans, architecture diagrams</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box safety" x="70" y="650" width="385" height="132" rx="14"/>
+    <text x="95" y="686">
+      <tspan class="box-heading" x="95">Safety boundary</tspan>
+      <tspan class="box-line" x="95" dy="28">logs, review, reminders,</tspan>
+      <tspan class="box-line" x="95" dy="24">watch-captured sync only</tspan>
+      <tspan class="small-line" x="95" dy="24">Not certified dive-computer behavior</tspan>
+    </text>
+  </g>
+
+  <path class="arrow-blue" marker-end="url(#arrow-blue)" d="M 350 242 H 430"/>
+  <rect class="arrow-label-bg" x="345" y="346" width="142" height="24" rx="6"/>
+  <text class="arrow-label" x="416" y="363" text-anchor="middle">package ownership</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 745 250 H 830"/>
+  <rect class="arrow-label-bg" x="770" y="346" width="175" height="24" rx="6"/>
+  <text class="arrow-label" x="857" y="363" text-anchor="middle">companion target embed</text>
+
+  <path class="arrow-blue" marker-end="url(#arrow-blue)" d="M 590 405 V 328"/>
+  <rect class="arrow-label-bg" x="510" y="346" width="160" height="24" rx="6"/>
+  <text class="arrow-label" x="590" y="363" text-anchor="middle">mobile validation/import</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 780 465 H 810 V 390 H 1015 V 332"/>
+  <rect class="arrow-label-bg" x="812" y="374" width="384" height="24" rx="6"/>
+  <text class="arrow-label" x="1004" y="391" text-anchor="middle">generated output, not currently compiled into watch target</text>
+
+  <path class="arrow-gray" marker-end="url(#arrow-gray)" d="M 1005 525 V 630"/>
+  <rect class="arrow-label-bg" x="884" y="545" width="242" height="24" rx="6"/>
+  <text class="arrow-label" x="1005" y="562" text-anchor="middle">diagram update check</text>
+
+  <path class="arrow-gray" marker-end="url(#arrow-gray)" d="M 850 678 H 780"/>
+  <rect class="arrow-label-bg" x="690" y="595" width="163" height="24" rx="6"/>
+  <text class="arrow-label" x="771" y="612" text-anchor="middle">architecture reference</text>
+</svg>

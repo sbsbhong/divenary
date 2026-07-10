@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" role="img" aria-labelledby="external-title external-desc">
+  <title id="external-title">External service boundaries</title>
+  <desc id="external-desc">Markdown-preview SVG export of the External Services page from architecture.drawio.</desc>
+  <defs>
+    <style>
+      svg { background: #ffffff; font-family: Arial, Helvetica, sans-serif; color: #111827; }
+      .canvas { fill: #ffffff; }
+      .box { stroke-width: 2; }
+      .current { fill: #dbeafe; stroke: #2563eb; }
+      .poc { fill: #fef3c7; stroke: #d97706; }
+      .future { fill: #f3f4f6; stroke: #9ca3af; }
+      .safety { fill: #fff7ed; stroke: #ea580c; }
+      .title-text { font-size: 28px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 17px; font-weight: 600; fill: #374151; }
+      .box-heading { font-size: 20px; font-weight: 700; fill: #111827; }
+      .box-line { font-size: 16px; fill: #1f2937; }
+      .small-line { font-size: 15px; fill: #1f2937; }
+      .arrow-blue { fill: none; stroke: #2563eb; stroke-width: 3; }
+      .arrow-amber { fill: none; stroke: #d97706; stroke-width: 3; }
+      .arrow-gray { fill: none; stroke: #6b7280; stroke-width: 3; }
+      .arrow-orange { fill: none; stroke: #ea580c; stroke-width: 3; }
+      .arrow-label-bg { fill: #ffffff; stroke: #e5e7eb; stroke-width: 1; }
+      .arrow-label { font-size: 13px; font-weight: 700; fill: #374151; }
+    </style>
+    <marker id="arrow-blue" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#d97706"/>
+    </marker>
+    <marker id="arrow-gray" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#6b7280"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M 0 0 L 12 6 L 0 12 z" fill="#ea580c"/>
+    </marker>
+  </defs>
+
+  <rect class="canvas" x="0" y="0" width="1400" height="900"/>
+
+  <g>
+    <rect class="box current" x="40" y="30" width="1320" height="132" rx="18"/>
+    <text x="700" y="65" text-anchor="middle">
+      <tspan class="title-text" x="700">External Services</tspan>
+      <tspan class="subtitle" x="700" dy="29">Recreational log companion</tspan>
+      <tspan class="subtitle" x="700" dy="25">current local app, PoC platform links, future reserved services</tspan>
+      <tspan class="subtitle" x="700" dy="25">Not certified dive-computer behavior</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="70" y="190" width="340" height="180" rx="14"/>
+    <text x="95" y="227">
+      <tspan class="box-heading" x="95">Open-Meteo boundary</tspan>
+      <tspan class="box-line" x="95" dy="29">current Home conditions provider</tspan>
+      <tspan class="box-line" x="95" dy="24">current / PoC client-side provider</tspan>
+      <tspan class="box-line" x="95" dy="24">weather / marine conditions</tspan>
+      <tspan class="box-line" x="95" dy="24">not safety-critical</tspan>
+      <tspan class="small-line" x="95" dy="24">current / PoC</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box future" x="520" y="178" width="380" height="198" rx="14"/>
+    <text x="545" y="214">
+      <tspan class="box-heading" x="545">Supabase/Auth/Cloud Sync boundary</tspan>
+      <tspan class="box-line" x="545" dy="28">future</tspan>
+      <tspan class="box-line" x="545" dy="24">no current client</tspan>
+      <tspan class="box-line" x="545" dy="24">no migrations</tspan>
+      <tspan class="box-line" x="545" dy="24">no RLS policies</tspan>
+      <tspan class="box-line" x="545" dy="24">no cloud backup</tspan>
+      <tspan class="small-line" x="545" dy="24">reserved</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="1010" y="190" width="340" height="165" rx="14"/>
+    <text x="1035" y="227">
+      <tspan class="box-heading" x="1035">Apple platform services</tspan>
+      <tspan class="box-line" x="1035" dy="29">WatchConnectivity</tspan>
+      <tspan class="box-line" x="1035" dy="24">Core Motion underwater sensor boundary</tspan>
+      <tspan class="box-line" x="1035" dy="24">Notifications</tspan>
+      <tspan class="small-line" x="1035" dy="24">current / PoC</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box current" x="70" y="520" width="340" height="128" rx="14"/>
+    <text x="95" y="557">
+      <tspan class="box-heading" x="95">mobile app boundary</tspan>
+      <tspan class="box-line" x="95" dy="29">current local repositories</tspan>
+      <tspan class="small-line" x="95" dy="25">Local import acknowledgement,</tspan>
+      <tspan class="small-line" x="95" dy="22">not cloud sync</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box poc" x="520" y="520" width="380" height="128" rx="14"/>
+    <text x="545" y="557">
+      <tspan class="box-heading" x="545">watch app boundary</tspan>
+      <tspan class="box-line" x="545" dy="29">current local session capture</tspan>
+      <tspan class="small-line" x="545" dy="25">requires paired Apple Watch validation</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box safety" x="1010" y="500" width="340" height="180" rx="14"/>
+    <text x="1035" y="537">
+      <tspan class="box-heading" x="1035">real-device validation</tspan>
+      <tspan class="box-line" x="1035" dy="29">pairing</tspan>
+      <tspan class="box-line" x="1035" dy="24">background delivery</tspan>
+      <tspan class="box-line" x="1035" dy="24">underwater sensor behavior</tspan>
+      <tspan class="box-line" x="1035" dy="24">auto-launch</tspan>
+      <tspan class="small-line" x="1035" dy="24">requires real-device validation</tspan>
+    </text>
+  </g>
+
+  <g>
+    <rect class="box safety" x="520" y="735" width="380" height="130" rx="14"/>
+    <text x="545" y="766">
+      <tspan class="box-heading" x="545">Safety claim boundary</tspan>
+      <tspan class="box-line" x="545" dy="29">not safety-critical</tspan>
+      <tspan class="box-line" x="545" dy="24">no certified dive-computer behavior</tspan>
+      <tspan class="box-line" x="545" dy="24">no emergency guidance</tspan>
+    </text>
+  </g>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 240 350 V 520"/>
+  <rect class="arrow-label-bg" x="93" y="423" width="294" height="24" rx="6"/>
+  <text class="arrow-label" x="240" y="440" text-anchor="middle">current Home conditions provider boundary</text>
+
+  <path class="arrow-gray" marker-end="url(#arrow-gray)" d="M 520 275 H 410 V 545"/>
+  <rect class="arrow-label-bg" x="357" y="386" width="230" height="24" rx="6"/>
+  <text class="arrow-label" x="472" y="403" text-anchor="middle">future cloud sync, no current client</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 1010 282 H 900 V 560"/>
+  <rect class="arrow-label-bg" x="930" y="392" width="110" height="24" rx="6"/>
+  <text class="arrow-label" x="985" y="409" text-anchor="middle">Platform APIs</text>
+
+  <path class="arrow-orange" marker-end="url(#arrow-orange)" d="M 1180 355 V 500"/>
+  <rect class="arrow-label-bg" x="1120" y="450" width="208" height="24" rx="6"/>
+  <text class="arrow-label" x="1224" y="467" text-anchor="middle">requires real-device validation</text>
+
+  <path class="arrow-amber" marker-end="url(#arrow-amber)" d="M 520 585 H 410"/>
+  <rect class="arrow-label-bg" x="382" y="666" width="304" height="24" rx="6"/>
+  <text class="arrow-label" x="534" y="683" text-anchor="middle">WatchConnectivity payload and import acknowledgement</text>
+
+  <path class="arrow-orange" marker-end="url(#arrow-orange)" d="M 240 648 V 794 H 520"/>
+  <rect class="arrow-label-bg" x="294" y="759" width="126" height="24" rx="6"/>
+  <text class="arrow-label" x="357" y="776" text-anchor="middle">not safety-critical</text>
+</svg>
