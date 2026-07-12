@@ -61,7 +61,7 @@ describe('watchSessionToDiveLogEntry', () => {
       now: 1781353000,
     });
 
-    expect(entry.syncStatus).toBe('pending');
+    expect(entry.cloudSyncStatus).toBe('notConfigured');
     expect(entry.watchCapture?.session.syncStatus).toBe(syncStatus);
   });
 
@@ -109,7 +109,7 @@ describe('watchSessionToDiveLogEntry', () => {
     expect(entry.localId).toBe('watch:watch-session-1:1781352600');
     expect(entry.watchCapture?.importKey).toBe('watch-session-1:1781352600');
     expect(entry.source).toBe('watch');
-    expect(entry.syncStatus).toBe('pending');
+    expect(entry.cloudSyncStatus).toBe('notConfigured');
     expect(entry.createdAt).toBe(1781353000);
     expect(entry.updatedAt).toBe(1781353000);
     expect(entry.watchCapture?.session).toBe(baseSession);

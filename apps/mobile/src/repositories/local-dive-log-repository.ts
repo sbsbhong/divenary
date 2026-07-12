@@ -97,6 +97,7 @@ export function mergeWatchImport(currentEntry: DiveLogEntry | undefined, nextEnt
     localId: currentEntry.localId,
     remoteId: currentEntry.remoteId,
     ownerUserId: currentEntry.ownerUserId,
+    cloudSyncStatus: currentEntry.cloudSyncStatus,
     createdAt: currentEntry.createdAt,
     manual: currentEntry.manual,
     mobile: currentEntry.mobile,

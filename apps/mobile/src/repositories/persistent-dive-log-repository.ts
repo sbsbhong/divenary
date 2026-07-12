@@ -2,7 +2,11 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchSyncMessage } from '../types/dive-session';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import { createAsyncStorageKeyValueStore, type PersistentKeyValueStore } from '../storage/persistent-key-value-store';
-import { PersistentJsonStore, migrateVersionedValue } from '../storage/persistent-json-store';
+import {
+  PersistentJsonStore,
+  UnsupportedStorageVersionError,
+  type StoredEnvelope,
+} from '../storage/persistent-json-store';
 import { mobileStorageKeys } from '../storage/storage-keys';
 import type { DiveLogRepository } from './dive-log-repository';
 import {
@@ -29,9 +33,9 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     this.now = options.now ?? getCurrentTimestampSeconds;
     this.store = new PersistentJsonStore<DiveLogEntry[]>({
       key: mobileStorageKeys.logbook,
-      schemaVersion: 2,
+      schemaVersion: 3,
       defaultValue: () => initialEntries.map(cloneDiveLogEntry),
-      migrate: envelope => migrateVersionedValue<DiveLogEntry[]>(mobileStorageKeys.logbook, 2, envelope),
+      migrate: migrateLogbookEnvelope,
       storage: options.storage ?? createAsyncStorageKeyValueStore(),
       now: this.now,
       onReadError: options.onReadError,
@@ -87,6 +91,25 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
   private async writeEntries(entries: DiveLogEntry[]): Promise<void> {
     await this.store.write(entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries));
   }
+}
+
+type LegacyDiveLogEntry = Omit<DiveLogEntry, 'cloudSyncStatus'> & {
+  syncStatus?: 'localOnly' | 'pending' | 'synced' | 'failed';
+};
+
+function migrateLogbookEnvelope(envelope: StoredEnvelope<unknown>): DiveLogEntry[] {
+  if (envelope.schemaVersion === 3) {
+    return envelope.value as DiveLogEntry[];
+  }
+
+  if (envelope.schemaVersion === 2 && Array.isArray(envelope.value)) {
+    return (envelope.value as LegacyDiveLogEntry[]).map(({ syncStatus: _legacyStatus, ...entry }) => ({
+      ...entry,
+      cloudSyncStatus: 'notConfigured',
+    }));
+  }
+
+  throw new UnsupportedStorageVersionError(mobileStorageKeys.logbook, Number(envelope.schemaVersion));
 }
 
 export const createDefaultPersistentDiveLogRepository = (

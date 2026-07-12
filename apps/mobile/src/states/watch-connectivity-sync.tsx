@@ -298,7 +298,7 @@ async function markWatchConnectivityImported(
 
   const savedEntry = await repository.save({
     ...enrichedEntry,
-    syncStatus: 'pending',
+    cloudSyncStatus: 'notConfigured',
     updatedAt: payload.receivedAt ?? Date.now() / 1000,
   });
 

@@ -100,7 +100,7 @@ describe('WatchConnectivitySyncProvider', () => {
       depthMeters: 13.2,
       waterTemperatureCelsius: 24.1,
     });
-    expect(entries[0].syncStatus).toBe('pending');
+    expect(entries[0].cloudSyncStatus).toBe('notConfigured');
     expect(entries[0].watchCapture?.session.syncStatus).toBe('pending');
     expect(queryClient.getQueryData(diveLogbookQueryKeys.list(repository))).toEqual(entries);
   });
@@ -166,10 +166,10 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const [entry] = await repository.list();
-    expect(entry.syncStatus).toBe('pending');
+    expect(entry.cloudSyncStatus).toBe('notConfigured');
     expect(notifyImportedEntry).toHaveBeenCalledWith(expect.objectContaining({
       localId: entry.localId,
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
     }));
   });
 
@@ -211,7 +211,7 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(entries[0].watchCapture?.session.localSessionId).toBe('fixture-rich-session');
     expect(onImportedEntry).toHaveBeenCalledWith(expect.objectContaining({
       localId: entries[0].localId,
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
     }));
   });
 
@@ -360,7 +360,7 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(summary).toEqual({ receivedCount: 2, importedCount: 2 });
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
       watchCapture: {
         session: {
           localSessionId: 'demo-duplicate-session',
@@ -534,7 +534,7 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const [entry] = await repository.list();
-    expect(entry.syncStatus).toBe('pending');
+    expect(entry.cloudSyncStatus).toBe('notConfigured');
     expect(entry.manual.title).toBe('Plan save fails');
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['plan-save-fails-payload']);
     const originalPlan = await planRepository.get('plan-save-fails');

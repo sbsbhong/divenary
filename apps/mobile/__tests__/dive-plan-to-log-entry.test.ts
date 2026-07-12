@@ -34,7 +34,7 @@ describe('divePlanToDiveLogEntryDraft', () => {
     expect(draft).toMatchObject({
       localId: 'manual-from-plan',
       source: 'manual',
-      syncStatus: 'localOnly',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         entryStyle: 'boat',
         site: { siteId: 'site-1', name: 'Blue Wall' },

@@ -33,7 +33,6 @@ import { useHomeConditions } from '../../conditions/use-home-conditions';
 import { supportedLanguages, type SupportedLanguage } from '../../i18n';
 import { useAppPreferences } from '../../states/app-preferences';
 import type { MobileDiveSession } from '../../types/dive-session';
-import { toVisibleRecentSessionSyncStatus } from '../../utils/dive-log-sync-status';
 import { formatDate, formatDepth, formatDuration, formatTemperature } from '../../utils/dive-formatters';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
 
@@ -56,7 +55,6 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   const recentMaxDepthMeters = recentSession ? getSessionMaxDepthMeters(recentSession) : undefined;
   const recentDurationSeconds = recentSession ? getSessionDurationSeconds(recentSession) : undefined;
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const syncStatus = toVisibleRecentSessionSyncStatus(recentSession?.syncStatus);
   const conditionsProvider = React.useMemo(
     () => props.conditionsProvider ?? createOpenMeteoHomeConditionsProvider(),
     [props.conditionsProvider],
@@ -117,7 +115,6 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           <LatestLogCard
             session={recentSession}
             locale={locale}
-            syncStatus={syncStatus}
             recentMaxDepthMeters={recentMaxDepthMeters}
             recentDurationSeconds={recentDurationSeconds}
           />
@@ -251,7 +248,6 @@ function LatestLogEmptyCard(): React.JSX.Element {
 function LatestLogCard(props: {
   session: MobileDiveSession;
   locale: string;
-  syncStatus: ReturnType<typeof toVisibleRecentSessionSyncStatus>;
   recentMaxDepthMeters: number | undefined;
   recentDurationSeconds: number | undefined;
 }): React.JSX.Element {
@@ -262,7 +258,6 @@ function LatestLogCard(props: {
       <DiveSummaryCard.Header
         eyebrow={t('home.latestLog')}
         title={props.session.siteName ?? t('home.noRecentLog')}
-        right={<StatusPill label={t(`status.${props.syncStatus}`, { defaultValue: props.syncStatus })} tone="secondary" />}
       />
       <DiveSummaryCard.Body>
         <DiveSummaryCard.Metric

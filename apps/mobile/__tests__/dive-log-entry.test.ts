@@ -9,7 +9,7 @@ describe('createBlankDiveLogEntry', () => {
 
     expect(entry.localId).toBe('manual-entry-1');
     expect(entry.source).toBe('manual');
-    expect(entry.syncStatus).toBe('localOnly');
+    expect(entry.cloudSyncStatus).toBe('notConfigured');
     expect(entry.createdAt).toBe(1781353000);
     expect(entry.updatedAt).toBe(1781353000);
 

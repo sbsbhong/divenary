@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
+import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
@@ -12,12 +12,10 @@ import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
-import type { InstrumentTone } from '../../components/ui/theme';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DiveSessionFilter } from '../../types/dive-session';
 import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
-import { toVisibleCloudSyncStatus, type VisibleCloudSyncStatus } from '../../utils/dive-log-sync-status';
 import { formatDate, formatDepth, formatDuration } from '../../utils/dive-formatters';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
 import { diveLogEntryToMobileSession } from '../../states/use-dive-logbook';
@@ -46,12 +44,10 @@ type LogbookScreenProps = {
   isSaving?: boolean;
 };
 
-type SyncFilter = 'all' | 'synced' | 'pending';
 type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
-  const [syncFilter, setSyncFilter] = React.useState<SyncFilter>('all');
   const [route, setRoute] = React.useState<LocalRoute>('list');
   const [draftEntry, setDraftEntry] = React.useState<DiveLogEntry | undefined>();
   const [syncToastMessage, setSyncToastMessage] = React.useState<string | undefined>();
@@ -62,13 +58,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
   const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
-  const visibleEntries = React.useMemo(() => {
-    if (syncFilter === 'all') {
-      return props.entries;
-    }
-
-    return props.entries.filter(entry => toVisibleCloudSyncStatus(entry.syncStatus) === syncFilter);
-  }, [props.entries, syncFilter]);
+  const visibleEntries = props.entries;
   const [selectedId, setSelectedId] = React.useState(visibleEntries[0]?.localId);
   const selectedEntry = visibleEntries.find(entry => entry.localId === selectedId);
 
@@ -264,29 +254,6 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
                 className="px-0 py-0 text-base font-normal"
               />
             </Input>
-            <HStack space="xs" className="rounded-full bg-muted p-1">
-              <SelectorPill
-                testID="logbook-filter-all"
-                className="flex-1"
-                label={t('logbook.all')}
-                selected={syncFilter === 'all'}
-                onPress={() => setSyncFilter('all')}
-              />
-              <SelectorPill
-                testID="logbook-filter-synced"
-                className="flex-1"
-                label={t('logbook.synced')}
-                selected={syncFilter === 'synced'}
-                onPress={() => setSyncFilter('synced')}
-              />
-              <SelectorPill
-                testID="logbook-filter-pending"
-                className="flex-1"
-                label={t('logbook.pending')}
-                selected={syncFilter === 'pending'}
-                onPress={() => setSyncFilter('pending')}
-              />
-            </HStack>
           </VStack>
         </VStack>
 
@@ -393,7 +360,6 @@ function SessionListItem(props: {
 }): React.JSX.Element {
   const session = diveLogEntryToMobileSession(props.entry);
   const listMetrics = getListMetrics(props.entry);
-  const status = toVisibleCloudSyncStatus(props.entry.syncStatus);
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const tags = session.tags?.length ? session.tags.join(', ') : t('logbook.noTags');
@@ -425,11 +391,6 @@ function SessionListItem(props: {
             </VStack>
           </HStack>
           <VStack space="xs" className="items-end">
-            <StatusPill
-              testID={`logbook-list-status-${siteName}`}
-              label={t(`status.${status}`, { defaultValue: status })}
-              tone={syncStatusTone(status)}
-            />
             {unsupportedDepth ? (
               <StatusPill
                 testID={`logbook-list-unsupported-depth-${siteName}`}
@@ -472,15 +433,3 @@ function formatListDuration(seconds: number | undefined): string {
 function toTestIdValue(value: string): string {
   return value.replace(/\s+/g, '');
 }
-
-const syncStatusTone = (status: VisibleCloudSyncStatus): InstrumentTone => {
-  if (status === 'synced') {
-    return 'primary';
-  }
-
-  if (status === 'failed') {
-    return 'danger';
-  }
-
-  return status === 'localOnly' ? 'muted' : 'secondary';
-};

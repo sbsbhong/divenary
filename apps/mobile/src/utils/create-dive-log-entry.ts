@@ -12,7 +12,7 @@ export const createBlankDiveLogEntry = (options: CreateBlankDiveLogEntryOptions 
   return {
     localId,
     source: 'manual',
-    syncStatus: 'localOnly',
+    cloudSyncStatus: 'notConfigured',
     createdAt: timestamp,
     updatedAt: timestamp,
     manual: {

@@ -1,12 +1,13 @@
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { WatchSyncMessage } from '../src/types/dive-session';
 
 const manualEntry = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'manual-1',
   source: 'manual',
-  syncStatus: 'localOnly',
+  cloudSyncStatus: 'notConfigured',
   createdAt: 100,
   updatedAt: 100,
   manual: {
@@ -46,6 +47,55 @@ const watchMessage: WatchSyncMessage = {
 };
 
 describe('PersistentDiveLogRepository', () => {
+  it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const legacyStatuses = ['localOnly', 'pending', 'synced', 'failed'] as const;
+    const legacyEntries = legacyStatuses.map((syncStatus, index) => ({
+      ...manualEntry({
+        localId: `legacy-${syncStatus}`,
+        manual: {
+          ...manualEntry().manual,
+          notes: index === 1 ? 'Keep mobile edits.' : undefined,
+        },
+      }),
+      syncStatus,
+      ...(index === 1
+        ? {
+            source: 'watch' as const,
+            watchCapture: {
+              importKey: 'legacy-watch:260',
+              importedAt: 300,
+              session: {
+                localSessionId: 'legacy-watch',
+                startedAt: 200,
+                endedAt: 260,
+                syncStatus: 'synced' as const,
+                samples: [],
+              },
+              measuredValues: { startedAt: 200, endedAt: 260 },
+              samples: [],
+            },
+          }
+        : {}),
+    }));
+    await storage.setString(
+      mobileStorageKeys.logbook,
+      JSON.stringify({ schemaVersion: 2, updatedAt: 500, value: legacyEntries }),
+    );
+
+    const entries = await new PersistentDiveLogRepository({ storage, now: () => 600 }).list();
+    const watchEntry = entries.find(entry => entry.localId === 'legacy-pending');
+
+    expect(entries.map(entry => entry.cloudSyncStatus)).toEqual([
+      'notConfigured',
+      'notConfigured',
+      'notConfigured',
+      'notConfigured',
+    ]);
+    expect(watchEntry?.watchCapture?.session.syncStatus).toBe('synced');
+    expect(watchEntry?.manual.notes).toBe('Keep mobile edits.');
+  });
+
   it('saves, reloads, sorts, and deletes persisted entries', async () => {
     const storage = new InMemoryKeyValueStore();
     const repository = new PersistentDiveLogRepository({ storage, now: () => 999 });
@@ -98,7 +148,7 @@ describe('PersistentDiveLogRepository', () => {
     expect(reimportedEntry.localId).toBe(importedEntry.localId);
     expect(reimportedEntry.manual.site.name).toBe('Edited Reef');
     expect(reimportedEntry.manual.notes).toBe('Keep mobile edits.');
-    expect(reimportedEntry.syncStatus).toBe('pending');
+    expect(reimportedEntry.cloudSyncStatus).toBe('notConfigured');
     expect(reimportedEntry.watchCapture?.session.siteName).toBe('Updated Watch Reef');
     expect(reimportedEntry.watchCapture?.session.syncStatus).toBe('synced');
     expect(reimportedEntry.watchCapture?.measuredValues.maxDepthMeters).toBe(18);

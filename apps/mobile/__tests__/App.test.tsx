@@ -159,9 +159,14 @@ describe('App navigation', () => {
   });
 
   test('renders correctly', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
     await ReactTestRenderer.act(async () => {
-      renderers.push(ReactTestRenderer.create(<App />));
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
     });
+
+    expect(renderer!.root.findAllByProps({ children: '대기 중' })).toHaveLength(0);
   });
 
   test('keeps four top-level tabs and opens Settings', async () => {
@@ -313,7 +318,7 @@ describe('App navigation', () => {
     const importedToastEntry = (await defaultDiveLogRepository.list()).find(
       entry => entry.watchCapture?.session.localSessionId === 'app-toast-session',
     );
-    expect(importedToastEntry?.syncStatus).toBe('pending');
+    expect(importedToastEntry?.cloudSyncStatus).toBe('notConfigured');
 
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
     expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('로그 작성');

@@ -184,7 +184,7 @@ scubaEntry.manual = {
 const watchScubaPressureEditEntry: DiveLogEntry = {
   ...watchEntry,
   localId: 'watch:scuba-pressure-edit:1781352600',
-  syncStatus: 'pending',
+  cloudSyncStatus: 'notConfigured',
   manual: {
     ...watchEntry.manual,
     site: { name: 'Watch Pressure Edit Reef' },
@@ -701,7 +701,7 @@ describe('Logbook manual entry flow', () => {
 
     expect(savedEntry).toMatchObject({
       source: 'manual',
-      syncStatus: 'localOnly',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         site: { name: 'Blue Corner' },
         buddyIds: ['Mina', 'Alex'],
@@ -1021,12 +1021,12 @@ describe('Logbook manual entry flow', () => {
     expect(root.findAllByProps({ testID: 'log-entry-detail-demo-capture' })).toHaveLength(0);
   });
 
-  test('labels manual local-only rows as locally saved instead of pending sync', async () => {
+  test('does not show a cloud status for manual rows before cloud sync exists', async () => {
     const repository = new LocalDiveLogRepository([manualEntry]);
     const renderer = await renderLogbook(repository);
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'logbook-list-status-Manual Reef' }).props.label).toBe('Local');
+    expect(root.findAllByProps({ testID: 'logbook-list-status-Manual Reef' })).toHaveLength(0);
   });
 
   test('marks imported watch logs above the supported watch depth even when summary fields are lower', async () => {
@@ -1041,11 +1041,11 @@ describe('Logbook manual entry flow', () => {
     );
   });
 
-  test('shows current watch imports as pending cloud sync and keeps synced filter empty', async () => {
+  test('does not present cloud status controls before cloud sync exists', async () => {
     const syncedWatchEntry: DiveLogEntry = {
       ...watchEntry,
       localId: 'watch:visible-synced-as-pending:1781352600',
-      syncStatus: 'synced',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         ...watchEntry.manual,
         site: { name: 'Visible Pending Reef' },
@@ -1064,14 +1064,10 @@ describe('Logbook manual entry flow', () => {
     const renderer = await renderLogbook(repository);
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'logbook-list-status-Visible Pending Reef' }).props.label).toBe('Pending');
-
-    await press(root, 'logbook-filter-synced');
-    expect(root.findAllByProps({ testID: 'logbook-list-item-Visible Pending Reef' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'logbook-empty-state' })).toBeTruthy();
-
-    await press(root, 'logbook-filter-pending');
     expect(root.findByProps({ testID: 'logbook-list-item-Visible Pending Reef' })).toBeTruthy();
+    expect(root.findAllByProps({ testID: 'logbook-list-status-Visible Pending Reef' })).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'logbook-filter-synced' })).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'logbook-filter-pending' })).toHaveLength(0);
   });
 
   test('delegates log detail opening to the app route when provided', async () => {
@@ -1306,7 +1302,7 @@ describe('Logbook manual entry flow', () => {
     expect(entries[0]).toMatchObject({
       localId: 'watch:watch-entry-1:1781352600',
       source: 'watch',
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         site: { name: 'Edited Watch Reef' },
         notes: 'Reviewed on mobile.',
