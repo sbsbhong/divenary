@@ -134,6 +134,7 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func load() {
+        defer { recoverInterruptedRecordings() }
         if fileManager.fileExists(atPath: recordsStorageURL.path) {
             do {
                 sessions = try profileStore.migrateLegacyRecords(at: recordsStorageURL)
@@ -178,6 +179,65 @@ final class DiveSessionStore: ObservableObject {
         } catch {
             sessions = []
         }
+    }
+
+    private func recoverInterruptedRecordings() {
+        guard let recordings = try? profileStore.loadActiveRecordings() else { return }
+        for recording in recordings where !sessions.contains(where: { $0.id == recording.metadata.localSessionId }) {
+            guard !recording.samples.isEmpty else { continue }
+            let endedAt = recording.samples.last?.timestamp ?? recording.metadata.startedAt
+            let payload: DiveSessionPayload
+            switch recording.metadata.plan.diveMode {
+            case .freedive:
+                var engine = FreeDiveSessionEngine(startedAt: recording.metadata.startedAt)
+                recording.samples.forEach { engine.append($0) }
+                payload = .freedive(engine.finish(at: endedAt))
+            case .scuba:
+                var engine = ScubaDiveEngine(
+                    startedAt: recording.metadata.startedAt,
+                    gasLabel: recording.metadata.plan.gasLabel,
+                    sessionID: recording.metadata.localSessionId
+                )
+                recording.samples.forEach { engine.append($0) }
+                payload = .scuba(engine.finish(at: endedAt))
+            }
+            let plan = recording.metadata.plan
+            let record = DiveSessionRecord(
+                id: recording.metadata.localSessionId,
+                schemaVersion: 3,
+                captureMode: recording.metadata.captureMode,
+                diveMode: plan.diveMode,
+                siteId: nil,
+                siteName: plan.siteName.isEmpty ? nil : plan.siteName,
+                sourcePlanLocalId: plan.sourcePlanLocalId,
+                planTitle: plan.title.isEmpty ? nil : plan.title,
+                buddyIds: plan.buddyIds,
+                gearIds: plan.gearIds,
+                tags: plan.tags,
+                notes: plan.quickNote.isEmpty ? nil : plan.quickNote,
+                rating: nil,
+                perceivedExertion: nil,
+                visibilityRating: nil,
+                waterCondition: .unknown,
+                syncStatus: .pending,
+                entryLocation: nil,
+                exitLocation: nil,
+                startedAt: recording.metadata.startedAt,
+                endedAt: endedAt,
+                samples: recording.samples,
+                payload: payload,
+                profile: DiveProfileMetadata(
+                    contentRevision: UUID().uuidString,
+                    sampleCount: recording.samples.count,
+                    interrupted: true
+                )
+            )
+            if let entry = try? profileStore.finalize(record: record) {
+                sessions.append(entry.displayRecord)
+                try? profileStore.clearActiveRecording(sessionID: record.id)
+            }
+        }
+        sessions.sort { $0.startedAt > $1.startedAt }
     }
 
     private func loadPlannedDives() {

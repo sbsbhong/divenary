@@ -27,4 +27,3 @@ Accepted
 - `apps/mobile/ios/DiveWatchApp/Storage/DiveProfileArtifactStore.swift`
 - `apps/mobile/ios/DiveMobile/WatchConnectivityInbox.swift`
 - `apps/mobile/src/repositories/persistent-dive-log-repository.ts`
-

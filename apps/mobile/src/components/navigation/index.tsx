@@ -97,6 +97,7 @@ export default function RootNavigation(): React.JSX.Element {
   const [pendingLogDraft, setPendingLogDraft] = React.useState<PendingLogDraft | undefined>();
   const [completedPromptPlan, setCompletedPromptPlan] = React.useState<DivePlan | undefined>();
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
+  const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
   const [reselectTokens, setReselectTokens] = React.useState<Record<NavigationRouteName, number>>({
     home: 0,
     logbook: 0,
@@ -240,7 +241,11 @@ export default function RootNavigation(): React.JSX.Element {
     getInitialWatchSyncNotificationOpen()
       .then(open => {
         if (isMounted && open) {
-          openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+          if (rootStackNavigationRef.isReady()) {
+            openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+          } else {
+            pendingNotificationOpenRef.current = open.entryLocalId;
+          }
         }
       })
       .catch(error => {
@@ -248,7 +253,11 @@ export default function RootNavigation(): React.JSX.Element {
       });
 
     const subscription = subscribeToWatchSyncNotificationOpens(open => {
-      openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+      if (rootStackNavigationRef.isReady()) {
+        openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+      } else {
+        pendingNotificationOpenRef.current = open.entryLocalId;
+      }
     });
 
     return () => {
@@ -256,6 +265,15 @@ export default function RootNavigation(): React.JSX.Element {
       subscription.remove();
     };
   }, [openStackScreen]);
+
+  const handleNavigationReady = React.useCallback(() => {
+    refreshVisibleStackRoute();
+    const pendingLocalId = pendingNotificationOpenRef.current;
+    if (pendingLocalId) {
+      pendingNotificationOpenRef.current = undefined;
+      openStackScreen('logbookDetail', { localId: pendingLocalId }, 'logbook');
+    }
+  }, [openStackScreen, refreshVisibleStackRoute]);
 
   const openImportedLogToast = React.useCallback(() => {
     if (!autoImportToast) {
@@ -335,7 +353,7 @@ export default function RootNavigation(): React.JSX.Element {
         }}>
         <NavigationContainer
           ref={rootStackNavigationRef}
-          onReady={refreshVisibleStackRoute}
+          onReady={handleNavigationReady}
           onStateChange={refreshVisibleStackRoute}>
           <Stack.Navigator
             initialRouteName="tabs"

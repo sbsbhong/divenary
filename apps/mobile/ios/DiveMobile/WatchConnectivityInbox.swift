@@ -98,6 +98,9 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     error: Error?
   ) {
     guard error == nil, activationState == .activated else {
+      DispatchQueue.main.async { [weak self] in
+        self?.isActivated = false
+      }
       return
     }
 
@@ -156,7 +159,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   }
 
   private func enqueuePendingPayload(_ payload: PendingWatchConnectivityPayload) {
-    DispatchQueue.main.async {
+    let persist = {
       if self.pendingPayloads.contains(where: {
         $0.localSessionId == payload.localSessionId
           && $0.contentRevision == payload.contentRevision
@@ -171,6 +174,11 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       self.persistPendingPayloads()
       NotificationCenter.default.post(name: .diveWatchSyncPayloadReceived, object: self, userInfo: payload.dictionary)
     }
+    if Thread.isMainThread {
+      persist()
+    } else {
+      DispatchQueue.main.sync(execute: persist)
+    }
   }
 
   private func makePendingPayload(from userInfo: [String: Any]) -> PendingWatchConnectivityPayload? {
@@ -183,7 +191,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   }
 
   private func drainPendingPayloadsOnMainQueue() -> [[String: Any]] {
-    pendingPayloads.map(\.dictionary).filter { !$0.isEmpty }
+    pendingPayloads.prefix(1).map(\.dictionary).filter { !$0.isEmpty }
   }
 
   private func acknowledgeOnMainQueue(payloadIds: [String]) {
@@ -239,15 +247,31 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   private func flushPendingAcknowledgementsOnMainQueue() {
     guard let connectivitySession,
           connectivitySession.activationState == .activated else { return }
-    for acknowledgement in pendingAcknowledgements {
+    let outstandingIdentities = Set(connectivitySession.outstandingUserInfoTransfers.compactMap {
+      PendingWatchConnectivityAcknowledgement.identity(from: $0.userInfo)
+    })
+    for acknowledgement in pendingAcknowledgements where !outstandingIdentities.contains(acknowledgement.identity) {
       let dictionary = acknowledgement.dictionary
       if connectivitySession.isReachable {
         connectivitySession.sendMessage(dictionary, replyHandler: nil) { _ in }
       }
       connectivitySession.transferUserInfo(dictionary)
     }
-    pendingAcknowledgements.removeAll()
-    persistPendingAcknowledgements()
+  }
+
+  func session(
+    _ session: WCSession,
+    didFinish userInfoTransfer: WCSessionUserInfoTransfer,
+    error: Error?
+  ) {
+    guard error == nil,
+          let identity = PendingWatchConnectivityAcknowledgement.identity(from: userInfoTransfer.userInfo) else {
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      self?.pendingAcknowledgements.removeAll { $0.identity == identity }
+      self?.persistPendingAcknowledgements()
+    }
   }
 
   private func updatePlannedDivesOnMainQueue(json plannedDivesJson: String) -> [String: Any] {
@@ -441,20 +465,38 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     sourceURL: URL,
     metadata: [String: Any]
   ) throws -> PendingWatchConnectivityPayload {
-    try persistPendingData(Data(contentsOf: sourceURL), metadata: metadata)
+    try persistPendingData(Data(contentsOf: sourceURL), metadata: metadata, requiresIntegrityMetadata: true)
   }
 
   private func persistPendingData(
     _ data: Data,
-    metadata: [String: Any]
+    metadata: [String: Any],
+    requiresIntegrityMetadata: Bool = false
   ) throws -> PendingWatchConnectivityPayload {
-    let expectedByteCount = metadata[WatchConnectivityEnvelopeKey.byteCount] as? Int ?? data.count
-    let expectedDigest = metadata[WatchConnectivityEnvelopeKey.sha256] as? String
-      ?? Self.sha256Hex(data)
+    let suppliedByteCount = metadata[WatchConnectivityEnvelopeKey.byteCount] as? Int
+    let suppliedDigest = metadata[WatchConnectivityEnvelopeKey.sha256] as? String
+    let suppliedSessionId = metadata[WatchConnectivityEnvelopeKey.localSessionId] as? String
+    let suppliedRevision = metadata[WatchConnectivityEnvelopeKey.contentRevision] as? String
+    if requiresIntegrityMetadata && (
+      suppliedByteCount == nil || suppliedDigest == nil || suppliedSessionId == nil || suppliedRevision == nil
+    ) {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    let expectedByteCount = suppliedByteCount ?? data.count
+    let expectedDigest = suppliedDigest ?? Self.sha256Hex(data)
     guard data.count == expectedByteCount, Self.sha256Hex(data) == expectedDigest else {
       throw CocoaError(.fileReadCorruptFile)
     }
-    _ = try JSONSerialization.jsonObject(with: data)
+    let message = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+    let session = message?["session"] as? [String: Any]
+    let bodyProfile = session?["profile"] as? [String: Any]
+    if requiresIntegrityMetadata && (
+      session?["localSessionId"] as? String != suppliedSessionId
+        || bodyProfile?["contentRevision"] as? String != suppliedRevision
+        || bodyProfile?["sampleCount"] as? Int != metadata[WatchConnectivityEnvelopeKey.sampleCount] as? Int
+    ) {
+      throw CocoaError(.fileReadCorruptFile)
+    }
     let payloadId = UUID().uuidString
     let directory = Self.inboxDirectoryURL()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -523,6 +565,16 @@ private struct PendingWatchConnectivityAcknowledgement: Codable, Equatable {
   let byteCount: Int?
   let sampleCount: Int?
   let acknowledgedAt: TimeInterval
+
+  var identity: String { "\(localSessionId):\(contentRevision):\(sha256)" }
+
+  static func identity(from dictionary: [String: Any]) -> String? {
+    guard dictionary[WatchConnectivityEnvelopeKey.kind] as? String == WatchConnectivityEnvelopeValue.acknowledgementKind,
+          let sessionId = dictionary[WatchConnectivityEnvelopeKey.localSessionId] as? String,
+          let revision = dictionary[WatchConnectivityEnvelopeKey.contentRevision] as? String,
+          let digest = dictionary[WatchConnectivityEnvelopeKey.sha256] as? String else { return nil }
+    return "\(sessionId):\(revision):\(digest)"
+  }
 
   var dictionary: [String: Any] {
     var value: [String: Any] = [

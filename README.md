@@ -19,7 +19,7 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
   - Swift Codable 타입 생성(`quicktype`)
 - `apps/mobile`:
   - React Native `0.85.3` 모바일 앱
-  - AsyncStorage 기반 Logbook/Planbook/설정 저장소와 session/revision별 Watch profile 분리 저장
+  - AsyncStorage 기반 Logbook/Planbook/설정 metadata와 Application Support 파일 기반 session/revision별 Watch profile 분리 저장
   - React Navigation 기반 bottom tab navigation
   - runtime watch sync JSON validation, WatchConnectivity pending inbox 수동 동기화, active simulator import/ack 확인 경로
   - 실행하지 않은 Planbook planned dive를 watch companion에 전달하는 PoC

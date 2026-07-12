@@ -137,7 +137,7 @@ final class DiveSessionRecorder: ObservableObject {
             )
         case .scuba:
             guard var engine = scubaEngine else { return nil }
-            payload = .scuba(engine.finish(at: endedAt))
+            payload = .scuba(normalizeScubaSession(engine.finish(at: endedAt), samples: samples))
         }
         currentRecordPayload = payload
 
@@ -293,6 +293,33 @@ final class DiveSessionRecorder: ObservableObject {
             diveCount: session.diveCount,
             longestDiveDurationSeconds: session.longestDiveDurationSeconds,
             segments: segments
+        )
+    }
+
+    private func normalizeScubaSession(
+        _ session: ScubaDiveSession,
+        samples: [DepthSample]
+    ) -> ScubaDiveSession {
+        let averageDepth = samples.isEmpty
+            ? 0
+            : samples.reduce(0) { $0 + $1.depthMeters } / Double(samples.count)
+        let temperatures = samples.compactMap(\.waterTemperatureCelsius)
+        let averageTemperature = temperatures.isEmpty
+            ? nil
+            : temperatures.reduce(0, +) / Double(temperatures.count)
+        let profileMax = samples.map { max($0.depthMeters, $0.bucketMaxDepthMeters ?? $0.depthMeters) }.max() ?? 0
+        return ScubaDiveSession(
+            id: session.id,
+            startTime: session.startTime,
+            endTime: session.endTime,
+            durationSeconds: session.durationSeconds,
+            maxDepthMeters: max(session.maxDepthMeters, profileMax),
+            averageDepthMeters: averageDepth,
+            waterTemperatureCelsius: averageTemperature,
+            gasLabel: session.gasLabel,
+            latestAscentRateMetersPerMinute: session.latestAscentRateMetersPerMinute,
+            maxAscentRateMetersPerMinute: session.maxAscentRateMetersPerMinute,
+            safetyStop: session.safetyStop
         )
     }
 }

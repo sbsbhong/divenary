@@ -23,7 +23,10 @@ struct UnsupportedDepthRecord: Codable, Equatable {
             return nil
         }
 
-        let firstExceededAt = samples.first { $0.depthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters }?.timestamp
+        let firstExceededAt = samples.first {
+            max($0.depthMeters, $0.bucketMaxDepthMeters ?? $0.depthMeters)
+                > DiveDepthSupport.supportedWatchDepthLimitMeters
+        }?.timestamp
 
         return UnsupportedDepthRecord(
             exceeded: true,

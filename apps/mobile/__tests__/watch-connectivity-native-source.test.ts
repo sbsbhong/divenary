@@ -510,7 +510,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(record).toContain('struct UnsupportedDepthRecord: Codable, Equatable');
     expect(record).toContain('let unsupportedDepth: UnsupportedDepthRecord?');
     expect(record).toContain('firstExceededAt');
-    expect(record).toContain('samples.first { $0.depthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters }');
+    expect(record).toContain('max($0.depthMeters, $0.bucketMaxDepthMeters ?? $0.depthMeters)');
     expect(record).toContain('unsupportedDepth = RecordUnsupportedDepthPayload(record: session.unsupportedDepth)');
     expect(record).toContain('let unsupportedDepth: RecordUnsupportedDepthPayload?');
     expect(record).not.toContain('filter { $0.depthMeters <= DiveDepthSupport.supportedWatchDepthLimitMeters }');

@@ -8,6 +8,7 @@ import {
   type StoredEnvelope,
 } from '../storage/persistent-json-store';
 import { mobileStorageKeys } from '../storage/storage-keys';
+import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
 import type { DiveLogRepository } from './dive-log-repository';
 import {
   cloneDiveLogEntry,
@@ -22,23 +23,25 @@ export type PersistentDiveLogRepositoryOptions = {
   now?: () => number;
   initialEntries?: DiveLogEntry[];
   onReadError?: (error: Error) => void;
+  profileStorage?: WatchProfileStorage;
 };
 
 export class PersistentDiveLogRepository implements DiveLogRepository {
   private readonly store: PersistentJsonStore<DiveLogEntry[]>;
   private readonly now: () => number;
-  private readonly profileStorage: PersistentKeyValueStore;
+  private readonly profileStorage: WatchProfileStorage;
 
   constructor(options: PersistentDiveLogRepositoryOptions = {}) {
     const initialEntries = options.initialEntries ?? [];
     this.now = options.now ?? getCurrentTimestampSeconds;
-    this.profileStorage = options.storage ?? createAsyncStorageKeyValueStore();
+    const metadataStorage = options.storage ?? createAsyncStorageKeyValueStore();
+    this.profileStorage = options.profileStorage ?? createWatchProfileStorage(metadataStorage);
     this.store = new PersistentJsonStore<DiveLogEntry[]>({
       key: mobileStorageKeys.logbook,
       schemaVersion: 3,
       defaultValue: () => initialEntries.map(cloneDiveLogEntry),
       migrate: migrateLogbookEnvelope,
-      storage: this.profileStorage,
+      storage: metadataStorage,
       now: this.now,
       onReadError: options.onReadError,
     });
@@ -72,16 +75,20 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     await this.writeEntries(entries.filter(entry => entry.localId !== localId));
   }
 
-  async importWatchMessages(messages: WatchSyncMessage[]): Promise<DiveLogEntry[]> {
+  async importWatchMessages(
+    messages: WatchSyncMessage[],
+    options?: { profileDigests?: Array<string | undefined> },
+  ): Promise<DiveLogEntry[]> {
     const now = this.now();
     let entries = await this.readEntries();
+    const obsoleteProfileKeys = new Set<string>();
 
-    for (const message of messages) {
+    for (const [messageIndex, message] of messages.entries()) {
       const fullSamples = message.session.samples;
       const contentRevision = message.session.profile?.contentRevision
         ?? `${message.session.endedAt ?? message.session.startedAt}`;
       const profileStorageKey = makeProfileStorageKey(message.session.localSessionId, contentRevision);
-      await this.profileStorage.setString(profileStorageKey, JSON.stringify(fullSamples));
+      await this.profileStorage.write(profileStorageKey, fullSamples);
       const previewSamples = makePeakPreservingPreview(fullSamples);
       const nextEntry = watchSessionToDiveLogEntry({
         session: { ...message.session, samples: previewSamples },
@@ -94,10 +101,15 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
               storageKey: profileStorageKey,
               contentRevision,
               sampleCount: fullSamples.length,
+              sha256: options?.profileDigests?.[messageIndex],
             },
           }
         : undefined;
       const currentEntry = findByImportKey(entries, nextEntry.watchCapture?.importKey);
+      const currentProfileKey = currentEntry?.watchCapture?.profile?.storageKey;
+      if (currentProfileKey && currentProfileKey !== profileStorageKey) {
+        obsoleteProfileKeys.add(currentProfileKey);
+      }
       const mergedEntry = mergeWatchImport(currentEntry, nextEntry);
 
       entries = currentEntry
@@ -106,6 +118,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     }
 
     await this.writeEntries(entries);
+    await Promise.all(Array.from(obsoleteProfileKeys, key => this.profileStorage.remove(key)));
     return this.list();
   }
 
@@ -115,11 +128,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     if (!reference) {
       return entry?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
     }
-    const stored = await this.profileStorage.getString(reference.storageKey);
+    const stored = await this.profileStorage.read(reference.storageKey);
     if (!stored) {
       return entry?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
     }
-    return JSON.parse(stored) as WatchDepthSample[];
+    return stored;
   }
 
   private async readEntries(): Promise<DiveLogEntry[]> {

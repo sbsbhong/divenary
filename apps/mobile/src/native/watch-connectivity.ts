@@ -9,6 +9,8 @@ export type WatchConnectivityPayload = {
   payloadJson: string;
   localSessionId?: string;
   receivedAt?: number;
+  contentRevision?: string;
+  sha256?: string;
 };
 
 export type WatchConnectivitySubscription = {

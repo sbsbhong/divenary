@@ -58,13 +58,13 @@ iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 
 4. UserDefaults pending index에는 path와 identity만 저장한다.
 5. JS에는 drain 시 한 payload만 문자열로 materialize한다.
 
-JS validator와 mobile repository 저장이 모두 성공하면 native layer는 ACK를 persistent outbox에 먼저 추가한다. 그 다음 inbound index와 file을 삭제한다. WCSession activation 전에는 ACK를 보내지 않고, activation 뒤 `transferUserInfo`에 제출한다. 이 순서가 cold start에서 “모바일에는 저장됐지만 Watch는 계속 pending”인 상태를 막는다.
+JS validator와 mobile repository 저장이 모두 성공하면 native layer는 ACK를 persistent outbox에 먼저 추가한다. 그 다음 inbound index와 file을 삭제한다. WCSession activation 전에는 ACK를 보내지 않고, activation 뒤 `transferUserInfo`에 제출한다. ACK는 enqueue 시점이 아니라 `didFinish userInfoTransfer` 성공 callback에서만 outbox에서 제거한다. activation 실패 시 상태를 다시 비활성으로 돌려 다음 activation에서 재시도한다. 이 순서가 cold start에서 “모바일에는 저장됐지만 Watch는 계속 pending”인 상태를 막는다.
 
 ## 모바일 metadata와 profile 분리
 
-`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 별도 key에 한 번 저장한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. 삭제 시 referenced profile도 같이 삭제한다.
+`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `DiveMobile/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 profile file도 같이 삭제한다.
 
-현재 profile store는 local key-value storage 경계이고 Supabase는 아직 없다. Supabase를 도입할 때 권장 경계는 session metadata table과 immutable profile object(Storage 또는 별도 blob)의 분리다. sample을 한 row씩 10,800개 저장하는 방식이나 metadata JSON에 중복 삽입하는 방식은 기본안이 아니다.
+현재 profile store는 iOS local file storage 경계이고 Supabase는 아직 없다. Supabase를 도입할 때 권장 경계는 session metadata table과 immutable profile object(Storage 또는 별도 blob)의 분리다. sample을 한 row씩 10,800개 저장하는 방식이나 metadata JSON에 중복 삽입하는 방식은 기본안이 아니다.
 
 ## 알림 생명주기와 한계
 
@@ -77,6 +77,7 @@ iOS에서 사용자가 알림을 이미 거부했다면 `requestPermission()`은
 ## 장애 복구와 검증
 
 - legacy monolithic Watch file은 모든 migrated artifact가 검증된 뒤 삭제한다.
+- 앱이 기록 중 종료되면 다음 launch에서 NDJSON journal을 복원해 `interrupted` profile artifact로 finalize하고 review 가능한 세션으로 남긴다.
 - corrupted/truncated inbound file은 repository에 전달하거나 ACK하지 않는다.
 - repository/profile 저장 실패는 inbound item을 남겨 다음 drain에서 재시도한다.
 - duplicate identity는 native inbox와 Watch outstanding transfer에서 합친다.
@@ -95,4 +96,3 @@ iOS에서 사용자가 알림을 이미 거부했다면 `requestPermission()`은
 - [다이브 로그 도메인](../domains/dive-log.md)
 - [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md)
 - [열린 질문](../questions/open-questions.md)
-

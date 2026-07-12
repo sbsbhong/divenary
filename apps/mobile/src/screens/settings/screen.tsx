@@ -87,18 +87,31 @@ export default function SettingsScreen({
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
-      if (nextState !== 'active' || !awaitingNotificationSettings.current) {
+      if (nextState !== 'active') {
         return;
       }
-      awaitingNotificationSettings.current = false;
       void hasWatchSyncNotificationPermission().then(async permitted => {
-        if (permitted) {
-          await setWatchSyncNotificationsEnabled(true);
+        if (awaitingNotificationSettings.current) {
+          awaitingNotificationSettings.current = false;
+          await setWatchSyncNotificationsEnabled(permitted);
+        } else if (watchSyncNotificationsEnabled && !permitted) {
+          await setWatchSyncNotificationsEnabled(false);
         }
       });
     });
     return () => subscription.remove();
-  }, [hasWatchSyncNotificationPermission, setWatchSyncNotificationsEnabled]);
+  }, [hasWatchSyncNotificationPermission, setWatchSyncNotificationsEnabled, watchSyncNotificationsEnabled]);
+
+  React.useEffect(() => {
+    if (route !== 'notifications' || !watchSyncNotificationsEnabled) {
+      return;
+    }
+    void hasWatchSyncNotificationPermission().then(async permitted => {
+      if (!permitted) {
+        await setWatchSyncNotificationsEnabled(false);
+      }
+    });
+  }, [hasWatchSyncNotificationPermission, route, setWatchSyncNotificationsEnabled, watchSyncNotificationsEnabled]);
 
   const themeLabel = getThemeLabel(themePreference, t);
   const languageLabel = getLanguageLabel(language, t);
@@ -233,33 +246,33 @@ export default function SettingsScreen({
               }
               notificationToggleBusy.current = true;
               try {
-              if (watchSyncNotificationsEnabled) {
-                await setWatchSyncNotificationsEnabled(false);
-                return;
-              }
+                if (watchSyncNotificationsEnabled) {
+                  await setWatchSyncNotificationsEnabled(false);
+                  return;
+                }
 
-              const permitted = await requestWatchSyncNotificationPermission();
+                const permitted = await requestWatchSyncNotificationPermission();
 
-              if (permitted) {
-                await setWatchSyncNotificationsEnabled(true);
-                return;
-              }
-              Alert.alert(
-                t('settings.notifications.permissionRequired', { defaultValue: '알림 권한이 필요합니다' }),
-                t('settings.notifications.openSettingsDescription', {
-                  defaultValue: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
-                }),
-                [
-                  { text: t('common.cancel', { defaultValue: '취소' }), style: 'cancel' },
-                  {
-                    text: t('settings.notifications.openSettings', { defaultValue: '설정 열기' }),
-                    onPress: () => {
-                      awaitingNotificationSettings.current = true;
-                      void openNotificationSettings();
+                if (permitted) {
+                  await setWatchSyncNotificationsEnabled(true);
+                  return;
+                }
+                Alert.alert(
+                  t('settings.notifications.permissionRequired', { defaultValue: '알림 권한이 필요합니다' }),
+                  t('settings.notifications.openSettingsDescription', {
+                    defaultValue: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
+                  }),
+                  [
+                    { text: t('common.cancel', { defaultValue: '취소' }), style: 'cancel' },
+                    {
+                      text: t('settings.notifications.openSettings', { defaultValue: '설정 열기' }),
+                      onPress: () => {
+                        awaitingNotificationSettings.current = true;
+                        void openNotificationSettings();
+                      },
                     },
-                  },
-                ],
-              );
+                  ],
+                );
               } finally {
                 notificationToggleBusy.current = false;
               }

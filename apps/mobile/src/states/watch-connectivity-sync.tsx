@@ -132,17 +132,34 @@ export function WatchConnectivitySyncProvider({
       importPayloadSafely(payload);
     });
 
-    const drain = () => drainPendingPayloads().then(payloads => {
-        if (!isMounted) {
-          return;
+    const drain = async () => {
+      const seenPayloadIds = new Set<string>();
+      try {
+        while (isMounted) {
+          const payloads = await drainPendingPayloads();
+          if (!payloads.length) {
+            return;
+          }
+          const freshPayloads = payloads.filter(payload => !payload.payloadId || !seenPayloadIds.has(payload.payloadId));
+          if (!freshPayloads.length) {
+            return;
+          }
+          for (const payload of freshPayloads) {
+            if (payload.payloadId) {
+              seenPayloadIds.add(payload.payloadId);
+            }
+            try {
+              await importPayload(payload);
+            } catch (error) {
+              console.warn('Failed to import watch sync payload', error);
+              return;
+            }
+          }
         }
-
-        for (const payload of payloads) {
-          importPayloadSafely(payload);
-        }
-      }).catch(error => {
+      } catch (error) {
         console.warn('Failed to drain pending watch sync payloads', error);
-      });
+      }
+    };
     void drain();
     const appStateSubscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') {
@@ -155,7 +172,7 @@ export function WatchConnectivitySyncProvider({
       subscription.remove();
       appStateSubscription.remove();
     };
-  }, [drainPendingPayloads, importPayloadSafely, preferencesHydrated, subscribeToPayloads]);
+  }, [drainPendingPayloads, importPayload, importPayloadSafely, preferencesHydrated, subscribeToPayloads]);
 
   return <>{children}</>;
 }
@@ -171,29 +188,44 @@ export async function importPendingWatchConnectivityPayloads({
   notifyImportedEntry,
   coordinator = defaultWatchConnectivityImportCoordinator,
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
-  const payloads = await drainPendingPayloads();
   let importedCount = 0;
+  let receivedCount = 0;
+  const seenPayloadIds = new Set<string>();
 
-  for (const payload of payloads) {
-    const importedEntry = await importWatchConnectivityPayload({
-      payload,
-      repository,
-      planRepository,
-      queryClient,
-      queryScope,
-      acknowledgePayloads,
-      acknowledgeImportedPayloads,
-      notifyImportedEntry,
-      coordinator,
-    });
+  while (true) {
+    const payloads = await drainPendingPayloads();
+    if (!payloads.length) {
+      break;
+    }
+    const freshPayloads = payloads.filter(payload => !payload.payloadId || !seenPayloadIds.has(payload.payloadId));
+    if (!freshPayloads.length) {
+      break;
+    }
+    receivedCount += freshPayloads.length;
+    for (const payload of freshPayloads) {
+      if (payload.payloadId) {
+        seenPayloadIds.add(payload.payloadId);
+      }
+      const importedEntry = await importWatchConnectivityPayload({
+        payload,
+        repository,
+        planRepository,
+        queryClient,
+        queryScope,
+        acknowledgePayloads,
+        acknowledgeImportedPayloads,
+        notifyImportedEntry,
+        coordinator,
+      });
 
-    if (importedEntry) {
-      importedCount += 1;
+      if (importedEntry) {
+        importedCount += 1;
+      }
     }
   }
 
   return {
-    receivedCount: payloads.length,
+    receivedCount,
     importedCount,
   };
 }
@@ -240,7 +272,20 @@ async function importWatchConnectivityPayloadOnce({
     return undefined;
   }
 
-  const entries = await repository.importWatchMessages([result.message]);
+  const existingEntries = await repository.list();
+  const duplicate = existingEntries.find(entry =>
+    entry.watchCapture?.session.localSessionId === result.message.session.localSessionId
+      && entry.watchCapture?.profile?.contentRevision === payload.contentRevision
+      && Boolean(payload.sha256)
+      && entry.watchCapture?.profile?.sha256 === payload.sha256,
+  );
+  if (duplicate) {
+    await acknowledgePayload(payload, acknowledgeImportedPayloads);
+    return undefined;
+  }
+  const entries = await repository.importWatchMessages([result.message], {
+    profileDigests: [payload.sha256],
+  });
   const { importedEntry, entries: importedEntries } = await markWatchConnectivityImported(
     repository,
     planRepository,

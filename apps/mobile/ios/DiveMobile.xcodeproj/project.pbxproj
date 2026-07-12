@@ -36,6 +36,8 @@
 		C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* WatchConnectivityInbox.swift */; };
 		C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* WatchConnectivityModule.swift */; };
 		C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* WatchConnectivityModuleBridge.m */; };
+		C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000004 /* WatchProfileStorageModule.swift */; };
+		C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */; };
 		C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
@@ -126,6 +128,8 @@
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = DiveMobile/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = DiveMobile/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = DiveMobile/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
+		D00000000000000000000004 /* WatchProfileStorageModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchProfileStorageModule.swift; path = DiveMobile/WatchProfileStorageModule.swift; sourceTree = "<group>"; };
+		D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchProfileStorageModuleBridge.m; path = DiveMobile/WatchProfileStorageModuleBridge.m; sourceTree = "<group>"; };
 		D5B5388708193690CDCF20BB /* DiveSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionStore.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* ReverseGeocoderModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReverseGeocoderModule.swift; path = DiveMobile/ReverseGeocoderModule.swift; sourceTree = "<group>"; };
 		E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ReverseGeocoderModuleBridge.m; path = DiveMobile/ReverseGeocoderModuleBridge.m; sourceTree = "<group>"; };
@@ -180,6 +184,8 @@
 				D00000000000000000000001 /* WatchConnectivityInbox.swift */,
 				D00000000000000000000002 /* WatchConnectivityModule.swift */,
 				D00000000000000000000003 /* WatchConnectivityModuleBridge.m */,
+				D00000000000000000000004 /* WatchProfileStorageModule.swift */,
+				D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */,
 				E10000000000000000000001 /* ReverseGeocoderModule.swift */,
 				E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -585,6 +591,8 @@
 				C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */,
 				C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */,
 				C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */,
+				C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */,
+				C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */,
 				E00000000000000000000001 /* ReverseGeocoderModule.swift in Sources */,
 				E00000000000000000000002 /* ReverseGeocoderModuleBridge.m in Sources */,
 			);

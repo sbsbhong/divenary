@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import { Alert, AppState, type AppStateStatus } from 'react-native';
 import i18n from '../src/i18n';
 import { HStack } from '../src/components/ui/hstack';
 import { Icon } from '../src/components/ui/icon';
@@ -20,6 +21,8 @@ const renderSettings = async (options?: {
   onBack?: () => void;
   onOpenRoute?: (route: Exclude<SettingsRoute, 'index'>) => void;
   requestWatchSyncNotificationPermission?: () => Promise<boolean>;
+  hasWatchSyncNotificationPermission?: () => Promise<boolean>;
+  openNotificationSettings?: () => Promise<void>;
   route?: SettingsRoute;
 }) => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
@@ -30,6 +33,8 @@ const renderSettings = async (options?: {
         <SettingsScreen
           loadLinkedWatchInfo={options?.loadLinkedWatchInfo ?? (() => Promise.resolve(linkedWatchInfo))}
           requestWatchSyncNotificationPermission={options?.requestWatchSyncNotificationPermission}
+          hasWatchSyncNotificationPermission={options?.hasWatchSyncNotificationPermission}
+          openNotificationSettings={options?.openNotificationSettings}
           route={options?.route}
           onBack={options?.onBack}
           onOpenRoute={options?.onOpenRoute}
@@ -106,7 +111,10 @@ describe('SettingsScreen', () => {
 
   test('opens notification detail and enables watch sync notifications after permission is granted', async () => {
     const requestWatchSyncNotificationPermission = jest.fn().mockResolvedValue(true);
-    const renderer = await renderSettings({ requestWatchSyncNotificationPermission });
+    const renderer = await renderSettings({
+      requestWatchSyncNotificationPermission,
+      hasWatchSyncNotificationPermission: jest.fn().mockResolvedValue(true),
+    });
     const root = renderer.root;
 
     await ReactTestRenderer.act(async () => {
@@ -152,6 +160,42 @@ describe('SettingsScreen', () => {
 
     expect(requestWatchSyncNotificationPermission).toHaveBeenCalledTimes(1);
     expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(false);
+  });
+
+  test('enables the toggle after a physical-device permission change in iOS Settings', async () => {
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      appStateListener = listener;
+      return { remove: jest.fn() };
+    });
+    let settingsAction: (() => void) | undefined;
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      settingsAction = buttons?.find(button => button.text === '설정 열기')?.onPress;
+    });
+    const openNotificationSettings = jest.fn().mockResolvedValue(undefined);
+    const hasWatchSyncNotificationPermission = jest.fn().mockResolvedValue(true);
+    const renderer = await renderSettings({
+      route: 'notifications',
+      requestWatchSyncNotificationPermission: jest.fn().mockResolvedValue(false),
+      hasWatchSyncNotificationPermission,
+      openNotificationSettings,
+    });
+    const root = renderer.root;
+
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
+      settingsAction?.();
+      await Promise.resolve();
+    });
+    expect(openNotificationSettings).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      appStateListener?.('active');
+      await Promise.resolve();
+    });
+
+    expect(hasWatchSyncNotificationPermission).toHaveBeenCalled();
+    expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(true);
   });
 
   test('renders device management as a detail screen', async () => {

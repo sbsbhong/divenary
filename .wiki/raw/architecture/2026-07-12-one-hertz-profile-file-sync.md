@@ -15,4 +15,3 @@ iPhone native receiver는 delegate callback 안에서 임시 `WCSessionFile`을 
 모바일 로그북 metadata에는 최대 160개의 peak-preserving preview만 둔다. 전체 profile은 session/revision별 저장 항목으로 한 번만 보관하고 detail 화면 진입 시 지연 로드한다. Supabase가 추가될 때 session metadata row와 profile object를 분리하는 같은 경계를 유지한다.
 
 알림 설정은 preferences hydration 완료 뒤 inbox를 drain한다. foreground import는 toast, background import는 opt-in local notification을 사용한다. iOS notification permission이 이미 denied이면 다시 prompt할 수 없으므로 Settings 앱으로 이동하는 복구 경로를 제공하고 복귀 시 권한을 다시 읽는다. 이는 외부 push provider가 없는 force-quit remote push를 보장하지 않는다.
-

@@ -9,6 +9,7 @@ import notifee, {
 import { AppState, Platform, type AppStateStatus } from 'react-native';
 import i18n, { resolveSupportedLanguage, type SupportedLanguage } from '../i18n';
 import type { DiveLogEntry } from '../types/dive-log-entry';
+import { createAsyncStorageKeyValueStore } from '../storage/persistent-key-value-store';
 
 export type WatchSyncNotificationOpen = {
   entryLocalId: string;
@@ -22,6 +23,8 @@ type WatchSyncImportNotificationOptions = {
 
 export const WATCH_SYNC_IMPORT_NOTIFICATION_CHANNEL_ID = 'watch-sync-imports';
 const WATCH_SYNC_IMPORT_NOTIFICATION_SOURCE = 'watch-sync-import';
+const BACKGROUND_OPEN_STORAGE_KEY = 'dive-mobile:watch-sync-notification-open';
+const backgroundOpenStorage = createAsyncStorageKeyValueStore();
 
 type WatchSyncImportNotificationContent = {
   body: string;
@@ -132,7 +135,16 @@ export function resolveWatchSyncImportNotificationContent(
 export async function getInitialWatchSyncNotificationOpen(): Promise<WatchSyncNotificationOpen | undefined> {
   try {
     const initialNotification = await notifee.getInitialNotification();
-    return initialNotification ? notificationOpenFromInitialNotification(initialNotification) : undefined;
+    const initialOpen = initialNotification ? notificationOpenFromInitialNotification(initialNotification) : undefined;
+    if (initialOpen) {
+      return initialOpen;
+    }
+    const storedOpen = await backgroundOpenStorage.getString(BACKGROUND_OPEN_STORAGE_KEY);
+    if (!storedOpen) {
+      return undefined;
+    }
+    await backgroundOpenStorage.remove(BACKGROUND_OPEN_STORAGE_KEY);
+    return JSON.parse(storedOpen) as WatchSyncNotificationOpen;
   } catch (error) {
     console.warn('Failed to read initial watch sync notification', error);
     return undefined;
@@ -160,7 +172,15 @@ export function subscribeToWatchSyncNotificationOpens(
 }
 
 export function registerWatchSyncNotificationBackgroundHandler(): void {
-  notifee.onBackgroundEvent(async (_event: Event) => undefined);
+  notifee.onBackgroundEvent(async (event: Event) => {
+    if (event.type !== EventType.PRESS) {
+      return;
+    }
+    const open = notificationOpenFromNotification(event.detail.notification);
+    if (open) {
+      await backgroundOpenStorage.setString(BACKGROUND_OPEN_STORAGE_KEY, JSON.stringify(open));
+    }
+  });
 }
 
 async function ensureWatchSyncImportChannel(channelName: string): Promise<string> {

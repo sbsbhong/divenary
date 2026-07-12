@@ -36,7 +36,10 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     this.entriesByLocalId.delete(localId);
   }
 
-  async importWatchMessages(messages: WatchSyncMessage[]): Promise<DiveLogEntry[]> {
+  async importWatchMessages(
+    messages: WatchSyncMessage[],
+    _options?: { profileDigests?: Array<string | undefined> },
+  ): Promise<DiveLogEntry[]> {
     const now = this.now();
 
     for (const message of messages) {
