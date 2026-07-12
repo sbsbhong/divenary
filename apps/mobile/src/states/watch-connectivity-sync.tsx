@@ -19,6 +19,10 @@ import { enrichWatchLogWithSourcePlan, getWatchSessionSourcePlanLocalId } from '
 import { parseWatchSyncMessageJson } from '../utils/watch-sync-message-validation';
 import { diveLogbookQueryKeys } from './use-dive-logbook-queries';
 import { divePlanQueryKeys } from './use-dive-plan-queries';
+import {
+  defaultWatchConnectivityImportCoordinator,
+  type WatchConnectivityImportCoordinator,
+} from './watch-connectivity-import-coordinator';
 
 type WatchConnectivitySyncProviderProps = {
   children?: React.ReactNode;
@@ -30,6 +34,7 @@ type WatchConnectivitySyncProviderProps = {
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
   onImportedEntry?: (entry: DiveLogEntry) => void;
   subscribeToPayloads?: (handler: (payload: WatchConnectivityPayload) => void) => WatchConnectivitySubscription;
+  coordinator?: WatchConnectivityImportCoordinator;
 };
 
 type WatchConnectivityImportOptions = {
@@ -41,6 +46,7 @@ type WatchConnectivityImportOptions = {
   acknowledgePayloads?: (payloadIds: readonly string[]) => Promise<void>;
   acknowledgeImportedPayloads?: (payloadIds: readonly string[]) => Promise<void>;
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
+  coordinator?: WatchConnectivityImportCoordinator;
 };
 
 export type WatchConnectivityImportSummary = {
@@ -59,6 +65,7 @@ type WatchConnectivityPayloadImportOptions = {
   acknowledgePayloads: WatchConnectivityAcknowledgement;
   acknowledgeImportedPayloads: WatchConnectivityAcknowledgement;
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
+  coordinator: WatchConnectivityImportCoordinator;
 };
 
 export function WatchConnectivitySyncProvider({
@@ -71,6 +78,7 @@ export function WatchConnectivitySyncProvider({
   notifyImportedEntry,
   onImportedEntry,
   subscribeToPayloads = subscribeToWatchConnectivityPayloads,
+  coordinator = defaultWatchConnectivityImportCoordinator,
 }: WatchConnectivitySyncProviderProps): React.JSX.Element {
   const queryClient = useQueryClient();
 
@@ -84,6 +92,7 @@ export function WatchConnectivitySyncProvider({
         acknowledgePayloads,
         acknowledgeImportedPayloads,
         notifyImportedEntry,
+        coordinator,
       });
 
       if (importedEntry) {
@@ -93,6 +102,7 @@ export function WatchConnectivitySyncProvider({
     [
       acknowledgeImportedPayloads,
       acknowledgePayloads,
+      coordinator,
       notifyImportedEntry,
       onImportedEntry,
       planRepository,
@@ -148,6 +158,7 @@ export async function importPendingWatchConnectivityPayloads({
   acknowledgePayloads = acknowledgeWatchConnectivityPayloads,
   acknowledgeImportedPayloads = acknowledgeImportedWatchConnectivityPayloads,
   notifyImportedEntry,
+  coordinator = defaultWatchConnectivityImportCoordinator,
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
   const payloads = await drainPendingPayloads();
   let importedCount = 0;
@@ -162,6 +173,7 @@ export async function importPendingWatchConnectivityPayloads({
       acknowledgePayloads,
       acknowledgeImportedPayloads,
       notifyImportedEntry,
+      coordinator,
     });
 
     if (importedEntry) {
@@ -176,6 +188,30 @@ export async function importPendingWatchConnectivityPayloads({
 }
 
 async function importWatchConnectivityPayload({
+  payload,
+  repository,
+  planRepository,
+  queryClient,
+  queryScope,
+  acknowledgePayloads,
+  acknowledgeImportedPayloads,
+  notifyImportedEntry,
+  coordinator,
+}: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
+  return coordinator.run(payload, () => importWatchConnectivityPayloadOnce({
+    payload,
+    repository,
+    planRepository,
+    queryClient,
+    queryScope,
+    acknowledgePayloads,
+    acknowledgeImportedPayloads,
+    notifyImportedEntry,
+    coordinator,
+  }));
+}
+
+async function importWatchConnectivityPayloadOnce({
   payload,
   repository,
   planRepository,

@@ -4,6 +4,7 @@ import ReactTestRenderer from 'react-test-renderer';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
+import type { WatchConnectivityPayload } from '../src/native/watch-connectivity';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
 import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
 
@@ -693,5 +694,145 @@ describe('WatchConnectivitySyncProvider', () => {
 
     expect(acknowledgePayloads).not.toHaveBeenCalled();
     expect(console.warn).toHaveBeenCalledWith('Failed to import watch sync payload', expect.any(Error));
+  });
+
+  it('coalesces the same payload across automatic events and manual drains', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const notifyImportedEntry = jest.fn().mockResolvedValue(undefined);
+    const originalImport = repository.importWatchMessages.bind(repository);
+    let releaseImport = () => {};
+    const importGate = new Promise<void>(resolve => {
+      releaseImport = resolve;
+    });
+    const importSpy = jest.spyOn(repository, 'importWatchMessages').mockImplementation(async messages => {
+      await importGate;
+      return originalImport(messages);
+    });
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'shared-payload',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            notifyImportedEntry={notifyImportedEntry}
+            subscribeToPayloads={handler => {
+              listener = handler;
+              return { remove: jest.fn() };
+            }}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    let manualImport: ReturnType<typeof importPendingWatchConnectivityPayloads> | undefined;
+    await ReactTestRenderer.act(async () => {
+      listener?.(payload);
+      manualImport = importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: async () => [payload],
+        acknowledgeImportedPayloads,
+      });
+      await flushPromises();
+    });
+    const callsBeforeRelease = importSpy.mock.calls.length;
+
+    releaseImport();
+    await ReactTestRenderer.act(async () => {
+      await manualImport;
+      await flushPromises();
+    });
+
+    expect(callsBeforeRelease).toBe(1);
+    expect(importSpy).toHaveBeenCalledTimes(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['shared-payload']);
+    expect(notifyImportedEntry).toHaveBeenCalledTimes(1);
+    expect(await repository.list()).toHaveLength(1);
+  });
+
+  it('continues the serialized import queue after a payload fails', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const originalImport = repository.importWatchMessages.bind(repository);
+    const executionOrder: string[] = [];
+    let rejectFirstImport = () => {};
+    const firstImportGate = new Promise<void>((_resolve, reject) => {
+      rejectFirstImport = () => reject(new Error('storage unavailable'));
+    });
+    jest.spyOn(repository, 'importWatchMessages').mockImplementation(async messages => {
+      const localSessionId = messages[0].session.localSessionId;
+      executionOrder.push(`start:${localSessionId}`);
+      if (localSessionId === 'queue-first') {
+        await firstImportGate;
+      }
+      const entries = await originalImport(messages);
+      executionOrder.push(`end:${localSessionId}`);
+      return entries;
+    });
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    const makePayload = (payloadId: string, localSessionId: string): WatchConnectivityPayload => ({
+      payloadId,
+      localSessionId,
+      receivedAt: 1781355000,
+      payloadJson: JSON.stringify({
+        ...metadataRichFixture,
+        session: {
+          ...metadataRichFixture.session,
+          localSessionId,
+          samples: metadataRichFixture.session.samples.map(sample => ({ ...sample, localSessionId })),
+        },
+      }),
+    });
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            subscribeToPayloads={handler => {
+              listener = handler;
+              return { remove: jest.fn() };
+            }}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      listener?.(makePayload('queue-payload-first', 'queue-first'));
+      listener?.(makePayload('queue-payload-second', 'queue-second'));
+      await flushPromises();
+    });
+    const orderBeforeFailure = [...executionOrder];
+
+    rejectFirstImport();
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(orderBeforeFailure).toEqual(['start:queue-first']);
+    expect(executionOrder).toEqual(['start:queue-first', 'start:queue-second', 'end:queue-second']);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalledWith(['queue-payload-first']);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['queue-payload-second']);
+    expect(await repository.list()).toHaveLength(1);
   });
 });
