@@ -17,6 +17,7 @@ import {
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import { AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import type { DiveLogbookSection } from '../../types/dive-session';
@@ -105,7 +106,7 @@ export default function RootNavigation(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const logbook = useDiveLogbook();
   const planning = useDivePlans();
-  const { language, watchSyncNotificationsEnabled } = useAppPreferences();
+  const { isHydrated, language, watchSyncNotificationsEnabled } = useAppPreferences();
 
   const refreshVisibleStackRoute = React.useCallback(() => {
     const rootState = rootStackNavigationRef.getRootState();
@@ -267,6 +268,9 @@ export default function RootNavigation(): React.JSX.Element {
 
   const showImportedEntryToast = React.useCallback(
     (entry: DiveLogEntry) => {
+      if (AppState.currentState && AppState.currentState !== 'active') {
+        return;
+      }
       setAutoImportToast({
         entryLocalId: entry.localId,
         siteName: entry.manual.site.name ?? entry.watchCapture?.session.siteName ?? t('logbook.untitledDive'),
@@ -319,6 +323,7 @@ export default function RootNavigation(): React.JSX.Element {
 
   return (
     <WatchConnectivitySyncProvider
+      preferencesHydrated={isHydrated}
       notifyImportedEntry={showImportedEntryNotification}
       onImportedEntry={showImportedEntryToast}>
       <VStack
@@ -613,6 +618,19 @@ function LogbookDetailRoute(
   },
 ): React.JSX.Element {
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
+  const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
+
+  React.useEffect(() => {
+    let mounted = true;
+    void props.logbook.loadWatchProfile(props.route.params.localId).then(samples => {
+      if (mounted) {
+        setProfileSamples(samples);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [props.logbook.loadWatchProfile, props.route.params.localId]);
 
   if (!entry) {
     return <MissingRouteScreen navigation={props.navigation} />;
@@ -622,6 +640,7 @@ function LogbookDetailRoute(
     <RoutedScrollScreen>
       <LogEntryDetail
         entry={entry}
+        profileSamples={profileSamples}
         onBack={() => props.navigation.goBack()}
         onEdit={nextEntry => props.navigation.navigate('logbookEdit', { localId: nextEntry.localId })}
         onDelete={async localId => {

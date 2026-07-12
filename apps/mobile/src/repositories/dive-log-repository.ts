@@ -1,5 +1,5 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
-import type { WatchSyncMessage } from '../types/dive-session';
+import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 
 export type DiveLogRepository = {
   list(): Promise<DiveLogEntry[]>;
@@ -7,4 +7,5 @@ export type DiveLogRepository = {
   save(entry: DiveLogEntry): Promise<DiveLogEntry>;
   delete(localId: string): Promise<void>;
   importWatchMessages(messages: WatchSyncMessage[]): Promise<DiveLogEntry[]>;
+  getWatchProfile(localId: string): Promise<WatchDepthSample[]>;
 };

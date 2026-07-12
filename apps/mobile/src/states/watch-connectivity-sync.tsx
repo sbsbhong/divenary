@@ -1,5 +1,6 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import React from 'react';
+import { AppState } from 'react-native';
 import {
   acknowledgeImportedWatchConnectivityPayloads,
   acknowledgeWatchConnectivityPayloads,
@@ -35,6 +36,7 @@ type WatchConnectivitySyncProviderProps = {
   onImportedEntry?: (entry: DiveLogEntry) => void;
   subscribeToPayloads?: (handler: (payload: WatchConnectivityPayload) => void) => WatchConnectivitySubscription;
   coordinator?: WatchConnectivityImportCoordinator;
+  preferencesHydrated?: boolean;
 };
 
 type WatchConnectivityImportOptions = {
@@ -79,6 +81,7 @@ export function WatchConnectivitySyncProvider({
   onImportedEntry,
   subscribeToPayloads = subscribeToWatchConnectivityPayloads,
   coordinator = defaultWatchConnectivityImportCoordinator,
+  preferencesHydrated = true,
 }: WatchConnectivitySyncProviderProps): React.JSX.Element {
   const queryClient = useQueryClient();
 
@@ -121,13 +124,15 @@ export function WatchConnectivitySyncProvider({
   );
 
   React.useEffect(() => {
+    if (!preferencesHydrated) {
+      return;
+    }
     let isMounted = true;
     const subscription = subscribeToPayloads(payload => {
       importPayloadSafely(payload);
     });
 
-    drainPendingPayloads()
-      .then(payloads => {
+    const drain = () => drainPendingPayloads().then(payloads => {
         if (!isMounted) {
           return;
         }
@@ -135,16 +140,22 @@ export function WatchConnectivitySyncProvider({
         for (const payload of payloads) {
           importPayloadSafely(payload);
         }
-      })
-      .catch(error => {
+      }).catch(error => {
         console.warn('Failed to drain pending watch sync payloads', error);
       });
+    void drain();
+    const appStateSubscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        void drain();
+      }
+    });
 
     return () => {
       isMounted = false;
       subscription.remove();
+      appStateSubscription.remove();
     };
-  }, [drainPendingPayloads, importPayloadSafely, subscribeToPayloads]);
+  }, [drainPendingPayloads, importPayloadSafely, preferencesHydrated, subscribeToPayloads]);
 
   return <>{children}</>;
 }

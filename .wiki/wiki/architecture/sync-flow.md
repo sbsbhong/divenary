@@ -6,7 +6,7 @@ Updated: 2026-07-12
 
 ## 요약
 
-현재 동기화 모델은 계약을 먼저 정의하는 방식이다. `packages/contracts`가 mode-aware watch sync message를 정의하고, watch 앱은 `DiveSessionRecord`를 동기화 가능한 JSON으로 encode해 크기에 따라 direct message/user info 또는 file transfer로 enqueue한다. 모바일 iOS native code는 payload를 durable inbox에 저장하고 React Native로 전달한다. 모바일 JS의 자동 event와 수동 drain은 하나의 process-wide coordinator를 공유해 같은 `payloadId`를 합치고 서로 다른 payload를 직렬 처리한다. Import acknowledgement는 모바일 local repository 저장 완료만 뜻하며 future cloud sync 성공을 뜻하지 않는다. Cloud backend가 없으므로 `DiveLogEntry.cloudSyncStatus`는 `notConfigured`이고 cloud filter/status UI는 숨긴다. Raw Watch `session.syncStatus`는 전송 provenance로 그대로 보존한다.
+현재 동기화 모델은 계약을 먼저 정의한다. Watch session body는 크기와 관계없이 immutable JSON artifact 하나를 `transferFile`로 보내며 direct message/user info session path와 chunk protocol은 사용하지 않는다. 모바일 iOS native code는 수신 파일을 Application Support에 복사하고 identity만 pending index에 저장한다. 모바일 JS의 자동 event와 수동 drain은 하나의 process-wide coordinator를 공유한다. Import acknowledgement는 profile과 local repository 저장 완료만 뜻하며 future cloud sync 성공을 뜻하지 않는다. ACK는 activation 전 durable outbox에 남고 revision/digest가 일치해야 Watch 상태가 `synced`가 된다.
 
 ## 현재 상태
 
@@ -73,7 +73,7 @@ WatchConnectivity PoC 동작은 다음과 같다.
 Watch sync notification 동작은 다음과 같다.
 
 - `src/notifications/watch-sync-notification-service.ts`는 Notifee permission request, local notification display, notification press data를 다룬다.
-- Settings의 watch sync notification opt-in은 사용자가 켤 때 permission을 요청하고, 거부되면 preference를 켜지 않는다.
+- Settings의 watch sync notification opt-in은 현재 OS permission을 먼저 읽는다. 이미 denied이면 시스템 Settings 복구 경로를 제공하고 앱 복귀 시 다시 확인한다.
 - Notification은 `WatchConnectivitySyncProvider`가 payload를 local repository에 저장하고 imported acknowledge까지 처리한 뒤 best-effort로 요청한다. Notification 실패는 repository import나 native inbox acknowledgement를 되돌리지 않는다.
 - Foreground 사용자는 local notification 대신 사용자가 닫기 전까지 유지되는 in-app toast를 본다.
 - Notification 문구는 local repository 저장 결과만 뜻하며 Supabase upload, cloud backup, certified dive computer data verification을 뜻하지 않는다.
@@ -81,7 +81,7 @@ Watch sync notification 동작은 다음과 같다.
 현재 비어 있는 부분은 다음과 같다.
 
 - WatchConnectivity entitlement, background delivery, 장시간 retry, 실기기 paired delivery 검증 없음. Companion embed 구조는 `apps/mobile/ios/DiveMobile.xcodeproj`에 포함되어 있고 활성 simulator 전송은 확인됐지만, 실제 설치/전송은 아직 지원 hardware에서 검증되지 않았다.
-- Durable native inbox, reachable live message, acknowledgement 기반 재처리 경로가 있고, Logbook import action은 pending native inbox를 수동 drain한다. 자동 import provider는 event subscription을 먼저 열고 durable inbox를 drain하도록 보강됐지만, 실제 연결 끊김 후 재연결 crash 재현과 수정은 지원 hardware에서 확인해야 한다. Planned dive context는 mobile-to-watch로 전달되지만 사용자-facing retry status와 backoff policy는 아직 없다.
+- Durable file inbox, activation-gated acknowledgement outbox, revision/digest 기반 재처리 경로가 있고 Logbook import action은 pending native inbox를 수동 drain한다. 자동 import provider는 preferences hydration 뒤 event subscription과 drain을 시작하고 active 복귀 때 다시 drain한다. 실제 연결 끊김 후 재연결과 background/force-quit wake는 지원 hardware에서 확인해야 한다.
 - Watch sync notification code boundary와 Settings opt-in은 구현됐지만, background/killed 상태의 실제 OS delivery와 local notification 표시가 physical paired device에서 검증되지는 않았다.
 - Supabase upload와 cloud sync는 없다. 따라서 cloud status는 `notConfigured`이며 사용자 화면에 cloud 성공·대기·실패 상태를 표시하지 않는다.
 - 인증된 사용자 연결 없음.
@@ -94,3 +94,4 @@ Watch sync notification 동작은 다음과 같다.
 - [Watch 앱 구조](watch-app.md)
 - [Supabase 구조](supabase.md)
 - [다이브 로그 도메인](../domains/dive-log.md)
+- [1Hz 프로파일 파일 저장과 동기화](profile-file-sync.md)

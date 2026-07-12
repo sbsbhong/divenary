@@ -53,6 +53,7 @@
 - Updated: Mobile/Watch UI 언어
 - Updated: Diving App / Open Questions
 - Updated: 열린 질문
+- Updated: 동기화 흐름 구조
 
 ## [2026-07-07] ingest | Watch debug demo sync logbook UX
 - Added: Watch debug demo sync logbook UX raw source
@@ -726,4 +727,9 @@
 - Updated: ADR: Local-first mobile logbook with future Supabase sync
 - Updated: Mobile/Watch UI 언어
 - Updated: 안전 규칙
+- Updated: 열린 질문
+## [2026-07-12] ingest | 1Hz 프로파일 파일 저장과 동기화
+- Updated: ADR 목록
+- Updated: ADR: 1Hz immutable profile과 file-only session sync
+- Updated: Diving App / QA and Test Plan
 - Updated: 열린 질문

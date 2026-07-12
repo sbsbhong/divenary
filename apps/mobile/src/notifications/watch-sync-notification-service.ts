@@ -32,16 +32,37 @@ type WatchSyncImportNotificationContent = {
 
 export async function requestWatchSyncNotificationPermission(): Promise<boolean> {
   try {
+    if (typeof notifee.getNotificationSettings === 'function') {
+      const currentSettings = await notifee.getNotificationSettings();
+      if (isNotificationPermissionGranted(currentSettings.authorizationStatus)) {
+        return true;
+      }
+      if (currentSettings.authorizationStatus === AuthorizationStatus.DENIED) {
+        return false;
+      }
+    }
     const settings = await notifee.requestPermission();
-
-    return (
-      settings.authorizationStatus === AuthorizationStatus.AUTHORIZED ||
-      settings.authorizationStatus === AuthorizationStatus.PROVISIONAL
-    );
+    return isNotificationPermissionGranted(settings.authorizationStatus);
   } catch (error) {
     console.warn('Failed to request watch sync notification permission', error);
     return false;
   }
+}
+
+export async function hasWatchSyncNotificationPermission(): Promise<boolean> {
+  try {
+    if (typeof notifee.getNotificationSettings !== 'function') {
+      return false;
+    }
+    const settings = await notifee.getNotificationSettings();
+    return isNotificationPermissionGranted(settings.authorizationStatus);
+  } catch {
+    return false;
+  }
+}
+
+function isNotificationPermissionGranted(status: AuthorizationStatus): boolean {
+  return status === AuthorizationStatus.AUTHORIZED || status === AuthorizationStatus.PROVISIONAL;
 }
 
 export async function notifyWatchSyncImport(
@@ -136,6 +157,10 @@ export function subscribeToWatchSyncNotificationOpens(
   return {
     remove: unsubscribe,
   };
+}
+
+export function registerWatchSyncNotificationBackgroundHandler(): void {
+  notifee.onBackgroundEvent(async (_event: Event) => undefined);
 }
 
 async function ensureWatchSyncImportChannel(channelName: string): Promise<string> {

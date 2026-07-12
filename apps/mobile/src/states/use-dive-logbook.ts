@@ -91,6 +91,10 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
   const refresh = React.useCallback(async () => {
     await entriesQuery.refetch();
   }, [entriesQuery]);
+  const loadWatchProfile = React.useCallback(
+    (localId: string) => repository.getWatchProfile(localId),
+    [repository],
+  );
 
   return {
     entries,
@@ -101,6 +105,7 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
     setFilter,
     syncWatchPayloads,
     refresh,
+    loadWatchProfile,
     saveEntry: saveEntryMutation.mutateAsync,
     deleteEntry: deleteEntryMutation.mutateAsync,
     isLoading: entriesQuery.isLoading,

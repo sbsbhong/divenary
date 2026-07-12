@@ -10,6 +10,7 @@ export type ThemePreference = 'system' | 'light' | 'dark';
 export type ResolvedTheme = 'light' | 'dark';
 
 export type AppPreferences = {
+  isHydrated: boolean;
   themePreference: ThemePreference;
   resolvedTheme: ResolvedTheme;
   language: SupportedLanguage;
@@ -46,6 +47,7 @@ export function AppPreferencesProvider(props: AppPreferencesProviderProps): Reac
   const [themePreference, setThemePreferenceState] = React.useState<ThemePreference>('system');
   const [language, setLanguageState] = React.useState<SupportedLanguage>(resolveInitialLanguage);
   const [watchSyncNotificationsEnabled, setWatchSyncNotificationsEnabledState] = React.useState(false);
+  const [isHydrated, setIsHydrated] = React.useState(false);
 
   React.useEffect(() => {
     let isMounted = true;
@@ -65,7 +67,12 @@ export function AppPreferencesProvider(props: AppPreferencesProviderProps): Reac
           setLanguageState(storedPreferences.language);
         }
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        if (isMounted) {
+          setIsHydrated(true);
+        }
+      });
 
     return () => {
       isMounted = false;
@@ -134,6 +141,7 @@ export function AppPreferencesProvider(props: AppPreferencesProviderProps): Reac
 
   const value = React.useMemo<AppPreferences>(
     () => ({
+      isHydrated,
       themePreference,
       resolvedTheme,
       language,
@@ -143,6 +151,7 @@ export function AppPreferencesProvider(props: AppPreferencesProviderProps): Reac
       setWatchSyncNotificationsEnabled,
     }),
     [
+      isHydrated,
       language,
       resolvedTheme,
       setLanguage,

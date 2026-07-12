@@ -126,7 +126,8 @@ extension DiveSessionRecord {
             endedAt: endedAt,
             samples: samples,
             payload: payload,
-            unsupportedDepth: unsupportedDepth
+            unsupportedDepth: unsupportedDepth,
+            profile: profile
         )
     }
 
@@ -155,7 +156,54 @@ extension DiveSessionRecord {
             endedAt: endedAt,
             samples: samples,
             payload: payload,
-            unsupportedDepth: unsupportedDepth
+            unsupportedDepth: unsupportedDepth,
+            profile: profile
+        )
+    }
+
+    func withProfile(_ nextProfile: DiveProfileMetadata, samples nextSamples: [DepthSample]? = nil) -> DiveSessionRecord {
+        copy(id: id, samples: nextSamples ?? samples, profile: nextProfile)
+    }
+
+    func withSamples(_ nextSamples: [DepthSample]) -> DiveSessionRecord {
+        copy(id: id, samples: nextSamples, profile: profile)
+    }
+
+    func withIdentity(_ nextID: UUID) -> DiveSessionRecord {
+        copy(id: nextID, samples: samples, profile: profile)
+    }
+
+    private func copy(
+        id nextID: UUID,
+        samples nextSamples: [DepthSample],
+        profile nextProfile: DiveProfileMetadata?
+    ) -> DiveSessionRecord {
+        DiveSessionRecord(
+            id: nextID,
+            schemaVersion: schemaVersion,
+            captureMode: captureMode,
+            diveMode: diveMode,
+            siteId: siteId,
+            siteName: siteName,
+            sourcePlanLocalId: sourcePlanLocalId,
+            planTitle: planTitle,
+            buddyIds: buddyIds,
+            gearIds: gearIds,
+            tags: tags,
+            notes: notes,
+            rating: rating,
+            perceivedExertion: perceivedExertion,
+            visibilityRating: visibilityRating,
+            waterCondition: waterCondition,
+            syncStatus: syncStatus,
+            entryLocation: entryLocation,
+            exitLocation: exitLocation,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            samples: nextSamples,
+            payload: payload,
+            unsupportedDepth: unsupportedDepth,
+            profile: nextProfile
         )
     }
 }

@@ -29,7 +29,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(inbox).toContain('func acknowledgeImported(payloadIds: [String])');
     expect(inbox).toContain('didReceiveMessage message');
     expect(inbox).toContain('enqueuePendingPayload(from: message)');
-    expect(inbox).toContain('sendMessage(acknowledgement');
+    expect(inbox).toContain('pendingAcknowledgements');
+    expect(inbox).toContain('flushPendingAcknowledgementsOnMainQueue');
+    expect(inbox).toContain('connectivitySession.sendMessage(dictionary');
     expect(inbox).toContain('watchSyncAcknowledgement');
     expect(module).toContain('@objc(acknowledgePayloads:resolver:rejecter:)');
     expect(module).toContain('@objc(acknowledgeImportedPayloads:resolver:rejecter:)');
@@ -43,10 +45,9 @@ describe('WatchConnectivity native source contract', () => {
     const store = readRepoFile('apps/mobile/ios/DiveWatchApp/Storage/DiveSessionStore.swift');
 
     expect(transport).toContain('onTransferStatusChanged');
-    expect(transport).toContain('sendMessage(userInfo');
-    expect(transport).toContain('connectivitySession.isReachable');
+    expect(transport).toContain('connectivitySession.transferFile(');
+    expect(transport).toContain('outstandingFileTransfers');
     expect(transport).toContain('sessionReachabilityDidChange');
-    expect(transport).toContain('didFinish userInfoTransfer');
     expect(transport).toContain('didReceiveUserInfo userInfo');
     expect(transport).toContain('didReceiveMessage message');
     expect(transport).toContain('handleAcknowledgement(userInfo: message)');
@@ -57,18 +58,18 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('syncStatus == .failed && sessions[index].syncStatus == .synced');
   });
 
-  it('uses file transfer for watch sessions that exceed the safe direct-message size', () => {
+  it('uses one immutable file transfer for every watch session size', () => {
     const transport = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncTransport.swift');
     const envelope = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncEnvelope.swift');
     const inbox = readRepoFile('apps/mobile/ios/DiveMobile/WatchConnectivityInbox.swift');
 
-    expect(envelope).toContain('directMessagePayloadLimitBytes');
     expect(envelope).toContain('fileMetadata');
-    expect(transport).toContain('payloadData.count <= WatchSyncEnvelope.directMessagePayloadLimitBytes');
     expect(transport).toContain('connectivitySession.transferFile(');
+    expect(transport).not.toContain('transferUserInfo(userInfo)');
     expect(transport).toContain('didFinish fileTransfer: WCSessionFileTransfer');
     expect(inbox).toContain('didReceive file: WCSessionFile');
-    expect(inbox).toContain('Data(contentsOf: file.fileURL)');
+    expect(inbox).toContain('persistPendingFile(sourceURL: file.fileURL');
+    expect(inbox).toContain('WatchConnectivityInbox", isDirectory: true');
     expect(inbox).toContain('enqueuePendingPayload(');
   });
 
@@ -79,8 +80,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('onActivationCompleted');
     expect(store).toContain('self?.retryPendingSyncs()');
     expect(store).toContain('retryPendingSyncs');
-    expect(store).toContain('session.syncStatus != .synced');
-    expect(store).toContain('syncTransport.enqueue(session: session)');
+    expect(store).toContain('entry.displayRecord.syncStatus != .synced');
+    expect(store).toContain('syncTransport.enqueue(');
+    expect(store).toContain('artifact: entry.artifact');
     expect(transport).toContain('onActivationCompleted');
     expect(transport).toContain('activationState == .activated');
   });
@@ -210,7 +212,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(record).toContain('enum DiveCaptureMode: String, Codable, Equatable');
     expect(record).toContain('let captureMode: DiveCaptureMode');
     expect(record).toContain('captureMode = session.captureMode.rawValue');
-    expect(recorder).toContain('init(sensorProvider: DepthSensorProvider, captureMode: DiveCaptureMode = .real)');
+    expect(recorder).toContain('captureMode: DiveCaptureMode = .real');
+    expect(recorder).toContain('profileStore: DiveProfileRecordingStoring');
     expect(recorder).toContain('captureMode: captureMode');
     expect(recording).toContain('enum WatchRecordingMode');
     expect(recording).toContain('case real');

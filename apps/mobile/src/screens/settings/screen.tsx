@@ -1,4 +1,5 @@
 import React from 'react';
+import { Alert, AppState, Linking } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
@@ -21,7 +22,10 @@ import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { SupportedLanguage } from '../../i18n';
 import { getLinkedWatchInfo, type LinkedWatchInfo } from '../../native/watch-connectivity';
-import { requestWatchSyncNotificationPermission as requestDefaultWatchSyncNotificationPermission } from '../../notifications/watch-sync-notification-service';
+import {
+  hasWatchSyncNotificationPermission as hasDefaultWatchSyncNotificationPermission,
+  requestWatchSyncNotificationPermission as requestDefaultWatchSyncNotificationPermission,
+} from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences, type ThemePreference } from '../../states/app-preferences';
 
 export type SettingsRoute = 'index' | 'theme' | 'language' | 'notifications' | 'devices';
@@ -50,6 +54,8 @@ type SettingsScreenProps = {
   onBack?: () => void;
   onOpenRoute?: (route: Exclude<SettingsRoute, 'index'>) => void;
   requestWatchSyncNotificationPermission?: () => Promise<boolean>;
+  hasWatchSyncNotificationPermission?: () => Promise<boolean>;
+  openNotificationSettings?: () => Promise<void>;
 };
 
 const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
@@ -60,6 +66,8 @@ export default function SettingsScreen({
   onBack,
   onOpenRoute,
   requestWatchSyncNotificationPermission = requestDefaultWatchSyncNotificationPermission,
+  hasWatchSyncNotificationPermission = hasDefaultWatchSyncNotificationPermission,
+  openNotificationSettings = Linking.openSettings,
   route: controlledRoute,
 }: SettingsScreenProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -73,7 +81,24 @@ export default function SettingsScreen({
   } = useAppPreferences();
   const [localRoute, setLocalRoute] = React.useState<SettingsRoute>('index');
   const [linkedWatchInfo, setLinkedWatchInfo] = React.useState<LinkedWatchInfo | undefined>();
+  const awaitingNotificationSettings = React.useRef(false);
+  const notificationToggleBusy = React.useRef(false);
   const route = controlledRoute ?? localRoute;
+
+  React.useEffect(() => {
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState !== 'active' || !awaitingNotificationSettings.current) {
+        return;
+      }
+      awaitingNotificationSettings.current = false;
+      void hasWatchSyncNotificationPermission().then(async permitted => {
+        if (permitted) {
+          await setWatchSyncNotificationsEnabled(true);
+        }
+      });
+    });
+    return () => subscription.remove();
+  }, [hasWatchSyncNotificationPermission, setWatchSyncNotificationsEnabled]);
 
   const themeLabel = getThemeLabel(themePreference, t);
   const languageLabel = getLanguageLabel(language, t);
@@ -203,6 +228,11 @@ export default function SettingsScreen({
             description={t('settings.notifications.watchSyncDescription')}
             selected={watchSyncNotificationsEnabled}
             onPress={async () => {
+              if (notificationToggleBusy.current) {
+                return;
+              }
+              notificationToggleBusy.current = true;
+              try {
               if (watchSyncNotificationsEnabled) {
                 await setWatchSyncNotificationsEnabled(false);
                 return;
@@ -212,6 +242,26 @@ export default function SettingsScreen({
 
               if (permitted) {
                 await setWatchSyncNotificationsEnabled(true);
+                return;
+              }
+              Alert.alert(
+                t('settings.notifications.permissionRequired', { defaultValue: '알림 권한이 필요합니다' }),
+                t('settings.notifications.openSettingsDescription', {
+                  defaultValue: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
+                }),
+                [
+                  { text: t('common.cancel', { defaultValue: '취소' }), style: 'cancel' },
+                  {
+                    text: t('settings.notifications.openSettings', { defaultValue: '설정 열기' }),
+                    onPress: () => {
+                      awaitingNotificationSettings.current = true;
+                      void openNotificationSettings();
+                    },
+                  },
+                ],
+              );
+              } finally {
+                notificationToggleBusy.current = false;
               }
             }}
           />

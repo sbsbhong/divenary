@@ -21,6 +21,7 @@ import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
 
 type LogEntryDetailProps = {
   entry: DiveLogEntry;
+  profileSamples?: WatchSession['samples'];
   onBack?: () => void;
   onEdit?: (entry: DiveLogEntry) => void;
   onDelete?: (localId: string) => Promise<void>;
@@ -34,7 +35,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const averageDepth = getMeasuredValue(props.entry, 'averageDepthMeters');
   const waterTemperature = getMeasuredValue(props.entry, 'waterTemperatureCelsius');
   const duration = getMeasuredValue(props.entry, 'durationSeconds');
-  const watchSamples = props.entry.watchCapture?.samples ?? [];
+  const watchSamples = props.profileSamples ?? props.entry.watchCapture?.samples ?? [];
   const hasTemperatureSamples = watchSamples.some(sample => sample.waterTemperatureCelsius !== undefined);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
   const tags = props.entry.manual.tags.length ? props.entry.manual.tags.join(', ') : t('logbook.none');
@@ -115,18 +116,18 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
             {t('logbook.unsupportedDepthWarning')}
           </Text>
         ) : null}
-        {props.entry.watchCapture?.samples.length ? (
+        {watchSamples.length ? (
           <>
             <SessionProfile
               testID="log-entry-detail-depth-profile"
-              samples={props.entry.watchCapture.samples}
+              samples={watchSamples}
               kind="depth"
               title={t('logbook.depthProfile')}
             />
             {hasTemperatureSamples ? (
               <SessionProfile
                 testID="log-entry-detail-temperature-profile"
-                samples={props.entry.watchCapture.samples}
+                samples={watchSamples}
                 kind="temperature"
                 title={t('logbook.temperatureProfile')}
               />

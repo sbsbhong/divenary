@@ -2,17 +2,17 @@ import Foundation
 import WatchConnectivity
 
 protocol WatchSyncTransporting: AnyObject {
-    var onTransferStatusChanged: ((UUID, DiveSyncStatus) -> Void)? { get set }
+    var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)? { get set }
     var onActivationCompleted: (() -> Void)? { get set }
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)? { get set }
 
     func activate()
-    func enqueue(session: DiveSessionRecord) -> DiveSyncStatus
+    func enqueue(artifact: DiveProfileArtifactIdentity, fileURL: URL) -> DiveSyncStatus
     func refreshPlannedDives()
 }
 
 final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelegate {
-    var onTransferStatusChanged: ((UUID, DiveSyncStatus) -> Void)?
+    var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)?
     var onActivationCompleted: (() -> Void)?
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)?
 
@@ -30,30 +30,30 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
         connectivitySession?.activate()
     }
 
-    func enqueue(session diveSession: DiveSessionRecord) -> DiveSyncStatus {
+    func enqueue(artifact: DiveProfileArtifactIdentity, fileURL: URL) -> DiveSyncStatus {
         guard let connectivitySession else {
             return .failed
         }
 
-        do {
-            let payloadData = try diveSession.syncMessageData()
-            if payloadData.count <= WatchSyncEnvelope.directMessagePayloadLimitBytes {
-                let userInfo = try WatchSyncEnvelope.userInfo(for: diveSession)
-                if connectivitySession.isReachable {
-                    connectivitySession.sendMessage(userInfo, replyHandler: nil) { _ in }
-                }
-                connectivitySession.transferUserInfo(userInfo)
-            } else {
-                let fileURL = try makeTransferFile(payloadData: payloadData, sessionId: diveSession.id)
-                connectivitySession.transferFile(
-                    fileURL,
-                    metadata: WatchSyncEnvelope.fileMetadata(for: diveSession)
-                )
-            }
-            return .pending
-        } catch {
+        guard fileManager.fileExists(atPath: fileURL.path) else {
             return .failed
         }
+        let alreadyOutstanding = connectivitySession.outstandingFileTransfers.contains { transfer in
+            guard let metadata = transfer.file.metadata,
+                  let outstanding = WatchSyncEnvelope.artifactIdentity(from: metadata) else {
+                return false
+            }
+            return outstanding.localSessionId == artifact.localSessionId
+                && outstanding.contentRevision == artifact.contentRevision
+                && outstanding.sha256 == artifact.sha256
+        }
+        if !alreadyOutstanding {
+            connectivitySession.transferFile(
+                fileURL,
+                metadata: WatchSyncEnvelope.fileMetadata(for: artifact)
+            )
+        }
+        return .pending
     }
 
     func refreshPlannedDives() {
@@ -82,18 +82,16 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
         didFinish fileTransfer: WCSessionFileTransfer,
         error: Error?
     ) {
-        guard let localSessionId = fileTransfer.file.metadata?[WatchSyncEnvelope.localSessionIdKey] as? String else {
+        guard let metadata = fileTransfer.file.metadata,
+              let artifact = WatchSyncEnvelope.artifactIdentity(from: metadata) else {
             return
         }
-
-        try? fileManager.removeItem(at: fileTransfer.file.fileURL)
-
-        guard error != nil, let sessionId = UUID(uuidString: localSessionId) else {
+        guard error != nil else {
             return
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.onTransferStatusChanged?(sessionId, .failed)
+            self?.onTransferStatusChanged?(artifact, .failed)
         }
     }
 
@@ -108,27 +106,6 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
     private func notifyReadyToRetry() {
         DispatchQueue.main.async { [weak self] in
             self?.onActivationCompleted?()
-        }
-    }
-
-    func session(
-        _ session: WCSession,
-        didFinish userInfoTransfer: WCSessionUserInfoTransfer,
-        error: Error?
-    ) {
-        guard error != nil else {
-            return
-        }
-
-        guard
-            let localSessionId = userInfoTransfer.userInfo[WatchSyncEnvelope.localSessionIdKey] as? String,
-            let sessionId = UUID(uuidString: localSessionId)
-        else {
-            return
-        }
-
-        DispatchQueue.main.async { [weak self] in
-            self?.onTransferStatusChanged?(sessionId, .failed)
         }
     }
 
@@ -159,12 +136,23 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
     private func handleAcknowledgement(userInfo: [String: Any]) {
         guard userInfo[WatchSyncEnvelope.kindKey] as? String == WatchSyncEnvelope.acknowledgementKind,
               let localSessionId = userInfo[WatchSyncEnvelope.localSessionIdKey] as? String,
-              let sessionId = UUID(uuidString: localSessionId) else {
+              let sessionId = UUID(uuidString: localSessionId),
+              let contentRevision = userInfo[WatchSyncEnvelope.contentRevisionKey] as? String,
+              let sha256 = userInfo[WatchSyncEnvelope.sha256Key] as? String else {
             return
         }
 
+        let artifact = DiveProfileArtifactIdentity(
+            localSessionId: sessionId,
+            contentRevision: contentRevision,
+            sha256: sha256,
+            byteCount: userInfo[WatchSyncEnvelope.byteCountKey] as? Int ?? 0,
+            sampleCount: userInfo[WatchSyncEnvelope.sampleCountKey] as? Int ?? 0,
+            relativePath: ""
+        )
+
         DispatchQueue.main.async { [weak self] in
-            self?.onTransferStatusChanged?(sessionId, .synced)
+            self?.onTransferStatusChanged?(artifact, .synced)
         }
     }
 
@@ -180,13 +168,5 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
             self?.onPlannedDivesChanged?(plannedDives)
         }
         return true
-    }
-
-    private func makeTransferFile(payloadData: Data, sessionId: UUID) throws -> URL {
-        let directory = fileManager.temporaryDirectory.appendingPathComponent("DiveWatchSync", isDirectory: true)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        let fileURL = directory.appendingPathComponent("\(sessionId.uuidString)-\(UUID().uuidString).json")
-        try payloadData.write(to: fileURL, options: .atomic)
-        return fileURL
     }
 }

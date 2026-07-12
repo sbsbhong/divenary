@@ -15,6 +15,8 @@ Updated: 2026-07-12
 - contract schema와 generated TypeScript/Swift 출력의 일치 여부를 검증한다.
 - 모바일 typecheck, repository migration, Watch import serialization/dedupe, acknowledgement retry를 검증한다.
 - Watch persistence, optional 수온 encoding, large payload fixture, Debug/Release compile을 검증한다.
+- 1Hz bucket의 sparse/invalid/out-of-order/final flush, 3시간 10,800 sample 상한, immutable artifact digest와 legacy migration을 검증한다.
+- short/large session이 모두 단일 `transferFile` 경로를 사용하고 ACK identity가 revision/digest까지 일치하는지 검증한다.
 - fixture와 simulator 결과는 실제 WatchConnectivity delivery 또는 수중 sensor 동작의 증거로 쓰지 않는다.
 
 ## Gate B: 건식 실기기
@@ -25,6 +27,7 @@ Updated: 2026-07-12
 - 모바일 local save 뒤에만 acknowledgement가 발생하고 Watch session이 `synced`가 되는지 확인한다.
 - planned scuba/freedive round trip과 source plan completion을 확인한다.
 - Debug 8,000-sample fixture의 file transfer, 단일 import, dedupe와 acknowledgement를 확인한다.
+- iOS 알림을 이전에 거부한 실기기에서 토글이 Settings 복구 경로를 열고 복귀 뒤 실제 권한과 preference가 일치하는지 확인한다.
 
 Gate B는 Watch 앱이 설치되지 않은 동안 완료로 표시하지 않는다.
 

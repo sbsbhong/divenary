@@ -31,6 +31,7 @@
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | 실제 프리다이빙·스쿠버 전까지 가능한 모든 미구현 작업을 P0로 두고 건식 실기기, 얕은 물 센서, Supabase/Auth, Memory/share, 출시·안전 경계를 의존성 wave로 정리한다. | 2026-07-12 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | 모바일 앱은 local-first 로그북의 중심이며, 현재 cloud 상태는 `notConfigured`이고 이후 Supabase outbox를 같은 저장소 경계에 붙인다. | 2026-07-12 |
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 local-first 로그북과 embedded watch companion을 소유하며, Watch import coordinator와 raw Watch 상태에서 분리된 `cloudSyncStatus: notConfigured`를 사용한다. | 2026-07-12 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch의 bounded 1Hz profile, immutable file-only session transport, iPhone durable inbox/ACK outbox, 모바일 profile 분리를 설명한다. | 2026-07-12 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | 이 저장소는 Turborepo로 관리되는 Yarn 1 workspace monorepo다. 앱 workspace는 `apps/` 아래에 있고, 공유 package는 `packages/` 아래에 있다.                                                                                                                                                                                                                                                        | 2026-06-28 |
 | [Supabase 구조](architecture/supabase.md)                                      | 구현된 Supabase 영역은 아직 없으며, Auth/RLS/generated type/remote repository/outbox/media storage 전체가 pre-real-dive P0다. | 2026-07-12 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch acknowledgement와 cloud 상태를 분리하고, 자동/수동 import를 process-wide coordinator로 직렬화하며, 큰 session은 file transfer로 전달한다. | 2026-07-12 |
@@ -66,6 +67,7 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [ADR 목록](decisions/adr-index.md) | 이 문서는 accepted architecture decision record 목록을 관리한다. | 2026-06-28 |
+| [ADR: 1Hz immutable profile과 file-only session sync](decisions/adr-one-hertz-file-sync.md) | raw live callback과 bounded profile을 분리하고 session body를 immutable file 하나로 전달한다. | 2026-07-12 |
 | [ADR: Local-first mobile logbook with future Supabase sync](decisions/adr-local-first-mobile-logbook.md) | Local-first 저장소를 유지하고, guest 로그 연결 동의 뒤 Supabase outbox를 추가한다. 현재 cloud 상태는 `notConfigured`다. | 2026-07-12 |
 
 ## questions

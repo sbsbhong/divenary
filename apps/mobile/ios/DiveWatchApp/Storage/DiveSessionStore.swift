@@ -16,24 +16,31 @@ final class DiveSessionStore: ObservableObject {
     private let userDefaults: UserDefaults
     private let fileManager: FileManager
     private let recordsStorageURL: URL
+    private let profileStore: DiveProfileArtifactStore
     private var executedPlanIds = Set<String>()
 
     init(
         userDefaults: UserDefaults = .standard,
         syncTransport: WatchSyncTransporting = WatchSyncTransport(),
         recordsStorageURL: URL? = nil,
-        fileManager: FileManager = .default
+        fileManager: FileManager = .default,
+        profileStore: DiveProfileArtifactStore? = nil
     ) {
         self.userDefaults = userDefaults
         self.syncTransport = syncTransport
         self.fileManager = fileManager
         self.recordsStorageURL = recordsStorageURL ?? Self.defaultRecordsStorageURL(fileManager: fileManager)
+        self.profileStore = profileStore ?? DiveProfileArtifactStore(
+            rootURL: (recordsStorageURL ?? Self.defaultRecordsStorageURL(fileManager: fileManager))
+                .deletingLastPathComponent(),
+            fileManager: fileManager
+        )
         preferredDiveMode = Self.loadPreferredDiveMode(from: userDefaults)
         load()
         loadPlannedDives()
-        self.syncTransport.onTransferStatusChanged = { [weak self] sessionId, syncStatus in
+        self.syncTransport.onTransferStatusChanged = { [weak self] artifact, syncStatus in
             Task { @MainActor in
-                self?.updateSyncStatus(for: sessionId, to: syncStatus)
+                self?.updateSyncStatus(for: artifact, to: syncStatus)
             }
         }
         self.syncTransport.onActivationCompleted = { [weak self] in
@@ -51,12 +58,24 @@ final class DiveSessionStore: ObservableObject {
 
     func save(_ session: DiveSessionRecord) {
         let safeSession = session.sanitizedForPersistence()
-        let syncStatus = syncTransport.enqueue(session: safeSession)
-        sessions.insert(safeSession.withSyncStatus(syncStatus), at: 0)
+        do {
+            let entry = try profileStore.finalize(record: safeSession)
+            let syncStatus = syncTransport.enqueue(
+                artifact: entry.artifact,
+                fileURL: profileStore.artifactURL(for: entry.artifact)
+            )
+            let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
+            try profileStore.updateDisplayRecord(displayRecord)
+            sessions.removeAll { $0.id == displayRecord.id }
+            sessions.insert(displayRecord, at: 0)
+            try? profileStore.clearActiveRecording(sessionID: safeSession.id)
+        } catch {
+            assertionFailure("Failed to finalize dive profile: \(error)")
+            return
+        }
         if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
-        persist()
     }
 
     func replacePlannedDives(_ nextPlannedDives: [WatchPlannedDive]) {
@@ -83,8 +102,12 @@ final class DiveSessionStore: ObservableObject {
         userDefaults.set(nextDiveMode.rawValue, forKey: Self.preferredDiveModeStorageKey)
     }
 
-    private func updateSyncStatus(for sessionId: UUID, to syncStatus: DiveSyncStatus) {
-        guard let index = sessions.firstIndex(where: { $0.id == sessionId }) else {
+    private func updateSyncStatus(for artifact: DiveProfileArtifactIdentity, to syncStatus: DiveSyncStatus) {
+        guard let entry = try? profileStore.loadEntries().first(where: {
+            $0.id == artifact.localSessionId
+                && $0.artifact.contentRevision == artifact.contentRevision
+                && $0.artifact.sha256 == artifact.sha256
+        }), let index = sessions.firstIndex(where: { $0.id == artifact.localSessionId }) else {
             return
         }
 
@@ -93,50 +116,45 @@ final class DiveSessionStore: ObservableObject {
         }
 
         sessions[index] = sessions[index].withSyncStatus(syncStatus).sanitizedForPersistence()
-        persist()
+        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(syncStatus))
     }
 
     private func retryPendingSyncs() {
-        var didUpdate = false
-
-        for index in sessions.indices {
-            let session = sessions[index].sanitizedForPersistence()
-            guard session.syncStatus != .synced else {
+        guard let entries = try? profileStore.loadEntries() else { return }
+        for entry in entries {
+            guard entry.displayRecord.syncStatus != .synced else {
                 continue
             }
-
-            let syncStatus = syncTransport.enqueue(session: session)
-            sessions[index] = session.withSyncStatus(syncStatus).sanitizedForPersistence()
-            didUpdate = true
-        }
-
-        if didUpdate {
-            persist()
+            let syncStatus = syncTransport.enqueue(
+                artifact: entry.artifact,
+                fileURL: profileStore.artifactURL(for: entry.artifact)
+            )
+            updateSyncStatus(for: entry.artifact, to: syncStatus)
         }
     }
 
     private func load() {
         if fileManager.fileExists(atPath: recordsStorageURL.path) {
             do {
-                let data = try Data(contentsOf: recordsStorageURL)
-                sessions = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
-                    .map { $0.sanitizedForPersistence() }
-                    .sorted { $0.startedAt > $1.startedAt }
+                sessions = try profileStore.migrateLegacyRecords(at: recordsStorageURL)
+                    .map(\.displayRecord)
             } catch {
-                sessions = []
-                try? fileManager.removeItem(at: recordsStorageURL)
+                sessions = (try? profileStore.loadEntries().map(\.displayRecord)) ?? []
             }
+            return
+        }
+
+        if let entries = try? profileStore.loadEntries(), !entries.isEmpty {
+            sessions = entries.map(\.displayRecord)
             return
         }
 
         if let data = userDefaults.data(forKey: storageKey) {
             do {
-                sessions = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
-                    .map { $0.sanitizedForPersistence() }
+                let records = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
+                sessions = try records.map { try profileStore.finalize(record: $0).displayRecord }
                     .sorted { $0.startedAt > $1.startedAt }
-                if persist() {
-                    userDefaults.removeObject(forKey: storageKey)
-                }
+                userDefaults.removeObject(forKey: storageKey)
             } catch {
                 sessions = []
                 userDefaults.removeObject(forKey: storageKey)
@@ -155,7 +173,8 @@ final class DiveSessionStore: ObservableObject {
                 .map(DiveSessionRecord.init(legacySession:))
                 .map { $0.sanitizedForPersistence() }
                 .sorted { $0.startedAt > $1.startedAt }
-            _ = persist()
+            sessions = try sessions.map { try profileStore.finalize(record: $0).displayRecord }
+                .sorted { $0.startedAt > $1.startedAt }
         } catch {
             sessions = []
         }
@@ -177,23 +196,6 @@ final class DiveSessionStore: ObservableObject {
         } catch {
             plannedDives = []
             userDefaults.removeObject(forKey: plannedDivesStorageKey)
-        }
-    }
-
-    @discardableResult
-    private func persist() -> Bool {
-        do {
-            let data = try JSONEncoder().encode(sessions)
-            try fileManager.createDirectory(
-                at: recordsStorageURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
-            )
-            try data.write(to: recordsStorageURL, options: .atomic)
-            userDefaults.removeObject(forKey: storageKey)
-            return true
-        } catch {
-            assertionFailure("Failed to save dive sessions: \(error)")
-            return false
         }
     }
 
