@@ -187,4 +187,12 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertTrue(WatchRecordingMode.demo.sensorProvider() is DemoDepthSensorProvider)
         XCTAssertTrue(WatchRecordingMode.debugTest.sensorProvider() is DemoDepthSensorProvider)
     }
+
+    func testDebugTestAddsDurableTestProvenanceWithoutChangingTheSyncContract() {
+        let preparedPlan = WatchRecordingMode.debugTest.prepare(plan: PreDivePlan(diveMode: .freedive))
+
+        XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
+        XCTAssertTrue(preparedPlan.tags.contains(DiveSessionRecord.debugTestTag))
+        XCTAssertFalse(WatchRecordingMode.demo.prepare(plan: PreDivePlan()).tags.contains(DiveSessionRecord.debugTestTag))
+    }
 }

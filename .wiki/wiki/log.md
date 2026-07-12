@@ -701,3 +701,6 @@
 
 ## [2026-07-11] ingest | 동기화 흐름 구조
 - Updated: large watch session file transfer
+
+## [2026-07-12] ingest | Watch 앱 구조
+- Updated: 안전 규칙

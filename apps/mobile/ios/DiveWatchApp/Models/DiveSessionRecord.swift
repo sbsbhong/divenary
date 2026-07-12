@@ -355,6 +355,8 @@ enum SafetyStopStatus: String, Codable, Equatable {
 }
 
 extension DiveSessionRecord {
+    static let debugTestTag = "debug-test-capture"
+
     init(legacySession session: DiveSession) {
         let summary = session.summary
         let payload: DiveSessionPayload
@@ -885,5 +887,17 @@ private struct RecordWatchDepthSamplePayload: Encodable {
         depthMeters = sample.depthMeters
         pressureKPa = sample.pressureKPa
         waterTemperatureCelsius = sample.waterTemperatureCelsius
+    }
+}
+
+extension DiveSessionRecord {
+    var captureProvenanceLabel: String? {
+        guard captureMode == .demo else {
+            return nil
+        }
+
+        return tags.contains(Self.debugTestTag)
+            ? String(localized: "Test")
+            : String(localized: "Demo")
     }
 }

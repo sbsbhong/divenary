@@ -218,6 +218,7 @@ const resources = {
         manualSource: '수동',
         watchSource: '워치',
         demoCapture: '데모',
+        testCapture: '테스트',
         sources: {
           watch: '워치',
           manual: '수동',
@@ -618,6 +619,7 @@ const resources = {
         manualSource: 'Manual',
         watchSource: 'Watch',
         demoCapture: 'Demo',
+        testCapture: 'Test',
         sources: {
           watch: 'Watch',
           manual: 'Manual',

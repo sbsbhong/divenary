@@ -40,6 +40,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const marineLife = props.entry.manual.observedMarineLife.length ? props.entry.manual.observedMarineLife.join(', ') : t('logbook.none');
   const sourceLabel = props.entry.source === 'watch' ? t('logbook.watchCaptured') : t('logbook.manualValue');
   const isDemoCapture = props.entry.watchCapture?.session.captureMode === 'demo';
+  const isDebugTestCapture = props.entry.watchCapture?.session.tags?.includes('debug-test-capture') ?? false;
   const note = firstNonBlankText(props.entry.manual.notes, props.entry.watchCapture?.session.notes) ?? t('logbook.noNotes');
   const headerPills = (
     <HStack space="xs" className="items-center justify-end">
@@ -48,7 +49,13 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
         label={props.entry.source === 'watch' ? t('logbook.watchSource') : t('logbook.manualSource')}
         tone="secondary"
       />
-      {isDemoCapture ? <StatusPill testID="log-entry-detail-demo-capture" label={t('logbook.demoCapture')} tone="warning" /> : null}
+      {isDemoCapture ? (
+        <StatusPill
+          testID={isDebugTestCapture ? 'log-entry-detail-test-capture' : 'log-entry-detail-demo-capture'}
+          label={isDebugTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
+          tone="warning"
+        />
+      ) : null}
     </HStack>
   );
 

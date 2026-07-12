@@ -442,6 +442,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopRouting).toContain('case .active, .pausedTooShallow, .completed:');
     expect(safetyStopRouting).toContain('case .pausedTooDeep, .armed, .unknown, .notRequired, .skippedOrIncomplete:');
     expect(recording).toContain('case debugTest');
+    expect(recording).toContain('DiveSessionRecord.debugTestTag');
+    expect(recording).toContain('recordingMode.prepare(plan: plan)');
     expect(recording).toContain('digitalCrownRotation');
     expect(recording).toContain('SurfaceEndDiveGate');
     expect(recording).toContain('surfaceEndGate.isVisible');

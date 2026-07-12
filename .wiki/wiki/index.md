@@ -34,7 +34,7 @@
 | [Monorepo 구조](architecture/monorepo.md)                                      | 이 저장소는 Turborepo로 관리되는 Yarn 1 workspace monorepo다. 앱 workspace는 `apps/` 아래에 있고, 공유 package는 `packages/` 아래에 있다.                                                                                                                                                                                                                                                        | 2026-06-28 |
 | [Supabase 구조](architecture/supabase.md)                                      | 현재 저장소에는 구현된 Supabase 영역이 없다.                                                                                                                                                                                                                                                                                                                                          | 2026-06-28 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | WatchConnectivity import acknowledgement는 local repository 저장/수신 확인이며 future cloud sync와 분리된다. 큰 watch session은 file transfer로 mobile durable inbox에 전달되고, mobile provider는 native event를 먼저 구독한 뒤 inbox를 drain한다.                                                                                                                                                                 | 2026-07-11 |
-| [Watch 앱 구조](architecture/watch-app.md)                                      | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Recording은 full-height depth gauge, compact end-dive overlay, demo capture 분리, 40m 초과 unsupported-depth warning, recommendation-only safety stop wording을 사용하고, Home은 첫 frame 뒤에 sensor availability와 real provider를 초기화한다.                                                                   | 2026-07-10 |
+| [Watch 앱 구조](architecture/watch-app.md)                                      | `apps/mobile/ios/DiveWatchApp`는 SwiftUI watchOS companion 앱 source를 담는다. Debug Test Freedive/Scuba는 일반 watch session과 같은 sync 경로를 사용하되 fake sample provenance를 `Test`로 표시하며, Home은 첫 frame 뒤에 sensor availability와 real provider를 초기화한다.                                                                                      | 2026-07-12 |
 
 ## domains
 
@@ -49,7 +49,7 @@
 | [다이브 로그 도메인](domains/dive-log.md) | Dive log domain은 watch/import/manual 로그를 model하며, 40m 초과 값과 watch `unsupportedDepth` metadata를 보존하고, safety stop과 future decompression stop을 같은 구조로 섞지 않는다. | 2026-07-09 |
 | [다이브 계획 도메인](domains/dive-planning.md) | 모바일 Planbook은 비중요 계획 알림이며, optional planned pressure는 준비 맥락 metadata일 뿐 실제 측정값이나 안전 계산 결과가 아니다. | 2026-06-28 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
-| [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, Apple Watch 기반 v1은 40m 이하를 지원 범위로 두고 40m 초과 값은 warning과 함께 보존하며, Air-only safety-stop reminder와 pressure metadata를 gas/deco/safety decision으로 해석하지 않는다. | 2026-07-09 |
+| [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, debug fake sample도 실측으로 표시하지 않고 `Test` provenance를 유지한다. | 2026-07-12 |
 
 ## design
 

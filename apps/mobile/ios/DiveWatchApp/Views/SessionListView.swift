@@ -67,8 +67,8 @@ private struct SessionRow: View {
 
                     HStack(spacing: 5) {
                         SessionMetadataPill(title: session.diveMode.listBadgeLabel, color: profileColor)
-                        if session.captureMode == .demo {
-                            SessionMetadataPill(title: String(localized: "Demo"), color: DiveWatchTheme.secondary)
+                        if let captureProvenanceLabel = session.captureProvenanceLabel {
+                            SessionMetadataPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
                         }
                         SessionSyncStatusPill(syncStatus: session.syncStatus)
                     }

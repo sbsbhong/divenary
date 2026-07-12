@@ -1,11 +1,11 @@
 # 안전 규칙
 
-Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
-Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
-Updated: 2026-07-09
+Sources: pre-Karpathy wiki page, 2026-06-28; user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; Debug test capture provenance, 2026-07-12
+Raw: [Pre-Karpathy: 안전 규칙](../../raw/domains/safety-rules.md); [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Debug test capture provenance](../../raw/architecture/2026-07-12-debug-test-capture-provenance.md)
+Updated: 2026-07-12
 Status: Reference / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-07-09
+Last reviewed: 2026-07-12
 Change policy: safety rules require explicit review
 Related pages: [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotiable-safety-rules.md); [Diving App / Safety UX and Legal Notes](diving-app-safety-ux-legal-notes.md)
 
@@ -59,7 +59,7 @@ Watch Home의 수심 3m 이상 자동 기록 시작은 사용자가 시작 버�
 
 Fake depth sample은 명시적인 demo capture mode에서만 허용된다. Demo capture는 로그 리뷰에서 `demo`로 표시되어야 하며, 실측 watch log나 안전 근거처럼 취급하지 않는다.
 
-`DiveWatchAppDebug`의 `Test Freedive`와 `Test Scuba`도 기존 `captureMode: demo`를 사용한다. Debug/test recording은 개발과 데모를 위한 경로이며, sync contract에 안전 의미가 있는 별도 상태를 추가하지 않는다.
+`DiveWatchAppDebug`의 `Test Freedive`와 `Test Scuba`도 기존 `captureMode: demo`를 사용하고 `debug-test-capture` tag로 일반 demo와 구분한다. Watch와 mobile은 이를 `Test`로 표시한다. Debug/test recording은 개발 검증 경로이며 실측 기록처럼 표시하지 않고, sync contract에 안전 의미가 있는 별도 상태를 추가하지 않는다.
 
 실제 underwater Apple Watch sensor behavior는 공개 배포 전에 지원되는 hardware에서 수동 검증해야 한다. Simulator, mock sensor, demo mode behavior는 실제 underwater correctness의 증거가 아니다.
 

@@ -21,8 +21,8 @@ struct SummaryView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             StatusPill(title: String(localized: "Dive captured"))
-                            if session.captureMode == .demo {
-                                StatusPill(title: String(localized: "Demo"), color: DiveWatchTheme.secondary)
+                            if let captureProvenanceLabel = session.captureProvenanceLabel {
+                                StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
                             }
                             Spacer(minLength: 6)
                             Text("\(summary.sampleCount)")

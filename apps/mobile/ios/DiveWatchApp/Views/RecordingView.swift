@@ -43,6 +43,16 @@ enum WatchRecordingMode: Equatable {
             return String(localized: "Test")
         }
     }
+
+    func prepare(plan: PreDivePlan) -> PreDivePlan {
+        guard self == .debugTest, !plan.userTags.contains(DiveSessionRecord.debugTestTag) else {
+            return plan
+        }
+
+        var taggedPlan = plan
+        taggedPlan.userTags.append(DiveSessionRecord.debugTestTag)
+        return taggedPlan
+    }
 }
 
 struct SurfaceEndDiveGate {
@@ -123,7 +133,7 @@ struct RecordingView: View {
         }
         .navigationBarBackButtonHidden(recorder.isRecording)
         .onAppear {
-            recorder.startSession(plan: plan)
+            recorder.startSession(plan: recordingMode.prepare(plan: plan))
         }
         .onDisappear {
             if completedSession == nil {
