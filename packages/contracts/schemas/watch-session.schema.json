@@ -375,6 +375,9 @@
     "scuba": {
       "$ref": "#/definitions/scubaPayload"
     },
+    "profile": {
+      "$ref": "./watch-profile-metadata.schema.json"
+    },
     "samples": {
       "type": "array",
       "items": {

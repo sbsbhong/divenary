@@ -1,5 +1,5 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
-import type { WatchSyncMessage } from '../types/dive-session';
+import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 import { watchFixtureMessages } from '../utils/watch-fixtures';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import type { DiveLogRepository } from './dive-log-repository';
@@ -36,7 +36,10 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     this.entriesByLocalId.delete(localId);
   }
 
-  async importWatchMessages(messages: WatchSyncMessage[]): Promise<DiveLogEntry[]> {
+  async importWatchMessages(
+    messages: WatchSyncMessage[],
+    _options?: { profileDigests?: Array<string | undefined> },
+  ): Promise<DiveLogEntry[]> {
     const now = this.now();
 
     for (const message of messages) {
@@ -47,6 +50,10 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     }
 
     return this.listSync();
+  }
+
+  async getWatchProfile(localId: string): Promise<WatchDepthSample[]> {
+    return this.entriesByLocalId.get(localId)?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
   }
 
   listSync(): DiveLogEntry[] {

@@ -35,6 +35,7 @@ export interface WatchSessionCommon {
   unsupportedDepth?: UnsupportedDepthRecord;
   freedive?: FreeDivePayload;
   scuba?: ScubaPayload;
+  profile?: WatchProfileMetadata;
   samples: WatchDepthSample[];
 }
 export type WatchSession = WatchSessionCommon & (
@@ -151,6 +152,13 @@ export interface SafetyStopRecord {
   remainingSeconds: number;
   timeInZoneSeconds: number;
 }
+export interface WatchProfileMetadata {
+  formatVersion: number;
+  contentRevision: string;
+  sampleIntervalSeconds: number;
+  sampleCount: number;
+  interrupted?: boolean;
+}
 export interface WatchDepthSample {
   localSessionId: string;
   /**
@@ -158,6 +166,8 @@ export interface WatchDepthSample {
    */
   timestamp: number;
   depthMeters: number;
+  bucketMinDepthMeters?: number;
+  bucketMaxDepthMeters?: number;
   pressureKPa?: number;
   waterTemperatureCelsius?: number;
 }

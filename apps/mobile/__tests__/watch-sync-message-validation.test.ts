@@ -82,6 +82,100 @@ describe('watch sync message validation', () => {
     expect(result.message.session.captureMode).toBe('demo');
   });
 
+  it('accepts one-hertz profile metadata and bucket extrema', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'profile-session-1',
+        schemaVersion: 3,
+        startedAt: 1781352000,
+        endedAt: 1781352001,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-1',
+          sampleIntervalSeconds: 1,
+          sampleCount: 2,
+        },
+        samples: [
+          {
+            localSessionId: 'profile-session-1',
+            timestamp: 1781352000.8,
+            depthMeters: 4,
+            bucketMinDepthMeters: 2,
+            bucketMaxDepthMeters: 5,
+          },
+          {
+            localSessionId: 'profile-session-1',
+            timestamp: 1781352001.7,
+            depthMeters: 7,
+            bucketMinDepthMeters: 4,
+            bucketMaxDepthMeters: 8,
+          },
+        ],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('rejects profile metadata with a non-one-hertz cadence', () => {
+    const result = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'bad-profile-cadence',
+        startedAt: 1781352000,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-1',
+          sampleIntervalSeconds: 10,
+          sampleCount: 1,
+        },
+        samples: [{ localSessionId: 'bad-profile-cadence', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error('expected non-one-hertz profile metadata to be invalid');
+    }
+    expect(result.error.message).toContain('session.profile.sampleIntervalSeconds');
+  });
+
+  it('rejects unknown profile metadata keys and negative bucket extrema', () => {
+    const unknownKeyResult = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'bad-profile-key',
+        startedAt: 1781352000,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-1',
+          sampleIntervalSeconds: 1,
+          sampleCount: 1,
+          sha256: 'must-live-outside-artifact',
+        },
+        samples: [{ localSessionId: 'bad-profile-key', timestamp: 1781352000, depthMeters: 0 }],
+      },
+    });
+    expect(unknownKeyResult.ok).toBe(false);
+
+    const negativeExtremaResult = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: 'bad-profile-extrema',
+        startedAt: 1781352000,
+        samples: [{
+          localSessionId: 'bad-profile-extrema',
+          timestamp: 1781352000,
+          depthMeters: 0,
+          bucketMinDepthMeters: -1,
+          bucketMaxDepthMeters: 0,
+        }],
+      },
+    });
+    expect(negativeExtremaResult.ok).toBe(false);
+  });
+
   it('accepts unsupported watch depth metadata for review-only imports', () => {
     const result = parseWatchSyncMessageValue({
       type: 'sessionEnded',

@@ -5,7 +5,11 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     @MainActor
     func testFreediveRecorderLiveMaxUsesRawSamplesBeforeSegmentStarts() async {
         let sensorProvider = ManualDepthSensorProvider()
-        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider)
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            profileStore: StubProfileRecordingStore(),
+            now: { EngineTestFixtures.start }
+        )
 
         recorder.startSession(plan: PreDivePlan(diveMode: .freedive))
         sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0.9))
@@ -63,7 +67,12 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     @MainActor
     func testScubaRecorderDropsNonFiniteSamplesBeforePersistence() async throws {
         let sensorProvider = ManualDepthSensorProvider()
-        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider, captureMode: .demo)
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            captureMode: .demo,
+            profileStore: StubProfileRecordingStore(),
+            now: { EngineTestFixtures.start }
+        )
 
         recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
         sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0))
@@ -81,7 +90,12 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     @MainActor
     func testScubaRecorderKeepsLastMeasuredTemperatureWhenNextSampleHasNone() async throws {
         let sensorProvider = ManualDepthSensorProvider()
-        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider, captureMode: .demo)
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            captureMode: .demo,
+            profileStore: StubProfileRecordingStore(),
+            now: { EngineTestFixtures.start }
+        )
 
         recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
         sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0, temperature: 24))
@@ -93,6 +107,38 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
         XCTAssertEqual(record.samples.count, 2)
         XCTAssertNil(record.samples.last?.waterTemperatureCelsius)
+    }
+
+    @MainActor
+    func testRecorderUsesRawCallbacksForLiveStateAndPersistsOneSamplePerSecond() async throws {
+        let sensorProvider = ManualDepthSensorProvider()
+        let profileStore = StubProfileRecordingStore()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(EngineTestFixtures.sample(0.1, depth: 2, temperature: 21))
+        sensorProvider.emit(EngineTestFixtures.sample(0.8, depth: 7, temperature: nil))
+        await Task.yield()
+
+        XCTAssertEqual(recorder.currentDepth, 7)
+        XCTAssertEqual(recorder.maxDepth, 7)
+        XCTAssertTrue(recorder.samples.isEmpty)
+
+        sensorProvider.emit(EngineTestFixtures.sample(1.2, depth: 4, temperature: 22))
+        await Task.yield()
+        let record = try XCTUnwrap(recorder.stopSession())
+
+        XCTAssertEqual(record.schemaVersion, 3)
+        XCTAssertEqual(record.samples.map(\.depthMeters), [7, 4])
+        XCTAssertEqual(record.samples.first?.bucketMinDepthMeters, 2)
+        XCTAssertEqual(record.samples.first?.bucketMaxDepthMeters, 7)
+        XCTAssertEqual(record.samples.first?.waterTemperatureCelsius, 21)
+        XCTAssertEqual(profileStore.appendedSamples.map(\.depthMeters), [7, 4])
     }
 
     @MainActor
@@ -108,11 +154,11 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(store.sessions.count, 1)
         XCTAssertEqual(store.sessions.first?.id, record.id)
         XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
-        XCTAssertEqual(transport.enqueuedSessions.map(\.id), [record.id])
+        XCTAssertEqual(transport.enqueuedArtifacts.map(\.localSessionId), [record.id])
 
-        let persisted = try persistedSessions(at: storageURL)
+        let persisted = try profileEntries(at: storageURL)
         XCTAssertEqual(persisted.map(\.id), [record.id])
-        XCTAssertEqual(persisted.first?.syncStatus, .failed)
+        XCTAssertEqual(persisted.first?.displayRecord.syncStatus, .failed)
         XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
     }
 
@@ -129,11 +175,11 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(store.sessions.count, 1)
         XCTAssertEqual(store.sessions.first?.id, record.id)
         XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
-        XCTAssertEqual(transport.enqueuedSessions.map(\.id), [record.id])
+        XCTAssertEqual(transport.enqueuedArtifacts.map(\.localSessionId), [record.id])
 
-        let persisted = try persistedSessions(at: storageURL)
+        let persisted = try profileEntries(at: storageURL)
         XCTAssertEqual(persisted.map(\.id), [record.id])
-        XCTAssertEqual(persisted.first?.syncStatus, .failed)
+        XCTAssertEqual(persisted.first?.displayRecord.syncStatus, .failed)
         XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
     }
 
@@ -151,11 +197,10 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
 
         store.save(record)
 
-        let enqueued = try XCTUnwrap(transport.enqueuedSessions.first)
-        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
-        assertScubaPayloadIsJSONSafe(enqueued)
+        let fileURL = try XCTUnwrap(transport.enqueuedFileURLs.first)
+        XCTAssertNoThrow(try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)))
+        let persisted = try XCTUnwrap(profileEntries(at: storageURL).first?.displayRecord)
         assertScubaPayloadIsJSONSafe(persisted)
-        XCTAssertNoThrow(try persisted.syncMessageData())
     }
 
     @MainActor
@@ -168,21 +213,12 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
 
         store.save(record)
 
-        let enqueued = try XCTUnwrap(transport.enqueuedSessions.first)
-        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
-        for sanitized in [enqueued, persisted] {
-            XCTAssertEqual(sanitized.captureMode, .real)
-            XCTAssertNil(sanitized.entryLocation)
-            XCTAssertNil(sanitized.exitLocation)
-            XCTAssertEqual(sanitized.samples.count, 3)
-            assertScubaPayloadIsJSONSafe(sanitized)
-            XCTAssertNoThrow(try sanitized.syncMessageData())
-        }
-
-        let session = try syncSessionObject(from: persisted)
+        let fileURL = try XCTUnwrap(transport.enqueuedFileURLs.first)
+        let session = try syncSessionObject(fromArtifactAt: fileURL)
         XCTAssertEqual(session["captureMode"] as? String, "real")
         XCTAssertNil(session["entryLocation"])
         XCTAssertNil(session["exitLocation"])
+        XCTAssertEqual((session["samples"] as? [[String: Any]])?.count, 3)
         XCTAssertNotNil(session["scuba"])
     }
 
@@ -200,9 +236,9 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         store.save(record)
 
         XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
-        let persisted = try XCTUnwrap(persistedSessions(at: storageURL).first)
+        let persisted = try XCTUnwrap(profileEntries(at: storageURL).first)
         XCTAssertEqual(persisted.id, record.id)
-        XCTAssertEqual(persisted.samples.count, record.samples.count)
+        XCTAssertEqual(persisted.artifact.sampleCount, record.samples.count)
 
         let reloaded = DiveSessionStore(
             userDefaults: userDefaults,
@@ -210,15 +246,23 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             recordsStorageURL: storageURL
         )
         XCTAssertEqual(reloaded.sessions.first?.id, record.id)
-        XCTAssertEqual(reloaded.sessions.first?.samples.count, record.samples.count)
+        XCTAssertLessThanOrEqual(reloaded.sessions.first?.samples.count ?? .max, 160)
     }
 
     func testLargeSavedSessionExceedsDirectMessageLimitAndKeepsFileTransferMetadataSmall() throws {
         let record = DiveSessionRecord.largeDebugFixture(sampleCount: 8_000).sanitizedForPersistence()
         let payloadData = try record.syncMessageData()
-        let metadata = WatchSyncEnvelope.fileMetadata(for: record, sentAt: EngineTestFixtures.start)
+        let identity = DiveProfileArtifactIdentity(
+            localSessionId: record.id,
+            contentRevision: "revision-1",
+            sha256: String(repeating: "a", count: 64),
+            byteCount: payloadData.count,
+            sampleCount: record.samples.count,
+            relativePath: "session.json"
+        )
+        let metadata = WatchSyncEnvelope.fileMetadata(for: identity, sentAt: EngineTestFixtures.start)
 
-        XCTAssertGreaterThan(payloadData.count, WatchSyncEnvelope.directMessagePayloadLimitBytes)
+        XCTAssertGreaterThan(payloadData.count, 48 * 1024)
         XCTAssertEqual(metadata[WatchSyncEnvelope.kindKey] as? String, WatchSyncEnvelope.kind)
         XCTAssertEqual(metadata[WatchSyncEnvelope.localSessionIdKey] as? String, record.id.uuidString)
         XCTAssertNil(metadata[WatchSyncEnvelope.payloadBase64Key])
@@ -229,7 +273,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1_200)
         let data = try record.syncMessageData()
 
-        XCTAssertGreaterThan(data.count, WatchSyncEnvelope.directMessagePayloadLimitBytes)
+        XCTAssertGreaterThan(data.count, 48 * 1024)
         XCTAssertEqual(record.captureMode, .demo)
         XCTAssertTrue(record.tags.contains(DiveSessionRecord.debugTestTag))
     }
@@ -250,7 +294,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
 
         XCTAssertEqual(store.sessions.map(\DiveSessionRecord.id), [record.id])
         XCTAssertNil(userDefaults.data(forKey: "savedDiveSessionRecords"))
-        XCTAssertEqual((try persistedSessions(at: storageURL)).map(\DiveSessionRecord.id), [record.id])
+        XCTAssertEqual((try profileEntries(at: storageURL)).map(\.id), [record.id])
     }
 
     func testFreediveSanitizerMakesNonFiniteDerivedValuesJSONSafe() throws {
@@ -604,6 +648,13 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         return try XCTUnwrap(message["session"] as? [String: Any])
     }
 
+    private func syncSessionObject(fromArtifactAt fileURL: URL) throws -> [String: Any] {
+        let message = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
+        )
+        return try XCTUnwrap(message["session"] as? [String: Any])
+    }
+
     private func makeIsolatedUserDefaults() -> UserDefaults {
         let suiteName = "DiveWatchAppTests.\(UUID().uuidString)"
         let userDefaults = UserDefaults(suiteName: suiteName)!
@@ -617,9 +668,8 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             .appendingPathComponent("savedDiveSessionRecords.json")
     }
 
-    private func persistedSessions(at storageURL: URL) throws -> [DiveSessionRecord] {
-        let data = try Data(contentsOf: storageURL)
-        return try JSONDecoder().decode([DiveSessionRecord].self, from: data)
+    private func profileEntries(at storageURL: URL) throws -> [DiveProfileManifestEntry] {
+        try DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent()).loadEntries()
     }
 
     private func assertScubaPayloadIsJSONSafe(_ record: DiveSessionRecord) {
@@ -909,13 +959,29 @@ private final class ManualDepthSensorProvider: DepthSensorProvider {
     }
 }
 
+private final class StubProfileRecordingStore: DiveProfileRecordingStoring {
+    private(set) var metadata: ActiveDiveRecordingMetadata?
+    private(set) var appendedSamples: [DepthSample] = []
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
+        self.metadata = metadata
+    }
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {
+        appendedSamples.append(sample)
+    }
+
+    func clearActiveRecording(sessionID: UUID) throws {}
+}
+
 private final class StubWatchSyncTransport: WatchSyncTransporting {
-    var onTransferStatusChanged: ((UUID, DiveSyncStatus) -> Void)?
+    var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)?
     var onActivationCompleted: (() -> Void)?
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)?
 
     private let enqueueStatus: DiveSyncStatus
-    private(set) var enqueuedSessions: [DiveSessionRecord] = []
+    private(set) var enqueuedArtifacts: [DiveProfileArtifactIdentity] = []
+    private(set) var enqueuedFileURLs: [URL] = []
     private(set) var activateCallCount = 0
 
     init(enqueueStatus: DiveSyncStatus) {
@@ -926,8 +992,9 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
         activateCallCount += 1
     }
 
-    func enqueue(session: DiveSessionRecord) -> DiveSyncStatus {
-        enqueuedSessions.append(session)
+    func enqueue(artifact: DiveProfileArtifactIdentity, fileURL: URL) -> DiveSyncStatus {
+        enqueuedArtifacts.append(artifact)
+        enqueuedFileURLs.append(fileURL)
         return enqueueStatus
     }
 

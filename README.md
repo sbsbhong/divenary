@@ -19,17 +19,17 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
   - Swift Codable 타입 생성(`quicktype`)
 - `apps/mobile`:
   - React Native `0.85.3` 모바일 앱
-  - AsyncStorage 기반 Logbook/Planbook/설정 저장소
+  - AsyncStorage 기반 Logbook/Planbook/설정 metadata와 Application Support 파일 기반 session/revision별 Watch profile 분리 저장
   - React Navigation 기반 bottom tab navigation
   - runtime watch sync JSON validation, WatchConnectivity pending inbox 수동 동기화, active simulator import/ack 확인 경로
   - 실행하지 않은 Planbook planned dive를 watch companion에 전달하는 PoC
   - Settings 기기 관리에서 공개 `WCSession` paired/install/reachable 상태 표시
 - `apps/mobile/ios/DiveWatchApp`:
   - `apps/mobile/ios/DiveMobile.xcodeproj` 안의 embedded watchOS companion target
-  - Start/End 기록 흐름, 세션 요약, UserDefaults 기반 로컬 저장
+  - Start/End 기록 흐름, 원시 live callback과 분리된 최대 1Hz profile, 세션 요약, Application Support 기반 immutable artifact/manifest 저장
   - 저장된 세션 목록/상세 화면
   - 모바일 planned dive 목록 표시와 선택한 계획으로 recording 시작
-  - 저장 시 WatchConnectivity `transferUserInfo` enqueue와 reachable `sendMessage` 병행 PoC
+  - 모든 session body를 단일 WatchConnectivity `transferFile`로 전달하고 revision/SHA-256 ACK로 완료하는 PoC
 
 ## 폴더 구조
 ```text

@@ -1,8 +1,8 @@
 # ADR 목록
 
-Sources: pre-Karpathy wiki page, 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App accepted design and implementation, 2026-07-12
 Raw: [Pre-Karpathy: ADR 목록](../../raw/decisions/adr-index.md)
-Updated: 2026-06-28
+Updated: 2026-07-12
 
 ## 요약
 
@@ -11,6 +11,7 @@ Updated: 2026-06-28
 ## 현재 상태
 
 - [ADR: Local-first mobile logbook with future Supabase sync](adr-local-first-mobile-logbook.md): 모바일 로그북을 local-first로 구현하고, 이후 Supabase sync를 같은 저장소 경계 위에 붙이는 결정을 기록한다.
+- [ADR: 1Hz immutable profile과 file-only session sync](adr-one-hertz-file-sync.md): raw live callback과 bounded profile을 분리하고 session body를 immutable file 하나로 전달하는 결정을 기록한다.
 
 ## 상세
 

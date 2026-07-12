@@ -14,9 +14,9 @@ Last reviewed: 2026-07-12
 - 실제 Apple Watch underwater sensor behavior는 아직 지원 hardware에서 검증되지 않았다. `RealDepthSensorProvider`는 `CMWaterSubmersionManager` 기반으로 구현됐고, fake sample은 명시적 demo mode로 분리됐다.
 - Apple Watch 기반 v1 지원 수심은 40m 이하로 제한한다. 40m보다 깊은 값은 reject/clamp하지 않고 로그/계획/review에 보존하되 unsupported-depth warning을 표시하는 정책으로 구현됐다. 다만 실제 Apple Watch가 40m 초과 상황에서 어떤 값을 제공하거나 기능을 중단하는지는 지원 hardware에서 검증해야 한다.
 - Store-level Apple Watch Ultra-only install filtering은 App Store/TestFlight 단계에서 검증해야 한다. 현재 code boundary는 watch target `underwater-depth` background mode, motion usage description, `waterSubmersionAvailable` runtime gate로 real start를 제한한다.
-- WatchConnectivity code boundary, companion embed project 구조, durable native inbox, JS acknowledge 경로는 추가됐지만, pairing, entitlement setup, background delivery, retry/backoff behavior, paired iPhone 실기기 전송은 아직 검증되지 않았다.
+- WatchConnectivity session body는 file-only이고 native inbox와 activation-gated ACK outbox가 구현됐지만, pairing, entitlement setup, background/force-quit delivery, retry timing, paired iPhone 실기기 전송은 아직 검증되지 않았다.
 - 자동 drain과 수동 drain은 process-wide coordinator로 직렬화됐지만, 실제 disconnect/reconnect crash가 사라졌는지는 paired hardware에서 재현해야 한다.
-- Watch sync notification은 Notifee와 Settings opt-in으로 구현됐지만, background/killed 상태에서 WatchConnectivity 수신 뒤 local repository 저장과 local notification 표시가 실제 기기에서 어떻게 동작하는지는 검증되지 않았다.
+- Watch sync notification은 preference hydration, AppState 재-drain, Notifee background handler, denied-permission Settings 복구 경로를 갖지만 background/force-quit 상태에서 실제 WatchConnectivity wake와 local notification 표시가 어떻게 동작하는지는 paired 실기기에서 검증되지 않았다.
 - Settings의 기기 관리는 공개 `WCSession` 상태를 표시하지만, 사용자가 설정한 Apple Watch 이름을 읽는 공개 API는 아직 확인되지 않았다. 현재 native fallback 이름은 `Apple Watch`다.
 - Supabase schema, RLS policy, auth, repository, cloud backup은 구현되지 않았다.
 - 모바일 cloud 상태는 `notConfigured`로 분리했고 cloud UI는 숨겼다. 실제 cloud sync가 들어오면 outbox, retry, conflict, `pending`/`synced`/`failed` 전이를 설계해야 한다.

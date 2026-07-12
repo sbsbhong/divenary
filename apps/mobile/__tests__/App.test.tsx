@@ -5,6 +5,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import ReactTestRenderer from 'react-test-renderer';
+import { AppState } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
 import { Menu } from '../src/components/ui/menu';
@@ -144,6 +145,10 @@ describe('App navigation', () => {
       frame: { width: 320, height: 640, x: 0, y: 0 },
       insets: { left: 0, right: 0, bottom: 0, top: 0 },
     };
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
 
     await ReactTestRenderer.act(async () => {
       await i18n.changeLanguage('ko');

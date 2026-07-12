@@ -17,6 +17,7 @@ import {
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
+import { AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import type { DiveLogbookSection } from '../../types/dive-session';
@@ -96,6 +97,7 @@ export default function RootNavigation(): React.JSX.Element {
   const [pendingLogDraft, setPendingLogDraft] = React.useState<PendingLogDraft | undefined>();
   const [completedPromptPlan, setCompletedPromptPlan] = React.useState<DivePlan | undefined>();
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
+  const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
   const [reselectTokens, setReselectTokens] = React.useState<Record<NavigationRouteName, number>>({
     home: 0,
     logbook: 0,
@@ -105,7 +107,7 @@ export default function RootNavigation(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const logbook = useDiveLogbook();
   const planning = useDivePlans();
-  const { language, watchSyncNotificationsEnabled } = useAppPreferences();
+  const { isHydrated, language, watchSyncNotificationsEnabled } = useAppPreferences();
 
   const refreshVisibleStackRoute = React.useCallback(() => {
     const rootState = rootStackNavigationRef.getRootState();
@@ -239,7 +241,11 @@ export default function RootNavigation(): React.JSX.Element {
     getInitialWatchSyncNotificationOpen()
       .then(open => {
         if (isMounted && open) {
-          openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+          if (rootStackNavigationRef.isReady()) {
+            openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+          } else {
+            pendingNotificationOpenRef.current = open.entryLocalId;
+          }
         }
       })
       .catch(error => {
@@ -247,7 +253,11 @@ export default function RootNavigation(): React.JSX.Element {
       });
 
     const subscription = subscribeToWatchSyncNotificationOpens(open => {
-      openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+      if (rootStackNavigationRef.isReady()) {
+        openStackScreen('logbookDetail', { localId: open.entryLocalId }, 'logbook');
+      } else {
+        pendingNotificationOpenRef.current = open.entryLocalId;
+      }
     });
 
     return () => {
@@ -255,6 +265,15 @@ export default function RootNavigation(): React.JSX.Element {
       subscription.remove();
     };
   }, [openStackScreen]);
+
+  const handleNavigationReady = React.useCallback(() => {
+    refreshVisibleStackRoute();
+    const pendingLocalId = pendingNotificationOpenRef.current;
+    if (pendingLocalId) {
+      pendingNotificationOpenRef.current = undefined;
+      openStackScreen('logbookDetail', { localId: pendingLocalId }, 'logbook');
+    }
+  }, [openStackScreen, refreshVisibleStackRoute]);
 
   const openImportedLogToast = React.useCallback(() => {
     if (!autoImportToast) {
@@ -267,6 +286,9 @@ export default function RootNavigation(): React.JSX.Element {
 
   const showImportedEntryToast = React.useCallback(
     (entry: DiveLogEntry) => {
+      if (AppState.currentState && AppState.currentState !== 'active') {
+        return;
+      }
       setAutoImportToast({
         entryLocalId: entry.localId,
         siteName: entry.manual.site.name ?? entry.watchCapture?.session.siteName ?? t('logbook.untitledDive'),
@@ -319,6 +341,7 @@ export default function RootNavigation(): React.JSX.Element {
 
   return (
     <WatchConnectivitySyncProvider
+      preferencesHydrated={isHydrated}
       notifyImportedEntry={showImportedEntryNotification}
       onImportedEntry={showImportedEntryToast}>
       <VStack
@@ -330,7 +353,7 @@ export default function RootNavigation(): React.JSX.Element {
         }}>
         <NavigationContainer
           ref={rootStackNavigationRef}
-          onReady={refreshVisibleStackRoute}
+          onReady={handleNavigationReady}
           onStateChange={refreshVisibleStackRoute}>
           <Stack.Navigator
             initialRouteName="tabs"
@@ -613,6 +636,19 @@ function LogbookDetailRoute(
   },
 ): React.JSX.Element {
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
+  const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
+
+  React.useEffect(() => {
+    let mounted = true;
+    void props.logbook.loadWatchProfile(props.route.params.localId).then(samples => {
+      if (mounted) {
+        setProfileSamples(samples);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [props.logbook.loadWatchProfile, props.route.params.localId]);
 
   if (!entry) {
     return <MissingRouteScreen navigation={props.navigation} />;
@@ -622,6 +658,7 @@ function LogbookDetailRoute(
     <RoutedScrollScreen>
       <LogEntryDetail
         entry={entry}
+        profileSamples={profileSamples}
         onBack={() => props.navigation.goBack()}
         onEdit={nextEntry => props.navigation.navigate('logbookEdit', { localId: nextEntry.localId })}
         onDelete={async localId => {

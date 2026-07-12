@@ -15,6 +15,14 @@
     "depthMeters": {
       "type": "number"
     },
+    "bucketMinDepthMeters": {
+      "type": "number",
+      "minimum": 0
+    },
+    "bucketMaxDepthMeters": {
+      "type": "number",
+      "minimum": 0
+    },
     "pressureKPa": {
       "type": "number"
     },

@@ -26,6 +26,8 @@
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
 		891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490329F69552608512F0258A /* DiveSessionSummary.swift */; };
 		8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B5388708193690CDCF20BB /* DiveSessionStore.swift */; };
+		A10000000000000000000001 /* OneHertzProfileSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* OneHertzProfileSampler.swift */; };
+		A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* DiveProfileArtifactStore.swift */; };
 		AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */; };
 		ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 972E39BFCAB25BD1867935E1 /* Foundation.framework */; };
 		B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* DemoDepthSensorProvider.swift */; };
@@ -34,6 +36,8 @@
 		C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* WatchConnectivityInbox.swift */; };
 		C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* WatchConnectivityModule.swift */; };
 		C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* WatchConnectivityModuleBridge.m */; };
+		C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000004 /* WatchProfileStorageModule.swift */; };
+		C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */; };
 		C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
@@ -50,6 +54,8 @@
 		FA1000000000000000000008 /* SafetyStopController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000008 /* SafetyStopController.swift */; };
 		FA1000000000000000000009 /* ScubaDiveEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000009 /* ScubaDiveEngineTests.swift */; };
 		FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* ScubaDiveEngine.swift */; };
+		FA100000000000000000000B /* OneHertzProfileSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */; };
+		FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -113,6 +119,8 @@
 		956EB9D331534828E0706E5C /* SessionListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
 		972E39BFCAB25BD1867935E1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthGaugeRail.swift; sourceTree = "<group>"; };
+		A20000000000000000000001 /* OneHertzProfileSampler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSampler.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* DiveProfileArtifactStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStore.swift; sourceTree = "<group>"; };
 		B20000000000000000000001 /* DemoDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoDepthSensorProvider.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* DepthSensorAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorAvailability.swift; sourceTree = "<group>"; };
 		B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthAutoLaunchAuthorization.swift; sourceTree = "<group>"; };
@@ -120,6 +128,8 @@
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = DiveMobile/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = DiveMobile/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = DiveMobile/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
+		D00000000000000000000004 /* WatchProfileStorageModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchProfileStorageModule.swift; path = DiveMobile/WatchProfileStorageModule.swift; sourceTree = "<group>"; };
+		D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchProfileStorageModuleBridge.m; path = DiveMobile/WatchProfileStorageModuleBridge.m; sourceTree = "<group>"; };
 		D5B5388708193690CDCF20BB /* DiveSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionStore.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* ReverseGeocoderModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReverseGeocoderModule.swift; path = DiveMobile/ReverseGeocoderModule.swift; sourceTree = "<group>"; };
 		E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ReverseGeocoderModuleBridge.m; path = DiveMobile/ReverseGeocoderModuleBridge.m; sourceTree = "<group>"; };
@@ -135,6 +145,8 @@
 		FA2000000000000000000008 /* SafetyStopController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SafetyStopController.swift; sourceTree = "<group>"; };
 		FA2000000000000000000009 /* ScubaDiveEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScubaDiveEngineTests.swift; sourceTree = "<group>"; };
 		FA200000000000000000000A /* ScubaDiveEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScubaDiveEngine.swift; sourceTree = "<group>"; };
+		FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSamplerTests.swift; sourceTree = "<group>"; };
+		FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStoreTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -172,6 +184,8 @@
 				D00000000000000000000001 /* WatchConnectivityInbox.swift */,
 				D00000000000000000000002 /* WatchConnectivityModule.swift */,
 				D00000000000000000000003 /* WatchConnectivityModuleBridge.m */,
+				D00000000000000000000004 /* WatchProfileStorageModule.swift */,
+				D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */,
 				E10000000000000000000001 /* ReverseGeocoderModule.swift */,
 				E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -276,6 +290,7 @@
 			isa = PBXGroup;
 			children = (
 				D5B5388708193690CDCF20BB /* DiveSessionStore.swift */,
+				A20000000000000000000002 /* DiveProfileArtifactStore.swift */,
 			);
 			path = Storage;
 			sourceTree = "<group>";
@@ -324,6 +339,7 @@
 			isa = PBXGroup;
 			children = (
 				F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */,
+				A20000000000000000000001 /* OneHertzProfileSampler.swift */,
 				FA2000000000000000000006 /* FreeDiveSessionEngine.swift */,
 				FA2000000000000000000008 /* SafetyStopController.swift */,
 				FA200000000000000000000A /* ScubaDiveEngine.swift */,
@@ -339,6 +355,8 @@
 				FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */,
 				FA2000000000000000000007 /* SafetyStopControllerTests.swift */,
 				FA2000000000000000000009 /* ScubaDiveEngineTests.swift */,
+				FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */,
+				FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */,
 			);
 			path = DiveWatchAppTests;
 			sourceTree = "<group>";
@@ -573,6 +591,8 @@
 				C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */,
 				C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */,
 				C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */,
+				C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */,
+				C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */,
 				E00000000000000000000001 /* ReverseGeocoderModule.swift in Sources */,
 				E00000000000000000000002 /* ReverseGeocoderModuleBridge.m in Sources */,
 			);
@@ -588,6 +608,7 @@
 				FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */,
 				891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */,
 				C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */,
+				A10000000000000000000001 /* OneHertzProfileSampler.swift in Sources */,
 				FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */,
 				FA1000000000000000000008 /* SafetyStopController.swift in Sources */,
 				FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */,
@@ -598,6 +619,7 @@
 				AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */,
 				B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */,
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
+				A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */,
 				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
 				6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */,
 				08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */,
@@ -619,6 +641,8 @@
 				FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */,
 				FA1000000000000000000007 /* SafetyStopControllerTests.swift in Sources */,
 				FA1000000000000000000009 /* ScubaDiveEngineTests.swift in Sources */,
+				FA100000000000000000000B /* OneHertzProfileSamplerTests.swift in Sources */,
+				FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

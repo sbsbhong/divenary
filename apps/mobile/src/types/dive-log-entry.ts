@@ -68,6 +68,12 @@ export type DiveLogWatchCapture = {
   session: WatchSessionCommon;
   measuredValues: DiveLogWatchMeasuredValues;
   samples: WatchDepthSample[];
+  profile?: {
+    storageKey: string;
+    contentRevision: string;
+    sampleCount: number;
+    sha256?: string;
+  };
 };
 
 export type DiveLogFieldProvenance = Partial<

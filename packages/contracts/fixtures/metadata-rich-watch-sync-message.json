@@ -33,11 +33,19 @@
     "maxDepthMeters": 13.2,
     "averageDepthMeters": 7.8,
     "waterTemperatureCelsius": 24.2,
+    "profile": {
+      "formatVersion": 1,
+      "contentRevision": "fixture-rich-revision-1",
+      "sampleIntervalSeconds": 1,
+      "sampleCount": 4
+    },
     "samples": [
       {
         "localSessionId": "fixture-rich-session",
         "timestamp": 1781352000,
         "depthMeters": 0,
+        "bucketMinDepthMeters": 0,
+        "bucketMaxDepthMeters": 0,
         "pressureKPa": 101.325,
         "waterTemperatureCelsius": 24.8
       },
@@ -45,6 +53,8 @@
         "localSessionId": "fixture-rich-session",
         "timestamp": 1781352240,
         "depthMeters": 13.2,
+        "bucketMinDepthMeters": 12.8,
+        "bucketMaxDepthMeters": 13.2,
         "pressureKPa": 230.773,
         "waterTemperatureCelsius": 24.1
       },
@@ -52,6 +62,8 @@
         "localSessionId": "fixture-rich-session",
         "timestamp": 1781352480,
         "depthMeters": 5,
+        "bucketMinDepthMeters": 4.8,
+        "bucketMaxDepthMeters": 5.3,
         "pressureKPa": 150.358,
         "waterTemperatureCelsius": 24.3
       },
@@ -59,6 +71,8 @@
         "localSessionId": "fixture-rich-session",
         "timestamp": 1781352600,
         "depthMeters": 0,
+        "bucketMinDepthMeters": 0,
+        "bucketMaxDepthMeters": 0.4,
         "pressureKPa": 101.325,
         "waterTemperatureCelsius": 24.6
       }

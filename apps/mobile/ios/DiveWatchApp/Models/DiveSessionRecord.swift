@@ -23,7 +23,10 @@ struct UnsupportedDepthRecord: Codable, Equatable {
             return nil
         }
 
-        let firstExceededAt = samples.first { $0.depthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters }?.timestamp
+        let firstExceededAt = samples.first {
+            max($0.depthMeters, $0.bucketMaxDepthMeters ?? $0.depthMeters)
+                > DiveDepthSupport.supportedWatchDepthLimitMeters
+        }?.timestamp
 
         return UnsupportedDepthRecord(
             exceeded: true,
@@ -31,6 +34,28 @@ struct UnsupportedDepthRecord: Codable, Equatable {
             maxDepthMeters: maxDepthMeters,
             firstExceededAt: firstExceededAt
         )
+    }
+}
+
+struct DiveProfileMetadata: Codable, Equatable {
+    let formatVersion: Int
+    let contentRevision: String
+    let sampleIntervalSeconds: Double
+    let sampleCount: Int
+    let interrupted: Bool?
+
+    init(
+        formatVersion: Int = 1,
+        contentRevision: String,
+        sampleIntervalSeconds: Double = 1,
+        sampleCount: Int,
+        interrupted: Bool? = nil
+    ) {
+        self.formatVersion = formatVersion
+        self.contentRevision = contentRevision
+        self.sampleIntervalSeconds = sampleIntervalSeconds
+        self.sampleCount = sampleCount
+        self.interrupted = interrupted
     }
 }
 
@@ -59,6 +84,7 @@ struct DiveSessionRecord: Codable, Identifiable {
     let samples: [DepthSample]
     let unsupportedDepth: UnsupportedDepthRecord?
     let payload: DiveSessionPayload
+    let profile: DiveProfileMetadata?
 
     init(
         id: UUID,
@@ -84,7 +110,8 @@ struct DiveSessionRecord: Codable, Identifiable {
         endedAt: Date?,
         samples: [DepthSample],
         payload: DiveSessionPayload,
-        unsupportedDepth: UnsupportedDepthRecord? = nil
+        unsupportedDepth: UnsupportedDepthRecord? = nil,
+        profile: DiveProfileMetadata? = nil
     ) {
         self.id = id
         self.schemaVersion = schemaVersion
@@ -110,6 +137,7 @@ struct DiveSessionRecord: Codable, Identifiable {
         self.samples = samples
         self.unsupportedDepth = unsupportedDepth ?? UnsupportedDepthRecord.from(samples: samples, payload: payload)
         self.payload = payload
+        self.profile = profile
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -137,6 +165,7 @@ struct DiveSessionRecord: Codable, Identifiable {
         case samples
         case unsupportedDepth
         case payload
+        case profile
     }
 
     init(from decoder: Decoder) throws {
@@ -165,7 +194,8 @@ struct DiveSessionRecord: Codable, Identifiable {
             endedAt: try container.decodeIfPresent(Date.self, forKey: .endedAt),
             samples: try container.decode([DepthSample].self, forKey: .samples),
             payload: try container.decode(DiveSessionPayload.self, forKey: .payload),
-            unsupportedDepth: try container.decodeIfPresent(UnsupportedDepthRecord.self, forKey: .unsupportedDepth)
+            unsupportedDepth: try container.decodeIfPresent(UnsupportedDepthRecord.self, forKey: .unsupportedDepth),
+            profile: try container.decodeIfPresent(DiveProfileMetadata.self, forKey: .profile)
         )
     }
 }
@@ -536,7 +566,16 @@ extension DiveSessionRecord {
             endedAt: safeEndedAt,
             samples: safeSamples,
             payload: safePayload,
-            unsupportedDepth: UnsupportedDepthRecord.from(samples: safeSamples, payload: safePayload)
+            unsupportedDepth: UnsupportedDepthRecord.from(samples: safeSamples, payload: safePayload),
+            profile: profile.map {
+                DiveProfileMetadata(
+                    formatVersion: $0.formatVersion,
+                    contentRevision: $0.contentRevision,
+                    sampleIntervalSeconds: $0.sampleIntervalSeconds,
+                    sampleCount: safeSamples.count,
+                    interrupted: $0.interrupted
+                )
+            }
         )
     }
 }
@@ -765,6 +804,7 @@ private struct RecordWatchSessionPayload: Encodable {
     let averageDepthMeters: Double
     let waterTemperatureCelsius: Double?
     let unsupportedDepth: RecordUnsupportedDepthPayload?
+    let profile: RecordWatchProfileMetadataPayload?
     let samples: [RecordWatchDepthSamplePayload]
     let freedive: RecordWatchFreeDivePayload?
     let scuba: RecordWatchScubaPayload?
@@ -797,6 +837,7 @@ private struct RecordWatchSessionPayload: Encodable {
         averageDepthMeters = summary.averageDepthMeters
         waterTemperatureCelsius = summary.averageWaterTemperatureCelsius
         unsupportedDepth = RecordUnsupportedDepthPayload(record: session.unsupportedDepth)
+        profile = session.profile.map(RecordWatchProfileMetadataPayload.init(metadata:))
         samples = session.samples.map { RecordWatchDepthSamplePayload(sessionId: session.id.uuidString, sample: $0) }
 
         switch session.payload {
@@ -825,6 +866,22 @@ private struct RecordUnsupportedDepthPayload: Encodable {
         limitMeters = record.limitMeters
         maxDepthMeters = record.maxDepthMeters
         firstExceededAt = record.firstExceededAt?.timeIntervalSince1970
+    }
+}
+
+private struct RecordWatchProfileMetadataPayload: Encodable {
+    let formatVersion: Int
+    let contentRevision: String
+    let sampleIntervalSeconds: Double
+    let sampleCount: Int
+    let interrupted: Bool?
+
+    init(metadata: DiveProfileMetadata) {
+        formatVersion = metadata.formatVersion
+        contentRevision = metadata.contentRevision
+        sampleIntervalSeconds = metadata.sampleIntervalSeconds
+        sampleCount = metadata.sampleCount
+        interrupted = metadata.interrupted
     }
 }
 
@@ -938,6 +995,8 @@ private struct RecordWatchDepthSamplePayload: Encodable {
     let localSessionId: String
     let timestamp: Double
     let depthMeters: Double
+    let bucketMinDepthMeters: Double?
+    let bucketMaxDepthMeters: Double?
     let pressureKPa: Double?
     let waterTemperatureCelsius: Double?
 
@@ -945,6 +1004,8 @@ private struct RecordWatchDepthSamplePayload: Encodable {
         localSessionId = sessionId
         timestamp = sample.timestamp.timeIntervalSince1970
         depthMeters = sample.depthMeters
+        bucketMinDepthMeters = sample.bucketMinDepthMeters
+        bucketMaxDepthMeters = sample.bucketMaxDepthMeters
         pressureKPa = sample.pressureKPa
         waterTemperatureCelsius = sample.waterTemperatureCelsius
     }

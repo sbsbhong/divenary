@@ -1,5 +1,5 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
-import type { WatchSyncMessage } from '../types/dive-session';
+import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import { createAsyncStorageKeyValueStore, type PersistentKeyValueStore } from '../storage/persistent-key-value-store';
 import {
@@ -8,6 +8,7 @@ import {
   type StoredEnvelope,
 } from '../storage/persistent-json-store';
 import { mobileStorageKeys } from '../storage/storage-keys';
+import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
 import type { DiveLogRepository } from './dive-log-repository';
 import {
   cloneDiveLogEntry,
@@ -22,21 +23,25 @@ export type PersistentDiveLogRepositoryOptions = {
   now?: () => number;
   initialEntries?: DiveLogEntry[];
   onReadError?: (error: Error) => void;
+  profileStorage?: WatchProfileStorage;
 };
 
 export class PersistentDiveLogRepository implements DiveLogRepository {
   private readonly store: PersistentJsonStore<DiveLogEntry[]>;
   private readonly now: () => number;
+  private readonly profileStorage: WatchProfileStorage;
 
   constructor(options: PersistentDiveLogRepositoryOptions = {}) {
     const initialEntries = options.initialEntries ?? [];
     this.now = options.now ?? getCurrentTimestampSeconds;
+    const metadataStorage = options.storage ?? createAsyncStorageKeyValueStore();
+    this.profileStorage = options.profileStorage ?? createWatchProfileStorage(metadataStorage);
     this.store = new PersistentJsonStore<DiveLogEntry[]>({
       key: mobileStorageKeys.logbook,
       schemaVersion: 3,
       defaultValue: () => initialEntries.map(cloneDiveLogEntry),
       migrate: migrateLogbookEnvelope,
-      storage: options.storage ?? createAsyncStorageKeyValueStore(),
+      storage: metadataStorage,
       now: this.now,
       onReadError: options.onReadError,
     });
@@ -63,16 +68,48 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
 
   async delete(localId: string): Promise<void> {
     const entries = await this.readEntries();
+    const deletedEntry = entries.find(entry => entry.localId === localId);
+    if (deletedEntry?.watchCapture?.profile?.storageKey) {
+      await this.profileStorage.remove(deletedEntry.watchCapture.profile.storageKey);
+    }
     await this.writeEntries(entries.filter(entry => entry.localId !== localId));
   }
 
-  async importWatchMessages(messages: WatchSyncMessage[]): Promise<DiveLogEntry[]> {
+  async importWatchMessages(
+    messages: WatchSyncMessage[],
+    options?: { profileDigests?: Array<string | undefined> },
+  ): Promise<DiveLogEntry[]> {
     const now = this.now();
     let entries = await this.readEntries();
+    const obsoleteProfileKeys = new Set<string>();
 
-    for (const message of messages) {
-      const nextEntry = watchSessionToDiveLogEntry({ session: message.session, now });
+    for (const [messageIndex, message] of messages.entries()) {
+      const fullSamples = message.session.samples;
+      const contentRevision = message.session.profile?.contentRevision
+        ?? `${message.session.endedAt ?? message.session.startedAt}`;
+      const profileStorageKey = makeProfileStorageKey(message.session.localSessionId, contentRevision);
+      await this.profileStorage.write(profileStorageKey, fullSamples);
+      const previewSamples = makePeakPreservingPreview(fullSamples);
+      const nextEntry = watchSessionToDiveLogEntry({
+        session: { ...message.session, samples: previewSamples },
+        now,
+      });
+      nextEntry.watchCapture = nextEntry.watchCapture
+        ? {
+            ...nextEntry.watchCapture,
+            profile: {
+              storageKey: profileStorageKey,
+              contentRevision,
+              sampleCount: fullSamples.length,
+              sha256: options?.profileDigests?.[messageIndex],
+            },
+          }
+        : undefined;
       const currentEntry = findByImportKey(entries, nextEntry.watchCapture?.importKey);
+      const currentProfileKey = currentEntry?.watchCapture?.profile?.storageKey;
+      if (currentProfileKey && currentProfileKey !== profileStorageKey) {
+        obsoleteProfileKeys.add(currentProfileKey);
+      }
       const mergedEntry = mergeWatchImport(currentEntry, nextEntry);
 
       entries = currentEntry
@@ -81,7 +118,21 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     }
 
     await this.writeEntries(entries);
+    await Promise.all(Array.from(obsoleteProfileKeys, key => this.profileStorage.remove(key)));
     return this.list();
+  }
+
+  async getWatchProfile(localId: string): Promise<WatchDepthSample[]> {
+    const entry = (await this.readEntries()).find(candidate => candidate.localId === localId);
+    const reference = entry?.watchCapture?.profile;
+    if (!reference) {
+      return entry?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
+    }
+    const stored = await this.profileStorage.read(reference.storageKey);
+    if (!stored) {
+      return entry?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
+    }
+    return stored;
   }
 
   private async readEntries(): Promise<DiveLogEntry[]> {
@@ -133,4 +184,24 @@ function findByImportKey(entries: DiveLogEntry[], importKey: string | undefined)
 
 function getCurrentTimestampSeconds(): number {
   return Date.now() / 1000;
+}
+
+function makeProfileStorageKey(localSessionId: string, contentRevision: string): string {
+  return `dive-mobile:watch-profile:${encodeURIComponent(localSessionId)}:${encodeURIComponent(contentRevision)}`;
+}
+
+function makePeakPreservingPreview(samples: WatchDepthSample[], limit = 160): WatchDepthSample[] {
+  if (samples.length <= limit) {
+    return samples;
+  }
+  const bucketSize = samples.length / limit;
+  return Array.from({ length: limit }, (_, index) => {
+    const start = Math.floor(index * bucketSize);
+    const end = Math.max(start + 1, Math.floor((index + 1) * bucketSize));
+    return samples.slice(start, end).reduce((deepest, sample) => {
+      const deepestValue = deepest.bucketMaxDepthMeters ?? deepest.depthMeters;
+      const sampleValue = sample.bucketMaxDepthMeters ?? sample.depthMeters;
+      return sampleValue > deepestValue ? sample : deepest;
+    });
+  });
 }

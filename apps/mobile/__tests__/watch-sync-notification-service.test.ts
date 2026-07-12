@@ -13,6 +13,7 @@ jest.mock('@notifee/react-native', () => {
     createChannel: jest.fn(async () => 'watch-sync-imports'),
     displayNotification: jest.fn(async () => 'notification-id'),
     getInitialNotification: jest.fn(async () => null),
+    getNotificationSettings: jest.fn(async () => ({ authorizationStatus: -1 })),
     onForegroundEvent: jest.fn(),
     requestPermission: jest.fn(async () => ({ authorizationStatus: 1 })),
   };
@@ -63,6 +64,9 @@ const makeEntry = () => {
 describe('watch sync notification service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (notifee.getNotificationSettings as jest.Mock).mockResolvedValue({
+      authorizationStatus: AuthorizationStatus.NOT_DETERMINED,
+    });
     Object.defineProperty(AppState, 'currentState', {
       configurable: true,
       value: 'background',
@@ -88,6 +92,15 @@ describe('watch sync notification service', () => {
     });
 
     await expect(requestWatchSyncNotificationPermission()).resolves.toBe(false);
+  });
+
+  it('does not request again after iOS has already denied permission', async () => {
+    (notifee.getNotificationSettings as jest.Mock).mockResolvedValueOnce({
+      authorizationStatus: AuthorizationStatus.DENIED,
+    });
+
+    await expect(requestWatchSyncNotificationPermission()).resolves.toBe(false);
+    expect(notifee.requestPermission).not.toHaveBeenCalled();
   });
 
   it('displays the local-device watch import notification when enabled outside the foreground', async () => {

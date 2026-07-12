@@ -174,6 +174,35 @@ describe('PersistentDiveLogRepository', () => {
     expect((await repository.get('manual-1'))?.manual.site.name).toBe('Manual Reef');
   });
 
+  it('stores the complete watch profile separately and keeps only a bounded peak preview in metadata', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDiveLogRepository({ storage, now: () => 500 });
+    const samples = Array.from({ length: 1_000 }, (_, index) => ({
+      localSessionId: `sample-${index}`,
+      timestamp: 200 + index,
+      depthMeters: index === 501 ? 42 : index % 20,
+    }));
+
+    const [entry] = await repository.importWatchMessages([{
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-1',
+          sampleIntervalSeconds: 1,
+          sampleCount: samples.length,
+        },
+        samples,
+      },
+    }]);
+
+    expect(entry.watchCapture?.samples.length).toBeLessThanOrEqual(160);
+    expect(entry.watchCapture?.samples.some(sample => sample.depthMeters === 42)).toBe(true);
+    expect(entry.watchCapture?.profile?.sampleCount).toBe(1_000);
+    await expect(repository.getWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+  });
+
   it('does not load pre-reset v1 logbook entries', async () => {
     const storage = new InMemoryKeyValueStore();
     await storage.setString(

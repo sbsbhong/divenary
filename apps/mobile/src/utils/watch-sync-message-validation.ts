@@ -49,6 +49,7 @@ const sessionKeys = [
   'unsupportedDepth',
   'freedive',
   'scuba',
+  'profile',
   'samples',
 ] as const;
 const locationKeys = ['latitude', 'longitude', 'horizontalAccuracyMeters', 'capturedAt'] as const;
@@ -101,7 +102,16 @@ const safetyStopStatuses = [
   'completed',
   'skippedOrIncomplete',
 ] as const;
-const sampleKeys = ['localSessionId', 'timestamp', 'depthMeters', 'pressureKPa', 'waterTemperatureCelsius'] as const;
+const profileKeys = ['formatVersion', 'contentRevision', 'sampleIntervalSeconds', 'sampleCount', 'interrupted'] as const;
+const sampleKeys = [
+  'localSessionId',
+  'timestamp',
+  'depthMeters',
+  'bucketMinDepthMeters',
+  'bucketMaxDepthMeters',
+  'pressureKPa',
+  'waterTemperatureCelsius',
+] as const;
 
 type WatchLocation = NonNullable<WatchSession['entryLocation']>;
 type FreeDivePayload = NonNullable<WatchSession['freedive']>;
@@ -109,6 +119,7 @@ type FreeDiveSegment = FreeDivePayload['segments'][number];
 type ScubaPayload = NonNullable<WatchSession['scuba']>;
 type SafetyStopRecord = ScubaPayload['safetyStop'];
 type UnsupportedDepthRecord = NonNullable<WatchSessionCommon['unsupportedDepth']>;
+type WatchProfileMetadata = NonNullable<WatchSessionCommon['profile']>;
 
 export function parseWatchSyncMessageJson(rawJson: string): WatchSyncMessageParseResult {
   try {
@@ -227,6 +238,12 @@ function parseWatchSession(value: unknown, path: string): ValidationResult<Watch
     return schemaVersion;
   }
   assignOptional(session, 'schemaVersion', schemaVersion.value);
+
+  const profile = readObject(objectResult.value, 'profile', path, parseWatchProfileMetadata);
+  if (!profile.ok) {
+    return profile;
+  }
+  assignOptional(session, 'profile', profile.value);
 
   const captureMode = readEnum(objectResult.value, 'captureMode', captureModes, path);
   if (!captureMode.ok) {
@@ -902,6 +919,14 @@ function parseWatchDepthSample(value: unknown, path: string): ValidationResult<W
   }
   assignOptional(sample, 'pressureKPa', pressureKPa.value);
 
+  for (const key of ['bucketMinDepthMeters', 'bucketMaxDepthMeters'] as const) {
+    const result = readNumber(objectResult.value, key, path, { min: 0 });
+    if (!result.ok) {
+      return result;
+    }
+    assignOptional(sample, key, result.value);
+  }
+
   const waterTemperatureCelsius = readNumber(objectResult.value, 'waterTemperatureCelsius', path);
   if (!waterTemperatureCelsius.ok) {
     return waterTemperatureCelsius;
@@ -909,6 +934,66 @@ function parseWatchDepthSample(value: unknown, path: string): ValidationResult<W
   assignOptional(sample, 'waterTemperatureCelsius', waterTemperatureCelsius.value);
 
   return { ok: true, value: sample };
+}
+
+function parseWatchProfileMetadata(value: unknown, path: string): ValidationResult<WatchProfileMetadata> {
+  const objectResult = expectRecord(value, path);
+  if (!objectResult.ok) {
+    return objectResult;
+  }
+
+  const keyResult = expectAllowedKeys(objectResult.value, profileKeys, path);
+  if (!keyResult.ok) {
+    return keyResult;
+  }
+
+  const formatVersion = readInteger(objectResult.value, 'formatVersion', path, { required: true, min: 1, max: 1 });
+  if (!formatVersion.ok || formatVersion.value === undefined) {
+    return formatVersion.ok
+      ? failure(joinPath(path, 'formatVersion'), `${joinPath(path, 'formatVersion')} is required`)
+      : formatVersion;
+  }
+
+  const contentRevision = readString(objectResult.value, 'contentRevision', path, { required: true });
+  if (!contentRevision.ok || contentRevision.value === undefined || contentRevision.value.length === 0) {
+    return contentRevision.ok
+      ? failure(joinPath(path, 'contentRevision'), `${joinPath(path, 'contentRevision')} must not be empty`)
+      : contentRevision;
+  }
+
+  const sampleIntervalSeconds = readNumber(objectResult.value, 'sampleIntervalSeconds', path, {
+    required: true,
+    min: 1,
+    max: 1,
+  });
+  if (!sampleIntervalSeconds.ok || sampleIntervalSeconds.value === undefined) {
+    return sampleIntervalSeconds.ok
+      ? failure(joinPath(path, 'sampleIntervalSeconds'), `${joinPath(path, 'sampleIntervalSeconds')} is required`)
+      : sampleIntervalSeconds;
+  }
+
+  const sampleCount = readInteger(objectResult.value, 'sampleCount', path, { required: true, min: 0 });
+  if (!sampleCount.ok || sampleCount.value === undefined) {
+    return sampleCount.ok
+      ? failure(joinPath(path, 'sampleCount'), `${joinPath(path, 'sampleCount')} is required`)
+      : sampleCount;
+  }
+
+  const interrupted = readBoolean(objectResult.value, 'interrupted', path);
+  if (!interrupted.ok) {
+    return interrupted;
+  }
+
+  return {
+    ok: true,
+    value: {
+      formatVersion: 1,
+      contentRevision: contentRevision.value,
+      sampleIntervalSeconds: 1,
+      sampleCount: sampleCount.value,
+      ...(interrupted.value === undefined ? {} : { interrupted: interrupted.value }),
+    },
+  };
 }
 
 type RecordValue = Record<string, unknown>;
