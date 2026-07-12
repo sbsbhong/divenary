@@ -70,6 +70,7 @@ public struct WatchSession: Codable {
     public let notes: String?
     public let perceivedExertion: Int?
     public let planTitle: String?
+    public let profile: WatchProfileMetadata?
     public let rating: Int?
     public let samples: [WatchDepthSample]
     public let schemaVersion: Int?
@@ -84,7 +85,7 @@ public struct WatchSession: Codable {
     public let waterCondition: WaterCondition?
     public let waterTemperatureCelsius: Double?
 
-    public init(averageDepthMeters: Double?, buddyIds: [String]?, captureMode: CaptureMode?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, unsupportedDepth: UnsupportedDepthRecord?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
+    public init(averageDepthMeters: Double?, buddyIds: [String]?, captureMode: CaptureMode?, diveMode: DiveMode?, endedAt: Double?, entryLocation: WatchLocation?, exitLocation: WatchLocation?, freedive: FreeDivePayload?, gasLabel: String?, gearIds: [String]?, localSessionId: String, maxDepthMeters: Double?, notes: String?, perceivedExertion: Int?, planTitle: String?, profile: WatchProfileMetadata?, rating: Int?, samples: [WatchDepthSample], schemaVersion: Int?, scuba: ScubaPayload?, siteId: String?, siteName: String?, sourcePlanLocalId: String?, startedAt: Double, syncStatus: SyncStatus?, tags: [String]?, unsupportedDepth: UnsupportedDepthRecord?, visibilityRating: Int?, waterCondition: WaterCondition?, waterTemperatureCelsius: Double?) {
         self.averageDepthMeters = averageDepthMeters
         self.buddyIds = buddyIds
         self.captureMode = captureMode
@@ -100,6 +101,7 @@ public struct WatchSession: Codable {
         self.notes = notes
         self.perceivedExertion = perceivedExertion
         self.planTitle = planTitle
+        self.profile = profile
         self.rating = rating
         self.samples = samples
         self.schemaVersion = schemaVersion
@@ -151,6 +153,7 @@ public extension WatchSession {
         notes: String?? = nil,
         perceivedExertion: Int?? = nil,
         planTitle: String?? = nil,
+        profile: WatchProfileMetadata?? = nil,
         rating: Int?? = nil,
         samples: [WatchDepthSample]? = nil,
         schemaVersion: Int?? = nil,
@@ -182,6 +185,7 @@ public extension WatchSession {
             notes: notes ?? self.notes,
             perceivedExertion: perceivedExertion ?? self.perceivedExertion,
             planTitle: planTitle ?? self.planTitle,
+            profile: profile ?? self.profile,
             rating: rating ?? self.rating,
             samples: samples ?? self.samples,
             schemaVersion: schemaVersion ?? self.schemaVersion,
@@ -412,8 +416,69 @@ public extension FreeDiveSegment {
     }
 }
 
+// MARK: - WatchProfileMetadata
+public struct WatchProfileMetadata: Codable {
+    public let contentRevision: String
+    public let formatVersion: Int
+    public let interrupted: Bool?
+    public let sampleCount: Int
+    public let sampleIntervalSeconds: Double
+
+    public init(contentRevision: String, formatVersion: Int, interrupted: Bool?, sampleCount: Int, sampleIntervalSeconds: Double) {
+        self.contentRevision = contentRevision
+        self.formatVersion = formatVersion
+        self.interrupted = interrupted
+        self.sampleCount = sampleCount
+        self.sampleIntervalSeconds = sampleIntervalSeconds
+    }
+}
+
+// MARK: WatchProfileMetadata convenience initializers and mutators
+
+public extension WatchProfileMetadata {
+    init(data: Data) throws {
+        self = try newJSONDecoder().decode(WatchProfileMetadata.self, from: data)
+    }
+
+    init(_ json: String, using encoding: String.Encoding = .utf8) throws {
+        guard let data = json.data(using: encoding) else {
+            throw NSError(domain: "JSONDecoding", code: 0, userInfo: nil)
+        }
+        try self.init(data: data)
+    }
+
+    init(fromURL url: URL) throws {
+        try self.init(data: try Data(contentsOf: url))
+    }
+
+    func with(
+        contentRevision: String? = nil,
+        formatVersion: Int? = nil,
+        interrupted: Bool?? = nil,
+        sampleCount: Int? = nil,
+        sampleIntervalSeconds: Double? = nil
+    ) -> WatchProfileMetadata {
+        return WatchProfileMetadata(
+            contentRevision: contentRevision ?? self.contentRevision,
+            formatVersion: formatVersion ?? self.formatVersion,
+            interrupted: interrupted ?? self.interrupted,
+            sampleCount: sampleCount ?? self.sampleCount,
+            sampleIntervalSeconds: sampleIntervalSeconds ?? self.sampleIntervalSeconds
+        )
+    }
+
+    func jsonData() throws -> Data {
+        return try newJSONEncoder().encode(self)
+    }
+
+    func jsonString(encoding: String.Encoding = .utf8) throws -> String? {
+        return String(data: try self.jsonData(), encoding: encoding)
+    }
+}
+
 // MARK: - WatchDepthSample
 public struct WatchDepthSample: Codable {
+    public let bucketMaxDepthMeters, bucketMinDepthMeters: Double?
     public let depthMeters: Double
     public let localSessionId: String
     public let pressureKPa: Double?
@@ -421,7 +486,9 @@ public struct WatchDepthSample: Codable {
     public let timestamp: Double
     public let waterTemperatureCelsius: Double?
 
-    public init(depthMeters: Double, localSessionId: String, pressureKPa: Double?, timestamp: Double, waterTemperatureCelsius: Double?) {
+    public init(bucketMaxDepthMeters: Double?, bucketMinDepthMeters: Double?, depthMeters: Double, localSessionId: String, pressureKPa: Double?, timestamp: Double, waterTemperatureCelsius: Double?) {
+        self.bucketMaxDepthMeters = bucketMaxDepthMeters
+        self.bucketMinDepthMeters = bucketMinDepthMeters
         self.depthMeters = depthMeters
         self.localSessionId = localSessionId
         self.pressureKPa = pressureKPa
@@ -449,6 +516,8 @@ public extension WatchDepthSample {
     }
 
     func with(
+        bucketMaxDepthMeters: Double?? = nil,
+        bucketMinDepthMeters: Double?? = nil,
         depthMeters: Double? = nil,
         localSessionId: String? = nil,
         pressureKPa: Double?? = nil,
@@ -456,6 +525,8 @@ public extension WatchDepthSample {
         waterTemperatureCelsius: Double?? = nil
     ) -> WatchDepthSample {
         return WatchDepthSample(
+            bucketMaxDepthMeters: bucketMaxDepthMeters ?? self.bucketMaxDepthMeters,
+            bucketMinDepthMeters: bucketMinDepthMeters ?? self.bucketMinDepthMeters,
             depthMeters: depthMeters ?? self.depthMeters,
             localSessionId: localSessionId ?? self.localSessionId,
             pressureKPa: pressureKPa ?? self.pressureKPa,
