@@ -10,14 +10,14 @@ Updated: 2026-07-12
 
 ## 현재 상태
 
-즉시 hardening은 완료됐다.
+즉시 hardening의 코드 구현과 자동 검증은 완료됐다. 건식 실기기 검증은 완료되지 않았으므로 P0 Wave 1은 현재 활성 gate다.
 
 - 자동 event와 수동 drain은 process-wide `WatchConnectivityImportCoordinator`를 공유한다. 같은 `payloadId`는 합쳐지고 서로 다른 payload는 직렬 처리되며 실패 뒤에도 queue가 계속된다.
 - Watch 수온은 optional이다. 첫 수온 update 전 값을 `0°C`로 만들지 않고, 수온이 없는 sample도 깊이·압력 기록으로 보존한다.
 - 모바일 `DiveLogEntry.cloudSyncStatus`와 raw Watch `session.syncStatus`를 분리했다. Logbook schema 2의 모든 기존 모바일 상태는 schema 3에서 `notConfigured`로 migration한다. Cloud backend가 없을 때는 cloud filter와 status pill을 표시하지 않는다.
 - `DiveWatchAppDebug`에서 deterministic 8,000-sample `Test Large Sync`를 일반 저장·전송 경로로 실행할 수 있다.
 
-자동 검증은 통과했지만 Watch 앱 실기기 설치와 물리 테스트는 아직 실행하지 않았다. Simulator나 mock 결과를 실기기 또는 수중 동작의 증거로 쓰지 않는다.
+자동 검증은 통과했지만 Watch 앱 실기기 설치와 물리 테스트는 아직 실행하지 않았다. 따라서 reconnect crash 부재, background delivery, large file transfer는 완료로 판정하지 않는다. Simulator나 mock 결과를 실기기 또는 수중 동작의 증거로 쓰지 않는다.
 
 ## P0 Wave 1: 건식 실기기
 

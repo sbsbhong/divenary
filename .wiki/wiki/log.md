@@ -1,5 +1,16 @@
 # Wiki Log
 
+## [2026-07-12] ingest | Pre-real-dive P0 readiness and QA boundary
+- Added: Pre-real-dive readiness scope and immediate hardening raw source
+- Updated: 구현 우선순위 기록
+- Updated: Diving App / QA and Test Plan
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 결정: 실제 프리다이빙·스쿠버만 제외하고 건식 실기기, 얕은 물 센서, Supabase/Auth, Memory/share와 출시 준비를 모두 P0로 유지
+  - 구현: Watch import 직렬화, optional 수온, cloud/Watch status 분리, DEBUG large payload fixture
+- 요약:
+  - 코드 hardening과 자동 검증은 완료됐지만 Watch 설치와 물리 검증은 미완료다. QA 문서에서 감압·조직·gas safety 계산을 제거하고 자동, 건식, 얕은 물, cloud/product, 출시, 실제 잠수 gate를 분리했다.
+
 ## [2026-07-10] ingest | Watch home launch sensor deferral
 - Added: Watch home launch sensor deferral raw source
 - Updated: Watch 앱 구조

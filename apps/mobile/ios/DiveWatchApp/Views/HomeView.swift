@@ -72,6 +72,7 @@ struct HomeView: View {
                     }
                     .buttonStyle(.plain)
 
+                    #if DEBUG
                     if showsDebugControls {
                         NavigationLink {
                             RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .debugTest)
@@ -104,6 +105,7 @@ struct HomeView: View {
                         }
                         .buttonStyle(DiveActionButtonStyle(kind: .secondary))
                     }
+                    #endif
 
                     if let latestSession = store.sessions.first {
                         LatestSessionCard(session: latestSession)

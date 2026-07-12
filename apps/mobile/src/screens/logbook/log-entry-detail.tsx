@@ -34,6 +34,8 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const averageDepth = getMeasuredValue(props.entry, 'averageDepthMeters');
   const waterTemperature = getMeasuredValue(props.entry, 'waterTemperatureCelsius');
   const duration = getMeasuredValue(props.entry, 'durationSeconds');
+  const watchSamples = props.entry.watchCapture?.samples ?? [];
+  const hasTemperatureSamples = watchSamples.some(sample => sample.waterTemperatureCelsius !== undefined);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
   const tags = props.entry.manual.tags.length ? props.entry.manual.tags.join(', ') : t('logbook.none');
   const buddies = props.entry.manual.buddyIds.length ? props.entry.manual.buddyIds.join(', ') : t('logbook.none');
@@ -92,11 +94,13 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
           />
         </HStack>
         <HStack space="md">
-          <DetailMetric
-            label={t('logbook.waterTemp')}
-            value={formatTemperature(waterTemperature.value)}
-            source={waterTemperature.source}
-          />
+          {waterTemperature.value !== undefined ? (
+            <DetailMetric
+              label={t('logbook.waterTemp')}
+              value={formatTemperature(waterTemperature.value)}
+              source={waterTemperature.source}
+            />
+          ) : null}
           <DetailMetric
             label={t('logbook.duration')}
             value={formatDetailDuration(duration.value)}
@@ -119,12 +123,14 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
               kind="depth"
               title={t('logbook.depthProfile')}
             />
-            <SessionProfile
-              testID="log-entry-detail-temperature-profile"
-              samples={props.entry.watchCapture.samples}
-              kind="temperature"
-              title={t('logbook.temperatureProfile')}
-            />
+            {hasTemperatureSamples ? (
+              <SessionProfile
+                testID="log-entry-detail-temperature-profile"
+                samples={props.entry.watchCapture.samples}
+                kind="temperature"
+                title={t('logbook.temperatureProfile')}
+              />
+            ) : null}
           </>
         ) : null}
       </DiveSummaryCard.Body>

@@ -62,6 +62,16 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertTrue(sample.isValidRecordingSample)
     }
 
+    func testSampleWithoutTemperatureOmitsTemperatureFromJSON() throws {
+        let sample = EngineTestFixtures.sample(0, depth: 1.2, temperature: nil)
+
+        let data = try JSONEncoder().encode(sample)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertNil(object["waterTemperatureCelsius"])
+        XCTAssertEqual(object["depthMeters"] as? Double, 1.2)
+    }
+
     func testFinishMarksSurfacedRequiredStopIncomplete() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))

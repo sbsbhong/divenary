@@ -6,6 +6,7 @@ import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repos
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import type { WatchConnectivityPayload } from '../src/native/watch-connectivity';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
+import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
 import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -42,6 +43,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('subscribes before draining pending payloads so startup deliveries are not missed', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
     const startupOrder: string[] = [];
 
     await ReactTestRenderer.act(async () => {
@@ -49,6 +51,7 @@ describe('WatchConnectivitySyncProvider', () => {
         <QueryClientProvider client={queryClient}>
           <WatchConnectivitySyncProvider
             repository={repository}
+            coordinator={coordinator}
             drainPendingPayloads={async () => {
               startupOrder.push('drain');
               return [];
@@ -834,5 +837,93 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(acknowledgeImportedPayloads).not.toHaveBeenCalledWith(['queue-payload-first']);
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['queue-payload-second']);
     expect(await repository.list()).toHaveLength(1);
+  });
+
+  it('deduplicates concurrent distinct payloads that share one session import key', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    let acknowledgedCount = 0;
+    let resolveAcknowledgements = () => {};
+    const acknowledgementsComplete = new Promise<void>(resolve => {
+      resolveAcknowledgements = resolve;
+    });
+    const acknowledgeImportedPayloads = jest.fn().mockImplementation(async () => {
+      acknowledgedCount += 1;
+      if (acknowledgedCount === 2) {
+        resolveAcknowledgements();
+      }
+    });
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    const makePayload = (payloadId: string): WatchConnectivityPayload => ({
+      payloadId,
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    });
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            subscribeToPayloads={handler => {
+              listener = handler;
+              return { remove: jest.fn() };
+            }}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      listener?.(makePayload('same-session-a'));
+      listener?.(makePayload('same-session-b'));
+      await acknowledgementsComplete;
+    });
+
+    expect(await repository.list()).toHaveLength(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['same-session-a']);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['same-session-b']);
+  });
+
+  it('redelivers without duplication after acknowledgement fails', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const acknowledgeImportedPayloads = jest.fn()
+      .mockRejectedValueOnce(new Error('watch unavailable'))
+      .mockResolvedValueOnce(undefined);
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'ack-retry-payload',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await expect(importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [payload],
+      acknowledgeImportedPayloads,
+      coordinator,
+    })).rejects.toThrow('watch unavailable');
+
+    const result = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [payload],
+      acknowledgeImportedPayloads,
+      coordinator,
+    });
+
+    expect(result.importedCount).toBe(1);
+    expect(await repository.list()).toHaveLength(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2);
   });
 });

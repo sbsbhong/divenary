@@ -50,34 +50,41 @@ describe('PersistentDiveLogRepository', () => {
   it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {
     const storage = new InMemoryKeyValueStore();
     const legacyStatuses = ['localOnly', 'pending', 'synced', 'failed'] as const;
-    const legacyEntries = legacyStatuses.map((syncStatus, index) => ({
-      ...manualEntry({
+    const legacyEntries = legacyStatuses.map((syncStatus, index) => {
+      const currentEntry = manualEntry({
         localId: `legacy-${syncStatus}`,
         manual: {
           ...manualEntry().manual,
           notes: index === 1 ? 'Keep mobile edits.' : undefined,
         },
-      }),
-      syncStatus,
-      ...(index === 1
-        ? {
-            source: 'watch' as const,
-            watchCapture: {
-              importKey: 'legacy-watch:260',
-              importedAt: 300,
-              session: {
-                localSessionId: 'legacy-watch',
-                startedAt: 200,
-                endedAt: 260,
-                syncStatus: 'synced' as const,
+      });
+      const schema2Entry = { ...currentEntry };
+      delete (schema2Entry as Partial<DiveLogEntry>).cloudSyncStatus;
+
+      return {
+        ...schema2Entry,
+        syncStatus,
+        ...(index === 1
+          ? {
+              source: 'watch' as const,
+              watchCapture: {
+                importKey: 'legacy-watch:260',
+                importedAt: 300,
+                session: {
+                  localSessionId: 'legacy-watch',
+                  startedAt: 200,
+                  endedAt: 260,
+                  syncStatus: 'synced' as const,
+                  samples: [],
+                },
+                measuredValues: { startedAt: 200, endedAt: 260 },
                 samples: [],
               },
-              measuredValues: { startedAt: 200, endedAt: 260 },
-              samples: [],
-            },
-          }
-        : {}),
-    }));
+            }
+          : {}),
+      };
+    });
+    expect(legacyEntries.every(entry => !('cloudSyncStatus' in entry))).toBe(true);
     await storage.setString(
       mobileStorageKeys.logbook,
       JSON.stringify({ schemaVersion: 2, updatedAt: 500, value: legacyEntries }),
@@ -94,6 +101,7 @@ describe('PersistentDiveLogRepository', () => {
     ]);
     expect(watchEntry?.watchCapture?.session.syncStatus).toBe('synced');
     expect(watchEntry?.manual.notes).toBe('Keep mobile edits.');
+    expect(entries.every(entry => !('syncStatus' in entry))).toBe(true);
   });
 
   it('saves, reloads, sorts, and deletes persisted entries', async () => {

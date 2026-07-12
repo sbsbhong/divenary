@@ -1187,6 +1187,42 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'log-entry-detail-note' }).props.children).toBe('Watch quick note from pre-dive');
   });
 
+  test('detail hides temperature metric and profile when no temperature was measured', async () => {
+    const watchEntryWithoutTemperature: DiveLogEntry = {
+      ...watchEntry,
+      localId: 'watch-entry-without-temperature',
+      manual: {
+        ...watchEntry.manual,
+        site: { name: 'Depth Only Reef' },
+      },
+      watchCapture: {
+        ...watchEntry.watchCapture!,
+        session: {
+          ...watchEntry.watchCapture!.session,
+          localSessionId: 'watch-entry-without-temperature',
+          siteName: 'Depth Only Reef',
+          samples: [
+            { localSessionId: 'watch-entry-without-temperature', timestamp: 1781352000, depthMeters: 0 },
+            { localSessionId: 'watch-entry-without-temperature', timestamp: 1781352300, depthMeters: 12 },
+          ],
+        },
+        samples: [
+          { localSessionId: 'watch-entry-without-temperature', timestamp: 1781352000, depthMeters: 0 },
+          { localSessionId: 'watch-entry-without-temperature', timestamp: 1781352300, depthMeters: 12 },
+        ],
+      },
+    };
+    const repository = new LocalDiveLogRepository([watchEntryWithoutTemperature]);
+    const renderer = await renderLogbook(repository);
+    const root = renderer.root;
+
+    await press(root, 'logbook-list-item-Depth Only Reef');
+
+    expect(root.findAll(node => node.props.children === 'Water temp')).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'log-entry-detail-temperature-profile' })).toHaveLength(0);
+    expect(root.findByProps({ testID: 'log-entry-detail-depth-profile' })).toBeTruthy();
+  });
+
   test('detail renders watch profiles with 850 raw samples', async () => {
     const largeSamples = Array.from({ length: 850 }, (_, index) => ({
       localSessionId: 'watch-entry-large-profile',

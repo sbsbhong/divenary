@@ -46,12 +46,17 @@ Physical matrix: NOT RUN. The Watch app has not been installed on the physical W
 
 Automated post-change gates:
 
-- Watch import coordinator Jest suite: PASS, 15 tests.
+- Watch import coordinator Jest suite: PASS, 17 tests. Same-payload coalescing, same-session distinct payload dedupe, serialized failure recovery, and acknowledgement-failure redelivery are covered.
 - Mobile cloud/Watch status separation suites: PASS, 107 tests with `--forceExit`; `App.test.tsx` has a pre-existing open-handle exit warning even when run alone.
+- Full mobile Jest: PASS, 32 suites and 314 tests with `--forceExit`; the existing open-handle exit warning remains.
 - Mobile TypeScript: PASS.
-- Optional-temperature Watch suites: PASS, 30 tests.
+- Full Watch XCTest: PASS, 70 tests.
+- Optional-temperature Watch tests include JSON omission and mobile detail UI hiding when no temperature was measured.
 - Large fixture Watch persistence/transport suite: PASS, 21 tests.
 - Native WatchConnectivity source contract: PASS, 31 tests.
 - `yarn watch:build`: PASS.
+- Watch Release simulator build: PASS. DEBUG-only large fixture controls are excluded at compile time.
+- `yarn ios:build`: PASS for the iOS Simulator app and embedded Watch app.
+- `yarn codex:check`: PASS after final review fixes. The sandboxed run blocked the Swift macro plugin; the unrestricted rerun passed.
 
 The next physical run must use the repository checklist. No paired Watch delivery, reconnect, background/killed delivery, large file transfer, or shallow-water sensor result is claimed yet.
