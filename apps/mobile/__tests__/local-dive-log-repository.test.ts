@@ -38,7 +38,7 @@ describe('LocalDiveLogRepository', () => {
       localId: 'watch:repo-watch-session-1:1781352600',
       createdAt: 1781354000,
       updatedAt: 1781354000,
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         site: {
           name: 'Repository Reef',
@@ -126,7 +126,7 @@ describe('LocalDiveLogRepository', () => {
       localId: importedEntry.localId,
       createdAt: importedEntry.createdAt,
       updatedAt: 1781354000,
-      syncStatus: 'pending',
+      cloudSyncStatus: 'notConfigured',
       manual: {
         site: { siteId: 'manual-site', name: 'Manual Reef' },
         buddyIds: ['manual-buddy'],
