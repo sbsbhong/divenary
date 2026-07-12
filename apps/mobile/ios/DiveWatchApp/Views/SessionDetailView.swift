@@ -44,7 +44,9 @@ struct SessionDetailView: View {
                 InstrumentCard {
                     VStack(spacing: 6) {
                         SummaryRow(title: String(localized: "Average depth"), value: DiveFormatters.depth(summary.averageDepthMeters))
-                        SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(summary.averageWaterTemperatureCelsius))
+                        if let averageTemperature = summary.averageWaterTemperatureCelsius {
+                            SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(averageTemperature))
+                        }
                         SummaryRow(title: String(localized: "Samples"), value: "\(summary.sampleCount)")
                         SummaryRow(
                             title: String(localized: "Ascent reminder max"),

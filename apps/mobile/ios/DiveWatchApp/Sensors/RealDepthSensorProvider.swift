@@ -39,7 +39,7 @@ final class RealDepthSensorProvider: NSObject, DepthSensorProvider, CMWaterSubme
                 timestamp: measurement.date,
                 depthMeters: depth,
                 pressureKPa: pressure,
-                waterTemperatureCelsius: latestTemperatureCelsius ?? 0
+                waterTemperatureCelsius: latestTemperatureCelsius
             )
         )
     }

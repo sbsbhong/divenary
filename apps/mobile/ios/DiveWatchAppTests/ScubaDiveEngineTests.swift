@@ -44,6 +44,24 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertEqual(session.maxAscentRateMetersPerMinute, 6)
     }
 
+    func testEngineAveragesOnlyAvailableTemperatures() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
+        engine.append(EngineTestFixtures.sample(0, depth: 0, temperature: nil))
+        engine.append(EngineTestFixtures.sample(60, depth: 12, temperature: 22))
+        engine.append(EngineTestFixtures.sample(120, depth: 6, temperature: nil))
+        engine.append(EngineTestFixtures.sample(180, depth: 3, temperature: 24))
+
+        let session = engine.finish(at: EngineTestFixtures.date(240))
+
+        XCTAssertEqual(session.waterTemperatureCelsius, 23)
+    }
+
+    func testSampleWithoutTemperatureRemainsValidForRecording() {
+        let sample = EngineTestFixtures.sample(0, depth: 1.2, temperature: nil)
+
+        XCTAssertTrue(sample.isValidRecordingSample)
+    }
+
     func testFinishMarksSurfacedRequiredStopIncomplete() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))

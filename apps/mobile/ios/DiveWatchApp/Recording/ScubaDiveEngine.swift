@@ -63,8 +63,9 @@ struct ScubaDiveEngine {
     }
 
     private var averageTemperature: Double? {
-        guard !samples.isEmpty else { return nil }
-        return samples.reduce(0) { $0 + $1.waterTemperatureCelsius } / Double(samples.count)
+        let temperatures = samples.compactMap(\.waterTemperatureCelsius)
+        guard !temperatures.isEmpty else { return nil }
+        return temperatures.reduce(0, +) / Double(temperatures.count)
     }
 
     private static func ascentRate(from previous: DepthSample?, to current: DepthSample) -> Double {

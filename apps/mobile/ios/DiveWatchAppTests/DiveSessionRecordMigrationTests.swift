@@ -79,6 +79,23 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testScubaRecorderKeepsLastMeasuredTemperatureWhenNextSampleHasNone() async throws {
+        let sensorProvider = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(sensorProvider: sensorProvider, captureMode: .demo)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(EngineTestFixtures.sample(0, depth: 0, temperature: 24))
+        sensorProvider.emit(EngineTestFixtures.sample(60, depth: 2, temperature: nil))
+        await Task.yield()
+
+        let record = try XCTUnwrap(recorder.stopSession())
+
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
+        XCTAssertEqual(record.samples.count, 2)
+        XCTAssertNil(record.samples.last?.waterTemperatureCelsius)
+    }
+
+    @MainActor
     func testStoreSavesDebugFreediveWhenCompanionTransportFails() throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()

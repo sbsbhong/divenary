@@ -5,14 +5,14 @@ struct DepthSample: Codable, Identifiable {
     let timestamp: Date
     let depthMeters: Double
     let pressureKPa: Double
-    let waterTemperatureCelsius: Double
+    let waterTemperatureCelsius: Double?
 
     init(
         id: UUID = UUID(),
         timestamp: Date = Date(),
         depthMeters: Double,
         pressureKPa: Double,
-        waterTemperatureCelsius: Double
+        waterTemperatureCelsius: Double?
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -24,7 +24,7 @@ struct DepthSample: Codable, Identifiable {
     var isValidRecordingSample: Bool {
         depthMeters.isFinite
             && pressureKPa.isFinite
-            && waterTemperatureCelsius.isFinite
+            && (waterTemperatureCelsius?.isFinite ?? true)
             && depthMeters >= 0
             && pressureKPa >= 0
     }

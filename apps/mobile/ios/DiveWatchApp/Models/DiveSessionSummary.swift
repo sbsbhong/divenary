@@ -17,7 +17,7 @@ struct DiveSessionSummary: Codable {
         let averageDepthMeters = sampleCount == 0
             ? 0
             : session.samples.reduce(0) { $0 + $1.depthMeters } / Double(sampleCount)
-        let temperatures = session.samples.map(\.waterTemperatureCelsius)
+        let temperatures = session.samples.compactMap(\.waterTemperatureCelsius)
         let averageWaterTemperatureCelsius = temperatures.isEmpty
             ? nil
             : temperatures.reduce(0, +) / Double(temperatures.count)
@@ -42,7 +42,7 @@ struct DiveSessionSummary: Codable {
         let averageDepthMeters = sampleCount == 0
             ? 0
             : record.samples.reduce(0) { $0 + $1.depthMeters } / Double(sampleCount)
-        let temperatures = record.samples.map(\.waterTemperatureCelsius)
+        let temperatures = record.samples.compactMap(\.waterTemperatureCelsius)
         let averageWaterTemperatureCelsius = temperatures.isEmpty
             ? nil
             : temperatures.reduce(0, +) / Double(temperatures.count)

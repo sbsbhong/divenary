@@ -493,7 +493,7 @@ private struct DiveSampleStats {
         averageDepthMeters = samples.isEmpty
             ? 0
             : samples.reduce(0) { $0 + $1.depthMeters } / Double(samples.count)
-        let temperatures = samples.map(\.waterTemperatureCelsius)
+        let temperatures = samples.compactMap(\.waterTemperatureCelsius)
         averageWaterTemperatureCelsius = temperatures.isEmpty
             ? nil
             : temperatures.reduce(0, +) / Double(temperatures.count)

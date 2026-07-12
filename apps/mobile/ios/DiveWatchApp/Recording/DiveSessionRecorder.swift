@@ -168,7 +168,9 @@ final class DiveSessionRecorder: ObservableObject {
         samples.append(sample)
         currentDepth = sample.depthMeters
         maxDepth = max(maxDepth, sample.depthMeters)
-        waterTemperatureCelsius = sample.waterTemperatureCelsius
+        if let measuredTemperature = sample.waterTemperatureCelsius {
+            waterTemperatureCelsius = measuredTemperature
+        }
         latestAscentRateMetersPerMinute = ascentRate(from: previousSample, to: sample)
         ascentWarningActive = latestAscentRateMetersPerMinute > recommendedAscentRateMetersPerMinute
 

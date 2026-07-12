@@ -11,7 +11,7 @@ enum EngineTestFixtures {
     static func sample(
         _ secondsAfterStart: TimeInterval,
         depth: Double,
-        temperature: Double = 24,
+        temperature: Double? = 24,
         id: UUID? = nil
     ) -> DepthSample {
         DepthSample(
