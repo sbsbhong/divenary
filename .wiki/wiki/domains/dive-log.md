@@ -1,12 +1,12 @@
 # 다이브 로그 도메인
 
-Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
-Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
-Updated: 2026-07-09
+Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
-Dive log domain은 현재 watch에서 기록한 레크리에이션 세션과 모바일에서 직접 작성한 수동 로그를 과거 기록 확인, 모바일 import, 비중요 계획/기억 화면에 쓰기 위해 model한다. Watch-origin log는 mode별 payload를 보존하며, freedive는 한 session 안의 여러 dive segment를, scuba는 rule-based safety stop reminder 결과를 담을 수 있다. Cloud sync가 아직 없으므로 watch import가 local repository에 저장되고 watch로 acknowledgement를 돌려보내도 모바일 visible cloud status는 `pending`으로 남는다. Safety stop 기록은 감압 정지 기록과 같은 의미가 아니며, future decompression stop은 별도 설계가 필요하다.
+Dive log domain은 watch 기록과 모바일 수동 로그를 과거 기록 확인과 review에 사용한다. Watch transfer status는 raw capture에 보존하고, 모바일 cloud 상태는 별도 `cloudSyncStatus`로 관리한다. Backend가 없는 현재 값은 `notConfigured`이며 cloud 상태 UI를 표시하지 않는다. Safety stop 기록은 감압 정지 기록과 같은 의미가 아니다.
 
 ## 현재 상태
 
@@ -75,12 +75,12 @@ Mobile model은 `WatchSession`과 모바일 최종 로그 항목을 분리한다
 
 - `source`: `manual` 또는 `watch`.
 - `fieldSource`: `manual`, `mobile`, `watch` provenance.
-- `syncStatus`: `localOnly`, `pending`, `synced`, `failed`.
+- `cloudSyncStatus`: `notConfigured`, `pending`, `synced`, `failed`.
 - `localId`: 로컬 저장 기준 식별자.
 - `remoteId`: future Supabase row와 연결하는 선택 식별자.
 - `ownerUserId`: future authenticated user 연결.
 
-`synced`와 `failed`는 future cloud sync를 위해 model type에 남아 있지만, 현재 화면에서 non-local log의 visible cloud status는 `pending`으로 접는다. `localOnly` 수동 로그만 cloud status badge에서 제외된다.
+`pending`/`synced`/`failed`는 future cloud outbox 상태를 위해 예약된다. Backend와 outbox가 없으므로 현재 수동/watch 항목은 모두 `notConfigured`이며 cloud badge와 filter를 숨긴다. Raw Watch `session.syncStatus`는 local WatchConnectivity 전송 provenance다.
 
 Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화면에서 잠금 값으로 다룬다. Manual field와 mobile-assisted field는 사용자가 수정할 수 있다.
 
@@ -90,13 +90,13 @@ Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화�
 
 완료된 Planbook 항목에서 Logbook 초안을 만들 수 있다. 이 전환은 자동 로그 저장이 아니라 수동 editor를 여는 흐름이다. 계획에서 복사하는 값은 site, buddy, gear, tags, dive mode, optional `entryStyle`, Air gas label, optional scuba pressure metadata, objective/training focus/notes 같은 안전한 metadata로 제한한다. 계획 최대 수심, 계획 시간, 예상 시야, 예상 난이도, checklist 상태는 실제 측정값이 아니므로 `DiveLogEntry.manual.measuredValues.maxDepthMeters`나 `durationSeconds`에 복사하지 않는다.
 
-Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 watch import key가 다시 들어오면 manual/mobile field는 유지하고 watch capture를 최신 payload로 갱신하되, 모바일 항목의 cloud sync status는 현재 `pending`으로 남긴다. 이렇게 해야 사용자가 모바일에서 보완한 site, notes, tags, rating, pressure 같은 맥락이 watch 재가져오기로 사라지지 않는다. Mode-specific metadata, `captureMode`, optional `unsupportedDepth`도 같은 원칙으로 보존되며, freedive segment와 scuba safety stop 상태는 모바일 detail에서 별도 section으로 확인할 수 있다. Demo/debug capture는 기존 `captureMode: demo`로 표시해 실측 기록과 구분한다. Duplicate native payload는 각각 WatchConnectivity import acknowledgement를 받을 수 있지만 repository row는 dedupe된다.
+Watch import는 raw `WatchSession`을 `watchCapture.session`에 보존한다. 같은 import key가 다시 들어오면 manual/mobile field와 cloud 상태를 유지하고 watch capture만 최신 payload로 갱신한다. 자동 event와 수동 drain은 process-wide coordinator로 같은 concurrent `payloadId`를 합치며 repository key도 row를 dedupe한다.
 
 Watch sample profile은 모바일 detail에서 depth/temperature SVG path로 렌더링한다. 원본 sample은 보존하고, 렌더링 단계에서만 min/max bucket downsampling을 적용해 850개 이상의 sample도 detail 화면에서 보이도록 한다.
 
 Legacy watch local log는 새 record model로 adapter된다. 모바일 runtime validator도 이미 native inbox에 들어온 schema v1/unknown flat `diveMode` payload를 mode-specific payload로 보강한다. 기존 freedive log는 하나의 `FreeDiveSegment`를 가진 `FreeDiveSession`으로 보존하고, 기존 scuba log는 safety stop 상태를 unknown 또는 not required로 기본 처리한다. 이 adapter와 validator 호환 경로는 기존 저장 데이터를 깨뜨리지 않기 위한 계층이며, 오래된 로그에 없던 safety stop 완료 사실을 새로 만들어내지 않는다.
 
-앱 기본 저장소는 AsyncStorage 기반 `PersistentDiveLogRepository`다. `LocalDiveLogRepository`는 테스트와 집중된 동작 검증용 in-memory 저장소로 남아 있다.
+앱 기본 저장소는 AsyncStorage 기반 `PersistentDiveLogRepository`다. 기존 `dive-app:logbook:v2` key의 schema 3은 schema-2 top-level 상태를 `cloudSyncStatus: notConfigured`로 migration한다. `LocalDiveLogRepository`는 테스트용 in-memory 저장소다.
 
 ## 관련 문서
 

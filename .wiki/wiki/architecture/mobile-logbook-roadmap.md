@@ -1,8 +1,8 @@
 # 모바일 로그북 로드맵
 
-Sources: pre-Karpathy wiki page, 2026-06-28
-Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
@@ -44,7 +44,7 @@ Updated: 2026-06-28
 
 - `source`: `manual` 또는 `watch`.
 - `fieldSource`: `manual`, `mobile`, `watch` provenance.
-- `syncStatus`: `localOnly`, `pending`, `synced`, `failed`.
+- `cloudSyncStatus`: 현재 `notConfigured`; remote outbox가 구현되면 `pending`, `synced`, `failed`를 사용한다.
 - `localId`: 로컬 저장과 offline-first 동작의 기준.
 - `remoteId`: Supabase sync 이후 remote row와 연결하는 선택 값.
 - `ownerUserId`: 인증된 사용자 연결이 생긴 뒤 붙는 선택 값.

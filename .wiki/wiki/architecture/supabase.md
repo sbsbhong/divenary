@@ -1,8 +1,8 @@
 # Supabase 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28
-Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
@@ -23,7 +23,9 @@ Schema change는 migration 중심으로 진행해야 한다. 새 table이나 변
 
 Watch sync contract는 현재 `userId`를 생략한다. 사용자 소유권은 watch-side capture가 아니라 인증된 mobile/server context에서 붙여야 한다.
 
-승인된 모바일 로그북 방향은 Supabase를 즉시 도입하지 않고 local-first 저장소 경계를 먼저 만드는 것이다. 이후 Supabase가 들어오면 비로그인 사용자는 `localOnly` 저장을 유지하고, 로그인 사용자는 local write 후 Supabase sync를 사용한다. 기존 local-only 로그를 계정에 연결할 때는 사용자 동의 흐름이 필요하다.
+Local-first 저장소 경계는 준비됐고 Supabase/Auth 전체 구현은 pre-real-dive P0다. 실제 구현 전 guest data 연결 동의, 로그아웃·계정 삭제·중복·conflict 정책을 별도 spec으로 확정한다. 이후 local Supabase project, user-owned schema와 RLS, generated database type, client, remote repository, outbox/retry, cloud backup, media storage 순서로 진행한다.
+
+모바일 `DiveLogEntry.cloudSyncStatus`는 현재 `notConfigured`다. Raw Watch `session.syncStatus`와 별개이며, backend와 outbox가 구현되기 전에는 cloud 상태 filter나 성공·대기·실패 pill을 표시하지 않는다. Mobile code는 direct SQL을 사용하지 않고 repository 경계 뒤에서 remote storage를 다룬다.
 
 ## 관련 문서
 

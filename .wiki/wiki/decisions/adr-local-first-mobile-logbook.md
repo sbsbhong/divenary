@@ -1,8 +1,8 @@
 # ADR: Local-first mobile logbook with future Supabase sync
 
-Sources: pre-Karpathy wiki page, 2026-06-28
-Raw: [Pre-Karpathy: ADR: Local-first mobile logbook with future Supabase sync](../../raw/decisions/adr-local-first-mobile-logbook.md)
-Updated: 2026-06-28
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: ADR: Local-first mobile logbook with future Supabase sync](../../raw/decisions/adr-local-first-mobile-logbook.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
@@ -26,7 +26,7 @@ React Query는 모바일 로그북의 조회와 변경을 다루는 cache/mutati
 
 Zustand는 첫 구현 범위에서 제외한다. 추후 로그 편집 화면의 draft, step, 선택 상태가 복잡해질 때 client-state store로 재검토한다.
 
-로그인 기능이 추가된 뒤에는 비로그인 사용자는 `localOnly` 저장을 유지하고, 로그인 사용자는 local write 후 Supabase sync를 수행한다. 기존 local-only 로그를 계정에 업로드할 때는 사용자 동의를 받는다.
+로그인 기능이 추가되기 전 모든 항목의 `cloudSyncStatus`는 `notConfigured`다. 로그인 사용자는 local write 후 Supabase outbox sync를 수행하고, 기존 guest 로그를 계정에 연결할 때는 사용자 동의를 받는다.
 
 ## Consequences
 

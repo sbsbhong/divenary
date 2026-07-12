@@ -23,12 +23,9 @@ Report the current remaining work for `diving-app` from durable project sources.
    - `git status --short`
    - `rg -n "TODO|FIXME|not implemented|미구현|검증|후속|남은|pending" README.md .wiki docs apps packages -g '!node_modules'`
 3. Treat old `docs/superpowers/plans/*.md` checkbox lists as historical unless the current `.wiki/wiki/index.md` articles or code still confirm them.
-4. Separate the answer into:
-   - completed or already implemented foundations
-   - approved but not implemented work
-   - open questions and real-device validation gaps
-   - recommended next 1-3 tasks
-5. Include file references for claims that may affect implementation priority.
+4. Separate the answer into completed foundations, the complete P0 backlog by dependency wave, physical validation gaps, the real-dive-only gate, and the next executable spec.
+5. Never omit Supabase/Auth or Memory/share merely because physical-device work is closer. Include every confirmed unresolved item that can be completed before an actual freedive or scuba dive.
+6. Include file references for claims that may affect implementation priority.
 
 ## Project Rules
 
@@ -37,14 +34,29 @@ Report the current remaining work for `diving-app` from durable project sources.
 - Preserve the safety boundary: this app is not a certified dive computer, decompression computer, medical device, emergency system, or certified equipment replacement.
 - For scuba-related pending work, distinguish non-certified reference assistant behavior from safety-critical computation.
 - For sync-related pending work, distinguish local repository import from future Supabase or cloud sync.
+- `DiveLogEntry.cloudSyncStatus` is separate from raw Watch `session.syncStatus`. Until a backend exists, cloud status is `notConfigured`; do not describe Watch import acknowledgement as cloud sync.
+- Physical testing starts only when the user requests it or implementation/automated verification is complete. Do not claim Watch installation, paired delivery, reconnect behavior, or underwater sensor behavior without observed evidence.
+
+## Priority Model
+
+All confirmed work possible before an actual freedive or scuba dive is P0. Waves express dependencies, not lower priority:
+
+1. Dry physical-device install, pairing, WatchConnectivity, acknowledgement, background/killed delivery, planned dives, notifications, and large file transfer.
+2. Shallow container/pool depth, pressure, optional temperature, auto-launch, handoff, wet controls, readability, and haptics.
+3. Supabase/Auth, user-owned schema/RLS, generated types, remote repositories, outbox/conflict, backup, and media storage.
+4. Memory/share, attachments/export, Logbook/Planbook completion, retry/status UX, accessibility, localization, and privacy controls.
+5. Release/signing/entitlement/privacy/security QA and design-only high-risk boundaries.
+
+Keep actual freediving/scuba, deep-water behavior, and real-dive safety-stop behavior in a separate Real-dive gate.
 
 ## Output Shape
 
 Keep the response short and actionable. Prefer this structure:
 
-- 현재 남은 큰 작업
-- 실기기 검증 전 우선순위
+- 완료된 기반
+- P0 Wave 1-5 전체
+- 실제 잠수 게이트
 - 열린 질문/검증 필요
-- 다음에 바로 할 일
+- 다음 실행 spec
 
-When priorities conflict, put real-device WatchConnectivity validation, contract safety boundaries, and data-loss/migration decisions before visual polish.
+Within a wave, put data loss, migration, security/RLS, WatchConnectivity integrity, and safety wording before visual polish.

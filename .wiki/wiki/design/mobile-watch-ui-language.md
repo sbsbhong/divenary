@@ -1,12 +1,12 @@
 # Mobile/Watch UI 언어
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
-Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
-Updated: 2026-07-09
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
-`diving-app`의 모바일과 watchOS UI는 **iOS grouped base + dive instrument accent**를 공통 방향으로 삼는다. 기본 구조는 Apple 앱처럼 조용하고 정돈된 grouped 화면을 따르고, 다이빙 앱의 성격은 수심, 시간, profile, 상태 같은 계기 요소 한두 곳에만 집중한다. 현재 watch recording은 full-height depth gauge와 compact live values를 중심으로 하고, 모바일 status badge는 low-chroma chip으로 제한한다. Safety stop 권장 상태와 future mandatory/decompression 상태는 색상 severity를 분리한다.
+`diving-app`의 모바일과 watchOS UI는 **iOS grouped base + dive instrument accent**를 공통 방향으로 삼는다. 현재 watch recording은 full-height depth gauge와 compact live values를 중심으로 한다. 모바일 cloud 상태는 backend가 없을 때 숨기고, 실제 상태가 생긴 뒤에만 low-chroma badge를 사용한다. Safety stop 권장 상태와 future mandatory/decompression 상태는 색상 severity를 분리한다.
 
 ## 현재 상태
 

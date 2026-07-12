@@ -704,3 +704,15 @@
 
 ## [2026-07-12] ingest | Watch 앱 구조
 - Updated: 안전 규칙
+
+## [2026-07-12] ingest | 구현 우선순위 기록
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: Watch 앱 구조
+- Updated: Supabase 구조
+- Updated: 모바일 로그북 로드맵
+- Updated: 다이브 로그 도메인
+- Updated: ADR: Local-first mobile logbook with future Supabase sync
+- Updated: Mobile/Watch UI 언어
+- Updated: 안전 규칙
+- Updated: 열린 질문

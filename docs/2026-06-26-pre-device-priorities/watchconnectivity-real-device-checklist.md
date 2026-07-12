@@ -13,6 +13,7 @@ This checklist is a manual gate before claiming paired-device WatchConnectivity 
 
 - Use a physical iPhone paired to a physical Apple Watch that supports the target watchOS version.
 - Install the iPhone app with the embedded `DiveWatchApp` companion.
+- For `Test Freedive`, `Test Scuba`, and `Test Large Sync`, run the shared `DiveWatchAppDebug` scheme with `DIVE_WATCH_DEBUG_CONTROLS=1`.
 - Confirm the iPhone app and watch app use the same build.
 - Confirm signing, bundle identifiers, WatchConnectivity entitlement, app groups if added later, and companion embed settings in Xcode.
 - Open Settings in the iPhone app and confirm the paired watch status row reports supported/paired/installed state.
@@ -22,7 +23,7 @@ This checklist is a manual gate before claiming paired-device WatchConnectivity 
 - Launch the iPhone app in the foreground.
 - Launch the watch app and save a short mock recording.
 - Confirm the mobile app receives the payload without using the manual sync button.
-- Confirm the log appears in Logbook with top-level `syncStatus: synced`.
+- Confirm the log appears in Logbook without a cloud-sync status pill. Cloud sync is not configured.
 - Confirm the foreground toast says local-device saved wording and stays visible until Open or Close is tapped.
 - Tap the toast Open action and confirm it opens the imported Logbook detail.
 - Confirm the watch session changes to `synced` after the mobile import acknowledgement is received.
@@ -37,6 +38,14 @@ This checklist is a manual gate before claiming paired-device WatchConnectivity 
 - If a transfer fails, confirm the payload is not acknowledged as imported and can be retried on app restart.
 - If automatic sync fails for any reason, tap the Logbook watch sync action and confirm the same watch session imports without duplicate loss or app crash.
 - Observe whether repeated failures have user-visible status; current implementation does not include a finished retry/backoff policy UI.
+
+## Duplicate And Large Transfer
+
+- Trigger automatic delivery and the Logbook manual sync action close together for the same pending record.
+- Confirm one mobile Logbook row, one foreground notification/toast, no crash, and eventual Watch acknowledgement.
+- Tap `Test Large Sync` once on Watch.
+- Confirm the 8,000-sample `Large Sync Fixture` persists on Watch and imports to one mobile row through file transfer.
+- Repeat manual sync while delivery is pending and confirm no duplicate row or crash.
 
 ## Background And Killed-App Delivery
 
@@ -70,6 +79,16 @@ This checklist is a manual gate before claiming paired-device WatchConnectivity 
 - Confirm Home conditions do not score dive suitability or issue weather, tide, current, no-fly, or emergency recommendations.
 - Confirm actual Apple Watch underwater sensor behavior is documented as unverified until tested on supported hardware.
 
+## Shallow Container Or Pool Sensor Check
+
+- Do this only in a controlled shallow container or pool environment. Do not perform an actual freedive or scuba dive for this checklist.
+- Start a real recording and confirm depth and pressure respond to immersion and return toward surface values after removal.
+- Confirm temperature is absent until the OS supplies a measurement; it must not appear or persist as `0°C` merely because temperature has not arrived.
+- After a real temperature arrives, confirm the live value and saved summary/detail use the measured value.
+- Where the controlled depth safely permits it, observe auto-launch/auto-start behavior and record whether background handoff works. Do not treat this trigger as a certified dive-start decision.
+- Check wet-screen readability, crown operation, haptics, accidental end protection, and non-certified reminder wording.
+- Stop here. Deep water, actual freediving/scuba profiles, 40m behavior, and real-dive safety-stop behavior belong to the separate real-dive gate.
+
 ## Results Template
 
 Record each physical-device run with:
@@ -85,4 +104,10 @@ Record each physical-device run with:
 - Notification permission/result:
 - Notification press routing result:
 - Retry/backoff observations:
+- Duplicate automatic/manual import result:
+- Large file-transfer result:
+- Shallow depth/pressure result:
+- Temperature missing/received result:
+- Auto-launch/background handoff result:
+- Wet control/readability/haptic result:
 - Known failures or follow-up work:

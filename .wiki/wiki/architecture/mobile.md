@@ -1,8 +1,8 @@
 # 모바일 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10
-Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md)
-Updated: 2026-07-10
+Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12
+Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
+Updated: 2026-07-12
 
 ## 요약
 
@@ -49,7 +49,7 @@ Updated: 2026-07-10
 현재 모바일 UI는 네 영역으로 구성된다.
 
 - Home: 위치 권한이 허용되면 device 좌표를 얻고, Open-Meteo provider로 local time, 기온, 해안 수온을 가져온다. 도시명은 iOS `CLGeocoder` 또는 Android `Geocoder` 기반 repo-local native module 결과를 우선 사용하고, native module이 없거나 실패하면 Open-Meteo timezone city로 fallback한다. 이 band는 dive suitability, tide/current/weather warning, route planning, safety recommendation을 제공하지 않는다.
-- Logbook: manual/watch 로그 목록, 검색, 동기화 상태 filter, 수동 로그 작성과 수정, watch sync action, dive mode별 입력 section, 상세 지표, provenance 표시, 수심 profile, 수온 profile, notes, tags.
+- Logbook: manual/watch 로그 목록, 검색, 수동 로그 작성과 수정, watch sync action, dive mode별 입력 section, 상세 지표, provenance 표시, 수심 profile, 수온 profile, notes, tags. Cloud backend가 없으므로 cloud 상태 filter와 pill은 표시하지 않는다.
 - Planning: persistent Planbook으로 다음 다이브 계획을 작성, 수정, 완료하고 완료된 계획에서 Logbook 초안을 열 수 있다.
 - Settings: 테마, 언어, watch sync notification opt-in 같은 앱 표시 선호와 paired watch 상태를 grouped list로 관리한다.
 
@@ -69,13 +69,13 @@ Styling rule은 현재 코드 기준으로 다음과 같다.
 - Inline `style`은 safe-area inset, chart bar height, pressed-state transform처럼 runtime value가 필요한 경우로 제한한다.
 - Mobile UI code에 raw hex color, numbered gray/slate/neutral palette, `typography-*` token, opacity utility를 다시 늘리지 않는다.
 
-앱 기본 Logbook 저장소는 `PersistentDiveLogRepository`다. 이 저장소는 `@react-native-async-storage/async-storage`를 감싼 `PersistentKeyValueStore`와 `PersistentJsonStore`를 통해 `DiveLogEntry[]`를 `dive-app:logbook:v2` key에 versioned JSON envelope로 저장한다. v2 key는 two-mode reset을 위해 기존 local v1 Logbook data와 분리한다. `LocalDiveLogRepository`는 테스트와 집중된 동작 검증용으로 남아 있다.
+앱 기본 Logbook 저장소는 `PersistentDiveLogRepository`다. 이 저장소는 `DiveLogEntry[]`를 기존 `dive-app:logbook:v2` key의 schema-3 envelope로 저장한다. Schema 2 top-level sync 상태는 모두 `cloudSyncStatus: notConfigured`로 migration한다. `LocalDiveLogRepository`는 테스트와 집중된 동작 검증용으로 남아 있다.
 
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 
-WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. `WatchConnectivityInbox`는 `AppDelegate` launch와 React Native module init 시 `WCSession`을 activate하고 `didReceiveUserInfo`와 `didReceiveMessage` envelope를 원시 JSON payload로 복원해 `UserDefaults` 기반 durable inbox에 저장한다. `WatchConnectivityModule`은 pending payload drain method, `DiveWatchSyncPayloadReceived` event, mobile-only acknowledge method, imported acknowledge method, planned dive update method, linked watch status method를 React Native에 노출한다. JS provider는 native event subscription을 먼저 열고 durable inbox를 drain한 뒤 watch payload를 검증해 기본 `PersistentDiveLogRepository`에 import한다. 저장이 끝난 payload만 imported acknowledge로 처리해 watch에 `watchSyncAcknowledgement`를 돌려보낸다. Imported acknowledge는 `transferUserInfo`를 기본으로 쓰고 watch가 reachable이면 `sendMessage`로도 보낸다. 저장 실패는 acknowledge하지 않으므로 앱 재시작 뒤 다시 drain될 수 있다. 자동 import는 Alert이 아니라 앱 내부 toast로 표시하고, 사용자가 toast를 누르면 해당 Logbook detail screen으로 이동한다. 이 toast는 사용자가 열거나 닫을 때까지 유지된다. Settings opt-in이 켜져 있고 앱이 foreground가 아니면 Notifee local notification도 요청한다. Logbook의 `워치 동기화` action도 pending native inbox를 수동 drain하며, native module이 없으면 새 기록 없음 또는 비지원 상태를 사용자에게 표시한다.
+WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. Native inbox와 module은 pending payload, event, acknowledge, planned dive, linked watch 상태를 관리한다. JS provider와 Logbook 수동 action은 같은 `WatchConnectivityImportCoordinator`를 사용해 concurrent import를 직렬화한다. 저장이 끝난 payload만 imported acknowledge하고 실패 payload는 재시도할 수 있게 남긴다. Foreground toast와 opt-in notification은 local 저장 결과만 뜻한다.
 
-수동 로그 작성은 `LogbookScreen`의 create action에서 시작하고, 기존 항목 수정은 상세 화면의 edit action에서 같은 editor를 재사용한다. Editor는 공통 field인 date/time, dive mode, site name, duration, max depth, buddy names, tags, observed marine life, notes, rating을 다루고, 새로 선택 가능한 `diveMode`는 scuba와 freedive 두 가지다. Scuba section은 gas label, water condition, visibility rating, perceived exertion을 다루고, freedive section은 repetition count, training focus, perceived exertion을 다룬다. 저장된 수동 로그는 `source: 'manual'`, `syncStatus: 'localOnly'`이며, 비어 있거나 유효하지 않은 수치 field는 `0`이 아니라 `undefined`로 유지한다. Watch 기반 항목을 모바일에서 수정하면 raw watch capture와 `source: 'watch'`를 유지하고, 이미 모바일 repository에 import된 항목의 top-level `syncStatus`는 `synced`로 유지한다.
+수동 로그는 `source: 'manual'`, `cloudSyncStatus: 'notConfigured'`로 저장하고 비어 있거나 유효하지 않은 수치 field는 `undefined`로 유지한다. Watch 기반 항목을 수정하면 raw watch capture와 `source: 'watch'`를 유지한다. Raw `watchCapture.session.syncStatus`는 Watch 전송 provenance이고 top-level `cloudSyncStatus`와 별개다.
 
 앱 기본 Planbook 저장소는 `PersistentDivePlanRepository`다. 이 저장소는 `DivePlan[]`를 `dive-app:planbook:v2` key에 저장하고, `LocalDivePlanRepository`와 같은 계획 정렬 helper를 사용한다. v2 key는 two-mode reset을 위해 기존 local v1 Planbook data와 분리한다. 계획 화면은 `draft`, `planned`, `completed` 상태만 사용하고, 새로 선택 가능한 `diveMode`는 scuba와 freedive 두 가지다. 완료로 전환할 때 Logbook 초안을 만들지 나중에 할지 선택하게 한다. 계획에서 로그를 만들 때는 navigation 계층이 임시 `pendingDraft`를 Logbook editor로 넘기며, 자동으로 완료 로그를 저장하지 않는다. `planned` 상태이고 아직 로그로 전환되지 않은 계획은 `watchPlannedDives` envelope로 watch companion에 전달되어 watch Home에서 선택한 뒤 시작할 수 있다.
 
