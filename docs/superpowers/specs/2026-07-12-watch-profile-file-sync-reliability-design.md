@@ -147,14 +147,14 @@ Failure leaves the legacy source intact and must not erase unrelated sessions. M
 
 The schema source under `packages/contracts` remains authoritative. Generated Swift and TypeScript outputs are never edited directly.
 
-The existing `WatchSyncMessage` session artifact remains the transfer validation boundary, but the depth-sample schema gains optional one-second bucket extrema. Session/profile metadata gains explicit fields for:
+The existing `WatchSyncMessage` session artifact remains the transfer validation boundary, but the depth-sample schema gains optional one-second bucket extrema. Session/profile metadata inside the artifact gains explicit fields for:
 
 - sampling interval/version;
 - content revision;
 - sample count;
-- artifact byte count;
-- SHA-256 digest;
 - interrupted-capture provenance where applicable.
+
+Artifact byte count and SHA-256 are deliberately excluded from the bytes they describe. They are calculated after finalization and stored in the Watch manifest, WatchConnectivity file metadata, iPhone inbox descriptor, mobile profile reference, and ACK. This avoids a circular self-hash while keeping every transport and persistence transition integrity-checkable.
 
 The file metadata supplied to `transferFile` carries only property-list-safe routing and integrity fields: kind, local session ID, content revision, message type, sent timestamp, byte count, SHA-256, and schema/format version. It never carries Base64 profile data.
 
@@ -389,4 +389,3 @@ Add an ADR for the canonical one-hertz persistence policy and file-backed sample
 ## Delivery Workflow
 
 After this design is committed, create a detailed implementation plan. Execute the plan on an isolated feature worktree. Preserve unrelated dirty files in the main checkout. Use test-driven changes, run proportional verification, update the wiki as part of the same feature, review the final diff, merge the completed feature branch into `main`, and report the merge commit plus executed and unexecuted verification evidence.
-
