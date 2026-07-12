@@ -1,6 +1,7 @@
 import Foundation
 
 enum WatchSyncEnvelope {
+    static let directMessagePayloadLimitBytes = 48 * 1024
     static let kind = "watchSyncMessage"
     static let acknowledgementKind = "watchSyncAcknowledgement"
     static let plannedDivesKind = "watchPlannedDives"
@@ -17,6 +18,14 @@ enum WatchSyncEnvelope {
         return [
             kindKey: kind,
             payloadBase64Key: payloadData.base64EncodedString(),
+            localSessionIdKey: session.id.uuidString,
+            sentAtKey: sentAt.timeIntervalSince1970
+        ]
+    }
+
+    static func fileMetadata(for session: DiveSessionRecord, sentAt: Date = Date()) -> [String: Any] {
+        [
+            kindKey: kind,
             localSessionIdKey: session.id.uuidString,
             sentAtKey: sentAt.timeIntervalSince1970
         ]

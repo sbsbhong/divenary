@@ -132,10 +132,38 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     enqueuePendingPayload(from: message)
   }
 
+  func session(_ session: WCSession, didReceive file: WCSessionFile) {
+    guard file.metadata?[WatchConnectivityEnvelopeKey.kind] as? String == WatchConnectivityEnvelopeValue.kind,
+          let payloadData = try? Data(contentsOf: file.fileURL),
+          let payloadJson = String(data: payloadData, encoding: .utf8) else {
+      return
+    }
+
+    enqueuePendingPayload(
+      payloadJson: payloadJson,
+      localSessionId: file.metadata?[WatchConnectivityEnvelopeKey.localSessionId] as? String
+    )
+  }
+
   private func enqueuePendingPayload(from userInfo: [String: Any]) {
     guard let payload = makePendingPayload(from: userInfo) else {
       return
     }
+
+    DispatchQueue.main.async {
+      self.pendingPayloads.append(payload)
+      self.persistPendingPayloads()
+      NotificationCenter.default.post(name: .diveWatchSyncPayloadReceived, object: self, userInfo: payload.dictionary)
+    }
+  }
+
+  private func enqueuePendingPayload(payloadJson: String, localSessionId: String?) {
+    let payload = PendingWatchConnectivityPayload(
+      payloadId: UUID().uuidString,
+      payloadJson: payloadJson,
+      localSessionId: localSessionId,
+      receivedAt: Date().timeIntervalSince1970
+    )
 
     DispatchQueue.main.async {
       self.pendingPayloads.append(payload)

@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "architecture/diving-app-state-management.md",
+                "file": "architecture/sync-flow.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "diving-app-state-management"
+              "title": "sync-flow"
             }
           }
         ]
@@ -185,19 +185,19 @@
   },
   "active": "308f839af53ed59e",
   "lastOpenFiles": [
+    "architecture/supabase.md",
+    "architecture/monorepo.md",
+    "architecture/mobile-logbook-roadmap.md",
+    "architecture/mobile.md",
+    "architecture/implementation-priorities.md",
+    "architecture/diving-app-state-management.md",
     "index.md",
+    "log.md",
     "project/diving-app-overview.md",
     "domains/diving-app-freediving-mode.md",
     "design/mobile-watch-ui-language.md",
-    "architecture/mobile.md",
-    "architecture/monorepo.md",
-    "architecture/diving-app-state-management.md",
     "architecture/watch-app.md",
-    "log.md",
     "algorithms/diving-app-algorithm-reference.md",
-    "architecture/supabase.md",
-    "architecture/mobile-logbook-roadmap.md",
-    "architecture/implementation-priorities.md",
     "decisions/adr-local-first-mobile-logbook.md",
     "decisions/adr-index.md",
     "architecture/sync-flow.md",

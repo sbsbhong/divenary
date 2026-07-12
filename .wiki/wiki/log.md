@@ -698,3 +698,6 @@
 - Updated: Mobile/Watch UI 언어
 - Updated: Diving App / Open Questions
 - Updated: 열린 질문
+
+## [2026-07-11] ingest | 동기화 흐름 구조
+- Updated: large watch session file transfer

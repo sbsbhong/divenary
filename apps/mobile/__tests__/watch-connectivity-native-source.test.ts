@@ -57,6 +57,21 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('syncStatus == .failed && sessions[index].syncStatus == .synced');
   });
 
+  it('uses file transfer for watch sessions that exceed the safe direct-message size', () => {
+    const transport = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncTransport.swift');
+    const envelope = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncEnvelope.swift');
+    const inbox = readRepoFile('apps/mobile/ios/DiveMobile/WatchConnectivityInbox.swift');
+
+    expect(envelope).toContain('directMessagePayloadLimitBytes');
+    expect(envelope).toContain('fileMetadata');
+    expect(transport).toContain('payloadData.count <= WatchSyncEnvelope.directMessagePayloadLimitBytes');
+    expect(transport).toContain('connectivitySession.transferFile(');
+    expect(transport).toContain('didFinish fileTransfer: WCSessionFileTransfer');
+    expect(inbox).toContain('didReceive file: WCSessionFile');
+    expect(inbox).toContain('Data(contentsOf: file.fileURL)');
+    expect(inbox).toContain('enqueuePendingPayload(');
+  });
+
   it('re-enqueues unsynced watch sessions after loading persisted sessions', () => {
     const store = readRepoFile('apps/mobile/ios/DiveWatchApp/Storage/DiveSessionStore.swift');
     const transport = readRepoFile('apps/mobile/ios/DiveWatchApp/Sync/WatchSyncTransport.swift');

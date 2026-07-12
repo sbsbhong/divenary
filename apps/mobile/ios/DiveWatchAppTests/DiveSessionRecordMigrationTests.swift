@@ -196,6 +196,18 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(reloaded.sessions.first?.samples.count, record.samples.count)
     }
 
+    func testLargeSavedSessionExceedsDirectMessageLimitAndKeepsFileTransferMetadataSmall() throws {
+        let record = Self.largeDebugScubaRecord(sampleCount: 8_000).sanitizedForPersistence()
+        let payloadData = try record.syncMessageData()
+        let metadata = WatchSyncEnvelope.fileMetadata(for: record, sentAt: EngineTestFixtures.start)
+
+        XCTAssertGreaterThan(payloadData.count, WatchSyncEnvelope.directMessagePayloadLimitBytes)
+        XCTAssertEqual(metadata[WatchSyncEnvelope.kindKey] as? String, WatchSyncEnvelope.kind)
+        XCTAssertEqual(metadata[WatchSyncEnvelope.localSessionIdKey] as? String, record.id.uuidString)
+        XCTAssertNil(metadata[WatchSyncEnvelope.payloadBase64Key])
+        XCTAssertTrue(PropertyListSerialization.propertyList(metadata, isValidFor: .binary))
+    }
+
     @MainActor
     func testStoreMigratesLegacyUserDefaultsRecordsToFileStorage() throws {
         let userDefaults = makeIsolatedUserDefaults()
