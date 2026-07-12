@@ -96,6 +96,13 @@ struct HomeView: View {
                             )
                         }
                         .buttonStyle(.plain)
+
+                        Button {
+                            store.save(DiveSessionRecord.largeDebugFixture(sampleCount: 8_000))
+                        } label: {
+                            Label("Test Large Sync", systemImage: "arrow.up.doc")
+                        }
+                        .buttonStyle(DiveActionButtonStyle(kind: .secondary))
                     }
 
                     if let latestSession = store.sessions.first {
@@ -138,7 +145,7 @@ struct HomeView: View {
 
     private var showsDebugControls: Bool {
         #if DEBUG
-        true
+        ProcessInfo.processInfo.environment["DIVE_WATCH_DEBUG_CONTROLS"] == "1"
         #else
         false
         #endif

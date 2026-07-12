@@ -357,6 +357,66 @@ enum SafetyStopStatus: String, Codable, Equatable {
 extension DiveSessionRecord {
     static let debugTestTag = "debug-test-capture"
 
+    #if DEBUG
+    static func largeDebugFixture(sampleCount: Int) -> DiveSessionRecord {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000001A6E")!
+        let startedAt = Date(timeIntervalSince1970: 1_783_225_525)
+        let safeSampleCount = max(1, sampleCount)
+        let samples = (0..<safeSampleCount).map { index in
+            let depth = Double(index % 300) / 10
+            return DepthSample(
+                timestamp: startedAt.addingTimeInterval(Double(index)),
+                depthMeters: depth,
+                pressureKPa: 101.325 + depth * 10,
+                waterTemperatureCelsius: 24 - depth * 0.03
+            )
+        }
+        let endedAt = startedAt.addingTimeInterval(Double(safeSampleCount - 1))
+        let averageDepth = samples.reduce(0) { $0 + $1.depthMeters } / Double(samples.count)
+        let averageTemperature = samples.compactMap(\.waterTemperatureCelsius).reduce(0, +) / Double(samples.count)
+
+        return DiveSessionRecord(
+            id: id,
+            schemaVersion: 2,
+            captureMode: .demo,
+            diveMode: .scuba,
+            siteId: nil,
+            siteName: "Large Sync Fixture",
+            sourcePlanLocalId: nil,
+            planTitle: nil,
+            buddyIds: [],
+            gearIds: [],
+            tags: [debugTestTag],
+            notes: "Deterministic debug payload for WatchConnectivity file transfer.",
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
+            syncStatus: .pending,
+            entryLocation: nil,
+            exitLocation: nil,
+            startedAt: startedAt,
+            endedAt: endedAt,
+            samples: samples,
+            payload: .scuba(
+                ScubaDiveSession(
+                    id: id,
+                    startTime: startedAt,
+                    endTime: endedAt,
+                    durationSeconds: endedAt.timeIntervalSince(startedAt),
+                    maxDepthMeters: samples.map(\.depthMeters).max() ?? 0,
+                    averageDepthMeters: averageDepth,
+                    waterTemperatureCelsius: averageTemperature,
+                    gasLabel: "Air",
+                    latestAscentRateMetersPerMinute: 0,
+                    maxAscentRateMetersPerMinute: 60,
+                    safetyStop: .legacyUnknown
+                )
+            )
+        )
+    }
+    #endif
+
     init(legacySession session: DiveSession) {
         let summary = session.summary
         let payload: DiveSessionPayload

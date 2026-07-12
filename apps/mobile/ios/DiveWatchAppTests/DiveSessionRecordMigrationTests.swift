@@ -192,7 +192,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         let storageURL = makeIsolatedRecordsStorageURL()
         let transport = StubWatchSyncTransport(enqueueStatus: .pending)
         let store = DiveSessionStore(userDefaults: userDefaults, syncTransport: transport, recordsStorageURL: storageURL)
-        let record = Self.largeDebugScubaRecord(sampleCount: 8_000)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 8_000)
         let encodedRecord = try JSONEncoder().encode([record.sanitizedForPersistence()])
 
         XCTAssertGreaterThan(encodedRecord.count, 1_048_576)
@@ -214,7 +214,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     func testLargeSavedSessionExceedsDirectMessageLimitAndKeepsFileTransferMetadataSmall() throws {
-        let record = Self.largeDebugScubaRecord(sampleCount: 8_000).sanitizedForPersistence()
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 8_000).sanitizedForPersistence()
         let payloadData = try record.syncMessageData()
         let metadata = WatchSyncEnvelope.fileMetadata(for: record, sentAt: EngineTestFixtures.start)
 
@@ -223,6 +223,15 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(metadata[WatchSyncEnvelope.localSessionIdKey] as? String, record.id.uuidString)
         XCTAssertNil(metadata[WatchSyncEnvelope.payloadBase64Key])
         XCTAssertTrue(PropertyListSerialization.propertyList(metadata, isValidFor: .binary))
+    }
+
+    func testLargeDebugFixtureExceedsDirectMessageLimit() throws {
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1_200)
+        let data = try record.syncMessageData()
+
+        XCTAssertGreaterThan(data.count, WatchSyncEnvelope.directMessagePayloadLimitBytes)
+        XCTAssertEqual(record.captureMode, .demo)
+        XCTAssertTrue(record.tags.contains(DiveSessionRecord.debugTestTag))
     }
 
     @MainActor
@@ -733,53 +742,6 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
                     gasLabel: "Air",
                     latestAscentRateMetersPerMinute: 5.75,
                     maxAscentRateMetersPerMinute: 5.75,
-                    safetyStop: .legacyUnknown
-                )
-            )
-        )
-    }
-
-    private static func largeDebugScubaRecord(sampleCount: Int) -> DiveSessionRecord {
-        let base = debugScubaRecord()
-        let samples = (0..<sampleCount).map { index in
-            EngineTestFixtures.sample(TimeInterval(index), depth: Double(index % 30))
-        }
-
-        return DiveSessionRecord(
-            id: base.id,
-            schemaVersion: base.schemaVersion,
-            captureMode: base.captureMode,
-            diveMode: base.diveMode,
-            siteId: base.siteId,
-            siteName: base.siteName,
-            sourcePlanLocalId: base.sourcePlanLocalId,
-            planTitle: base.planTitle,
-            buddyIds: base.buddyIds,
-            gearIds: base.gearIds,
-            tags: base.tags,
-            notes: base.notes,
-            rating: base.rating,
-            perceivedExertion: base.perceivedExertion,
-            visibilityRating: base.visibilityRating,
-            waterCondition: base.waterCondition,
-            syncStatus: base.syncStatus,
-            entryLocation: base.entryLocation,
-            exitLocation: base.exitLocation,
-            startedAt: EngineTestFixtures.date(0),
-            endedAt: EngineTestFixtures.date(TimeInterval(sampleCount - 1)),
-            samples: samples,
-            payload: .scuba(
-                ScubaDiveSession(
-                    id: base.id,
-                    startTime: EngineTestFixtures.date(0),
-                    endTime: EngineTestFixtures.date(TimeInterval(sampleCount - 1)),
-                    durationSeconds: TimeInterval(sampleCount - 1),
-                    maxDepthMeters: 29,
-                    averageDepthMeters: 14.5,
-                    waterTemperatureCelsius: 24,
-                    gasLabel: "Air",
-                    latestAscentRateMetersPerMinute: 0,
-                    maxAscentRateMetersPerMinute: 60,
                     safetyStop: .legacyUnknown
                 )
             )

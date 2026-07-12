@@ -244,10 +244,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(debugScheme).toContain('DIVE_WATCH_DEBUG_CONTROLS');
     expect(debugScheme).not.toContain('PRODUCT_BUNDLE_IDENTIFIER');
     expect(debugVisibilityBlock).toContain('#if DEBUG');
-    expect(debugVisibilityBlock).toContain('true');
-    expect(debugVisibilityBlock).not.toContain('ProcessInfo.processInfo.environment');
+    expect(debugVisibilityBlock).toContain('ProcessInfo.processInfo.environment["DIVE_WATCH_DEBUG_CONTROLS"] == "1"');
     expect(home).toContain('title: "Test Freedive"');
     expect(home).toContain('title: "Test Scuba"');
+    expect(home).toContain('Test Large Sync');
+    expect(home).toContain('store.save(DiveSessionRecord.largeDebugFixture');
+    const record = readRepoFile('apps/mobile/ios/DiveWatchApp/Models/DiveSessionRecord.swift');
+    expect(record).toContain('static func largeDebugFixture(sampleCount: Int)');
+    expect(record).toContain('debugTestTag');
   });
 
   it('refreshes the watch home view with a top pull gesture', () => {
@@ -604,7 +608,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(sample).toContain('var isValidRecordingSample: Bool');
     expect(sample).toContain('depthMeters.isFinite');
     expect(sample).toContain('pressureKPa.isFinite');
-    expect(sample).toContain('waterTemperatureCelsius.isFinite');
+    expect(sample).toContain('(waterTemperatureCelsius?.isFinite ?? true)');
     expect(recorder).toContain('guard sample.isValidRecordingSample else');
     expect(freeEngine).toContain('guard sample.isValidRecordingSample else');
     expect(scubaEngine).toContain('guard sample.isValidRecordingSample else');
