@@ -540,6 +540,7 @@
       }
     },
     "Debug depth control" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -583,22 +584,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "데모"
-          }
-        }
-      }
-    },
-    "Done" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Done"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "완료"
           }
         }
       }
@@ -832,6 +817,22 @@
         }
       }
     },
+    "Done" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "완료"
+          }
+        }
+      }
+    },
     "DONE" : {
       "localizations" : {
         "en" : {
@@ -930,22 +931,6 @@
         }
       }
     },
-    "Free Segment List" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Free Segment List"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프리다이빙 구간 목록"
-          }
-        }
-      }
-    },
     "Fail" : {
       "localizations" : {
         "en" : {
@@ -974,6 +959,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리"
+          }
+        }
+      }
+    },
+    "Free Segment List" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Free Segment List"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙 구간 목록"
           }
         }
       }
@@ -2469,6 +2470,7 @@
       }
     },
     "Test Freedive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2485,6 +2487,7 @@
       }
     },
     "Test Scuba" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
