@@ -14,10 +14,18 @@
     "ios:build": "yarn workspace @repo/mobile ios:build",
     "lint": "turbo run lint",
     "mobile:typecheck": "yarn workspace @repo/mobile typecheck",
+    "supabase": "supabase",
+    "supabase:advisors": "supabase db advisors --local --type security --fail-on error",
+    "supabase:lint:db": "supabase db lint --local --fail-on error",
+    "supabase:reset": "supabase db reset",
+    "supabase:start": "supabase start",
+    "supabase:stop": "supabase stop",
+    "supabase:test:db": "supabase test db",
     "test": "turbo run test",
     "watch:build": "yarn workspace @repo/mobile watch:build"
   },
   "devDependencies": {
+    "supabase": "2.109.1",
     "turbo": "^2.0.12"
   }
 }
