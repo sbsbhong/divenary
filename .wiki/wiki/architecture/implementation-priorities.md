@@ -1,7 +1,7 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md)
 Updated: 2026-07-13
 
 ## 요약
@@ -39,11 +39,12 @@ Updated: 2026-07-13
 
 ## P0 Wave 3: Supabase와 인증
 
-- 3A: root `supabase/`, `packages/supabase`, generated type, Keychain session, iOS native Google/Apple Auth, mandatory versioned terms/privacy consent를 만든다. Logbook/Planbook은 이 단계에서 local-only다.
+- 3A: root `supabase/`, `packages/supabase`, generated type, Keychain session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent를 만든다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 이 단계에서 local-only다.
 - 3B: user-owned Logbook/Planbook schema와 RLS, keyset cursor infinite pagination, private immutable 1Hz profile Storage와 detail-only fetch를 만든다.
-- 3C: `guest`/`user:<uuid>` local partition, explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
+- 3C: `guest`/`user:<uuid>` local partition, persistent manifest와 bounded batch를 쓰는 explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
 - 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.
 - Email/password, magic link, SMS, Android native Auth, profile/nickname/friends, app-provided manual identity management, marketing consent는 Wave 3 범위 밖이다. 같은 verified email은 Supabase Auth automatic linking을 따른다.
+- 3A 자동 구현 완료와 hosted provider/legal/signing/physical iPhone 승격 gate를 분리한다. 3B는 물리 Auth와 재동의 증거 전에는 시작하지 않으며, 3A build는 3D 앱 내 계정 삭제 전에는 release하지 않는다.
 - 7일 유예 soft deletion/recovery는 즉시 영구 삭제 뒤의 명시적 후속 기능이다.
 
 ## P0 Wave 4: 제품 완성

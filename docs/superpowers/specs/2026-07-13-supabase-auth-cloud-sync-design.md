@@ -62,15 +62,16 @@ bootstrapping
 ```
 
 - provider credential 성공만으로 membership이 활성화되지 않는다.
-- session과 현재 필수 문서 동의를 모두 확인해야 `authenticated`가 된다.
-- network failure는 invalid session과 구분한다. 마지막 membership을 알고 있으면 `authenticatedOffline`으로 local-only 사용을 허용한다.
+- Keychain에서 복원한 session은 online 경로에서 `getClaims()`와 `getUser()`로 claims와 server user를 검증한 뒤 사용한다. `getClaims()`도 signing key cache 상태나 symmetric JWT에 따라 network가 필요할 수 있으므로 network failure를 invalid token으로 오분류하지 않는다. `getSession()` 결과만 online authorization evidence로 신뢰하지 않는다.
+- session과 `get_onboarding_status()`가 반환한 현재 필수 문서 전체의 동의를 모두 확인해야 `authenticated`가 된다. membership row가 이미 있어도 새 필수 version이 생기면 다시 `pendingOnboarding`이 된다.
+- online bootstrap과 foreground에서는 claims/server user 검증 뒤 onboarding status를 조회한다. network transport failure는 invalid session과 구분한다. Offline fallback은 저장 session의 `expires_at`과 `session.user.id`가 아직 유효하고 정확히 일치하는 last-server-verified cache가 있을 때만 허용한다. 이는 token authenticity나 current legal status를 새로 증명하지 않는 bounded local trust이므로 `authenticatedOffline`은 local-only이며 cloud action을 허용하지 않는다.
 - 명백한 token invalidation/revocation만 logout으로 처리한다.
-- Supabase Auth listener는 process에서 한 번만 등록하고, foreground일 때 token refresh를 실행한다.
+- Supabase client는 `processLock`, `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`를 사용한다. Auth listener와 AppState listener는 provider lifetime에 각각 한 번만 등록하고 foreground에서 `startAutoRefresh()`, background에서 `stopAutoRefresh()`를 호출한다.
 
 ### Native Social Login
 
 - Google native SDK의 ID token은 provider `google`로 직접 교환한다. 현재 선택한 무료 native SDK는 custom nonce를 provider request에 넣지 못하므로 검증되지 않는 nonce를 임의로 전달하지 않는다.
-- Apple은 raw nonce를 생성하고 hashed nonce를 native request에 넣은 뒤 raw nonce와 ID token을 `supabase.auth.signInWithIdToken`으로 교환한다.
+- Apple native SDK wrapper가 cryptographically secure raw nonce를 자동 생성하고 SHA-256 hash를 Apple request에 넣도록 둔다. 성공 응답의 raw `nonce`와 ID token을 `supabase.auth.signInWithIdToken`으로 교환하며 별도 JavaScript 난수 구현을 만들지 않는다.
 - browser OAuth, email/password, magic link는 사용하지 않는다.
 - provider token은 Google/Apple API 사용 요구가 없으므로 저장하지 않는다.
 - 앱은 manual linking/unlinking UI를 제공하지 않는다. 같은 verified email이면 Supabase Auth가 identity를 한 user에 automatic linking하는 기본 동작을 수용하며, app code가 email을 직접 비교하거나 병합하지 않는다.
@@ -90,8 +91,15 @@ bootstrapping
 - `version text`
 - `effective_at timestamptz`
 - `document_url text`
-- `required boolean`
 - `(kind, version)` primary key
+
+`current_legal_documents`:
+
+- `kind text primary key`
+- `document_version text`
+- `(kind, document_version)`이 immutable `legal_documents` row를 참조한다.
+- v1 onboarding RPC는 current `terms`와 `privacy` pointer가 각각 하나씩 존재하는지 검증한다. version 교체는 새 immutable document row를 넣고 pointer를 바꾸는 한 transaction으로 수행한다.
+- current pointer insert/update trigger는 대상 document의 `effective_at <= transaction_timestamp()`를 강제한다. 두 RPC도 terms/privacy pointer가 정확히 두 개이며 모두 effective한지 공통 규칙으로 검증해 잘못된 server configuration이 전체 사용자를 silent pending 상태로 만들지 않게 한다.
 
 `consent_records`:
 
@@ -101,22 +109,25 @@ bootstrapping
 - `(user_id, document_kind, document_version)` primary key
 - `legal_documents` composite foreign key
 
-`complete_onboarding()` RPC는 owner id를 parameter로 받지 않고 `auth.uid()`를 사용한다. 호출 시점의 필수 문서를 다시 조회하고, 요청된 version이 현재 필수 version과 일치할 때 consent rows와 membership을 한 transaction에서 기록한다. 중복 호출은 동일 결과를 반환한다.
+`get_onboarding_status()` RPC는 owner id를 parameter로 받지 않고 현재 membership, current required documents, 동의한 version, 완료 여부를 한 snapshot으로 반환한다. `complete_onboarding()` RPC도 owner id를 받지 않고 `auth.uid()`를 사용한다. 호출 시점의 필수 문서를 다시 조회하고, 요청 배열이 중복·누락·추가 없이 current required set과 정확히 같을 때 consent rows와 최초 membership을 한 transaction에서 기록한다. consent와 membership은 `ON CONFLICT DO NOTHING`으로 보존하므로 중복 호출이 timestamp를 갱신하지 않고 동일 상태를 반환한다.
 
 ### Security
 
-- `public` app table은 모두 RLS를 활성화한다.
+- `public` app table 네 개는 모두 RLS를 활성화한다.
 - `app_memberships`와 `consent_records`는 owner만 읽을 수 있다.
-- `legal_documents`는 공개 읽기만 허용하고 client write는 차단한다.
+- `legal_documents`와 `current_legal_documents`는 공개 읽기만 허용하고 client write는 차단한다.
+- 2026년 Data API의 explicit privilege model에 맞춰 schema/table/function `GRANT`를 migration에 명시한다. legal document 두 table은 `anon`, `authenticated` select만, membership/consent는 `authenticated` select만 허용하고 client insert/update/delete는 SQL privilege와 RLS 양쪽에서 차단한다.
 - onboarding RPC의 default `PUBLIC` execute는 revoke하고 `authenticated`만 호출한다.
-- RPC는 fixed `search_path`, `auth.uid()` null check, current-version validation을 사용한다.
+- 상태 조회 RPC는 `SECURITY INVOKER`를 사용한다. write RPC가 `SECURITY DEFINER`를 써야 하는 이유는 direct client write를 막은 채 atomic insert를 수행하기 위해서이며, fixed empty `search_path`, 모든 object의 schema qualification, `auth.uid()` null check, current-version exact-set validation, 제한된 execute grant를 사용한다.
+- 동의 write RPC는 JWT `session_id`와 `auth.sessions`의 active row/user 일치도 확인한다. Sign-out 뒤 남은 access token으로 새 법적 동의를 기록할 수 없으며, 일반 session 거부 전이는 refresh/server rejection 또는 token expiry 시점 기준으로 설명한다.
+- anonymous sign-in은 비활성화하고 write RPC에서도 `is_anonymous` claim을 거부한다.
 - authorization은 `user_metadata`나 provider email이 아니라 `auth.uid()`만 사용한다.
-- mobile에는 project URL과 publishable key만 포함한다. provider secret과 `service_role`은 bundle에 넣지 않는다.
+- mobile에는 Supabase project URL/publishable key와 Google의 public web/iOS client ID만 포함한다. provider secret과 `service_role`은 bundle에 넣지 않는다.
 - Supabase session은 iOS Keychain storage adapter에 보관한다. token과 email은 log/analytics에 남기지 않는다.
 
 ### 3A Checkpoint Behavior
 
-3A 완료 시 로그인과 membership은 작동하지만 Logbook/Planbook repository는 아직 현재 local-only 구현을 사용한다. 기존 guest data는 계속 보이고 `cloudSyncStatus`는 `notConfigured`다. Auth 실패나 onboarding 취소는 Watch import와 로컬 데이터에 영향을 주지 않는다.
+3A 완료 시 로그인과 membership은 작동하지만 Logbook/Planbook repository는 아직 현재 local-only 구현을 사용한다. 기존 guest data는 계속 보이고 `cloudSyncStatus`는 `notConfigured`다. Auth 실패나 onboarding 취소는 Supabase session만 정리하고 Watch import와 로컬 데이터에 영향을 주지 않는다. 앱 내 계정 영구 삭제가 3D에서 구현되기 전까지 3A build는 내부 검증 checkpoint이며 App Store release 대상이 아니다.
 
 ## 3B: Remote Data Foundation
 
@@ -135,6 +146,8 @@ bootstrapping
 `dive_plans`는 server id와 owner/client id, list용 `status`, `planned_at`, `dive_mode`, `site_name`, versioned `plan_data jsonb`, `revision`, timestamps, tombstone을 가진다.
 
 JSONB는 domain payload 진화를 수용하고, 목록·정렬·filter에 필요한 값만 typed column으로 중복한다. Mobile code는 직접 SQL을 사용하지 않고 generated type과 repository function을 통해 접근한다.
+
+Remote app data와 Storage의 RLS는 단순한 `authenticated` role만으로 허용하지 않고 현재 필수 동의를 완료한 active membership도 확인한다. UI onboarding을 우회한 session은 Logbook/Planbook/profile object를 읽거나 쓸 수 없다.
 
 ### Pagination
 
@@ -175,7 +188,7 @@ JSONB는 domain payload 진화를 수용하고, 목록·정렬·filter에 필요
 4. remote metadata와 profile upload를 검증한다.
 5. 모든 record가 account local/remote에 존재하는 것을 확인한 뒤 guest source를 제거한다.
 
-중간 실패 시 guest source를 보존하고 같은 operation id로 재시도한다. 동의하지 않으면 account session을 종료하고 guest로 돌아간다.
+많은 record/profile은 persistent claim manifest와 bounded batch로 처리해 전체 collection을 한 번에 memory/network에 올리지 않는다. 중간 실패 시 guest source와 manifest cursor를 보존하고 같은 operation id로 재시도한다. 동의하지 않으면 account session을 종료하고 guest로 돌아간다.
 
 ### Outbox and Cloud Status
 
@@ -227,7 +240,7 @@ Outbox item은 operation id, principal, entity kind/id, mutation type, payload s
 ### Automated
 
 - migration reset과 generated type drift.
-- RLS owner isolation, anonymous denial, consent append-only, onboarding RPC current-version/idempotency.
+- explicit grants와 RLS owner isolation, anonymous denial, consent append-only, current-pointer 변경에 따른 재동의, onboarding RPC exact-set/idempotency.
 - secure session adapter and Auth state transitions including offline recovery.
 - native provider cancellation, Google token exchange, Apple nonce/token exchange adapter boundaries.
 - guest/account namespace migration and cross-account visibility denial.
@@ -238,7 +251,7 @@ Outbox item은 operation id, principal, entity kind/id, mutation type, payload s
 
 ### Manual and Physical
 
-- iOS native Google and Apple first login, repeat login, cancel, revoked credential, app restart.
+- iOS native Google and Apple first login, repeat login, cancel, app restart, Supabase session/refresh rejection. Provider-console revocation은 이미 발급된 Supabase session을 즉시 무효화한다고 가정하지 않고 별도 실기기 관찰 항목으로 둔다.
 - required consent completion and changed document re-consent.
 - guest data claim with offline interruption and retry.
 - long profile upload/download and infinite list scrolling.
@@ -259,9 +272,14 @@ Outbox item은 operation id, principal, entity kind/id, mutation type, payload s
 
 ## References
 
-- [Supabase React Native Auth](https://supabase.com/docs/guides/auth/quickstarts/react-native)
-- [Supabase Login with Apple](https://supabase.com/docs/guides/auth/social-login/auth-apple)
-- [Supabase Login with Google](https://supabase.com/docs/guides/auth/social-login/auth-google)
+- [Supabase React Native Auth quickstart](https://supabase.com/docs/guides/auth/quickstarts/react-native)
+- [Supabase database function security](https://supabase.com/docs/guides/database/functions)
+- [Supabase 2026 Data/GraphQL API explicit grants change](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically)
+- [Supabase Google Auth](https://supabase.com/docs/guides/auth/social-login/auth-google)
+- [Supabase Apple Auth](https://supabase.com/docs/guides/auth/social-login/auth-apple)
+- [React Native Google Sign-In original API](https://react-native-google-signin.github.io/docs/original)
+- [Invertase Apple Authentication 2.5.1](https://github.com/invertase/react-native-apple-authentication/tree/v2.5.1)
+
 - [Supabase ID Token Sign-In](https://supabase.com/docs/reference/javascript/auth-signinwithidtoken)
 - [Supabase Identity Linking](https://supabase.com/docs/guides/auth/auth-identity-linking)
 - [Supabase Local Development](https://supabase.com/docs/guides/local-development/overview)

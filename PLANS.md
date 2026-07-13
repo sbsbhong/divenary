@@ -516,13 +516,14 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - `docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md`
 - Implementation:
   - Pin `supabase@2.109.1`, `@supabase/supabase-js@2.110.2`, `@react-native-google-signin/google-signin@16.1.2`, `@invertase/react-native-apple-authentication@2.5.1`, `react-native-keychain@10.0.0`, and `react-native-url-polyfill@3.0.0` with Yarn 1 exact versions.
-  - Add `app_memberships`, `legal_documents`, `consent_records`, RLS policies, and an idempotent `complete_onboarding()` RPC that derives ownership from `auth.uid()`.
+  - Add `app_memberships`, immutable `legal_documents`, `current_legal_documents`, `consent_records`, explicit Data API grants, RLS policies, a snapshot `get_onboarding_status()` RPC, and an idempotent exact-set `complete_onboarding()` RPC that derives ownership from `auth.uid()`.
   - Generate database types instead of maintaining handwritten schema types.
-  - Store Supabase sessions in Keychain, exchange Google native ID tokens directly, and exchange Apple ID tokens with their verified raw nonce through `signInWithIdToken`.
+  - Store Supabase sessions in Keychain, validate restored claims and server user identity, use `processLock`/foreground auto-refresh, exchange Google native ID tokens directly, and exchange Apple ID tokens with the Invertase response's raw nonce through `signInWithIdToken`.
   - Implement `bootstrapping`, `guest`, `authenticating`, `pendingOnboarding`, `authenticated`, and `authenticatedOffline` states.
+  - Boot the existing guest app without constructing a client when public Supabase configuration is absent, and keep provider/server errors free of token/email values.
   - Keep current local repositories and `cloudSyncStatus: notConfigured` unchanged throughout 3A.
-- Gate: `supabase db reset`, focused pgTAP tests, generated type drift check, focused mobile Auth tests, `yarn mobile:typecheck`, `yarn ios:build`, and `yarn codex:check` pass; native Google and Apple login plus consent are manually verified on iPhone before leaving 3A.
-- Risk: Google OAuth client configuration, Apple capability/signing, bundle identifier, provider console settings, and real-device credentials are external prerequisites that automated tests cannot supply.
+- Gate: local reset, pgTAP plus REST privilege smoke tests, database lint/advisors, generated type drift, focused mobile Auth/native-config tests, `yarn mobile:typecheck`, `yarn ios:build`, `yarn watch:build`, and `yarn codex:check` pass. The automated checkpoint may be recorded separately, but native Google/Apple login, current consent/re-consent, guest preservation, and signed entitlements must be verified on a physical iPhone before leaving 3A for 3B.
+- Risk: owned immutable legal URLs, stable App ID/bundle ID, Google OAuth clients, hosted Supabase provider configuration, Apple capability/signing, and real-device credentials are external prerequisites. Wave 3A is an internal checkpoint and is not releasable before Wave 3D in-app deletion.
 
 ### Phase 2 Core Implementation: Wave 3B Remote Data Foundation
 
@@ -540,7 +541,7 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - focused mobile and package tests
 - Implementation:
   - Add `dive_logs` and `dive_plans` with `(user_id, local_id)` uniqueness, server `revision`, tombstones, typed list columns, and versioned JSONB payloads.
-  - Enforce owner RLS and Storage path ownership through `auth.uid()`.
+  - Enforce owner RLS and Storage path ownership through `auth.uid()` plus current-consent active membership, so a pre-onboarding session cannot access app data.
   - Page Logbook by `(started_at desc, id desc)` and Planbook by `(planned_at desc, id desc)` with page size 30.
   - Keep full profiles out of list rows and signed URLs; upload immutable objects to `dive-profiles/<user_id>/<dive_log_id>/<content_revision>.json` and download them only for detail.
   - Verify digest, byte count, and sample count before accepting a profile.
@@ -565,7 +566,7 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - Store current account data only under `user:<uuid>` and never combine principal partitions in a query result.
   - Write locally first, enqueue immutable operation snapshots, and drain with bounded exponential backoff plus jitter on launch, foreground, network recovery, and manual retry.
   - Extend cloud state to `pending | synced | failed | conflict` only after the backend is active.
-  - Claim guest records only after explicit consent using copy, remote/profile verification, and source removal; refusal signs out and returns to guest.
+  - Claim guest records only after explicit consent using a persistent manifest, bounded resumable batches, copy, remote/profile verification, and source removal; refusal signs out and returns to guest.
   - Reject stale revisions, preserve the local mutation as a conflict, fetch remote latest, and require explicit local-or-remote resolution.
   - Preserve the invariant that Watch `session.syncStatus: synced` acknowledges iPhone local import and never waits for Supabase.
 - Gate: Namespace migration, cross-account visibility, interrupted guest claim, outbox idempotency/retry, revision conflict, and Watch acknowledgement independence tests pass with `yarn mobile:typecheck`, focused Jest, `yarn ios:build`, and `yarn codex:check`.

@@ -1,7 +1,7 @@
 # 모바일 로그북 로드맵
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13
-Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13
+Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md)
 Updated: 2026-07-13
 
 ## 요약
@@ -33,9 +33,9 @@ Updated: 2026-07-13
 - [x] Phase 2.5: Logbook, Planbook, 설정 선호를 AsyncStorage 기반 persistent repository/provider에 저장한다.
 - [x] Phase 3: Watch에서 만든 contract-valid payload가 모바일로 들어올 수 있는지 검증한다.
 - [ ] Phase 4: Watch 기반 로그 작성 화면에서 측정값을 잠금 처리하고 누락된 맥락을 모바일에서 채운다.
-- [ ] Phase 5A: local Supabase, generated type, Keychain session, iOS native Google/Apple Auth, required consent를 추가한다. 기존 Logbook/Planbook은 local-only를 유지한다.
+- [ ] Phase 5A: local Supabase, generated type, Keychain session, iOS native Google/Apple Auth, current legal pointer와 재동의를 포함한 required consent를 추가한다. 자동 checkpoint와 hosted physical gate를 분리하며 기존 Logbook/Planbook은 local-only를 유지한다.
 - [ ] Phase 5B: user-owned Logbook/Planbook RLS, keyset cursor infinite pagination, private immutable profile Storage를 추가한다.
-- [ ] Phase 6: `guest`/`user:<uuid>` partition, explicit guest claim, outbox/retry, revision conflict를 적용한다.
+- [ ] Phase 6: `guest`/`user:<uuid>` partition, persistent manifest와 bounded batch 기반 explicit guest claim, outbox/retry, revision conflict를 적용한다.
 - [ ] Phase 7: account logout local purge와 즉시 영구 삭제를 적용하고 통합 회귀를 수행한다.
 
 ## 상세

@@ -749,3 +749,8 @@
 - Reliability follow-up: iPhone profile body를 Application Support native file store로 분리하고, activation-gated ACK를 `didFinish userInfoTransfer`까지 durable하게 유지하며, interrupted Watch journal 복구와 실기기 알림 권한 재동기화를 명시했다.
 - Updated: Diving App / QA and Test Plan
 - Updated: 열린 질문
+
+## [2026-07-13] ingest | Supabase 구조
+- Updated: 구현 우선순위 기록
+- Updated: 모바일 로그북 로드맵
+- Updated: 열린 질문
