@@ -468,3 +468,130 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - Record unresolved storage, transport, and Supabase schema decisions before starting auth work.
 - Verification gate: `yarn codex:check`
 - Risk: Adding auth before the local domain model stabilizes can force avoidable rewrites.
+
+## Epic: Wave 3 Supabase Auth and Local-First Cloud Sync
+
+### Phase 0 Investigation
+
+- Goal: Fix the approved product, data, security, and delivery boundaries before creating cloud code or native Auth configuration.
+- Files:
+  - `docs/superpowers/specs/2026-07-13-supabase-auth-cloud-sync-design.md`
+  - `apps/mobile/package.json`
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/types/**`
+  - `apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj`
+  - `packages/contracts/**`
+  - `.wiki/wiki/architecture/**`
+- Implementation:
+  - Preserve guest local-only use and separate `guest` from `user:<uuid>` local namespaces.
+  - Use native Google and Apple ID-token exchange on iOS; exclude email/password, magic link, SMS, Android native Auth, profile, nickname, friends, and app-provided manual identity linking. Accept Supabase automatic linking for the same verified email.
+  - Require versioned terms/privacy consent after first social identity creation and before active membership.
+  - Keep Watch local import acknowledgement independent from cloud sync.
+  - Use keyset pagination and detail-only immutable private Storage objects for full 1Hz profiles.
+  - Use optimistic server revisions, an idempotent outbox, explicit conflict state, immediate permanent account deletion, and a deferred 7-day soft-delete feature.
+- Gate: The design spec is approved, contains no unresolved product decision, and `git diff --check` passes.
+- Risk: The reported four-minute foreground physical test confirms pairing, import, local save, and Watch acknowledgement only; reconnect, background, killed-app, and large-transfer evidence remains incomplete.
+
+### Phase 1 Contract: Wave 3A Supabase and Auth Foundation
+
+- Goal: Produce a local Supabase development boundary, generated database types, secure native social login, mandatory legal consent, and a stable Auth state machine while leaving Logbook/Planbook local-only.
+- Files:
+  - `package.json`
+  - `yarn.lock`
+  - `supabase/config.toml`
+  - `supabase/migrations/**`
+  - `supabase/seed.sql`
+  - `supabase/tests/database/**`
+  - `packages/supabase/**`
+  - `apps/mobile/package.json`
+  - `apps/mobile/src/auth/**`
+  - `apps/mobile/src/states/auth.tsx`
+  - `apps/mobile/src/screens/auth/**`
+  - `apps/mobile/src/components/navigation/index.tsx`
+  - `apps/mobile/src/screens/settings/screen.tsx`
+  - `apps/mobile/src/i18n/resources.ts`
+  - `apps/mobile/ios/DiveMobile/**`
+  - `apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj`
+  - `apps/mobile/ios/Podfile.lock`
+  - `docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md`
+- Implementation:
+  - Pin `supabase@2.109.1`, `@supabase/supabase-js@2.110.2`, `@react-native-google-signin/google-signin@16.1.2`, `@invertase/react-native-apple-authentication@2.5.1`, `react-native-keychain@10.0.0`, and `react-native-url-polyfill@3.0.0` with Yarn 1 exact versions.
+  - Add `app_memberships`, `legal_documents`, `consent_records`, RLS policies, and an idempotent `complete_onboarding()` RPC that derives ownership from `auth.uid()`.
+  - Generate database types instead of maintaining handwritten schema types.
+  - Store Supabase sessions in Keychain, exchange Google native ID tokens directly, and exchange Apple ID tokens with their verified raw nonce through `signInWithIdToken`.
+  - Implement `bootstrapping`, `guest`, `authenticating`, `pendingOnboarding`, `authenticated`, and `authenticatedOffline` states.
+  - Keep current local repositories and `cloudSyncStatus: notConfigured` unchanged throughout 3A.
+- Gate: `supabase db reset`, focused pgTAP tests, generated type drift check, focused mobile Auth tests, `yarn mobile:typecheck`, `yarn ios:build`, and `yarn codex:check` pass; native Google and Apple login plus consent are manually verified on iPhone before leaving 3A.
+- Risk: Google OAuth client configuration, Apple capability/signing, bundle identifier, provider console settings, and real-device credentials are external prerequisites that automated tests cannot supply.
+
+### Phase 2 Core Implementation: Wave 3B Remote Data Foundation
+
+- Goal: Add owner-isolated remote Logbook/Planbook metadata, cursor pagination, and immutable private 1Hz profile Storage without yet switching local writes to an outbox.
+- Files:
+  - `supabase/migrations/**`
+  - `supabase/tests/database/**`
+  - `packages/supabase/src/database.types.ts`
+  - `packages/supabase/src/logbook/**`
+  - `packages/supabase/src/planbook/**`
+  - `packages/supabase/src/profiles/**`
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/states/use-dive-logbook-queries.ts`
+  - `apps/mobile/src/states/use-dive-plan-queries.ts`
+  - focused mobile and package tests
+- Implementation:
+  - Add `dive_logs` and `dive_plans` with `(user_id, local_id)` uniqueness, server `revision`, tombstones, typed list columns, and versioned JSONB payloads.
+  - Enforce owner RLS and Storage path ownership through `auth.uid()`.
+  - Page Logbook by `(started_at desc, id desc)` and Planbook by `(planned_at desc, id desc)` with page size 30.
+  - Keep full profiles out of list rows and signed URLs; upload immutable objects to `dive-profiles/<user_id>/<dive_log_id>/<content_revision>.json` and download them only for detail.
+  - Verify digest, byte count, and sample count before accepting a profile.
+- Gate: Local database reset, RLS/Storage owner-isolation tests, pagination no-gap/no-duplicate tests, profile integrity tests, generated type drift check, package tests, and `yarn mobile:typecheck` pass.
+- Risk: Storage policy path parsing and cursor behavior under equal timestamps can leak or duplicate data unless tested with adversarial fixtures.
+
+### Phase 3 Integration: Wave 3C Local-First Sync
+
+- Goal: Introduce principal-scoped local persistence, explicit guest claim, idempotent outbox delivery, retry, and revision conflict handling while preserving Watch import semantics.
+- Files:
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/sync/**`
+  - `apps/mobile/src/types/dive-log-entry.ts`
+  - `apps/mobile/src/types/dive-plan.ts`
+  - `apps/mobile/src/providers.tsx`
+  - `apps/mobile/src/screens/**`
+  - focused mobile tests
+  - `supabase/migrations/**`
+  - `supabase/tests/database/**`
+- Implementation:
+  - Migrate existing unscoped AsyncStorage envelopes exactly once into the `guest` namespace.
+  - Store current account data only under `user:<uuid>` and never combine principal partitions in a query result.
+  - Write locally first, enqueue immutable operation snapshots, and drain with bounded exponential backoff plus jitter on launch, foreground, network recovery, and manual retry.
+  - Extend cloud state to `pending | synced | failed | conflict` only after the backend is active.
+  - Claim guest records only after explicit consent using copy, remote/profile verification, and source removal; refusal signs out and returns to guest.
+  - Reject stale revisions, preserve the local mutation as a conflict, fetch remote latest, and require explicit local-or-remote resolution.
+  - Preserve the invariant that Watch `session.syncStatus: synced` acknowledges iPhone local import and never waits for Supabase.
+- Gate: Namespace migration, cross-account visibility, interrupted guest claim, outbox idempotency/retry, revision conflict, and Watch acknowledgement independence tests pass with `yarn mobile:typecheck`, focused Jest, `yarn ios:build`, and `yarn codex:check`.
+- Risk: Local source deletion during guest claim is irreversible; it may happen only after both account-local and remote artifacts are verified.
+
+### Phase 4 Cleanup/Review: Wave 3D Account Lifecycle
+
+- Goal: Complete privacy-safe logout, immediate permanent account deletion, integration regression, and durable documentation.
+- Files:
+  - `supabase/functions/delete-account/**`
+  - `supabase/migrations/**`
+  - `supabase/tests/database/**`
+  - `apps/mobile/src/auth/**`
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/screens/settings/**`
+  - `apps/mobile/src/i18n/resources.ts`
+  - `.wiki/raw/architecture/**`
+  - `.wiki/wiki/architecture/**`
+  - `.wiki/wiki/questions/open-questions.md`
+  - `.wiki/wiki/index.md`
+  - `.wiki/wiki/log.md`
+- Implementation:
+  - On logout, request server sign-out but always remove the Keychain session, current user partition, downloaded profile files, and account React Query cache locally; preserve guest data.
+  - Delete account data through a caller-authenticated privileged server boundary and remove Storage, database ownership, Auth user, and local credentials idempotently.
+  - Show irreversible deletion scope and require explicit reconfirmation in Settings.
+  - Record 7-day soft deletion/recovery, manual identity management UI, Android native Auth, profile/nickname/friends, and marketing consent as deferred work.
+  - Re-run foreground Watch pairing/import/local acknowledgement regression and retain the rest of Wave 1 and Wave 2 as physical gates.
+- Gate: Logout privacy tests, deletion authorization/idempotency tests, manual shared-device check, manual account deletion, long-profile/infinite-scroll integration, `yarn mobile:typecheck`, focused Jest, `yarn ios:build`, `yarn watch:build`, `yarn codex:check`, and `git diff --check` pass.
+- Risk: Auth-user deletion and Storage cleanup cross privileged systems; retries must never leave an active session that can access partially deleted data.

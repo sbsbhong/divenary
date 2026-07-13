@@ -1,23 +1,23 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md)
+Updated: 2026-07-13
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. P0 안의 wave는 중요도 차등이 아니라 의존성 순서다. 각 큰 항목은 별도 spec을 만든 뒤 순차 실행한다. 건식 실기기와 얕은 물통·수영장 침수 검증, Supabase·인증·원격 동기화, Memory/share, 출시 준비를 모두 포함한다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. 사용자가 foreground pairing/import/local acknowledgement 기준선을 확인했으므로 현재 구현 순서는 Wave 3 Supabase/Auth로 이동한다. Wave 1의 나머지 물리 항목과 Wave 2는 Wave 3 이후 통합 환경에서 다시 검증한다.
 
 ## 현재 상태
 
-즉시 hardening의 코드 구현과 자동 검증은 완료됐다. 건식 실기기 검증은 완료되지 않았으므로 P0 Wave 1은 현재 활성 gate다.
+즉시 hardening의 코드 구현과 자동 검증은 완료됐다. 사용자는 실기기에서 약 4분의 foreground pairing, Watch session 자동 import, 모바일 local save 뒤 Watch `synced` 전환을 확인했다. 이 보고는 핵심 foreground 경로의 기준선이며 build identifier, 기기/OS, reconnect, background, killed-app, large transfer 완료 증거는 아니다. 현재 활성 구현은 Wave 3이고 남은 Wave 1/2 항목은 삭제하지 않는다.
 
 - 자동 event와 수동 drain은 process-wide `WatchConnectivityImportCoordinator`를 공유한다. 같은 `payloadId`는 합쳐지고 서로 다른 payload는 직렬 처리되며 실패 뒤에도 queue가 계속된다.
 - Watch 수온은 optional이다. 첫 수온 update 전 값을 `0°C`로 만들지 않고, 수온이 없는 sample도 깊이·압력 기록으로 보존한다.
 - 모바일 `DiveLogEntry.cloudSyncStatus`와 raw Watch `session.syncStatus`를 분리했다. Logbook schema 2의 모든 기존 모바일 상태는 schema 3에서 `notConfigured`로 migration한다. Cloud backend가 없을 때는 cloud filter와 status pill을 표시하지 않는다.
 - `DiveWatchAppDebug`에서 deterministic 8,000-sample `Test Large Sync`를 일반 저장·전송 경로로 실행할 수 있다.
 
-자동 검증은 통과했지만 Watch 앱 실기기 설치와 물리 테스트는 아직 실행하지 않았다. 따라서 reconnect crash 부재, background delivery, large file transfer는 완료로 판정하지 않는다. Simulator나 mock 결과를 실기기 또는 수중 동작의 증거로 쓰지 않는다.
+자동 검증과 foreground 핵심 실기기 경로는 확인됐지만 reconnect crash 부재, background delivery, killed-app recovery, large file transfer는 완료로 판정하지 않는다. Simulator나 mock 결과를 실기기 또는 수중 동작의 증거로 쓰지 않는다.
 
 ## P0 Wave 1: 건식 실기기
 
@@ -39,13 +39,12 @@ Updated: 2026-07-12
 
 ## P0 Wave 3: Supabase와 인증
 
-- guest data를 계정에 연결하는 동의·보존·중복·로그아웃 정책을 먼저 spec으로 확정한다.
-- root `supabase/`와 필요 시 `packages/supabase`를 실제로 만들고 local CLI workflow를 고정한다.
-- user-owned Logbook/Planbook/profile/media schema, migration, exposed table RLS, owner isolation test를 만든다.
-- Auth session 복원·로그인·로그아웃·계정 삭제 경계를 모바일에 추가한다. Authorization에 user-editable metadata를 사용하지 않는다.
-- generated database type, Supabase client, remote repository를 기존 repository 경계 뒤에 둔다. 모바일에 direct SQL이나 service-role key를 넣지 않는다.
-- local-first outbox, retry/backoff, conflict resolution, tombstone/delete, cloud backup 상태를 정의하고 `cloudSyncStatus`를 그때 활성화한다.
-- 원격 media storage가 필요하면 upload/read/delete RLS와 offline behavior를 함께 검증한다.
+- 3A: root `supabase/`, `packages/supabase`, generated type, Keychain session, iOS native Google/Apple Auth, mandatory versioned terms/privacy consent를 만든다. Logbook/Planbook은 이 단계에서 local-only다.
+- 3B: user-owned Logbook/Planbook schema와 RLS, keyset cursor infinite pagination, private immutable 1Hz profile Storage와 detail-only fetch를 만든다.
+- 3C: `guest`/`user:<uuid>` local partition, explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
+- 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.
+- Email/password, magic link, SMS, Android native Auth, profile/nickname/friends, app-provided manual identity management, marketing consent는 Wave 3 범위 밖이다. 같은 verified email은 Supabase Auth automatic linking을 따른다.
+- 7일 유예 soft deletion/recovery는 즉시 영구 삭제 뒤의 명시적 후속 기능이다.
 
 ## P0 Wave 4: 제품 완성
 

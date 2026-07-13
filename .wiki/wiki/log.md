@@ -1,5 +1,20 @@
 # Wiki Log
 
+## [2026-07-13] ingest | Wave 3 Supabase/Auth 승인 결정
+- Added: Wave 3 Supabase/Auth 승인 결정 raw source
+- Updated: Supabase 구조
+- Updated: 구현 우선순위 기록
+- Updated: 모바일 로그북 로드맵
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자 실기기 보고: 약 4분 foreground pairing, Watch session 자동 import, 모바일 local save 뒤 Watch `synced` 확인
+  - 사용자 결정: iOS native Google/Apple, mandatory versioned consent, guest/account 분리, explicit guest claim, cursor pagination, detail-only private profile Storage, revision conflict, logout account-cache purge, 즉시 영구 삭제
+  - 기술 검토: manual provider linking UI는 제공하지 않고, 같은 verified email에는 Supabase Auth의 automatic linking 기본 동작을 수용
+  - 사용자 결정: 7일 유예 soft deletion/recovery, nickname/profile/friends, Android native Auth는 후속
+- 요약:
+  - Wave 3을 3A Auth foundation, 3B remote data, 3C local-first sync, 3D account lifecycle로 나눴다. Watch local acknowledgement와 cloud 성공을 분리하고, 남은 Wave 1/2 물리 gate는 완료로 과장하지 않는다.
+
 ## [2026-07-12] ingest | Pre-real-dive P0 readiness and QA boundary
 - Added: Pre-real-dive readiness scope and immediate hardening raw source
 - Updated: 구현 우선순위 기록

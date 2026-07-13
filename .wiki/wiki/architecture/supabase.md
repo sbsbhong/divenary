@@ -1,31 +1,35 @@
 # Supabase 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13
+Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md)
+Updated: 2026-07-13
 
 ## 요약
 
-현재 저장소에는 구현된 Supabase 영역이 없다.
+현재 저장소에는 구현된 Supabase 영역이 없지만 Wave 3의 Auth, 데이터 소유권, 목록 pagination, profile Storage, local-first sync, logout과 계정 삭제 정책은 승인됐다. 구현은 3A Auth foundation, 3B remote data, 3C local-first sync, 3D account lifecycle 순서로 진행한다.
 
 ## 현재 상태
 
-저장소에는 root `supabase/` directory나 `packages/supabase` workspace가 없다. 현재 코드에는 Supabase client initialization, generated database type, migration, RLS policy, repository layer, edge function, auth flow가 없다.
+root `supabase/`와 `packages/supabase`는 아직 없다. Supabase client, generated database type, migration, RLS policy, Auth UI, remote repository, outbox도 구현되지 않았다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 reconnect, background, killed-app, large transfer까지 검증된 것은 아니다.
+
+3A는 iOS native Google/Apple login, Keychain session, `app_memberships`, versioned `legal_documents`/`consent_records`, current required consent를 한 transaction에서 기록하는 onboarding RPC를 만든다. 같은 verified email의 OAuth identity는 Supabase Auth의 automatic linking을 따르되 app code는 email을 비교하거나 manual linking UI를 제공하지 않는다. Authorization은 `auth.uid()`만 사용한다. Email/password, magic link, SMS, Android native Auth, nickname/profile/friends, marketing consent는 범위 밖이다.
 
 ## 상세
 
-Supabase가 도입될 때 의도된 책임은 다음과 같다.
+Supabase가 도입될 때 책임은 다음과 같다.
 
-- `supabase/`: migration, RLS policy, seed data, database function, 필요 시 edge function.
-- `packages/supabase`: Supabase client initialization, generated database type, repository/query function, Supabase 전용 mapping logic.
+- `supabase/`: local configuration, migration, RLS, seed, database test, privileged account deletion boundary.
+- `packages/supabase`: generated database type, typed client factory, Auth와 Logbook/Planbook/profile repository. React Native UI와 native provider SDK에는 의존하지 않는다.
+- `apps/mobile`: Keychain session adapter, native Google/Apple credential adapter, Auth state/UI, principal-scoped local repository, outbox와 account cache.
+- Watch app: 기존 local capture와 iPhone sync만 담당한다. Supabase client, account id, cloud business logic을 갖지 않는다.
 
-Schema change는 migration 중심으로 진행해야 한다. 새 table이나 변경된 table은 RLS policy, 지원되는 경우 generated type update, repository update, Supabase 구조와 dive-log domain wiki 수정과 함께 다룬다.
+로컬 principal은 `guest`와 `user:<uuid>`로 분리한다. Guest는 local-only다. Account 연결은 명시적 동의를 받은 뒤 copy, remote/profile 검증, source removal 순서로 수행한다. Logout은 현재 account의 session, local partition, query cache, downloaded profile을 기기에서 제거하고 guest partition을 보존한다.
 
-Watch sync contract는 현재 `userId`를 생략한다. 사용자 소유권은 watch-side capture가 아니라 인증된 mobile/server context에서 붙여야 한다.
+Logbook은 `(started_at desc, id desc)`, Planbook은 `(planned_at desc, id desc)` keyset cursor와 기본 page size 30을 사용한다. 목록에는 typed metadata와 최대 160개 preview sample만 포함한다. 전체 1Hz profile은 private `dive-profiles/<user_id>/<dive_log_id>/<content_revision>.json` immutable object로 저장하고 detail에서만 다운로드한다.
 
-Local-first 저장소 경계는 준비됐고 Supabase/Auth 전체 구현은 pre-real-dive P0다. 실제 구현 전 guest data 연결 동의, 로그아웃·계정 삭제·중복·conflict 정책을 별도 spec으로 확정한다. 이후 local Supabase project, user-owned schema와 RLS, generated database type, client, remote repository, outbox/retry, cloud backup, media storage 순서로 진행한다.
+Signed-in write는 local save 뒤 idempotent outbox가 전달한다. Remote row `revision`이 expected revision과 다르면 local mutation을 `conflict`로 보존하고 remote latest를 가져온다. Watch `session.syncStatus: synced`는 iPhone local import acknowledgement이고 remote cloud 성공과 독립적이다.
 
-모바일 `DiveLogEntry.cloudSyncStatus`는 현재 `notConfigured`다. Raw Watch `session.syncStatus`와 별개이며, backend와 outbox가 구현되기 전에는 cloud 상태 filter나 성공·대기·실패 pill을 표시하지 않는다. Mobile code는 direct SQL을 사용하지 않고 repository 경계 뒤에서 remote storage를 다룬다.
+계정 삭제는 앱 안에서 재확인 뒤 즉시 영구 삭제한다. 7일 유예 soft deletion/recovery는 후속 기능이다. `service_role`과 provider secret은 mobile bundle에 두지 않는다.
 
 ## 관련 문서
 

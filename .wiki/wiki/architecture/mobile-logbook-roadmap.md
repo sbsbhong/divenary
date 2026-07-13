@@ -1,8 +1,8 @@
 # 모바일 로그북 로드맵
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13
+Raw: [Pre-Karpathy: 모바일 로그북 로드맵](../../raw/architecture/mobile-logbook-roadmap.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md)
+Updated: 2026-07-13
 
 ## 요약
 
@@ -10,7 +10,7 @@ Updated: 2026-07-12
 
 ## 현재 상태
 
-현재 모바일 로그북은 `DiveLogEntry`를 `DiveLogRepository` 경계 뒤에서 다룬다. 앱 기본 구현은 AsyncStorage 기반 `PersistentDiveLogRepository`와 React Query hook을 사용한다. 수동 로그 작성/수정과 WatchConnectivity pending inbox에서 가져온 watch log는 같은 목록에 표시되고 앱 재시작 뒤에도 저장된다. WatchConnectivity 전송 계층 PoC는 있지만 실제 paired-device delivery 검증, 인증, Supabase sync는 구현되어 있지 않다.
+현재 모바일 로그북은 `DiveLogEntry`를 `DiveLogRepository` 경계 뒤에서 다룬다. 앱 기본 구현은 AsyncStorage 기반 `PersistentDiveLogRepository`와 React Query hook을 사용한다. 수동 로그와 Watch log는 같은 목록에 표시되고 앱 재시작 뒤에도 저장된다. 사용자는 foreground paired-device 자동 import와 local save acknowledgement를 확인했지만 인증과 Supabase sync는 아직 구현되지 않았다.
 
 승인된 방향은 다음과 같다.
 
@@ -33,8 +33,10 @@ Updated: 2026-07-12
 - [x] Phase 2.5: Logbook, Planbook, 설정 선호를 AsyncStorage 기반 persistent repository/provider에 저장한다.
 - [x] Phase 3: Watch에서 만든 contract-valid payload가 모바일로 들어올 수 있는지 검증한다.
 - [ ] Phase 4: Watch 기반 로그 작성 화면에서 측정값을 잠금 처리하고 누락된 맥락을 모바일에서 채운다.
-- [ ] Phase 5: Supabase Auth, user-owned table, RLS, generated type, remote repository를 추가한다.
-- [ ] Phase 6: 로그인 상태에 따라 guest local-only와 signed-in local-plus-sync 저장 전략을 적용한다.
+- [ ] Phase 5A: local Supabase, generated type, Keychain session, iOS native Google/Apple Auth, required consent를 추가한다. 기존 Logbook/Planbook은 local-only를 유지한다.
+- [ ] Phase 5B: user-owned Logbook/Planbook RLS, keyset cursor infinite pagination, private immutable profile Storage를 추가한다.
+- [ ] Phase 6: `guest`/`user:<uuid>` partition, explicit guest claim, outbox/retry, revision conflict를 적용한다.
+- [ ] Phase 7: account logout local purge와 즉시 영구 삭제를 적용하고 통합 회귀를 수행한다.
 
 ## 상세
 
@@ -48,6 +50,10 @@ Updated: 2026-07-12
 - `localId`: 로컬 저장과 offline-first 동작의 기준.
 - `remoteId`: Supabase sync 이후 remote row와 연결하는 선택 값.
 - `ownerUserId`: 인증된 사용자 연결이 생긴 뒤 붙는 선택 값.
+
+원격 목록은 한 번에 모두 가져오지 않는다. Logbook은 `(started_at desc, id desc)`, Planbook은 `(planned_at desc, id desc)` cursor와 기본 page size 30을 사용한다. 목록에는 bounded preview만 두고 전체 1Hz profile은 private Storage에서 detail을 열 때만 받는다.
+
+로컬 저장은 `guest`와 `user:<uuid>` namespace로 분리한다. Guest claim은 명시적 동의 뒤 copy-and-verify로 수행하며, logout은 account partition과 downloaded profile을 기기에서 제거하고 guest를 보존한다. Watch `session.syncStatus: synced`는 계속 iPhone local import acknowledgement이고 remote cloud status와 별개다.
 
 Watch-captured field는 원본을 덮어쓰지 않는다. 사용자가 틀렸다고 느끼는 경우에는 원본 수정 대신 메모, 표시 제외, 또는 별도 보정 계층을 검토한다.
 
