@@ -65,6 +65,10 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
   >(undefined);
   const stateRef = React.useRef(state);
   const operationIdRef = React.useRef(0);
+  const intentEpochRef = React.useRef(0);
+  const offlineMembershipBlockedRef = React.useRef(false);
+  const acceptsAuthenticatedSessionRef = React.useRef(true);
+  const revalidationSuppressedRef = React.useRef(false);
   const mountedRef = React.useRef(true);
   const signInPromiseRef = React.useRef<Promise<void> | undefined>(undefined);
 
@@ -83,19 +87,37 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     [],
   );
 
+  const isCurrentIntent = React.useCallback(
+    (intentEpoch: number) =>
+      mountedRef.current && intentEpochRef.current === intentEpoch,
+    [],
+  );
+
+  const closeLocalSession = React.useCallback(async () => {
+    operationIdRef.current += 1;
+    intentEpochRef.current += 1;
+    acceptsAuthenticatedSessionRef.current = false;
+    revalidationSuppressedRef.current = false;
+    offlineMembershipBlockedRef.current = true;
+    updateState({status: 'guest'});
+
+    if (mobileAuth !== undefined) {
+      await Promise.allSettled([
+        mobileAuth.repository.signOut(),
+        mobileAuth.membershipCache.remove(),
+      ]);
+    }
+  }, [mobileAuth, updateState]);
+
   const clearInvalidSession = React.useCallback(
     async (operationId: number) => {
       if (mobileAuth === undefined || !isCurrentOperation(operationId)) {
         return;
       }
 
-      updateState({status: 'guest'});
-      await Promise.allSettled([
-        mobileAuth.repository.signOut(),
-        mobileAuth.membershipCache.remove(),
-      ]);
+      await closeLocalSession();
     },
-    [isCurrentOperation, mobileAuth, updateState],
+    [closeLocalSession, isCurrentOperation, mobileAuth],
   );
 
   const restoreOfflineMembership = React.useCallback(
@@ -108,7 +130,8 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       if (
         mobileAuth === undefined ||
         stored === undefined ||
-        stored.expiresAt <= mobileAuth.now()
+        stored.expiresAt <= mobileAuth.now() ||
+        offlineMembershipBlockedRef.current
       ) {
         if (isCurrentOperation(operationId)) {
           updateState({status: 'guest'});
@@ -148,10 +171,15 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       }
 
       if (!status.isComplete || status.onboardingCompletedAt === null) {
+        offlineMembershipBlockedRef.current = true;
+
         try {
           await mobileAuth.membershipCache.remove();
         } catch {
-          // A stale cache must not unlock the current online session.
+          if (isCurrentOperation(operationId)) {
+            await closeLocalSession();
+          }
+          return;
         }
 
         if (isCurrentOperation(operationId)) {
@@ -174,22 +202,46 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
         })),
       };
 
+      offlineMembershipBlockedRef.current = true;
+      let cacheSaved = false;
+
       try {
         await mobileAuth.membershipCache.save(cacheEntry);
+        cacheSaved = true;
       } catch {
-        // Online verification is authoritative even if the offline cache fails.
+        try {
+          await mobileAuth.membershipCache.remove();
+        } catch {
+          if (isCurrentOperation(operationId)) {
+            await closeLocalSession();
+          }
+          return;
+        }
       }
 
       if (isCurrentOperation(operationId)) {
+        if (cacheSaved) {
+          offlineMembershipBlockedRef.current = false;
+        }
         updateState({status: 'authenticated', userId});
       }
     },
-    [isCurrentOperation, mobileAuth, updateState],
+    [closeLocalSession, isCurrentOperation, mobileAuth, updateState],
   );
 
-  const revalidate = React.useCallback(async () => {
+  const revalidate = React.useCallback(async (expectedIntentEpoch?: number) => {
     if (mobileAuth === undefined) {
       updateState({status: 'guest'});
+      return;
+    }
+
+    const intentEpoch = expectedIntentEpoch ?? intentEpochRef.current;
+
+    if (
+      revalidationSuppressedRef.current ||
+      !acceptsAuthenticatedSessionRef.current ||
+      !isCurrentIntent(intentEpoch)
+    ) {
       return;
     }
 
@@ -215,6 +267,9 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     }
 
     if (stored === undefined) {
+      acceptsAuthenticatedSessionRef.current = false;
+      offlineMembershipBlockedRef.current = true;
+
       try {
         await mobileAuth.membershipCache.remove();
       } catch {
@@ -300,6 +355,7 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
   }, [
     applyOnboardingStatus,
     clearInvalidSession,
+    isCurrentIntent,
     isCurrentOperation,
     mobileAuth,
     updateState,
@@ -334,12 +390,21 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     const unsubscribe = mobileAuth.repository.subscribe(nextSession => {
       if (nextSession === null) {
         operationIdRef.current += 1;
+        intentEpochRef.current += 1;
+        acceptsAuthenticatedSessionRef.current = false;
+        revalidationSuppressedRef.current = false;
+        offlineMembershipBlockedRef.current = true;
         updateState({status: 'guest'});
         mobileAuth.membershipCache.remove().catch(() => undefined);
         return;
       }
 
-      revalidate().catch(() => undefined);
+      if (!acceptsAuthenticatedSessionRef.current) {
+        closeLocalSession().catch(() => undefined);
+        return;
+      }
+
+      revalidate(intentEpochRef.current).catch(() => undefined);
     });
     let previousAppState = AppState.currentState as AppStateStatus;
     const appStateSubscription = AppState.addEventListener(
@@ -351,7 +416,7 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
         if (nextAppState === 'active') {
           mobileAuth.repository.startAutoRefresh();
           if (!wasActive) {
-            revalidate().catch(() => undefined);
+            revalidate(intentEpochRef.current).catch(() => undefined);
           }
         } else {
           mobileAuth.repository.stopAutoRefresh();
@@ -359,16 +424,17 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       },
     );
 
-    revalidate().catch(() => undefined);
+    revalidate(intentEpochRef.current).catch(() => undefined);
 
     return () => {
       mountedRef.current = false;
       operationIdRef.current += 1;
+      intentEpochRef.current += 1;
       unsubscribe();
       appStateSubscription.remove();
       mobileAuth.repository.stopAutoRefresh();
     };
-  }, [mobileAuth, revalidate, updateState]);
+  }, [closeLocalSession, mobileAuth, revalidate, updateState]);
 
   const performSignIn = React.useCallback(
     async (provider: SocialProvider) => {
@@ -382,18 +448,23 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
         throw new NativeSocialAuthError('unavailable');
       }
 
-      const operationId = operationIdRef.current + 1;
-      operationIdRef.current = operationId;
+      const intentEpoch = intentEpochRef.current + 1;
+      intentEpochRef.current = intentEpoch;
+      operationIdRef.current += 1;
+      acceptsAuthenticatedSessionRef.current = true;
+      revalidationSuppressedRef.current = true;
       updateState({status: 'authenticating', provider});
 
       try {
         const result = await adapter();
 
-        if (!isCurrentOperation(operationId)) {
+        if (!isCurrentIntent(intentEpoch)) {
           return;
         }
 
         if (result.type === 'cancelled') {
+          acceptsAuthenticatedSessionRef.current = false;
+          revalidationSuppressedRef.current = false;
           updateState({status: 'guest'});
           return;
         }
@@ -401,29 +472,47 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
         await mobileAuth.repository.signInWithIdToken(
           toSocialIdTokenInput(result.credential),
         );
+
+        if (!isCurrentIntent(intentEpoch)) {
+          await closeLocalSession();
+          return;
+        }
+
         try {
           await mobileAuth.recentProviderStore.save(provider);
 
-          if (mountedRef.current) {
+          if (isCurrentIntent(intentEpoch)) {
             setRecentProvider(provider);
           }
         } catch {
           // This non-secret convenience preference must not block Auth.
         }
 
-        await revalidate();
-      } catch (error) {
-        if (isInvalidSessionError(error)) {
-          await clearInvalidSession(operationId);
-        } else if (isCurrentOperation(operationId)) {
-          updateState({status: 'guest'});
+        if (!isCurrentIntent(intentEpoch)) {
+          return;
         }
+
+        revalidationSuppressedRef.current = false;
+        await revalidate(intentEpoch);
+      } catch (error) {
+        if (!isCurrentIntent(intentEpoch)) {
+          return;
+        }
+
+        acceptsAuthenticatedSessionRef.current = false;
+        revalidationSuppressedRef.current = false;
+        offlineMembershipBlockedRef.current = true;
+
+        if (isInvalidSessionError(error)) {
+          await closeLocalSession();
+        }
+        updateState({status: 'guest'});
         throw error;
       }
     },
     [
-      clearInvalidSession,
-      isCurrentOperation,
+      closeLocalSession,
+      isCurrentIntent,
       mobileAuth,
       revalidate,
       updateState,
@@ -449,17 +538,7 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     [performSignIn],
   );
 
-  const endLocalSession = React.useCallback(async () => {
-    operationIdRef.current += 1;
-    updateState({status: 'guest'});
-
-    if (mobileAuth !== undefined) {
-      await Promise.allSettled([
-        mobileAuth.repository.signOut(),
-        mobileAuth.membershipCache.remove(),
-      ]);
-    }
-  }, [mobileAuth, updateState]);
+  const endLocalSession = closeLocalSession;
 
   const completeOnboarding = React.useCallback(
     async (documents: Array<{kind: 'terms' | 'privacy'; version: string}>) => {

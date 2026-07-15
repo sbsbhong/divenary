@@ -304,6 +304,76 @@ describe('AuthProvider', () => {
     expect(fixture.membershipCache.save).not.toHaveBeenCalled();
   });
 
+  test('fails closed when an incomplete-consent cache cannot be removed', async () => {
+    const fixture = createAuthFixture({
+      evidence,
+      status: pendingStatus,
+      cache: cachedMembership,
+    });
+    fixture.membershipCache.remove.mockRejectedValue(
+      new Error('membership cache unavailable'),
+    );
+
+    const auth = await mountAuth(fixture.mobileAuth);
+
+    expect(auth.state).toEqual({status: 'guest'});
+    expect(fixture.repository.signOut).toHaveBeenCalledTimes(1);
+    expect(fixture.membershipCache.save).not.toHaveBeenCalled();
+  });
+
+  test('removes a stale cache when complete online status cannot be cached', async () => {
+    let persistedCache: MembershipCacheEntry | undefined = cachedMembership;
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      cache: cachedMembership,
+    });
+    fixture.membershipCache.load.mockImplementation(
+      async () => persistedCache,
+    );
+    fixture.membershipCache.save.mockRejectedValue(
+      new Error('membership cache unavailable'),
+    );
+    fixture.membershipCache.remove.mockImplementation(async () => {
+      persistedCache = undefined;
+    });
+
+    const auth = await mountAuth(fixture.mobileAuth);
+    expect(auth.state).toEqual({status: 'authenticated', userId});
+    expect(fixture.membershipCache.remove).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      mountedRenderers.pop()?.unmount();
+    });
+
+    fixture.repository.verifyClaims.mockRejectedValue(
+      new AuthRepositoryError('network'),
+    );
+    const remounted = await mountAuth(fixture.mobileAuth);
+
+    expect(remounted.state).toEqual({status: 'guest'});
+    expect(fixture.membershipCache.load).toHaveBeenCalledTimes(1);
+  });
+
+  test('fails closed when neither complete cache save nor stale cache removal succeeds', async () => {
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      cache: cachedMembership,
+    });
+    fixture.membershipCache.save.mockRejectedValue(
+      new Error('membership cache unavailable'),
+    );
+    fixture.membershipCache.remove.mockRejectedValue(
+      new Error('membership cache unavailable'),
+    );
+
+    const auth = await mountAuth(fixture.mobileAuth);
+
+    expect(auth.state).toEqual({status: 'guest'});
+    expect(fixture.repository.signOut).toHaveBeenCalledTimes(1);
+  });
+
   test.each([
     ['claims user mismatch', 'claims-user'],
     ['claims expiry mismatch', 'claims-expiry'],
@@ -508,6 +578,94 @@ describe('AuthProvider', () => {
     expect(fixture.repository.signInWithIdToken).not.toHaveBeenCalled();
   });
 
+  test('keeps explicit sign-out authoritative over a late token exchange', async () => {
+    const exchange = createDeferred<Session>();
+    const google = jest.fn(async () => ({
+      type: 'credential',
+      credential: {provider: 'google', idToken: 'google-id-token'},
+    } as const));
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      providers: {google},
+    });
+    fixture.repository.getStoredSessionEvidence
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(evidence);
+    fixture.repository.signInWithIdToken.mockImplementation(async () => {
+      const exchangedSession = await exchange.promise;
+      fixture.emitAuth(exchangedSession);
+      return exchangedSession;
+    });
+    fixture.repository.signOut.mockRejectedValue(
+      new AuthRepositoryError('network'),
+    );
+    await mountAuth(fixture.mobileAuth);
+
+    let signInPromise!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      signInPromise = latestAuth.signIn('google');
+    });
+    await settle();
+    expect(fixture.repository.signInWithIdToken).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      await latestAuth.signOut();
+    });
+    exchange.resolve(session);
+    await ReactTestRenderer.act(async () => {
+      await signInPromise;
+    });
+    await settle();
+
+    expect(latestAuth.state).toEqual({status: 'guest'});
+    expect(
+      fixture.repository.signOut.mock.calls.length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(fixture.recentProviderStore.save).not.toHaveBeenCalled();
+  });
+
+  test('does not cancel native sign-in when foreground revalidation finishes first', async () => {
+    const nativeResult = createDeferred<
+      Awaited<ReturnType<NativeSocialSignIn>>
+    >();
+    const google = jest.fn(() => nativeResult.promise);
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      providers: {google},
+    });
+    fixture.repository.getStoredSessionEvidence
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(evidence);
+    await mountAuth(fixture.mobileAuth);
+
+    let signInPromise!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      signInPromise = latestAuth.signIn('google');
+      appStateListener?.('background');
+      appStateListener?.('active');
+    });
+    await settle();
+
+    expect(latestAuth.state).toEqual({
+      status: 'authenticating',
+      provider: 'google',
+    });
+
+    nativeResult.resolve({
+      type: 'credential',
+      credential: {provider: 'google', idToken: 'google-id-token'},
+    });
+    await ReactTestRenderer.act(async () => {
+      await signInPromise;
+    });
+    await settle();
+
+    expect(fixture.repository.signInWithIdToken).toHaveBeenCalledTimes(1);
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+  });
+
   test('completes exact rendered consent and supports explicit cancel/logout', async () => {
     const fixture = createAuthFixture({evidence, status: pendingStatus});
     await mountAuth(fixture.mobileAuth);
@@ -528,19 +686,21 @@ describe('AuthProvider', () => {
     expect(fixture.membershipCache.remove).toHaveBeenCalled();
     expect(fixture.recentProviderStore.save).not.toHaveBeenCalledWith(undefined);
 
-    fixture.repository.getStoredSessionEvidence.mockResolvedValue(evidence);
-    fixture.repository.getOnboardingStatus.mockResolvedValue(pendingStatus);
     await ReactTestRenderer.act(async () => {
-      fixture.emitAuth(session);
+      mountedRenderers.pop()?.unmount();
     });
-    await settle();
+    const restoredPending = createAuthFixture({
+      evidence,
+      status: pendingStatus,
+    });
+    await mountAuth(restoredPending.mobileAuth);
     expect(latestAuth.state.status).toBe('pendingOnboarding');
 
     await ReactTestRenderer.act(async () => {
       await latestAuth.cancelOnboarding();
     });
     expect(latestAuth.state).toEqual({status: 'guest'});
-    expect(fixture.repository.signOut).toHaveBeenCalledTimes(2);
+    expect(restoredPending.repository.signOut).toHaveBeenCalledTimes(1);
   });
 
   test('prevents consent operations while authenticated offline', async () => {
