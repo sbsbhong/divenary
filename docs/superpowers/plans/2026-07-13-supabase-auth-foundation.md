@@ -513,7 +513,7 @@ export type NativeSocialResult =
   | { type: 'cancelled' };
 ~~~
 
-Mock SDK modules before importing adapters. Assert Google `signIn()` resolved `{ type: 'cancelled', data: null }` returns cancelled and `{ type: 'success', data: { idToken } }` returns only its ID token; do not model cancellation as an error code. Missing tokens throw `NativeSocialAuthError('missing_id_token')`. Assert Apple calls `performRequest` without an app-generated nonce, requests only `EMAIL`, and returns the response's raw `nonce` with `identityToken`; the Invertase library generates a secure raw nonce and hashes it before sending to Apple. Also cover Apple `ERR_REQUEST_CANCELED` and empty response nonce. The app never computes or double-hashes the Apple nonce.
+Mock SDK modules before importing adapters. Assert Google `signIn()` resolved `{ type: 'cancelled', data: null }` returns cancelled and `{ type: 'success', data: { idToken } }` returns only its ID token; do not model cancellation as an error code. Missing tokens throw `NativeSocialAuthError('missing_id_token')`. Assert Apple calls `performRequest` without an app-generated nonce, requests only `EMAIL`, and returns the response's raw `nonce` with `identityToken`; the Invertase library generates a secure raw nonce and hashes it before sending to Apple. Also cover the installed v2.5.1 SDK's `appleAuth.Error.CANCELED` code and an empty response nonce. The app never computes or double-hashes the Apple nonce.
 
 Assert `recent-social-provider.ts` stores only schema version and `google | apple` under a namespaced AsyncStorage key, ignores malformed/unknown values, and never stores user/token data.
 
@@ -541,7 +541,7 @@ export class NativeSocialAuthError extends Error {
 
 - [ ] **Step 4: Implement provider adapters**
 
-Configure `GoogleSignin` once with validated `webClientId`, `iosClientId`, and `offlineAccess: false`. The iOS-first path calls `signIn()` directly; `hasPlayServices()` is Android-only and is not a precondition here. Use `isCancelledResponse`/`isSuccessResponse` before reading `data.idToken`. Expose Apple only when `Platform.OS === 'ios' && appleAuth.isSupported`; otherwise throw/test `NativeSocialAuthError('unavailable')` and never inject the adapter on Android. Apple calls `performRequest({ requestedOperation: LOGIN, requestedScopes: [EMAIL] })`; it deliberately omits a nonce so Invertase creates one, then returns `response.nonce` unchanged to Supabase. Map only `ERR_REQUEST_CANCELED` to cancelled. Persist neither provider token, name, nor email.
+Configure `GoogleSignin` once with validated `webClientId`, `iosClientId`, and `offlineAccess: false`. The iOS-first path calls `signIn()` directly; `hasPlayServices()` is Android-only and is not a precondition here. Use `isCancelledResponse`/`isSuccessResponse` before reading `data.idToken`. Expose Apple only when `Platform.OS === 'ios' && appleAuth.isSupported`; otherwise throw/test `NativeSocialAuthError('unavailable')` and never inject the adapter on Android. Apple calls `performRequest({ requestedOperation: LOGIN, requestedScopes: [EMAIL] })`; it deliberately omits a nonce so Invertase creates one, then returns `response.nonce` unchanged to Supabase. Map only `appleAuth.Error.CANCELED` to cancelled. Persist neither provider token, name, nor email.
 
 - [ ] **Step 5: Verify and commit**
 
