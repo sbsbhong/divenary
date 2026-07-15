@@ -19,8 +19,7 @@ jest.mock('react-native-safe-area-context', () => {
     initialWindowMetrics: metrics,
     useSafeAreaFrame: jest.fn(() => metrics.frame),
     useSafeAreaInsets: jest.fn(() => metrics.insets),
-    SafeAreaProvider: ({ children }: { children?: React.ReactNode }) =>
-      ReactModule.createElement(ReactModule.Fragment, null, children),
+    SafeAreaProvider: ({ children }: { children?: React.ReactNode }) => ReactModule.createElement(ReactModule.Fragment, null, children),
   };
 });
 
@@ -101,6 +100,8 @@ describe('Apple design system mapping', () => {
 
   test('keeps mobile screens within the Apple-style UI rules from DESIGN.md', () => {
     const source = [
+      readSource('src', 'screens', 'auth', 'login-screen.tsx'),
+      readSource('src', 'screens', 'auth', 'onboarding-screen.tsx'),
       readSource('src', 'screens', 'home', 'screen.tsx'),
       readSource('src', 'screens', 'logbook', 'screen.tsx'),
       readSource('src', 'screens', 'planning', 'screen.tsx'),
@@ -121,10 +122,7 @@ describe('Apple design system mapping', () => {
 
   test('keeps status pills low-chroma instead of primary filled button styling', () => {
     const source = readSource('src', 'components', 'ui', 'instrument.tsx');
-    const statusPillStyles = source.slice(
-      source.indexOf('const pillStyles'),
-      source.indexOf('export function StatusPill'),
-    );
+    const statusPillStyles = source.slice(source.indexOf('const pillStyles'), source.indexOf('export function StatusPill'));
 
     expect(statusPillStyles).not.toContain('bg-primary text-primary-foreground');
     expect(statusPillStyles).not.toContain('bg-secondary text-secondary-foreground');

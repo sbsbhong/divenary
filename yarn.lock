@@ -1999,6 +1999,14 @@
   dependencies:
     nanoid "^3.3.11"
 
+"@react-stately/checkbox@3.8.1":
+  version "3.8.1"
+  resolved "https://registry.yarnpkg.com/@react-stately/checkbox/-/checkbox-3.8.1.tgz#d99c2dfee10ae7df0c0511ce8572fe6f0a76ff4b"
+  integrity sha512-jNYNOkro8cgLkeeea24UQdE+PWpsBz/6hGPPM9CrHBvC7x2Egh3iHy1not61Oqp7BI7Rq1K1+Q4q8J37bOTr6w==
+  dependencies:
+    "@swc/helpers" "^0.5.0"
+    react-stately "^3.46.0"
+
 "@react-stately/overlays@^3.7.1":
   version "3.7.1"
   resolved "https://registry.yarnpkg.com/@react-stately/overlays/-/overlays-3.7.1.tgz#e00d943ef7da66be314d8be95913dbf473182ebe"

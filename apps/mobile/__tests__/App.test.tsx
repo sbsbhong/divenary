@@ -12,6 +12,46 @@ import { Menu } from '../src/components/ui/menu';
 import i18n from '../src/i18n';
 import { defaultDiveLogRepository } from '../src/repositories/default-dive-log-repository';
 
+type MockAuthState =
+  | { status: 'guest' }
+  | {
+      status: 'pendingOnboarding';
+      userId: string;
+      documents: Array<{
+        kind: 'terms' | 'privacy';
+        version: string;
+        effectiveAt: string;
+        documentUrl: string;
+      }>;
+    }
+  | { status: 'authenticated'; userId: string }
+  | { status: 'authenticatedOffline'; userId: string };
+
+let mockAuthState: MockAuthState = { status: 'guest' };
+let mockAuthConfigured = false;
+let mockAuthProviders: Array<'google' | 'apple'> = [];
+const mockCancelOnboarding = jest.fn(async () => {
+  mockAuthState = { status: 'guest' };
+});
+
+jest.mock('../src/states/auth', () => {
+  const ReactModule = require('react') as typeof import('react');
+
+  return {
+    AuthProvider: ({ children }: { children?: React.ReactNode }) => ReactModule.createElement(ReactModule.Fragment, null, children),
+    useAuth: () => ({
+      state: mockAuthState,
+      isConfigured: mockAuthConfigured,
+      availableProviders: mockAuthProviders,
+      recentProvider: undefined,
+      signIn: jest.fn(async () => undefined),
+      completeOnboarding: jest.fn(async () => undefined),
+      cancelOnboarding: mockCancelOnboarding,
+      signOut: jest.fn(async () => undefined),
+    }),
+  };
+});
+
 const readRepoFile = (path: string) => {
   const nodeRequire = require as (moduleName: string) => {
     readFileSync: (filePath: string, encoding: 'utf8') => string;
@@ -25,6 +65,47 @@ const readRepoFile = (path: string) => {
 const waitForTestID = async (root: ReactTestRenderer.ReactTestInstance, testID: string) => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (root.findAllByProps({ testID }).length > 0) {
+      return;
+    }
+
+    await ReactTestRenderer.act(async () => {
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+  }
+};
+
+type RenderedNode = {
+  children?: unknown;
+  props?: Record<string, unknown>;
+};
+
+const findRenderedNodesByTestID = (tree: ReturnType<ReactTestRenderer.ReactTestRenderer['toJSON']>, testID: string): RenderedNode[] => {
+  const matches: RenderedNode[] = [];
+
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      node.forEach(visit);
+      return;
+    }
+
+    if (node === null || typeof node !== 'object') {
+      return;
+    }
+
+    const renderedNode = node as RenderedNode;
+    if (renderedNode.props?.testID === testID) {
+      matches.push(renderedNode);
+    }
+    visit(renderedNode.children);
+  };
+
+  visit(tree);
+  return matches;
+};
+
+const waitForRenderedTestID = async (renderer: ReactTestRenderer.ReactTestRenderer, testID: string) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    if (findRenderedNodesByTestID(renderer.toJSON(), testID).length > 0) {
       return;
     }
 
@@ -50,6 +131,9 @@ const mockDrainPendingWatchConnectivityPayloads = jest.fn();
 const mockAcknowledgeWatchConnectivityPayloads = jest.fn();
 const mockAcknowledgeImportedWatchConnectivityPayloads = jest.fn();
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
+let mockNotificationForegroundHandler:
+  | ((event: { type: number; detail: { notification: { data: Record<string, string> } } }) => void)
+  | undefined;
 let mockWatchConnectivityHandler:
   | ((payload: { payloadId?: string; payloadJson: string; localSessionId?: string; receivedAt?: number }) => void)
   | undefined;
@@ -113,8 +197,7 @@ jest.mock('react-native-safe-area-context', () => {
     initialWindowMetrics: mockSafeAreaMetrics,
     useSafeAreaFrame: jest.fn(() => mockSafeAreaMetrics.frame),
     useSafeAreaInsets: jest.fn(() => mockSafeAreaMetrics.insets),
-    SafeAreaProvider: ({ children }: { children?: React.ReactNode }) =>
-      ReactModule.createElement(ReactModule.Fragment, null, children),
+    SafeAreaProvider: ({ children }: { children?: React.ReactNode }) => ReactModule.createElement(ReactModule.Fragment, null, children),
   };
 });
 
@@ -141,6 +224,21 @@ describe('App navigation', () => {
     mockAcknowledgeWatchConnectivityPayloads.mockResolvedValue(undefined);
     mockAcknowledgeImportedWatchConnectivityPayloads.mockResolvedValue(undefined);
     mockWatchConnectivityHandler = undefined;
+    mockNotificationForegroundHandler = undefined;
+    mockAuthState = { status: 'guest' };
+    mockAuthConfigured = false;
+    mockAuthProviders = [];
+    mockCancelOnboarding.mockClear();
+    const notifeeMock = jest.requireMock('@notifee/react-native') as {
+      default: {
+        onForegroundEvent: jest.Mock;
+      };
+    };
+    notifeeMock.default.onForegroundEvent.mockReset();
+    notifeeMock.default.onForegroundEvent.mockImplementation((handler: NonNullable<typeof mockNotificationForegroundHandler>) => {
+      mockNotificationForegroundHandler = handler;
+      return jest.fn();
+    });
     mockSafeAreaMetrics = {
       frame: { width: 320, height: 640, x: 0, y: 0 },
       insets: { left: 0, right: 0, bottom: 0, top: 0 },
@@ -224,6 +322,182 @@ describe('App navigation', () => {
     expect(navigationSource).toContain('planningCreate');
     expect(navigationSource).not.toContain('type AppDetailRoute');
     expect(navigationSource).not.toContain('detailRoute');
+  });
+
+  test('defines guest-preserving login and non-dismissible consent routes', () => {
+    const navigationSource = readRepoFile('apps/mobile/src/components/navigation/index.tsx');
+
+    expect(navigationSource).toContain('authLogin: undefined');
+    expect(navigationSource).toContain('authOnboarding: undefined');
+    expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authLogin"/);
+    expect(navigationSource).toContain("presentation: 'modal'");
+    expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authOnboarding"/);
+    expect(navigationSource).toContain('gestureEnabled: false');
+    expect(navigationSource).toContain('usePreventRemove');
+    expect(navigationSource).toContain("state.status === 'pendingOnboarding'");
+    expect(navigationSource).toContain('onOpenLogin={openAuthLogin}');
+  });
+
+  test('moves a configured guest through login and required consent, then returns an explicit cancellation to the same local tabs', async () => {
+    mockAuthConfigured = true;
+    mockAuthProviders = [];
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'nav-tab-settings' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'settings-account-action' }).props.onPress();
+    });
+    await waitForRenderedTestID(renderer!, 'auth-login-screen');
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-login-screen')).toHaveLength(1);
+
+    mockAuthState = {
+      status: 'pendingOnboarding',
+      userId: 'navigation-test-user',
+      documents: [
+        {
+          kind: 'terms',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/terms/2026-07-13',
+        },
+        {
+          kind: 'privacy',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/privacy/2026-07-13',
+        },
+      ],
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(<App />);
+    });
+    await waitForRenderedTestID(renderer!, 'auth-onboarding-screen');
+
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(1);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-login-screen')).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(<App />);
+    });
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(1);
+
+    const cancelAction = findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-cancel')[0]?.props?.onClick as
+      | (() => Promise<void>)
+      | undefined;
+    expect(cancelAction).toEqual(expect.any(Function));
+    await ReactTestRenderer.act(async () => {
+      await cancelAction?.();
+      renderer!.update(<App />);
+    });
+
+    expect(mockCancelOnboarding).toHaveBeenCalledTimes(1);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(0);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'settings-screen-title')).toHaveLength(1);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'nav-tab-logbook')).toHaveLength(1);
+  });
+
+  test('shows restored pending consent once and returns authenticated membership to tabs', async () => {
+    mockAuthConfigured = true;
+    mockAuthProviders = [];
+    mockAuthState = {
+      status: 'pendingOnboarding',
+      userId: 'restored-pending-user',
+      documents: [
+        {
+          kind: 'terms',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/terms/2026-07-13',
+        },
+        {
+          kind: 'privacy',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/privacy/2026-07-13',
+        },
+      ],
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    await waitForRenderedTestID(renderer!, 'auth-onboarding-screen');
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(<App />);
+    });
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(1);
+
+    mockAuthState = {
+      status: 'authenticated',
+      userId: 'restored-pending-user',
+    };
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(<App />);
+    });
+
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(0);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'nav-tab-home')).toHaveLength(1);
+  });
+
+  test('keeps required consent above foreground notification routes until the user completes or cancels it', async () => {
+    mockAuthConfigured = true;
+    mockAuthState = {
+      status: 'pendingOnboarding',
+      userId: 'pending-notification-user',
+      documents: [
+        {
+          kind: 'terms',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/terms/2026-07-13',
+        },
+        {
+          kind: 'privacy',
+          version: '2026-07-13',
+          effectiveAt: '2026-07-13T00:00:00Z',
+          documentUrl: 'https://legal.example.com/privacy/2026-07-13',
+        },
+      ],
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+    await waitForRenderedTestID(renderer!, 'auth-onboarding-screen');
+    expect(mockNotificationForegroundHandler).toEqual(expect.any(Function));
+
+    await ReactTestRenderer.act(async () => {
+      mockNotificationForegroundHandler?.({
+        type: 1,
+        detail: {
+          notification: {
+            data: {
+              source: 'watch-sync-import',
+              entryLocalId: 'missing-pending-notification-entry',
+            },
+          },
+        },
+      });
+    });
+
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-onboarding-screen')).toHaveLength(1);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'navigation-missing-route')).toHaveLength(0);
   });
 
   test('home and planning actions preserve the requested tab when returning to tabs', async () => {

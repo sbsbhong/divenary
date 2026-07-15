@@ -4,16 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
 import { HStack } from '../../components/ui/hstack';
-import {
-  BellIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CircleIcon,
-  GlobeIcon,
-  Icon,
-  SunIcon,
-  WatchIcon,
-} from '../../components/ui/icon';
+import { InstrumentButton } from '../../components/ui/instrument';
+import { BellIcon, ChevronLeftIcon, ChevronRightIcon, CircleIcon, GlobeIcon, Icon, SunIcon, WatchIcon } from '../../components/ui/icon';
 import { Pressable } from '../../components/ui/pressable';
 import { Radio, RadioGroup, RadioIcon, RadioIndicator, RadioLabel } from '../../components/ui/radio';
 import { ScrollView } from '../../components/ui/scroll-view';
@@ -27,6 +19,7 @@ import {
   requestWatchSyncNotificationPermission as requestDefaultWatchSyncNotificationPermission,
 } from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences, type ThemePreference } from '../../states/app-preferences';
+import { useAuth, type AuthState } from '../../states/auth';
 
 export type SettingsRoute = 'index' | 'theme' | 'language' | 'notifications' | 'devices';
 
@@ -52,6 +45,7 @@ type SettingsScreenProps = {
   loadLinkedWatchInfo?: () => Promise<LinkedWatchInfo>;
   route?: SettingsRoute;
   onBack?: () => void;
+  onOpenLogin?: () => void;
   onOpenRoute?: (route: Exclude<SettingsRoute, 'index'>) => void;
   requestWatchSyncNotificationPermission?: () => Promise<boolean>;
   hasWatchSyncNotificationPermission?: () => Promise<boolean>;
@@ -64,6 +58,7 @@ const languageOptions: SupportedLanguage[] = ['ko', 'en'];
 export default function SettingsScreen({
   loadLinkedWatchInfo = getLinkedWatchInfo,
   onBack,
+  onOpenLogin,
   onOpenRoute,
   requestWatchSyncNotificationPermission = requestDefaultWatchSyncNotificationPermission,
   hasWatchSyncNotificationPermission = hasDefaultWatchSyncNotificationPermission,
@@ -71,16 +66,12 @@ export default function SettingsScreen({
   route: controlledRoute,
 }: SettingsScreenProps): React.JSX.Element {
   const { t } = useTranslation();
-  const {
-    language,
-    setLanguage,
-    setThemePreference,
-    setWatchSyncNotificationsEnabled,
-    themePreference,
-    watchSyncNotificationsEnabled,
-  } = useAppPreferences();
+  const auth = useAuth();
+  const { language, setLanguage, setThemePreference, setWatchSyncNotificationsEnabled, themePreference, watchSyncNotificationsEnabled } =
+    useAppPreferences();
   const [localRoute, setLocalRoute] = React.useState<SettingsRoute>('index');
   const [linkedWatchInfo, setLinkedWatchInfo] = React.useState<LinkedWatchInfo | undefined>();
+  const [accountActionBusy, setAccountActionBusy] = React.useState(false);
   const awaitingNotificationSettings = React.useRef(false);
   const notificationToggleBusy = React.useRef(false);
   const route = controlledRoute ?? localRoute;
@@ -115,9 +106,7 @@ export default function SettingsScreen({
 
   const themeLabel = getThemeLabel(themePreference, t);
   const languageLabel = getLanguageLabel(language, t);
-  const watchSyncNotificationLabel = watchSyncNotificationsEnabled
-    ? t('settings.notifications.on')
-    : t('settings.notifications.off');
+  const watchSyncNotificationLabel = watchSyncNotificationsEnabled ? t('settings.notifications.on') : t('settings.notifications.off');
   const openRoute = React.useCallback(
     (nextRoute: Exclude<SettingsRoute, 'index'>) => {
       if (onOpenRoute) {
@@ -258,14 +247,21 @@ export default function SettingsScreen({
                   return;
                 }
                 Alert.alert(
-                  t('settings.notifications.permissionRequired', { defaultValue: '알림 권한이 필요합니다' }),
+                  t('settings.notifications.permissionRequired', {
+                    defaultValue: '알림 권한이 필요합니다',
+                  }),
                   t('settings.notifications.openSettingsDescription', {
                     defaultValue: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
                   }),
                   [
-                    { text: t('common.cancel', { defaultValue: '취소' }), style: 'cancel' },
                     {
-                      text: t('settings.notifications.openSettings', { defaultValue: '설정 열기' }),
+                      text: t('common.cancel', { defaultValue: '취소' }),
+                      style: 'cancel',
+                    },
+                    {
+                      text: t('settings.notifications.openSettings', {
+                        defaultValue: '설정 열기',
+                      }),
                       onPress: () => {
                         awaitingNotificationSettings.current = true;
                         void openNotificationSettings();
@@ -292,6 +288,30 @@ export default function SettingsScreen({
         <Text size="sm" className="leading-5 text-muted-foreground">
           {t('settings.subtitle')}
         </Text>
+      </VStack>
+
+      <VStack space="sm">
+        <Text testID="settings-section-account" size="xs" bold className="uppercase text-muted-foreground">
+          {t('settings.account.title')}
+        </Text>
+        <AccountCard
+          authState={auth.state}
+          isConfigured={auth.isConfigured}
+          isBusy={accountActionBusy}
+          onLogin={onOpenLogin}
+          onSignOut={async () => {
+            if (accountActionBusy) {
+              return;
+            }
+
+            setAccountActionBusy(true);
+            try {
+              await auth.signOut();
+            } finally {
+              setAccountActionBusy(false);
+            }
+          }}
+        />
       </VStack>
 
       <VStack space="sm">
@@ -350,12 +370,100 @@ export default function SettingsScreen({
   );
 }
 
+function AccountCard(props: {
+  authState: AuthState;
+  isConfigured: boolean;
+  isBusy: boolean;
+  onLogin?: () => void;
+  onSignOut: () => Promise<void>;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const content = getAccountCardContent(props.authState, props.isConfigured, t);
+  const canLogin = content.action === 'login' && props.onLogin !== undefined;
+  const canSignOut = content.action === 'signOut';
+
+  return (
+    <VStack space="lg" className="rounded-2xl bg-card px-4 py-4">
+      <VStack space="xs">
+        <Text testID="settings-account-status" size="lg" bold className="text-card-foreground">
+          {content.status}
+        </Text>
+        <Text testID="settings-account-description" size="sm" className="leading-5 text-muted-foreground">
+          {content.description}
+        </Text>
+      </VStack>
+      {canLogin ? (
+        <InstrumentButton
+          testID="settings-account-action"
+          accessibilityLabel={t('settings.account.login')}
+          label={t('settings.account.login')}
+          variant="primary"
+          isDisabled={props.isBusy}
+          onPress={props.onLogin}
+        />
+      ) : null}
+      {canSignOut ? (
+        <InstrumentButton
+          testID="settings-account-action"
+          accessibilityLabel={t('settings.account.signOut')}
+          label={t('settings.account.signOut')}
+          variant="danger"
+          isDisabled={props.isBusy}
+          onPress={props.onSignOut}
+        />
+      ) : null}
+    </VStack>
+  );
+}
+
+function getAccountCardContent(
+  authState: AuthState,
+  isConfigured: boolean,
+  t: ReturnType<typeof useTranslation>['t'],
+): { status: string; description: string; action?: 'login' | 'signOut' } {
+  if (!isConfigured) {
+    return {
+      status: t('settings.account.unconfiguredStatus'),
+      description: t('settings.account.unconfiguredDescription'),
+    };
+  }
+
+  switch (authState.status) {
+    case 'guest':
+      return {
+        status: t('settings.account.guestStatus'),
+        description: t('settings.account.guestDescription'),
+        action: 'login',
+      };
+    case 'pendingOnboarding':
+      return {
+        status: t('settings.account.pendingStatus'),
+        description: t('settings.account.pendingDescription'),
+      };
+    case 'authenticated':
+      return {
+        status: t('settings.account.authenticatedStatus'),
+        description: t('settings.account.authenticatedDescription'),
+        action: 'signOut',
+      };
+    case 'authenticatedOffline':
+      return {
+        status: t('settings.account.offlineStatus'),
+        description: t('settings.account.offlineDescription'),
+        action: 'signOut',
+      };
+    case 'bootstrapping':
+    case 'authenticating':
+      return {
+        status: t('settings.account.signingInStatus'),
+        description: t('settings.account.signingInDescription'),
+      };
+  }
+}
+
 function SettingsScaffold(props: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <ScrollView
-      className="flex-1 bg-background"
-      contentContainerClassName="px-5 pb-8 pt-5"
-      contentInsetAdjustmentBehavior="automatic">
+    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-5 pb-8 pt-5" contentInsetAdjustmentBehavior="automatic">
       <VStack space="xl">{props.children}</VStack>
     </ScrollView>
   );
@@ -405,9 +513,7 @@ function SettingRow(props: SettingRowProps): React.JSX.Element {
         <Box testID={`${props.rowTestID}-icon`} className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
           <ButtonIcon as={props.icon} className="text-primary" />
         </Box>
-        <ButtonText className="flex-1 text-base font-semibold text-card-foreground">
-          {props.label}
-        </ButtonText>
+        <ButtonText className="flex-1 text-base font-semibold text-card-foreground">{props.label}</ButtonText>
         <HStack space="sm" className="shrink-0 items-center">
           <ButtonText testID={props.valueTestID} className="text-sm text-muted-foreground">
             {props.value}
@@ -434,9 +540,7 @@ function OptionRow(props: OptionRowProps): React.JSX.Element {
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
       <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
         <VStack space="xs" className="flex-1 pr-3">
-          <RadioLabel className={labelClassName}>
-            {props.label}
-          </RadioLabel>
+          <RadioLabel className={labelClassName}>{props.label}</RadioLabel>
           {props.description ? (
             <Text size="sm" className="leading-5 text-muted-foreground">
               {props.description}
@@ -467,9 +571,7 @@ function ToggleRow(props: {
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
       <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
         <VStack space="xs" className="flex-1 pr-3">
-          <Text className={props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground'}>
-            {props.label}
-          </Text>
+          <Text className={props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground'}>{props.label}</Text>
           <Text size="sm" className="leading-5 text-muted-foreground">
             {props.description}
           </Text>
@@ -520,10 +622,7 @@ function getLanguageLabel(language: SupportedLanguage, t: ReturnType<typeof useT
   return language === 'ko' ? t('settings.language.korean') : t('settings.language.english');
 }
 
-function getLinkedWatchStatusLabel(
-  linkedWatchInfo: LinkedWatchInfo | undefined,
-  t: ReturnType<typeof useTranslation>['t'],
-): string {
+function getLinkedWatchStatusLabel(linkedWatchInfo: LinkedWatchInfo | undefined, t: ReturnType<typeof useTranslation>['t']): string {
   if (!linkedWatchInfo) {
     return t('settings.devices.status.checking');
   }
@@ -544,7 +643,5 @@ function getLinkedWatchStatusLabel(
     return t('settings.devices.status.appNotInstalled');
   }
 
-  return linkedWatchInfo.isReachable
-    ? t('settings.devices.status.connected')
-    : t('settings.devices.status.linked');
+  return linkedWatchInfo.isReachable ? t('settings.devices.status.connected') : t('settings.devices.status.linked');
 }

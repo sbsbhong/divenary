@@ -8,14 +8,11 @@ import {
   createNavigationContainerRef,
   createNavigatorFactory,
   useNavigationBuilder,
+  usePreventRemove,
   type ParamListBase,
   type TabNavigationState,
 } from '@react-navigation/native';
-import {
-  createNativeStackNavigator,
-  type NativeStackNavigationProp,
-  type NativeStackScreenProps,
-} from '@react-navigation/native-stack';
+import { createNativeStackNavigator, type NativeStackNavigationProp, type NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { AppState } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,6 +26,7 @@ import {
   subscribeToWatchSyncNotificationOpens,
 } from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences } from '../../states/app-preferences';
+import { useAuth } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
 import { useDivePlans } from '../../states/use-dive-plans';
 import { WatchConnectivitySyncProvider } from '../../states/watch-connectivity-sync';
@@ -42,6 +40,8 @@ import { KeyboardAwareScrollView } from '../ui/keyboard-aware-scroll-view';
 import { Pressable } from '../ui/pressable';
 import { Text } from '../ui/text';
 import { VStack } from '../ui/vstack';
+import LoginScreen from '../../screens/auth/login-screen';
+import OnboardingScreen from '../../screens/auth/onboarding-screen';
 import HomeScreen from '../../screens/home/screen';
 import { LogEntryDetail } from '../../screens/logbook/log-entry-detail';
 import { LogEntryEditor } from '../../screens/logbook/log-entry-editor';
@@ -53,6 +53,8 @@ import SettingsScreen, { type SettingsRoute } from '../../screens/settings/scree
 
 export type RootStackParamList = {
   tabs: undefined;
+  authLogin: undefined;
+  authOnboarding: undefined;
   logbookCreate: { draftLocalId?: string; sourcePlanLocalId?: string } | undefined;
   logbookDetail: { localId: string };
   logbookEdit: { localId: string };
@@ -80,11 +82,6 @@ type AppTabNavigatorProps = {
   onRouteReselect?: (routeName: NavigationRouteName) => void;
 };
 
-type AppTabScreenProps = {
-  name: NavigationRouteName;
-  children: () => React.ReactNode;
-};
-
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const AppTabs = createNavigatorFactory(AppTabNavigator)();
 const rootStackNavigationRef = createNavigationContainerRef<RootStackParamList>();
@@ -93,9 +90,13 @@ const AUTO_IMPORT_TOAST_TAB_OFFSET = 68;
 
 export default function RootNavigation(): React.JSX.Element {
   const { t } = useTranslation();
+  const { state } = useAuth();
+  const authStatusRef = React.useRef(state.status);
+  authStatusRef.current = state.status;
   const [autoImportToast, setAutoImportToast] = React.useState<AutoImportToast | undefined>();
   const [pendingLogDraft, setPendingLogDraft] = React.useState<PendingLogDraft | undefined>();
   const [completedPromptPlan, setCompletedPromptPlan] = React.useState<DivePlan | undefined>();
+  const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
   const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
   const [reselectTokens, setReselectTokens] = React.useState<Record<NavigationRouteName, number>>({
@@ -143,6 +144,10 @@ export default function RootNavigation(): React.JSX.Element {
       params?: RootStackParamList[RouteName],
       tabName?: NavigationRouteName,
     ) => {
+      if (authStatusRef.current === 'pendingOnboarding' && routeName !== 'authOnboarding') {
+        return;
+      }
+
       if (tabName) {
         rootNavigationActions.current?.navigate(tabName);
       }
@@ -267,6 +272,7 @@ export default function RootNavigation(): React.JSX.Element {
   }, [openStackScreen]);
 
   const handleNavigationReady = React.useCallback(() => {
+    setNavigationReady(true);
     refreshVisibleStackRoute();
     const pendingLocalId = pendingNotificationOpenRef.current;
     if (pendingLocalId) {
@@ -324,6 +330,41 @@ export default function RootNavigation(): React.JSX.Element {
     [openStackScreen],
   );
 
+  const openAuthLogin = React.useCallback(() => {
+    openStackScreen('authLogin');
+  }, [openStackScreen]);
+
+  React.useEffect(() => {
+    if (!navigationReady || !rootStackNavigationRef.isReady()) {
+      return;
+    }
+
+    const currentRouteName = rootStackNavigationRef.getCurrentRoute()?.name;
+
+    if (state.status === 'pendingOnboarding') {
+      if (currentRouteName === 'authOnboarding') {
+        return;
+      }
+
+      rootStackNavigationRef.dispatch(
+        currentRouteName === 'authLogin' ? StackActions.replace('authOnboarding') : CommonActions.navigate('authOnboarding'),
+      );
+      return;
+    }
+
+    if (
+      currentRouteName === 'authOnboarding' &&
+      (state.status === 'guest' || state.status === 'authenticated' || state.status === 'authenticatedOffline')
+    ) {
+      returnToTabs();
+      return;
+    }
+
+    if (currentRouteName === 'authLogin' && (state.status === 'authenticated' || state.status === 'authenticatedOffline')) {
+      returnToTabs();
+    }
+  }, [navigationReady, returnToTabs, state.status]);
+
   const reselectRoute = React.useCallback((routeName: NavigationRouteName) => {
     setReselectTokens(currentTokens => ({
       ...currentTokens,
@@ -351,10 +392,7 @@ export default function RootNavigation(): React.JSX.Element {
           paddingLeft: insets.left,
           paddingRight: insets.right,
         }}>
-        <NavigationContainer
-          ref={rootStackNavigationRef}
-          onReady={handleNavigationReady}
-          onStateChange={refreshVisibleStackRoute}>
+        <NavigationContainer ref={rootStackNavigationRef} onReady={handleNavigationReady} onStateChange={refreshVisibleStackRoute}>
           <Stack.Navigator
             initialRouteName="tabs"
             screenOptions={{
@@ -426,10 +464,16 @@ export default function RootNavigation(): React.JSX.Element {
                     )}
                   </AppTabs.Screen>
                   <AppTabs.Screen name="settings">
-                    {() => <SettingsScreen route="index" onOpenRoute={openSettingsDetail} />}
+                    {() => <SettingsScreen route="index" onOpenLogin={openAuthLogin} onOpenRoute={openSettingsDetail} />}
                   </AppTabs.Screen>
                 </AppTabs.Navigator>
               )}
+            </Stack.Screen>
+            <Stack.Screen name="authLogin" options={{ presentation: 'modal' }}>
+              {props => <LoginScreen onClose={() => props.navigation.goBack()} />}
+            </Stack.Screen>
+            <Stack.Screen name="authOnboarding" options={{ gestureEnabled: false, presentation: 'modal' }}>
+              {() => <AuthOnboardingRoute />}
             </Stack.Screen>
             <Stack.Screen name="logbookCreate">
               {props => (
@@ -441,15 +485,9 @@ export default function RootNavigation(): React.JSX.Element {
                 />
               )}
             </Stack.Screen>
-            <Stack.Screen name="logbookDetail">
-              {props => <LogbookDetailRoute {...props} logbook={logbook} />}
-            </Stack.Screen>
-            <Stack.Screen name="logbookEdit">
-              {props => <LogbookEditRoute {...props} logbook={logbook} />}
-            </Stack.Screen>
-            <Stack.Screen name="planningCreate">
-              {props => <PlanningCreateRoute {...props} planning={planning} />}
-            </Stack.Screen>
+            <Stack.Screen name="logbookDetail">{props => <LogbookDetailRoute {...props} logbook={logbook} />}</Stack.Screen>
+            <Stack.Screen name="logbookEdit">{props => <LogbookEditRoute {...props} logbook={logbook} />}</Stack.Screen>
+            <Stack.Screen name="planningCreate">{props => <PlanningCreateRoute {...props} planning={planning} />}</Stack.Screen>
             <Stack.Screen name="planningDetail">
               {props => (
                 <PlanningDetailRoute
@@ -461,9 +499,7 @@ export default function RootNavigation(): React.JSX.Element {
                 />
               )}
             </Stack.Screen>
-            <Stack.Screen name="planningEdit">
-              {props => <PlanningEditRoute {...props} planning={planning} />}
-            </Stack.Screen>
+            <Stack.Screen name="planningEdit">{props => <PlanningEditRoute {...props} planning={planning} />}</Stack.Screen>
             <Stack.Screen name="settingsDetail">
               {props => <SettingsScreen route={props.route.params.route} onBack={() => props.navigation.goBack()} />}
             </Stack.Screen>
@@ -486,15 +522,15 @@ export default function RootNavigation(): React.JSX.Element {
               className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3 shadow-sm"
               style={({ pressed }) => [
                 {
-                  bottom:
-                    AUTO_IMPORT_TOAST_EDGE_GAP +
-                    (visibleStackRoute === 'tabs' ? AUTO_IMPORT_TOAST_TAB_OFFSET : 0),
+                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + (visibleStackRoute === 'tabs' ? AUTO_IMPORT_TOAST_TAB_OFFSET : 0),
                   transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}>
               <VStack space="sm">
                 <Text className="text-sm font-semibold text-card-foreground">
-                  {t('watchSync.autoImportedTitle', { defaultValue: 'Watch log saved' })}
+                  {t('watchSync.autoImportedTitle', {
+                    defaultValue: 'Watch log saved',
+                  })}
                 </Text>
                 <Text className="text-sm leading-5 text-muted-foreground">
                   {t('watchSync.autoImportedBody', {
@@ -504,7 +540,9 @@ export default function RootNavigation(): React.JSX.Element {
                 <HStack space="sm" className="pt-1">
                   <InstrumentButton
                     testID="watch-auto-import-open-log"
-                    label={t('watchSync.openImportedLog', { defaultValue: 'Write log' })}
+                    label={t('watchSync.openImportedLog', {
+                      defaultValue: 'Write log',
+                    })}
                     variant="primary"
                     onPress={openImportedLogToast}
                     className="min-h-10 flex-1 px-4 py-2"
@@ -523,6 +561,14 @@ export default function RootNavigation(): React.JSX.Element {
       </VStack>
     </WatchConnectivitySyncProvider>
   );
+}
+
+function AuthOnboardingRoute(): React.JSX.Element {
+  const { state } = useAuth();
+
+  usePreventRemove(state.status === 'pendingOnboarding', () => undefined);
+
+  return <OnboardingScreen />;
 }
 
 function AppTabNavigator({ children, initialRouteName, onRouteReselect }: AppTabNavigatorProps): React.JSX.Element {
@@ -622,7 +668,9 @@ function LogbookCreateRoute(
         onSave={async nextEntry => {
           const savedEntry = await props.logbook.saveEntry(nextEntry);
           await props.onPendingDraftSaved(savedEntry, props.route.params?.sourcePlanLocalId);
-          props.navigation.replace('logbookDetail', { localId: savedEntry.localId });
+          props.navigation.replace('logbookDetail', {
+            localId: savedEntry.localId,
+          });
           return savedEntry;
         }}
       />
@@ -637,10 +685,11 @@ function LogbookDetailRoute(
 ): React.JSX.Element {
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
   const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
+  const { loadWatchProfile } = props.logbook;
 
   React.useEffect(() => {
     let mounted = true;
-    void props.logbook.loadWatchProfile(props.route.params.localId).then(samples => {
+    loadWatchProfile(props.route.params.localId).then(samples => {
       if (mounted) {
         setProfileSamples(samples);
       }
@@ -648,7 +697,7 @@ function LogbookDetailRoute(
     return () => {
       mounted = false;
     };
-  }, [props.logbook.loadWatchProfile, props.route.params.localId]);
+  }, [loadWatchProfile, props.route.params.localId]);
 
   if (!entry) {
     return <MissingRouteScreen navigation={props.navigation} />;
@@ -660,7 +709,11 @@ function LogbookDetailRoute(
         entry={entry}
         profileSamples={profileSamples}
         onBack={() => props.navigation.goBack()}
-        onEdit={nextEntry => props.navigation.navigate('logbookEdit', { localId: nextEntry.localId })}
+        onEdit={nextEntry =>
+          props.navigation.navigate('logbookEdit', {
+            localId: nextEntry.localId,
+          })
+        }
         onDelete={async localId => {
           await props.logbook.deleteEntry(localId);
           props.navigation.goBack();
@@ -691,7 +744,9 @@ function LogbookEditRoute(
         onCancel={() => props.navigation.goBack()}
         onSave={async nextEntry => {
           const savedEntry = await props.logbook.saveEntry(nextEntry);
-          props.navigation.replace('logbookDetail', { localId: savedEntry.localId });
+          props.navigation.replace('logbookDetail', {
+            localId: savedEntry.localId,
+          });
           return savedEntry;
         }}
       />
@@ -716,7 +771,9 @@ function PlanningCreateRoute(
         onCancel={() => props.navigation.goBack()}
         onSave={async nextPlan => {
           const savedPlan = await props.planning.savePlan(nextPlan);
-          props.navigation.replace('planningDetail', { localId: savedPlan.localId });
+          props.navigation.replace('planningDetail', {
+            localId: savedPlan.localId,
+          });
           return savedPlan;
         }}
       />
@@ -746,10 +803,16 @@ function PlanningDetailRoute(
       <PlanDetail
         plan={plan}
         onBack={() => props.navigation.goBack()}
-        onEdit={nextPlan => props.navigation.navigate('planningEdit', { localId: nextPlan.localId })}
+        onEdit={nextPlan =>
+          props.navigation.navigate('planningEdit', {
+            localId: nextPlan.localId,
+          })
+        }
         onPromote={async nextPlan => {
           if (!isPlanReadyForPromotion(nextPlan)) {
-            props.navigation.navigate('planningEdit', { localId: nextPlan.localId });
+            props.navigation.navigate('planningEdit', {
+              localId: nextPlan.localId,
+            });
             return;
           }
 
@@ -758,7 +821,9 @@ function PlanningDetailRoute(
             status: 'planned',
             updatedAt: Date.now() / 1000,
           });
-          props.navigation.replace('planningDetail', { localId: savedPlan.localId });
+          props.navigation.replace('planningDetail', {
+            localId: savedPlan.localId,
+          });
         }}
         onComplete={async nextPlan => {
           const timestamp = Date.now() / 1000;
@@ -802,7 +867,9 @@ function PlanningEditRoute(
         onCancel={() => props.navigation.goBack()}
         onSave={async nextPlan => {
           const savedPlan = await props.planning.savePlan(nextPlan);
-          props.navigation.replace('planningDetail', { localId: savedPlan.localId });
+          props.navigation.replace('planningDetail', {
+            localId: savedPlan.localId,
+          });
           return savedPlan;
         }}
       />
@@ -828,10 +895,14 @@ function MissingRouteScreen(props: { navigation: NativeStackNavigationProp<RootS
     <RoutedScrollScreen>
       <VStack testID="navigation-missing-route" space="md" className="rounded-2xl bg-card px-4 py-4">
         <Text className="text-lg font-semibold text-card-foreground">
-          {t('navigation.missingRouteTitle', { defaultValue: 'Screen unavailable' })}
+          {t('navigation.missingRouteTitle', {
+            defaultValue: 'Screen unavailable',
+          })}
         </Text>
         <Text className="text-sm leading-5 text-muted-foreground">
-          {t('navigation.missingRouteBody', { defaultValue: 'The item may have been deleted or is no longer available on this device.' })}
+          {t('navigation.missingRouteBody', {
+            defaultValue: 'The item may have been deleted or is no longer available on this device.',
+          })}
         </Text>
         <InstrumentButton label={t('logbook.backToList', { defaultValue: 'Back to list' })} onPress={() => props.navigation.goBack()} />
       </VStack>

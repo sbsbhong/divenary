@@ -7,6 +7,25 @@ import { Icon } from '../src/components/ui/icon';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/screen';
 import type { LinkedWatchInfo } from '../src/native/watch-connectivity';
+import type { AuthContextValue } from '../src/states/auth';
+
+const mockUseAuth = jest.fn<AuthContextValue, []>();
+
+jest.mock('../src/states/auth', () => ({
+  useAuth: () => mockUseAuth(),
+}));
+
+const createAuthContext = (overrides?: Partial<AuthContextValue>): AuthContextValue => ({
+  state: { status: 'guest' },
+  isConfigured: false,
+  availableProviders: [],
+  recentProvider: undefined,
+  signIn: jest.fn(async () => undefined),
+  completeOnboarding: jest.fn(async () => undefined),
+  cancelOnboarding: jest.fn(async () => undefined),
+  signOut: jest.fn(async () => undefined),
+  ...overrides,
+});
 
 const linkedWatchInfo: LinkedWatchInfo = {
   isSupported: true,
@@ -19,6 +38,7 @@ const linkedWatchInfo: LinkedWatchInfo = {
 const renderSettings = async (options?: {
   loadLinkedWatchInfo?: () => Promise<LinkedWatchInfo>;
   onBack?: () => void;
+  onOpenLogin?: () => void;
   onOpenRoute?: (route: Exclude<SettingsRoute, 'index'>) => void;
   requestWatchSyncNotificationPermission?: () => Promise<boolean>;
   hasWatchSyncNotificationPermission?: () => Promise<boolean>;
@@ -37,6 +57,7 @@ const renderSettings = async (options?: {
           openNotificationSettings={options?.openNotificationSettings}
           route={options?.route}
           onBack={options?.onBack}
+          onOpenLogin={options?.onOpenLogin}
           onOpenRoute={options?.onOpenRoute}
         />
       </AppPreferencesProvider>,
@@ -53,6 +74,8 @@ describe('SettingsScreen', () => {
     };
 
     asyncStorageMock.__resetAsyncStorageMock();
+    mockUseAuth.mockReset();
+    mockUseAuth.mockReturnValue(createAuthContext());
 
     await ReactTestRenderer.act(async () => {
       await i18n.changeLanguage('ko');
@@ -70,12 +93,104 @@ describe('SettingsScreen', () => {
     expect(root.findByProps({ testID: 'settings-row-theme-icon' })).toBeTruthy();
     expect(root.findByProps({ testID: 'settings-row-language-icon' })).toBeTruthy();
     expect(root.findByProps({ testID: 'settings-row-notifications-icon' })).toBeTruthy();
-    const rowIconClassName = root.findByProps({ testID: 'settings-row-theme-icon' }).props.className;
-    const linkedWatchIcon = root.findByProps({ testID: 'settings-linked-watch-icon' });
+    const rowIconClassName = root.findByProps({
+      testID: 'settings-row-theme-icon',
+    }).props.className;
+    const linkedWatchIcon = root.findByProps({
+      testID: 'settings-linked-watch-icon',
+    });
     expect(linkedWatchIcon.props.className).toBe(rowIconClassName);
     expect(linkedWatchIcon.findByType(Icon).props.size).toBe('sm');
     expect(root.findByProps({ testID: 'settings-row-theme-disclosure' })).toBeTruthy();
     expect(root.findByProps({ testID: 'settings-row-devices-disclosure' })).toBeTruthy();
+  });
+
+  test('keeps local Settings usable when social sign-in is not configured', async () => {
+    const onOpenLogin = jest.fn();
+    const renderer = await renderSettings({ onOpenLogin });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-section-account' }).props.children).toBe('계정');
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('로그인 설정 필요');
+    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('로컬 기록');
+    expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
+    expect(onOpenLogin).not.toHaveBeenCalled();
+    expect(root.findByProps({ testID: 'settings-row-theme' })).toBeTruthy();
+  });
+
+  test('opens social login from a configured guest account row', async () => {
+    const onOpenLogin = jest.fn();
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        availableProviders: ['google', 'apple'],
+      }),
+    );
+    const renderer = await renderSettings({ onOpenLogin });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('게스트로 사용 중');
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'settings-account-action' }).props.onPress();
+    });
+
+    expect(onOpenLogin).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows required-consent account status without exposing account actions', async () => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: {
+          status: 'pendingOnboarding',
+          userId: 'user-id',
+          documents: [],
+        },
+      }),
+    );
+    const renderer = await renderSettings();
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('필수 동의 필요');
+    expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
+  });
+
+  test('signs out an authenticated account explicitly', async () => {
+    const signOut = jest.fn(async () => undefined);
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: { status: 'authenticated', userId: 'user-id' },
+        signOut,
+      }),
+    );
+    const renderer = await renderSettings();
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('로그인됨');
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-account-action' }).props.onPress();
+    });
+
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  test('labels offline membership as local-only and still allows logout', async () => {
+    const signOut = jest.fn(async () => undefined);
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: { status: 'authenticatedOffline', userId: 'user-id' },
+        signOut,
+      }),
+    );
+    const renderer = await renderSettings();
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('오프라인 계정');
+    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('로컬 데이터');
+    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('확인할 수 없습니다');
+    expect(root.findByProps({ testID: 'settings-account-action' })).toBeTruthy();
   });
 
   test('shows linked watch in device management with icon and status', async () => {
