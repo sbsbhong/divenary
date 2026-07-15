@@ -473,7 +473,7 @@ Expected: focused tests and TypeScript pass.
 - [ ] **Step 6: Commit**
 
 ~~~bash
-git add apps/mobile/package.json apps/mobile/babel.config.js apps/mobile/index.js apps/mobile/scripts/load-mobile-env.js apps/mobile/src/config/env.ts apps/mobile/src/auth/keychain-session-storage.ts apps/mobile/__tests__/keychain-session-storage.test.ts apps/mobile/__tests__/supabase-env.test.ts apps/mobile/__tests__/babel-env.test.ts yarn.lock
+git add apps/mobile/package.json apps/mobile/tsconfig.json apps/mobile/babel.config.js apps/mobile/index.js apps/mobile/scripts/load-mobile-env.js apps/mobile/src/config/env.ts apps/mobile/src/auth/keychain-session-storage.ts apps/mobile/__tests__/keychain-session-storage.test.ts apps/mobile/__tests__/supabase-env.test.ts apps/mobile/__tests__/babel-env.test.ts packages/supabase/src/auth-repository.ts yarn.lock
 git commit -m "feat: secure Supabase mobile sessions"
 ~~~
 
@@ -528,11 +528,13 @@ Define `NativeSocialAuthErrorCode = 'unavailable' | 'missing_id_token' | 'missin
 ~~~ts
 export class NativeSocialAuthError extends Error {
   readonly code: NativeSocialAuthErrorCode;
+  readonly cause?: unknown;
 
   constructor(code: NativeSocialAuthErrorCode, options?: { cause?: unknown }) {
-    super('Social authentication failed', options);
+    super('Social authentication failed');
     this.name = 'NativeSocialAuthError';
     this.code = code;
+    this.cause = options?.cause;
   }
 }
 ~~~
@@ -764,11 +766,11 @@ Expected: all available commands exit 0. A container-runtime or environment-only
 
 - [ ] **Step 2: Prepare the hosted-provider promotion checklist**
 
-Record these external values without committing secrets: stable owned iOS bundle ID/App ID; Apple capability and signed provisioning profile; Google web client ID, iOS client ID, reversed scheme, and server-only client secret; hosted Supabase URL/publishable key; Google/Apple provider configuration whose accepted audiences include the matching web/iOS client IDs or native Apple bundle ID; reviewed immutable app-owned terms/privacy HTTPS URLs; and device/build identifier. Physical iPhone testing uses the hosted test project or an explicitly reachable trusted LAN endpoint—never `127.0.0.1`, which points to the phone itself. Native-only Apple ID-token login does not add an Apple secret to the app.
+Record these external values without committing secrets: stable owned iOS bundle ID/App ID; matching Watch App ID, `WKCompanionAppBundleIdentifier`, and iPhone/Watch signed provisioning profiles; Apple capability; Google web client ID, iOS client ID, reversed scheme, server-only client secret, consent-screen audience, and test-user status; hosted Supabase URL/publishable key; Google/Apple provider configuration whose accepted audiences include the matching web/iOS client IDs or native Apple bundle ID; reviewed immutable app-owned terms/privacy HTTPS URLs; a second immutable terms/privacy version plus current-pointer transition for re-consent testing; and device/build identifier. Physical iPhone testing should use the hosted test project. A trusted LAN endpoint is allowed only over HTTPS with a certificate the device trusts—never plain `http://192.168.x.x` and never `127.0.0.1`, which points to the phone itself. Native-only Apple ID-token login does not add an Apple secret to the app or require an Apple Services ID/OAuth secret rotation path.
 
 If any item is absent, mark only this promotion gate pending and continue documentation/automated checkpoint work. Do not insert placeholders into a hosted project or tracked native configuration.
 
-Once the user supplies/approves the owned identifiers, apply them as one promotion-only native change: set iPhone Debug/Release `PRODUCT_BUNDLE_IDENTIFIER`; update the Watch app identifier and `WKCompanionAppBundleIdentifier` together if the iPhone prefix changes; set the real public `GOOGLE_IOS_REVERSED_CLIENT_ID`; select the approved team/profile; and enable Sign in with Apple for that exact App ID. Re-run `ios-auth-configuration`, `yarn ios:build`, and `yarn watch:build`, then build/install a signed device configuration and inspect the processed app entitlement with `codesign -d --entitlements :- <DiveMobile.app>` to confirm only the iPhone app has `com.apple.developer.applesignin`. Do not infer signed capability from the unsigned simulator build.
+Once the user supplies/approves the owned identifiers, apply them as one promotion-only native change: set iPhone Debug/Release `PRODUCT_BUNDLE_IDENTIFIER`; update the Watch app identifier and `WKCompanionAppBundleIdentifier` together if the iPhone prefix changes; set the real public `GOOGLE_IOS_REVERSED_CLIENT_ID`; select the approved iPhone and Watch teams/profiles; and enable Sign in with Apple for that exact iPhone App ID. Re-run `ios-auth-configuration`, `yarn ios:build`, and `yarn watch:build`, then build/install a signed device configuration. Inspect both the signed `<DiveMobile.app>` and its embedded `<DiveWatchApp.app>` with `codesign -d --entitlements :-`: the iPhone app must contain `com.apple.developer.applesignin` and the Watch app must not. Do not infer signed capability from the unsigned simulator build.
 
 - [ ] **Step 3: Run the physical iPhone Auth matrix when prerequisites exist**
 
@@ -803,4 +805,4 @@ git add README.md apps/mobile/README.md .wiki/raw/architecture/2026-07-13-wave3a
 git commit -m "docs: record Supabase auth foundation"
 ~~~
 
-The automated Wave 3A implementation checkpoint may close when its available gates pass and external blockers are recorded. Wave 3B starts only after automated gates pass and physical iPhone Auth/re-consent evidence exists. Provider credentials, owned legal URLs, stable App ID, signing, and a physical device are external implementation prerequisites, not unresolved product decisions.
+The automated Wave 3A implementation checkpoint may close when its available gates pass and external blockers are recorded. This is a separate status from the physical promotion gate. Wave 3B starts only after automated gates pass and physical iPhone Auth/re-consent plus post-Auth Watch regression evidence exists. Provider credentials, owned legal URLs, stable iPhone/Watch App IDs, signing, and a physical device are external implementation prerequisites, not unresolved product decisions.
