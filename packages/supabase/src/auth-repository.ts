@@ -30,14 +30,16 @@ export type AuthRepositoryErrorKind =
 
 export class AuthRepositoryError extends Error {
   readonly kind: AuthRepositoryErrorKind;
+  readonly cause?: unknown;
 
   constructor(
     kind: AuthRepositoryErrorKind,
     options?: {cause?: unknown},
   ) {
-    super('Authentication operation failed', options);
+    super('Authentication operation failed');
     this.name = 'AuthRepositoryError';
     this.kind = kind;
+    this.cause = options?.cause;
   }
 }
 
