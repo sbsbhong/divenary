@@ -255,6 +255,7 @@ declare
   caller_claims jsonb := auth.jwt();
   caller_session_id uuid;
   current_count integer;
+  locked_current_count integer;
   current_terms_count integer;
   current_privacy_count integer;
   effective_count integer;
@@ -320,6 +321,14 @@ begin
   from public.current_legal_documents as current_document
   order by current_document.kind
   for share;
+
+  get diagnostics locked_current_count = row_count;
+
+  if locked_current_count <> 2 then
+    raise exception using
+      errcode = 'PT500',
+      message = 'legal_configuration_invalid';
+  end if;
 
   select
     count(*)::integer,
