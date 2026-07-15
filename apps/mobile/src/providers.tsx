@@ -13,6 +13,15 @@ type ProvidersProps = {
 export default function Providers(props: ProvidersProps): React.JSX.Element {
   const [queryClient] = React.useState(() => new QueryClient());
 
+  React.useEffect(() => {
+    return () => {
+      // Child observers schedule GC while unmounting, so clear after their cleanup completes.
+      queueMicrotask(() => {
+        queryClient.clear();
+      });
+    };
+  }, [queryClient]);
+
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
