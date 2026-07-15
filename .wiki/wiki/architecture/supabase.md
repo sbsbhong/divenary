@@ -10,13 +10,13 @@ Updated: 2026-07-15
 
 ## 현재 상태
 
-root `supabase/`와 `packages/supabase`는 아직 없다. Supabase client, generated database type, migration, RLS policy, Auth UI, remote repository, outbox도 구현되지 않았다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 reconnect, background, killed-app, large transfer까지 검증된 것은 아니다.
+Wave 3A 구현이 진행 중이다. Root `supabase/`에는 local config, auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경 변수에서 격리된 local CLI wrapper가 있다. `packages/supabase`에는 generated database type, typed client factory, runtime onboarding parser와 provider-independent Auth repository가 있다. Mobile Keychain/native provider/Auth UI와 remote data/outbox는 아직 구현되지 않았다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 reconnect, background, killed-app, large transfer까지 검증된 것은 아니다.
 
 3A는 iOS native Google/Apple login과 Keychain session을 만든다. 데이터베이스는 `app_memberships`, immutable `legal_documents`, kind별 `current_legal_documents` pointer, append-only `consent_records`를 분리한다. User id 인자가 없는 status RPC가 현재 필수 동의 coverage를 계산하므로 membership이 이미 있어도 새 current version에는 재동의해야 한다. Completion RPC는 current terms/privacy exact set만 원자적으로 기록하고 active Auth session을 확인한다.
 
 Supabase table은 RLS만으로 노출되지 않는 2026 Data API 권한 모델을 적용해 최소 `GRANT`도 migration에 명시한다. Session bootstrap은 `getSession()`만 신뢰하지 않고 online claims/user/status 검증을 수행한다. Network failure 때는 unexpired stored session evidence와 마지막 server-verified cache가 정확히 일치할 때만 local-only offline state를 허용한다. Client concurrency는 설치된 `auth-js@2.110.2`의 기본 lockless single-flight/commit guard를 사용하며 deprecated `processLock` custom option은 추가하지 않는다.
 
-로컬 Supabase 명령은 전용 wrapper를 통해 실행한다. Wrapper는 shell에 주입된 다른 hosted project의 `SUPABASE_PROJECT_ID`와 access token을 제거하므로 local stack, migration test, type generation이 repository `config.toml`의 독립 project context만 사용한다. Hosted promotion 명령은 이 local path와 명시적으로 분리한다.
+로컬 Supabase 명령은 격리된 launcher를 통해 실행한다. Root local CLI wrapper와 type generator/REST harness의 sanitized child environment는 shell에 주입된 다른 hosted project의 `SUPABASE_PROJECT_ID`와 access token을 제거하므로 local stack, migration test, type generation이 repository `config.toml`의 독립 project context만 사용한다. Hosted promotion 명령은 이 local path와 명시적으로 분리한다.
 
 같은 verified email의 OAuth identity는 Supabase Auth의 automatic linking을 따르되 app code는 email을 비교하거나 manual linking UI를 제공하지 않는다. Authorization은 `auth.uid()`만 사용한다. Email/password, magic link, SMS, Android native Auth, nickname/profile/friends, marketing consent는 범위 밖이다.
 

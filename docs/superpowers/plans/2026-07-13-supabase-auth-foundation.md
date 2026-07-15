@@ -60,6 +60,7 @@ Before Task 1, use `using-git-worktrees` and create `.worktrees/wave3a-supabase-
 - Modify: package.json
 - Modify: yarn.lock
 - Create: supabase/config.toml through the CLI
+- Create: supabase/scripts/run-local-supabase.mjs
 - Create: supabase/migrations/*_create_auth_foundation.sql through the CLI
 - Create: supabase/seed.sql
 - Create: supabase/tests/database/auth_foundation.test.sql
@@ -105,6 +106,8 @@ yarn supabase:local migration new create_auth_foundation
 ~~~
 
 Expected: config.toml and exactly one CLI-timestamped create_auth_foundation migration exist.
+
+After `yarn supabase init`, create `supabase/scripts/run-local-supabase.mjs` and route every local script through it. The wrapper removes unrelated shell-level `SUPABASE_PROJECT_ID`, `SUPABASE_ACCESS_TOKEN`, and `PINTERNET_SUPABASE_PROJECT_ID` values before invoking the pinned CLI. Use `yarn supabase:local migration new create_auth_foundation` for the migration; raw `yarn supabase` remains reserved for explicit hosted operations.
 
 - [ ] **Step 3: Write the failing pgTAP contract**
 
@@ -218,7 +221,7 @@ Expected: reset from empty state succeeds, every pgTAP assertion passes, lint/ad
 
 - [ ] **Step 7: Smoke-test the Data API boundary**
 
-The Node smoke test obtains the local API URL, publishable key, and server-only secret key from `yarn supabase status -o json`. With the secret key it creates two disposable verified users, each with a random test-only email/password; then it obtains user access/refresh sessions through `POST /auth/v1/token?grant_type=password`. This email/password use exists only inside the local authorization harness and does not add email Auth to the app. Call REST/RPC with those user JWTs. Assert anon legal/current reads succeed, anon membership reads and RPC fail, owner status/completion succeeds, cross-owner rows remain invisible, and direct client DML returns `401` or `403`. Delete both users through `/auth/v1/admin/users/<id>` in `finally`; never print credentials or JWTs. Run `node supabase/tests/rest/auth-foundation.mjs` and expect exit 0.
+The Node smoke test obtains the local API URL, publishable key, and server-only secret key from the equivalent of `yarn supabase:local status -o json`; its child process must use the same sanitized local environment. With the secret key it creates two disposable verified users, each with a random test-only email/password; then it obtains user access/refresh sessions through `POST /auth/v1/token?grant_type=password`. This email/password use exists only inside the local authorization harness and does not add email Auth to the app. Call REST/RPC with those user JWTs. Assert anon legal/current reads succeed, anon membership reads and RPC fail, owner status/completion succeeds, cross-owner rows remain invisible, and direct client DML returns `401` or `403`. Delete both users through `/auth/v1/admin/users/<id>` in `finally`; never print credentials or JWTs. Run `node supabase/tests/rest/auth-foundation.mjs` and expect exit 0.
 
 - [ ] **Step 8: Commit**
 
