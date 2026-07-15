@@ -1,21 +1,24 @@
 # 모바일 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
+Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
+Updated: 2026-07-15
 
 ## 요약
 
-`apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. 현재는 server와 database 없이 React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Open-Meteo Home 조건 provider, repo-local native reverse geocoder module, Gluestack UI v4/NativeWind styling stack을 사용한다.
+`apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. React Navigation, React Query, AsyncStorage 기반 persistent repository, generated watch contract TypeScript type, Open-Meteo Home 조건 provider, repo-local native reverse geocoder module, Gluestack UI v4/NativeWind styling stack과 Wave 3A Supabase/Auth client boundary를 사용한다. Remote Logbook/Planbook database와 cloud backup은 아직 없다.
 
 ## 현재 상태
 
-앱 package는 `@repo/mobile`이다. 현재 의존성은 React Native `0.85.3`, React `19.2.3`, TypeScript, Jest, Metro, `react-native-safe-area-context`, `@react-native-async-storage/async-storage`, `@notifee/react-native`, Gluestack UI v4 alpha package, NativeWind, Tailwind CSS, Reanimated, Worklets, React Native SVG를 포함한다.
+앱 package는 `@repo/mobile`이다. 현재 의존성은 React Native `0.85.3`, React `19.2.3`, TypeScript, Jest, Metro, `react-native-safe-area-context`, `@react-native-async-storage/async-storage`, `@notifee/react-native`, `@repo/supabase`, `react-native-keychain`, native Google/Apple sign-in package, Gluestack UI v4 alpha package, NativeWind, Tailwind CSS, Reanimated, Worklets, React Native SVG를 포함한다. `@supabase/supabase-js`는 mobile이 직접 소유하지 않고 `packages/supabase` 경계 안에 둔다.
 
 주요 source 경계는 다음과 같다.
 
 - `src/App.tsx`: 앱 UI entry.
-- `src/providers.tsx`: top-level `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `GluestackUIProvider`, `StatusBar`.
+- `src/providers.tsx`: app-owned `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `AuthProvider`, `GluestackUIProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
+- `src/auth/`: Keychain session adapter, native Google/Apple credential adapter, membership cache, recent-provider preference와 mobile Auth assembly.
+- `src/states/auth.tsx`: stored evidence, online claims/user/status 검증, foreground revalidation, bounded offline state와 sign-in concurrency를 관리한다.
+- `src/screens/auth`: guest-preserving login과 versioned terms/privacy exact set을 제출하는 non-dismissible onboarding 화면.
 - `src/components/navigation/index.tsx`: `@react-navigation/native` 기반 top-level `NavigationContainer`와 custom tab router. 현재 선택된 tab을 다시 누르면 해당 화면을 refresh하고 scroll top을 요청한다. Logbook detail/edit, Plan detail/create/edit, Settings detail은 tab 내부 local route가 아니라 root detail route 상태로 렌더링해 나중에 deep link를 route name과 params로 연결할 수 있게 했다.
 - `src/components/ui/`: 재사용 UI primitive, instrument control, session card, profile chart, tone type.
 - `components/ui/gluestack-ui-provider/`: generated Gluestack provider, color-mode script, token bridge.
@@ -61,6 +64,7 @@ Settings는 현재 다음 범위로 제한된다.
 - 설정 값 중 `themePreference`, `language`, `watchSyncNotificationsEnabled`는 AsyncStorage 기반 versioned JSON store에 저장된다. `resolvedTheme`은 저장하지 않고 device color scheme과 `themePreference`에서 파생한다.
 - Watch sync notification은 사용자가 켤 때 Notifee permission을 요청한다. Permission이 거부되면 preference를 켜지 않고, foreground import toast와 repository import는 계속 동작한다. 알림 문구는 local repository 저장 결과만 뜻하며 cloud upload나 Supabase sync를 의미하지 않는다.
 - 기기 관리는 iOS `WCSession`의 공개 상태인 지원 여부, paired 여부, watch app 설치 여부, reachable 여부를 보여준다. 공개 WatchConnectivity API는 사용자가 설정한 Apple Watch 이름을 제공하지 않으므로 native layer가 이름을 줄 수 없는 경우 `Apple Watch` fallback을 표시한다.
+- 계정 영역은 환경이 구성되지 않으면 guest/local-only 상태를 설명한다. 구성된 빌드에서는 사용 가능한 native Google/Apple provider만 표시하고, identity 이후 current terms/privacy 동의가 완료되기 전에는 onboarding route를 벗어날 수 없다. Cancel/sign-out은 Supabase session/cache만 정리하고 guest Logbook/Planbook은 그대로 둔다.
 
 Styling rule은 현재 코드 기준으로 다음과 같다.
 
@@ -85,8 +89,9 @@ Home/Memory 같은 preview surface와 summary helper도 알 수 없는 duration/
 
 현재 제한은 다음과 같다.
 
-- 인증 없음.
-- Supabase client 없음.
+- Wave 3A Auth 자동 구현은 완료됐지만 stable owned App ID, hosted Supabase/provider 설정, reviewed legal URL, signed entitlement와 physical Google/Apple Auth/re-consent는 아직 검증되지 않았다. Local `.invalid` legal URL은 fixture다.
+- Supabase remote Logbook/Planbook, infinite pagination, profile Storage와 cloud backup은 없다. Guest data는 기존 local repository에서 `cloudSyncStatus: notConfigured`를 유지한다.
+- Principal partition, guest claim, outbox/conflict, logout account-local purge와 앱 내 계정 삭제는 각각 3C/3D 후속이다. 3D 전에는 release하지 않는다.
 - Direct SQL 없음.
 - WatchConnectivity code boundary, companion embed 구조, durable native inbox, JS acknowledge 경로, Logbook import action의 pending inbox drain, mobile-to-watch planned dive 전달, linked watch status 표시, Notifee notification opt-in 경계가 있지만 paired-device delivery, entitlement, background delivery, retry/backoff policy, background/killed notification 표시 검증은 아직 없음.
 - Home city label은 native reverse geocoder 결과가 우선이지만, 실제 표시 품질은 platform geocoder backend와 locale에 의존한다. Native module 실패, Android `Geocoder.isPresent()` false, geocoder 빈 결과에서는 Open-Meteo timezone city로 fallback할 수 있으며, 이 경우 광역 timezone city인 `Seoul`처럼 보일 수 있다.

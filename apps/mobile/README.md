@@ -49,6 +49,17 @@ yarn ios:build
 
 `ios:build` uses `CODE_SIGNING_ALLOWED=NO` and a temp DerivedData path. It validates the CocoaPods workspace and the generated React/Codegen pod artifacts before building, then runs `pod install` when those files are missing.
 
+Wave 3A native Auth uses public values from `.env.development`:
+
+```dotenv
+SUPABASE_URL=
+SUPABASE_PUBLISHABLE_KEY=
+GOOGLE_WEB_CLIENT_ID=
+GOOGLE_IOS_CLIENT_ID=
+```
+
+Copy the key names from `.env.development.example` and do not commit real values. Provider secret and `service_role` must never be placed in the app bundle. The iPhone target owns the Sign in with Apple entitlement and `GOOGLE_IOS_REVERSED_CLIENT_ID` build setting; the embedded Watch target owns neither. A real reversed client scheme, stable owned App ID, matching profiles and provider-console configuration belong to the hosted physical promotion step.
+
 For Xcode builds, open the CocoaPods workspace, not the app project:
 
 ```bash
@@ -56,6 +67,8 @@ yarn workspace @repo/mobile ios:xcode
 ```
 
 Opening `ios/DiveMobile.xcodeproj` directly can leave the Swift `AppDelegate` without the React pod modules (`React`, `React_RCTAppDelegate`, and `ReactAppDependencyProvider`).
+
+The CLI `ios:build` is an unsigned simulator gate. Passing it does not prove Apple capability, provisioning, signed entitlements, Google callback configuration, or physical provider login.
 
 ## watchOS Companion
 
@@ -75,4 +88,8 @@ Android builds require Android Studio, Android SDK, `ANDROID_HOME`, and an emula
 
 ## Current Scope
 
-The app currently includes local persistent Logbook/Planbook/settings storage, watch fixture import, runtime watch sync JSON validation, and a WatchConnectivity receiver/import acknowledgement PoC verified in active iPhone/watch simulators. It does not implement auth, Supabase/cloud backup, real-device/background delivery verification, or production dive-computer behavior.
+The app currently includes local persistent Logbook/Planbook/settings storage, watch fixture import, runtime watch sync JSON validation, a WatchConnectivity receiver/import acknowledgement PoC, and the Wave 3A mobile Auth foundation: Keychain-compatible Supabase sessions, native Google/Apple credential adapters, guest-preserving login, and mandatory versioned terms/privacy consent.
+
+Guest Logbook/Planbook data remains in the existing local repositories with `cloudSyncStatus: notConfigured`. Wave 3A login, consent, cancellation, logout, and restore do not claim, upload, delete, partition, or permanently hide those records. The Watch app has no account, provider, Auth entitlement, or Supabase responsibility.
+
+Local database/Auth tests and unsigned simulator builds pass. Hosted Supabase/provider configuration, stable owned identifiers and signing, reviewed legal URLs, physical Google/Apple Auth/re-consent, and the post-Auth Watch regression remain a promotion gate. Remote data and infinite pagination (3B), principal partitions/guest claim/outbox (3C), account-local purge and immediate permanent account deletion (3D), real-device background delivery, and production dive-computer behavior are not implemented or verified. The app is not releasable before 3D adds in-app account deletion.

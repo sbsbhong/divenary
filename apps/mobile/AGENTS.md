@@ -4,9 +4,9 @@
 
 ## 앱 목적
 
-`apps/mobile`은 다이빙 로그를 탐색하고 watch-captured 세션을 리뷰하는 모바일 surface이자 iPhone/watch companion bundle의 소유자다. 현재는 production backend가 없지만, generated watch contract type, AsyncStorage 기반 local persistence, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, embedded watchOS companion target을 사용해 앱 구조와 UX boundary를 잡고 있다.
+`apps/mobile`은 다이빙 로그를 탐색하고 watch-captured 세션을 리뷰하는 모바일 surface이자 iPhone/watch companion bundle의 소유자다. 현재 production remote data/backend는 없지만, generated watch contract type, AsyncStorage 기반 local persistence, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, embedded watchOS companion target과 Wave 3A native social Auth foundation을 사용해 앱 구조와 UX boundary를 잡고 있다.
 
-장기적으로 모바일 앱은 authentication, user profile, dive log list/detail, manual dive creation, Supabase sync, statistics, search, planning, memory/share, backup flow의 중심이 된다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, server/user 연결은 향후 모바일 또는 backend layer에서 처리한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DiveWatchApp`와 `ios/DiveMobile.xcodeproj`에서 관리한다.
+모바일 앱은 현재 authentication과 mandatory consent를 소유하며, 장기적으로 user profile, dive log list/detail, manual dive creation, Supabase data sync, statistics, search, planning, memory/share, backup flow의 중심이 된다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, server/user data 연결은 3B/3C의 mobile/backend layer에서 처리한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DiveWatchApp`와 `ios/DiveMobile.xcodeproj`에서 관리한다.
 
 ## 현재 Stack
 
@@ -17,6 +17,8 @@
 - `@react-native-async-storage/async-storage`
 - `@tanstack/react-query`
 - `@react-navigation/native`
+- `@repo/supabase`, `react-native-keychain`
+- `@react-native-google-signin/google-signin`, `@invertase/react-native-apple-authentication`
 - Gluestack UI v4 alpha, NativeWind, Tailwind CSS
 - React Navigation 기반 custom bottom-tab navigator
 - iOS native WatchConnectivity bridge, import acknowledgement, embedded watchOS companion target
@@ -26,7 +28,10 @@
 ## Source 구조
 
 - `src/App.tsx`: app UI entry
-- `src/providers.tsx`: `SafeAreaProvider`와 top-level status bar
+- `src/providers.tsx`: app-owned `QueryClient`, `SafeAreaProvider`, preferences/Auth provider와 top-level status bar
+- `src/auth/`: Keychain session, native Google/Apple credential adapter, membership cache, recent provider와 mobile Auth assembly
+- `src/states/auth.tsx`: restore/revalidation/concurrency를 포함한 Auth state provider
+- `src/screens/auth/`: guest-preserving login과 versioned mandatory-consent 화면
 - `src/components/navigation/index.tsx`: React Navigation 기반 custom bottom-tab navigator
 - `src/components/ui/`: reusable primitives, instruments, cards, session profile, theme tokens
 - `src/screens/home/screen.tsx`: latest session과 high-level metrics
@@ -47,13 +52,13 @@
 
 모바일 앱이 담당한다.
 
-- 로그인과 사용자 profile, 해당 layer가 구현된 뒤의 session ownership
+- 로그인과 mandatory consent, 향후 사용자 profile과 session ownership
 - dive log list/detail, review, search, filtering
 - manual dive log creation과 future editing flow
 - watch sync payload import와 imported values 보존
 - 실행하지 않은 planned dive를 watch companion에 전달
 - iOS WatchConnectivity receiver와 companion watch target embed 구조
-- Supabase layer가 생긴 뒤의 sync orchestration
+- 3B/3C에서 추가될 Supabase data sync orchestration
 - non-certified planning reminder, memory/share preview, statistics
 
 모바일 앱에 넣지 않는다.
@@ -65,6 +70,8 @@
 - 별도 watch workspace 재도입
 - 감압, 조직 loading, gas switching safety, emergency dive decision 계산
 - certified dive computer 또는 medical/emergency recommendation copy
+- guest Logbook/Planbook을 Wave 3A login만으로 claim, upload, delete, partition하거나 영구히 숨기는 동작
+- Watch target의 Supabase client, account id, Auth entitlement 또는 provider callback
 
 ## 작업 지침
 
@@ -73,7 +80,8 @@
 - 화면 변경은 `src/screens/<area>/screen.tsx`에 두고, 재사용되는 표현만 `src/components/ui/`로 올린다.
 - app-wide provider 변경은 `src/providers.tsx`에서 처리한다.
 - watch sync contract type은 `packages/contracts/generated/typescript`에서 가져온다. generated output은 직접 수정하지 않는다.
-- Supabase나 auth가 들어오면 mobile 코드에 직접 SQL을 넣지 말고, 별도 package/repository boundary를 먼저 확인한다.
+- Supabase나 auth를 변경할 때 mobile 코드에 직접 SQL을 넣지 말고 `packages/supabase`의 typed package/repository boundary를 사용한다.
+- Wave 3A Auth 변경은 기존 guest Logbook/Planbook repository와 `cloudSyncStatus: notConfigured`를 유지해야 한다. Remote data, principal partition, guest claim, account-local purge는 각각 3B, 3C, 3D 전에는 추가하지 않는다.
 - 안전 관련 copy는 항상 non-certified assistant, reminder, review wording으로 제한한다.
 
 ## Skill 사용

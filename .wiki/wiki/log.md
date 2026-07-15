@@ -1,5 +1,24 @@
 # Wiki Log
 
+## [2026-07-15] ingest | Wave 3A Supabase Auth foundation implementation
+- Added: Wave 3A Supabase Auth foundation 구현 증거 raw source
+- Updated: 프로젝트 개요
+- Updated: Monorepo 구조
+- Updated: 모바일 구조
+- Updated: 모바일 로그북 로드맵
+- Updated: Supabase 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: 동기화 흐름 구조
+- Updated: 구현 우선순위 기록
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 구현: local Supabase Auth schema/RLS/RPC, typed package, Keychain-compatible session, native Google/Apple credential adapter, Auth state/UI와 immutable current legal consent
+  - 자동 검증: pgTAP 67개, Supabase package 20개, mobile 40 suite/418개, typecheck, unsigned iOS/watch builds와 `codex:check`
+  - 범위 확인: guest Logbook/Planbook은 local-only와 `notConfigured`를 유지하고 Watch target에는 account/provider/Supabase 책임을 추가하지 않음
+- 요약:
+  - Wave 3A automated checkpoint는 완료됐다. Hosted provider/legal/signing, physical Auth/re-consent와 post-Auth Watch regression은 3B 전 승격 gate로 남고, 3B remote data, 3C principal sync, 3D account lifecycle은 구현되지 않았다. 3A build는 3D 앱 내 계정 삭제 전에는 release하지 않는다.
+
 ## [2026-07-15] ingest | Supabase Auth 2.110.2 lock strategy correction
 - Added: Supabase Auth 2.110.2 lock strategy correction raw source
 - Updated: Supabase 구조

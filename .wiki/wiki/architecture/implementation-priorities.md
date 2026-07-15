@@ -1,16 +1,16 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md)
-Updated: 2026-07-13
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
+Updated: 2026-07-15
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. 사용자가 foreground pairing/import/local acknowledgement 기준선을 확인했으므로 현재 구현 순서는 Wave 3 Supabase/Auth로 이동한다. Wave 1의 나머지 물리 항목과 Wave 2는 Wave 3 이후 통합 환경에서 다시 검증한다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Wave 3A 자동 구현 checkpoint는 완료됐고 hosted provider/legal/signing, physical Auth/re-consent와 post-Auth Watch regression 승격 gate가 현재 우선순위다. 이 증거 전에는 3B를 시작하지 않으며 Wave 1의 나머지 물리 항목과 Wave 2도 유지한다.
 
 ## 현재 상태
 
-즉시 hardening의 코드 구현과 자동 검증은 완료됐다. 사용자는 실기기에서 약 4분의 foreground pairing, Watch session 자동 import, 모바일 local save 뒤 Watch `synced` 전환을 확인했다. 이 보고는 핵심 foreground 경로의 기준선이며 build identifier, 기기/OS, reconnect, background, killed-app, large transfer 완료 증거는 아니다. 현재 활성 구현은 Wave 3이고 남은 Wave 1/2 항목은 삭제하지 않는다.
+즉시 hardening과 Wave 3A의 코드 구현·자동 검증은 완료됐다. 사용자는 실기기에서 약 4분의 foreground pairing, Watch session 자동 import, 모바일 local save 뒤 Watch `synced` 전환을 확인했다. 이 보고는 Auth 도입 전 핵심 foreground 경로의 기준선이며 build identifier, 기기/OS, post-Auth regression, reconnect, background, killed-app, large transfer 완료 증거는 아니다. 현재 활성 gate는 3A hosted physical 승격이고 남은 Wave 1/2 항목은 삭제하지 않는다.
 
 - 자동 event와 수동 drain은 process-wide `WatchConnectivityImportCoordinator`를 공유한다. 같은 `payloadId`는 합쳐지고 서로 다른 payload는 직렬 처리되며 실패 뒤에도 queue가 계속된다.
 - Watch 수온은 optional이다. 첫 수온 update 전 값을 `0°C`로 만들지 않고, 수온이 없는 sample도 깊이·압력 기록으로 보존한다.
@@ -39,7 +39,7 @@ Updated: 2026-07-13
 
 ## P0 Wave 3: Supabase와 인증
 
-- 3A: root `supabase/`, `packages/supabase`, generated type, Keychain session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent를 만든다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 이 단계에서 local-only다.
+- 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 계속 local-only이고 `notConfigured`다. Hosted provider/legal/signing, physical Auth/re-consent와 post-Auth Watch regression은 pending이다.
 - 3B: user-owned Logbook/Planbook schema와 RLS, keyset cursor infinite pagination, private immutable 1Hz profile Storage와 detail-only fetch를 만든다.
 - 3C: `guest`/`user:<uuid>` local partition, persistent manifest와 bounded batch를 쓰는 explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
 - 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.

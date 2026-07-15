@@ -1,20 +1,20 @@
 # Supabase 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Supabase Auth 2.110.2 lock strategy correction, 2026-07-15
-Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Supabase Auth 2.110.2 lock strategy correction](../../raw/architecture/2026-07-15-supabase-auth-lock-strategy.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Supabase Auth 2.110.2 lock strategy correction, 2026-07-15; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
+Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Supabase Auth 2.110.2 lock strategy correction](../../raw/architecture/2026-07-15-supabase-auth-lock-strategy.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
 Updated: 2026-07-15
 
 ## 요약
 
-현재 저장소에는 구현된 Supabase 영역이 없지만 Wave 3의 Auth, 데이터 소유권, 목록 pagination, profile Storage, local-first sync, logout과 계정 삭제 정책은 승인됐다. 구현은 3A Auth foundation, 3B remote data, 3C local-first sync, 3D account lifecycle 순서로 진행한다.
+Wave 3A의 local Supabase/Auth 자동화 기반은 구현됐다. Hosted provider·법률 문서·서명·physical Auth 승격 gate는 대기 중이며, remote data는 3B, local-first sync는 3C, account lifecycle은 3D에서 순서대로 구현한다.
 
 ## 현재 상태
 
-Wave 3A 구현이 진행 중이다. Root `supabase/`에는 local config, auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경 변수에서 격리된 local CLI wrapper가 있다. `packages/supabase`에는 generated database type, typed client factory, runtime onboarding parser와 provider-independent Auth repository가 있다. Mobile Keychain/native provider/Auth UI와 remote data/outbox는 아직 구현되지 않았다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 reconnect, background, killed-app, large transfer까지 검증된 것은 아니다.
+Wave 3A 자동 구현 checkpoint는 완료됐다. Root `supabase/`에는 local config, Auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경 변수에서 격리된 local CLI wrapper가 있다. `packages/supabase`에는 generated database type, typed client factory, runtime onboarding parser와 provider-independent Auth repository가 있다. Mobile에는 Keychain-compatible session, native Google/Apple credential adapter, restore/revalidation state, guest-preserving login과 versioned mandatory-consent UI가 있다. Remote data, outbox와 account deletion은 아직 없다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 이는 Auth 도입 전 기준선이며 post-Auth regression, reconnect, background, killed-app, large transfer 증거는 아니다.
 
-3A는 iOS native Google/Apple login과 Keychain session을 만든다. 데이터베이스는 `app_memberships`, immutable `legal_documents`, kind별 `current_legal_documents` pointer, append-only `consent_records`를 분리한다. User id 인자가 없는 status RPC가 현재 필수 동의 coverage를 계산하므로 membership이 이미 있어도 새 current version에는 재동의해야 한다. Completion RPC는 current terms/privacy exact set만 원자적으로 기록하고 active Auth session을 확인한다.
+3A는 iOS native Google/Apple login과 Keychain-compatible session을 구현한다. 데이터베이스는 `app_memberships`, immutable `legal_documents`, kind별 `current_legal_documents` pointer, append-only `consent_records`를 분리한다. User id 인자가 없는 status RPC가 현재 필수 동의 coverage를 계산하므로 membership이 이미 있어도 새 current version에는 재동의해야 한다. Completion RPC는 current terms/privacy exact set만 원자적으로 기록하고 active Auth session을 확인한다. Login과 consent는 기존 guest Logbook/Planbook을 claim, upload, delete, partition하거나 영구히 숨기지 않으며 `cloudSyncStatus: notConfigured`를 유지한다.
 
-Supabase table은 RLS만으로 노출되지 않는 2026 Data API 권한 모델을 적용해 최소 `GRANT`도 migration에 명시한다. Session bootstrap은 `getSession()`만 신뢰하지 않고 online claims/user/status 검증을 수행한다. Network failure 때는 unexpired stored session evidence와 마지막 server-verified cache가 정확히 일치할 때만 local-only offline state를 허용한다. Client concurrency는 설치된 `auth-js@2.110.2`의 기본 lockless single-flight/commit guard를 사용하며 deprecated `processLock` custom option은 추가하지 않는다.
+Supabase table은 RLS만으로 노출되지 않는 2026 Data API 권한 모델을 적용해 최소 `GRANT`도 migration에 명시한다. Session bootstrap은 `getSession()`만 신뢰하지 않고 online claims/user/status 검증을 수행한다. `getClaims()` 또는 `getUser()` transport failure 때만 unexpired stored session evidence와 같은 user의 마지막 server-verified complete cache가 정확히 일치하면 local-only offline state를 허용한다. Invalid session, server rejection 또는 onboarding-status RPC 실패는 offline fallback 근거가 아니다. Client concurrency는 설치된 `auth-js@2.110.2`의 기본 lockless single-flight/commit guard를 사용하며 deprecated `processLock` custom option은 추가하지 않는다.
 
 로컬 Supabase 명령은 격리된 launcher를 통해 실행한다. Root local CLI wrapper와 type generator/REST harness의 sanitized child environment는 shell에 주입된 다른 hosted project의 `SUPABASE_PROJECT_ID`와 access token을 제거하므로 local stack, migration test, type generation이 repository `config.toml`의 독립 project context만 사용한다. Hosted promotion 명령은 이 local path와 명시적으로 분리한다.
 
@@ -26,7 +26,7 @@ Supabase가 도입될 때 책임은 다음과 같다.
 
 - `supabase/`: local configuration, migration, RLS, seed, database test, privileged account deletion boundary.
 - `packages/supabase`: generated database type, typed client factory, Auth와 Logbook/Planbook/profile repository. React Native UI와 native provider SDK에는 의존하지 않는다.
-- `apps/mobile`: Keychain session adapter, native Google/Apple credential adapter, Auth state/UI, principal-scoped local repository, outbox와 account cache.
+- `apps/mobile`: 현재 Keychain-compatible session adapter, native Google/Apple credential adapter와 Auth state/UI를 소유한다. Principal-scoped local repository, outbox와 account cache는 3C/3D 후속이다.
 - Watch app: 기존 local capture와 iPhone sync만 담당한다. Supabase client, account id, cloud business logic을 갖지 않는다.
 
 로컬 principal은 `guest`와 `user:<uuid>`로 분리한다. Guest는 local-only다. Account 연결은 명시적 동의를 받은 뒤 persistent manifest와 bounded batch를 사용해 copy, remote/profile 검증, source removal 순서로 수행한다. Logout은 현재 account의 session, local partition, query cache, downloaded profile을 기기에서 제거하고 guest partition을 보존한다.
@@ -35,7 +35,7 @@ Logbook은 `(started_at desc, id desc)`, Planbook은 `(planned_at desc, id desc)
 
 Signed-in write는 local save 뒤 idempotent outbox가 전달한다. Remote row `revision`이 expected revision과 다르면 local mutation을 `conflict`로 보존하고 remote latest를 가져온다. Watch `session.syncStatus: synced`는 iPhone local import acknowledgement이고 remote cloud 성공과 독립적이다.
 
-계정 삭제는 앱 안에서 재확인 뒤 즉시 영구 삭제한다. 7일 유예 soft deletion/recovery는 후속 기능이다. `service_role`과 provider secret은 mobile bundle에 두지 않는다.
+3D의 계정 삭제는 앱 안에서 재확인 뒤 즉시 영구 삭제한다. 7일 유예 soft deletion/recovery는 후속 기능이다. `service_role`과 provider secret은 mobile bundle에 두지 않는다. Local seed의 `.invalid` legal URL은 test fixture이며 production 법률 문서가 아니다.
 
 Stable owned App ID, provider console 설정, 실제 immutable 약관/개인정보 URL, signed provisioning, hosted test project, physical iPhone은 자동 구현과 분리된 승격 gate다. 3A는 앱 내 계정 삭제가 추가되는 3D 전까지 App Store release 대상이 아니다.
 

@@ -734,12 +734,20 @@ git commit -m "feat: configure iOS social authentication"
 ### Task 8: Close the automated checkpoint and record the external promotion gate
 
 **Files:**
+- Modify: apps/mobile/src/providers.tsx
 - Modify: README.md
 - Modify: apps/mobile/README.md
-- Create: .wiki/raw/architecture/2026-07-13-wave3a-auth-foundation-implementation.md
+- Modify: AGENTS.md
+- Modify: apps/mobile/AGENTS.md
+- Create: .wiki/raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md
 - Modify: .wiki/wiki/architecture/supabase.md
 - Modify: .wiki/wiki/architecture/implementation-priorities.md
 - Modify: .wiki/wiki/architecture/mobile-logbook-roadmap.md
+- Modify: .wiki/wiki/architecture/mobile.md
+- Modify: .wiki/wiki/architecture/monorepo.md
+- Modify: .wiki/wiki/architecture/profile-file-sync.md
+- Modify: .wiki/wiki/architecture/sync-flow.md
+- Modify: .wiki/wiki/project/overview.md
 - Modify: .wiki/wiki/questions/open-questions.md
 - Modify: .wiki/wiki/index.md
 - Modify: .wiki/wiki/log.md
@@ -748,7 +756,7 @@ git commit -m "feat: configure iOS social authentication"
 - Consumes: Tasks 1-7.
 - Produces: verified automated Wave 3A checkpoint plus an honest, separately tracked physical promotion gate for Wave 3B.
 
-- [ ] **Step 1: Run the full automated gate**
+- [x] **Step 1: Run the full automated gate**
 
 ~~~bash
 yarn supabase:reset
@@ -769,9 +777,9 @@ yarn codex:check
 git diff --check
 ~~~
 
-Expected: all available commands exit 0. A container-runtime or environment-only Xcode failure is reported with exact evidence and is never recorded as a pass. Automated code may be committed while a genuine external physical prerequisite stays pending; Wave 3B may not start.
+Expected: all available commands exit 0. A container-runtime or environment-only Xcode failure is reported with exact evidence and is never recorded as a pass. If the full Jest command passes assertions but retains the process, fix the owning provider lifecycle and require the exact command to exit 0 without `--forceExit`. Automated code may be committed while a genuine external physical prerequisite stays pending; Wave 3B may not start.
 
-- [ ] **Step 2: Prepare the hosted-provider promotion checklist**
+- [x] **Step 2: Prepare the hosted-provider promotion checklist**
 
 Record these external values without committing secrets: stable owned iOS bundle ID/App ID; matching Watch App ID, `WKCompanionAppBundleIdentifier`, and iPhone/Watch signed provisioning profiles; Apple capability; Google web client ID, iOS client ID, reversed scheme, server-only client secret, consent-screen audience, and test-user status; hosted Supabase URL/publishable key; Google/Apple provider configuration whose accepted audiences include the matching web/iOS client IDs or native Apple bundle ID; reviewed immutable app-owned terms/privacy HTTPS URLs; a second immutable terms/privacy version plus current-pointer transition for re-consent testing; and device/build identifier. Physical iPhone testing should use the hosted test project. A trusted LAN endpoint is allowed only over HTTPS with a certificate the device trusts—never plain `http://192.168.x.x` and never `127.0.0.1`, which points to the phone itself. Native-only Apple ID-token login does not add an Apple secret to the app or require an Apple Services ID/OAuth secret rotation path.
 
@@ -789,11 +797,11 @@ Expected: cancellation creates no membership; identity without current consent s
 
 Create guest Logbook/Planbook records before login. Verify 3A login, consent, logout, and restart do not claim, upload, delete, or permanently hide them and keep notConfigured. Repeat foreground Watch pairing/import/local-save/acknowledgement and confirm Watch synced occurs without a cloud write.
 
-- [ ] **Step 5: Update durable documentation with verified state only**
+- [x] **Step 5: Update durable documentation with verified state only**
 
 Use the `karpathy-llm-wiki` and `wiki-writing` skills before wiki edits. First create the immutable raw implementation-evidence source with exact commits, commands/results, and pending external gates; then compile it into the smallest affected wiki articles/index/log. Document only implemented and verified 3A behavior. Keep the external provider/legal/signing gate visibly pending until evidenced. Keep 3B remote data, 3C claim/outbox/conflict, 3D deletion, remaining Wave 1 physical cases, and Wave 2 sensors explicitly unimplemented or unverified. State that 3A is not releasable before 3D in-app account deletion.
 
-- [ ] **Step 6: Review secrets and finish the checkpoint**
+- [x] **Step 6: Review secrets and finish the checkpoint**
 
 Run:
 
@@ -805,10 +813,10 @@ git diff --check
 
 Expected: no secret values are tracked and the diff is clean.
 
-- [ ] **Step 7: Commit documentation**
+- [x] **Step 7: Commit documentation**
 
 ~~~bash
-git add README.md apps/mobile/README.md .wiki/raw/architecture/2026-07-13-wave3a-auth-foundation-implementation.md .wiki/wiki
+git add README.md apps/mobile/README.md AGENTS.md apps/mobile/AGENTS.md docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md .wiki/raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md .wiki/wiki
 git commit -m "docs: record Supabase auth foundation"
 ~~~
 

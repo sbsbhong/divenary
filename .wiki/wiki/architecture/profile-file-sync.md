@@ -1,8 +1,8 @@
 # 1Hz 프로파일 파일 저장과 동기화
 
-Sources: Diving App accepted design and implementation, 2026-07-12
-Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md)
-Updated: 2026-07-12
+Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
+Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
+Updated: 2026-07-15
 
 ## 요약
 
@@ -64,7 +64,7 @@ JS validator와 mobile repository 저장이 모두 성공하면 native layer는 
 
 `PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `DiveMobile/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 profile file도 같이 삭제한다.
 
-현재 profile store는 iOS local file storage 경계이고 Supabase는 아직 없다. Supabase를 도입할 때 권장 경계는 session metadata table과 immutable profile object(Storage 또는 별도 blob)의 분리다. sample을 한 row씩 10,800개 저장하는 방식이나 metadata JSON에 중복 삽입하는 방식은 기본안이 아니다.
+현재 profile store는 iOS local file storage 경계다. Wave 3A Supabase/Auth foundation은 구현됐지만 remote profile table/Storage는 3B 후속이다. Remote data를 도입할 때 권장 경계는 session metadata table과 immutable profile object(Storage 또는 별도 blob)의 분리다. sample을 한 row씩 10,800개 저장하는 방식이나 metadata JSON에 중복 삽입하는 방식은 기본안이 아니다.
 
 ## 알림 생명주기와 한계
 

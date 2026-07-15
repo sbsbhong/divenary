@@ -13,7 +13,7 @@
 - Apple Watch에서 다이빙 세션을 가볍게 기록하고 로컬에서 확인할 수 있는 watchOS 앱 PoC를 유지한다.
 - 모바일 앱에서 워치에서 온 세션을 리뷰하고, 로그북/계획/메모리 화면을 확장할 기반을 만든다.
 - `packages/contracts`의 JSON Schema를 watch-mobile sync contract의 기준으로 유지한다.
-- 향후 Supabase, 인증, cloud sync가 추가될 수 있게 경계를 분리하고, 현재 WatchConnectivity PoC와 모바일 영구 저장소는 검증된 범위 안에서 유지한다.
+- 구현된 Wave 3A Supabase/Auth foundation을 유지하되, guest Logbook/Planbook은 remote data 단계 전까지 local-only로 보존하고 WatchConnectivity PoC와 모바일 영구 저장소의 경계를 섞지 않는다.
 - 안전-critical 기능으로 오해될 수 있는 감압, 조직 포화도, 가스 전환 안전, 비상 지시 기능은 구현하거나 암시하지 않는다.
 
 ## 저장소 구조
@@ -22,23 +22,24 @@
 - 이 저장소는 모노레포다. `apps/` 아래 workspace 변경도 루트 저장소 기준으로 추적한다.
 - `apps/mobile`: Bare React Native 모바일 앱 workspace. React Native `0.85.3`을 사용한다. iOS native project는 `apps/mobile/ios/DiveMobile.xcodeproj`이며, iPhone app target `DiveMobile`과 companion watchOS target `DiveWatchApp`를 함께 소유한다. Watch source는 `apps/mobile/ios/DiveWatchApp` 아래에 둔다. 앱별 상세 지침은 `apps/mobile/AGENTS.md`를 따른다.
 - `packages/contracts`: watch sync contract의 JSON Schema 원본과 generated TypeScript/Swift 출력물을 관리한다.
+- `packages/supabase`: generated database type, typed client factory, onboarding parser와 provider-independent Auth repository를 관리한다. React Native UI나 native provider SDK를 넣지 않는다.
 - `packages/shared-utils`: 예약된 공유 package다. 실제 source 구현은 아직 없다.
+- `supabase`: local configuration, Auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경에서 격리된 local CLI wrapper를 관리한다. Remote Logbook/Planbook schema와 Storage는 아직 없다.
 - `.wiki/`: Karpathy LLM Wiki 방식의 장기 프로젝트 지식 저장소다. `.wiki/raw/`는 원본 source material, `.wiki/wiki/`는 compiled knowledge article이며, `.wiki/wiki/index.md`와 `.wiki/wiki/log.md`를 기준으로 탐색한다.
-- `supabase`, `packages/supabase`: 현재 구현되어 있지 않다. 생성되기 전에는 존재한다고 쓰지 않는다.
 
 ## 앱 요약
 
 ### `apps/mobile`
 
-모바일 앱은 React Native 기반의 다이빙 로그 리뷰 surface이자 iPhone/watch companion bundle의 소유자다. 현재는 React Navigation 기반 bottom-tab navigation, AsyncStorage 기반 Logbook/Planbook/설정 저장소, 수동 로그 작성, 계획 알림, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, Settings 기기 관리, companion watch target embed 구조를 갖는다. 인증, Supabase client, cloud backup, 실기기/background delivery 검증은 아직 없다.
+모바일 앱은 React Native 기반의 다이빙 로그 리뷰 surface이자 iPhone/watch companion bundle의 소유자다. 현재는 React Navigation 기반 bottom-tab navigation, AsyncStorage 기반 Logbook/Planbook/설정 저장소, 수동 로그 작성, 계획 알림, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, Settings 기기 관리, companion watch target embed 구조를 갖는다. 또한 Keychain-compatible session, iOS native Google/Apple credential adapter, Auth state/UI와 versioned mandatory consent를 갖는다. Hosted provider/signing/physical Auth, cloud data/backup, account deletion, background delivery 검증은 아직 없다.
 
-모바일 앱은 사용자 프로필, 인증, 로그북, 수동 로그 작성, 미래 Supabase sync, 통계/검색/리뷰/공유 흐름의 중심이 된다. 직접 SQL, 중복 Supabase schema type, watch-only sensor capture logic, imported watch sample을 손실시키는 raw rewrite는 넣지 않는다.
+모바일 앱은 인증, 로그북, 수동 로그 작성, 미래 사용자 프로필/Supabase data sync, 통계/검색/리뷰/공유 흐름의 중심이 된다. Wave 3A에서는 로그인해도 guest Logbook/Planbook을 claim, upload, delete, partition하거나 영구히 숨기지 않는다. 직접 SQL, 중복 Supabase schema type, watch-only sensor capture logic, imported watch sample을 손실시키는 raw rewrite는 넣지 않는다.
 
 ### watchOS companion
 
 watchOS 앱은 SwiftUI 기반 Apple Watch recording surface다. 현재 active source는 `apps/mobile/ios/DiveWatchApp`이며, `apps/mobile/ios/DiveMobile.xcodeproj`의 `DiveWatchApp` target/scheme으로 빌드된다. 별도 watch workspace는 유지하지 않는다.
 
-watch 앱은 pre-dive metadata capture, 모바일 planned dive 시작, mock 기반 live recording, local persistence, summary, saved session list/detail, sync-ready JSON export의 책임을 갖는다. 복잡한 account 관리, 전체 로그북 관리, Supabase schema-specific business logic은 watch 앱에 넣지 않는다.
+watch 앱은 pre-dive metadata capture, 모바일 planned dive 시작, `CMWaterSubmersionManager` 기반 real provider와 명시적 demo provider를 통한 live recording, local persistence, summary, saved session list/detail, sync-ready JSON export의 책임을 갖는다. 실제 underwater sensor behavior는 아직 지원 hardware에서 검증해야 한다. 복잡한 account 관리, 전체 로그북 관리, Supabase schema-specific business logic, Auth entitlement와 provider callback은 watch 앱에 넣지 않는다.
 
 ## Skill 사용 방식
 
