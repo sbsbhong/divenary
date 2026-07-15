@@ -610,7 +610,7 @@ const resources = {
           unavailableBody: 'Logbook and planning actions remain available.',
           permissionDenied: 'Location permission needed',
           permissionDeniedBody:
-            'Without location permission, DiveMobile cannot load weather, air temperature, or water temperature for your current area.',
+            'Without location permission, Divenary cannot load weather, air temperature, or water temperature for your current area.',
           openSettings: 'Open Settings',
           tryAgain: 'Try Again',
           refresh: 'Refresh',

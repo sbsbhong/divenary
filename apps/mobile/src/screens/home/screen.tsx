@@ -93,7 +93,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
             <StatusPill label={t('status.watchAssistant')} />
             <LanguageMenu />
           </HStack>
-          <Text className="text-4xl font-semibold leading-10 text-foreground">DiveMobile</Text>
+          <Text className="text-4xl font-semibold leading-10 text-foreground">Divenary</Text>
           <Text className="text-base leading-6 text-muted-foreground">{t('home.subtitle')}</Text>
           <HStack space="xs" className="items-baseline">
             <Text className="text-2xl font-semibold text-primary">{props.sessions.length}</Text>

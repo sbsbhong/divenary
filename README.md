@@ -30,8 +30,8 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
   - immutable legal document/current pointer, append-only consent, membership와 RLS/RPC 경계
 - `packages/supabase`:
   - generated database type, typed client factory, onboarding parser와 provider-independent Auth repository
-- `apps/mobile/ios/DiveWatchApp`:
-  - `apps/mobile/ios/DiveMobile.xcodeproj` 안의 embedded watchOS companion target
+- `apps/mobile/ios/DivenaryWatchApp`:
+  - `apps/mobile/ios/Divenary.xcodeproj` 안의 embedded watchOS companion target
   - Start/End 기록 흐름, 원시 live callback과 분리된 최대 1Hz profile, 세션 요약, Application Support 기반 immutable artifact/manifest 저장
   - 저장된 세션 목록/상세 화면
   - 모바일 planned dive 목록 표시와 선택한 계획으로 recording 시작
@@ -43,10 +43,10 @@ dive-app/
   apps/
     mobile/
       ios/
-        DiveMobile.xcodeproj/
-        DiveMobile.xcworkspace/
-        DiveMobile/
-        DiveWatchApp/
+        Divenary.xcodeproj/
+        Divenary.xcworkspace/
+        Divenary/
+        DivenaryWatchApp/
       src/
   packages/
     contracts/
@@ -85,7 +85,7 @@ yarn workspace @repo/contracts generate:swift
 - `packages/contracts/generated/swift/WatchContracts.swift`
 
 ## 모바일과 watchOS companion 구조
-실행 가능한 iPhone app과 watchOS companion app은 `apps/mobile/ios/DiveMobile.xcodeproj` 안에서 함께 관리합니다.
+실행 가능한 iPhone app과 watchOS companion app은 `apps/mobile/ios/Divenary.xcodeproj` 안에서 함께 관리합니다.
 
 Xcode 실행:
 ```bash
@@ -102,7 +102,7 @@ iOS app CLI 빌드 확인:
 yarn ios:build
 ```
 
-`apps/mobile/ios/DiveWatchApp` 주요 구성:
+`apps/mobile/ios/DivenaryWatchApp` 주요 구성:
 - `Models`: `DepthSample`, `DiveSession`, `DiveSessionSummary`
 - `Sensors`: `DepthSensorProvider`, `MockDepthSensorProvider`, `RealDepthSensorProvider`
 - `Recording`: `DiveSessionRecorder`

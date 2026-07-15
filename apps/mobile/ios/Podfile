@@ -14,7 +14,7 @@ if linkage != nil
   use_frameworks! :linkage => linkage.to_sym
 end
 
-target 'DiveMobile' do
+target 'Divenary' do
   config = use_native_modules!
 
   # Google Sign-In 9.x pulls Swift AppCheckCore through dependencies that do

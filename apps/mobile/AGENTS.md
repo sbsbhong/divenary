@@ -6,7 +6,7 @@
 
 `apps/mobile`은 다이빙 로그를 탐색하고 watch-captured 세션을 리뷰하는 모바일 surface이자 iPhone/watch companion bundle의 소유자다. 현재 production remote data/backend는 없지만, generated watch contract type, AsyncStorage 기반 local persistence, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, embedded watchOS companion target과 Wave 3A native social Auth foundation을 사용해 앱 구조와 UX boundary를 잡고 있다.
 
-모바일 앱은 현재 authentication과 mandatory consent를 소유하며, 장기적으로 user profile, dive log list/detail, manual dive creation, Supabase data sync, statistics, search, planning, memory/share, backup flow의 중심이 된다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, server/user data 연결은 3B/3C의 mobile/backend layer에서 처리한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DiveWatchApp`와 `ios/DiveMobile.xcodeproj`에서 관리한다.
+모바일 앱은 현재 authentication과 mandatory consent를 소유하며, 장기적으로 user profile, dive log list/detail, manual dive creation, Supabase data sync, statistics, search, planning, memory/share, backup flow의 중심이 된다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, server/user data 연결은 3B/3C의 mobile/backend layer에서 처리한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DivenaryWatchApp`와 `ios/Divenary.xcodeproj`에서 관리한다.
 
 ## 현재 Stack
 
@@ -44,8 +44,8 @@
 - `src/native/watch-connectivity.ts`: React Native WatchConnectivity wrapper
 - `src/types/dive-session.ts`: generated watch contract type 기반 mobile session type
 - `src/utils/`: formatter, watch fixture helper, summary 계산
-- `ios/DiveMobile.xcodeproj`: iPhone app target `DiveMobile`과 companion watch target `DiveWatchApp`
-- `ios/DiveWatchApp`: SwiftUI watchOS companion app source
+- `ios/Divenary.xcodeproj`: iPhone app target `Divenary`과 companion watch target `DivenaryWatchApp`
+- `ios/DivenaryWatchApp`: SwiftUI watchOS companion app source
 - `ios/`, `android/`: native projects
 
 ## 책임 범위
@@ -117,7 +117,7 @@ iOS native build 전 CocoaPods workspace가 필요하다.
 - `yarn workspace @repo/mobile ios:pods`
 - `yarn workspace @repo/mobile ios:xcode`
 
-Xcode를 열 때는 full iOS app 작업 기준으로 `ios/DiveMobile.xcworkspace`를 사용한다. `ios/DiveMobile.xcodeproj`는 `DiveWatchApp` target membership과 watch-only CLI build 확인에 사용하지만, full React Native iOS app build에서는 React pod module resolution이 필요하다.
+Xcode를 열 때는 full iOS app 작업 기준으로 `ios/Divenary.xcworkspace`를 사용한다. `ios/Divenary.xcodeproj`는 `DivenaryWatchApp` target membership과 watch-only CLI build 확인에 사용하지만, full React Native iOS app build에서는 React pod module resolution이 필요하다.
 
 ## Verification
 

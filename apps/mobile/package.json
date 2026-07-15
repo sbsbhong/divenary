@@ -7,14 +7,15 @@
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "ios:build": "node ./scripts/ios-build.mjs",
-    "ios:xcode": "yarn ios:pods && open ios/DiveMobile.xcworkspace",
+    "ios:xcode": "yarn ios:pods && open ios/Divenary.xcworkspace",
     "ios:pods": "cd ios && bundle exec pod install",
     "lint": "eslint .",
+    "native:brand:check": "node ./scripts/check-divenary-native-rename.mjs",
     "start": "react-native start",
     "test": "jest",
     "typecheck": "tsc --noEmit",
-    "watch:build": "xcodebuild -project ios/DiveMobile.xcodeproj -scheme DiveWatchApp -configuration Debug -destination 'generic/platform=watchOS Simulator' -derivedDataPath /private/tmp/DiveWatchAppDerivedData CODE_SIGNING_ALLOWED=NO build",
-    "watch:list": "xcodebuild -list -project ios/DiveMobile.xcodeproj",
+    "watch:build": "xcodebuild -project ios/Divenary.xcodeproj -scheme DivenaryWatchApp -configuration Debug -destination 'generic/platform=watchOS Simulator' -derivedDataPath /private/tmp/DivenaryWatchAppDerivedData CODE_SIGNING_ALLOWED=NO build",
+    "watch:list": "xcodebuild -list -project ios/Divenary.xcodeproj",
     "watch:ui:check": "node ./scripts/check-watch-ui-language.mjs"
   },
   "dependencies": {

@@ -31,16 +31,16 @@ const buildConfiguration = (project: string, id: string): string => {
 };
 
 const project = readRepoFile(
-  'apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj',
+  'apps/mobile/ios/Divenary.xcodeproj/project.pbxproj',
 );
 const mobileInfoPlist = readRepoFile(
-  'apps/mobile/ios/DiveMobile/Info.plist',
+  'apps/mobile/ios/Divenary/Info.plist',
 );
 const watchInfoPlist = readRepoFile(
-  'apps/mobile/ios/DiveWatchApp/Info.plist',
+  'apps/mobile/ios/DivenaryWatchApp/Info.plist',
 );
 const mobileEntitlements = readOptionalRepoFile(
-  'apps/mobile/ios/DiveMobile/DiveMobile.entitlements',
+  'apps/mobile/ios/Divenary/Divenary.entitlements',
 );
 const environmentExample = readRepoFile(
   'apps/mobile/.env.development.example',
@@ -60,7 +60,7 @@ describe('iOS social-auth native configuration', () => {
   test('assigns the Sign in with Apple entitlement to both iPhone configurations only', () => {
     for (const configuration of mobileConfigurations) {
       expect(configuration).toContain(
-        'CODE_SIGN_ENTITLEMENTS = DiveMobile/DiveMobile.entitlements;',
+        'CODE_SIGN_ENTITLEMENTS = Divenary/Divenary.entitlements;',
       );
     }
 
@@ -74,7 +74,7 @@ describe('iOS social-auth native configuration', () => {
 
     for (const configuration of watchConfigurations) {
       expect(configuration).not.toContain('CODE_SIGN_ENTITLEMENTS');
-      expect(configuration).not.toContain('DiveMobile.entitlements');
+      expect(configuration).not.toContain('Divenary.entitlements');
     }
   });
 

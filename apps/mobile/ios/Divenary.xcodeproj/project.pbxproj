@@ -1,0 +1,1043 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E2C63175E91C4718DBE3923 /* RecordingView.swift */; };
+		08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */; };
+		0C80B921A6F3F58F76C31292 /* libPods-Divenary.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */; };
+		0DA3A8DE547E6EA68A8F60D0 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956EB9D331534828E0706E5C /* SessionListView.swift */; };
+		11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */; };
+		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F26525BE2C876EE578F3C9A /* WatchSyncEnvelope.swift */; };
+		55EABF84D85DF352419E66E8 /* DepthSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DE78178255421044754FD2F /* DepthSample.swift */; };
+		646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE6A545437839029CC97811 /* HomeView.swift */; };
+		65B418949D09CE62247AEB33 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */; };
+		6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB8558F91BE7C8E9EA22C1A /* WatchSyncTransport.swift */; };
+		6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39957D0BC852B0FDF38FABA2 /* MockDepthSensorProvider.swift */; };
+		72F99C297E562922D87444A0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
+		775F06ECDC0D3A395069DC74 /* DivenaryWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 895332B886DE77424F1410C1 /* DivenaryWatchApp.swift */; };
+		8097168CBD59D256F2B105FC /* DiveFormatters.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */; };
+		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 490329F69552608512F0258A /* DiveSessionSummary.swift */; };
+		8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B5388708193690CDCF20BB /* DiveSessionStore.swift */; };
+		A10000000000000000000001 /* OneHertzProfileSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* OneHertzProfileSampler.swift */; };
+		A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* DiveProfileArtifactStore.swift */; };
+		AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */; };
+		ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 972E39BFCAB25BD1867935E1 /* Foundation.framework */; };
+		B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* DemoDepthSensorProvider.swift */; };
+		B10000000000000000000002 /* DepthSensorAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000002 /* DepthSensorAvailability.swift */; };
+		B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */; };
+		C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000001 /* WatchConnectivityInbox.swift */; };
+		C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000002 /* WatchConnectivityModule.swift */; };
+		C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* WatchConnectivityModuleBridge.m */; };
+		C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000004 /* WatchProfileStorageModule.swift */; };
+		C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */; };
+		C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */; };
+		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
+		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
+		D905DC1DE35C97E43DD60078 /* DivenaryWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6359F0F795514043D38F67FB /* DivenaryWatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		E00000000000000000000001 /* ReverseGeocoderModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* ReverseGeocoderModule.swift */; };
+		E00000000000000000000002 /* ReverseGeocoderModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */; };
+		EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
+		FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000001 /* EngineTestFixtures.swift */; };
+		FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */; };
+		FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */; };
+		FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000005 /* DiveSessionRecord.swift */; };
+		FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000006 /* FreeDiveSessionEngine.swift */; };
+		FA1000000000000000000007 /* SafetyStopControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000007 /* SafetyStopControllerTests.swift */; };
+		FA1000000000000000000008 /* SafetyStopController.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000008 /* SafetyStopController.swift */; };
+		FA1000000000000000000009 /* ScubaDiveEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA2000000000000000000009 /* ScubaDiveEngineTests.swift */; };
+		FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* ScubaDiveEngine.swift */; };
+		FA100000000000000000000B /* OneHertzProfileSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */; };
+		FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */; };
+		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		20E16BA1C517607E9CCABB8A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5E4C91BDE6F8F1CE9908A029;
+			remoteInfo = DivenaryWatchApp;
+		};
+		FA3000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5E4C91BDE6F8F1CE9908A029;
+			remoteInfo = DivenaryWatchApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		9B16606204BFD47B4C9DB8FB /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				D905DC1DE35C97E43DD60078 /* DivenaryWatchApp.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		13B07F961A680F5B00A75B9A /* Divenary.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Divenary.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Divenary/Images.xcassets; sourceTree = "<group>"; };
+		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Divenary/Info.plist; sourceTree = "<group>"; };
+		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = Divenary/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDepthSensorProvider.swift; sourceTree = "<group>"; };
+		1E2C63175E91C4718DBE3923 /* RecordingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
+		2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveFormatters.swift; sourceTree = "<group>"; };
+		2F26525BE2C876EE578F3C9A /* WatchSyncEnvelope.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSyncEnvelope.swift; sourceTree = "<group>"; };
+		39957D0BC852B0FDF38FABA2 /* MockDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = MockDepthSensorProvider.swift; sourceTree = "<group>"; };
+		3B4392A12AC88292D35C810B /* Pods-Divenary.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Divenary.debug.xcconfig"; path = "Target Support Files/Pods-Divenary/Pods-Divenary.debug.xcconfig"; sourceTree = "<group>"; };
+		3BB8558F91BE7C8E9EA22C1A /* WatchSyncTransport.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchSyncTransport.swift; sourceTree = "<group>"; };
+		490329F69552608512F0258A /* DiveSessionSummary.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionSummary.swift; sourceTree = "<group>"; };
+		4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
+		50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorProvider.swift; sourceTree = "<group>"; };
+		541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		5709B34CF0A7D63546082F79 /* Pods-Divenary.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Divenary.release.xcconfig"; path = "Target Support Files/Pods-Divenary/Pods-Divenary.release.xcconfig"; sourceTree = "<group>"; };
+		5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Divenary.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		6359F0F795514043D38F67FB /* DivenaryWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivenaryWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6BE6A545437839029CC97811 /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		6DE78178255421044754FD2F /* DepthSample.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSample.swift; sourceTree = "<group>"; };
+		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Divenary/AppDelegate.swift; sourceTree = "<group>"; };
+		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Divenary/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		895332B886DE77424F1410C1 /* DivenaryWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DivenaryWatchApp.swift; sourceTree = "<group>"; };
+		8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSession.swift; sourceTree = "<group>"; };
+		8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SummaryView.swift; sourceTree = "<group>"; };
+		956EB9D331534828E0706E5C /* SessionListView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionListView.swift; sourceTree = "<group>"; };
+		972E39BFCAB25BD1867935E1 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthGaugeRail.swift; sourceTree = "<group>"; };
+		A20000000000000000000001 /* OneHertzProfileSampler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSampler.swift; sourceTree = "<group>"; };
+		A20000000000000000000002 /* DiveProfileArtifactStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStore.swift; sourceTree = "<group>"; };
+		B20000000000000000000001 /* DemoDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoDepthSensorProvider.swift; sourceTree = "<group>"; };
+		B20000000000000000000002 /* DepthSensorAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorAvailability.swift; sourceTree = "<group>"; };
+		B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthAutoLaunchAuthorization.swift; sourceTree = "<group>"; };
+		B20000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = Divenary/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
+		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = Divenary/WatchConnectivityModule.swift; sourceTree = "<group>"; };
+		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = Divenary/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
+		D00000000000000000000004 /* WatchProfileStorageModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchProfileStorageModule.swift; path = Divenary/WatchProfileStorageModule.swift; sourceTree = "<group>"; };
+		D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchProfileStorageModuleBridge.m; path = Divenary/WatchProfileStorageModuleBridge.m; sourceTree = "<group>"; };
+		D5B5388708193690CDCF20BB /* DiveSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionStore.swift; sourceTree = "<group>"; };
+		E10000000000000000000001 /* ReverseGeocoderModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReverseGeocoderModule.swift; path = Divenary/ReverseGeocoderModule.swift; sourceTree = "<group>"; };
+		E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ReverseGeocoderModuleBridge.m; path = Divenary/ReverseGeocoderModuleBridge.m; sourceTree = "<group>"; };
+		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecorder.swift; sourceTree = "<group>"; };
+		FA2000000000000000000001 /* EngineTestFixtures.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = EngineTestFixtures.swift; sourceTree = "<group>"; };
+		FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreeDiveSessionEngineTests.swift; sourceTree = "<group>"; };
+		FA2000000000000000000003 /* DivenaryWatchAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DivenaryWatchAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecordMigrationTests.swift; sourceTree = "<group>"; };
+		FA2000000000000000000005 /* DiveSessionRecord.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecord.swift; sourceTree = "<group>"; };
+		FA2000000000000000000006 /* FreeDiveSessionEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = FreeDiveSessionEngine.swift; sourceTree = "<group>"; };
+		FA2000000000000000000007 /* SafetyStopControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SafetyStopControllerTests.swift; sourceTree = "<group>"; };
+		FA2000000000000000000008 /* SafetyStopController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SafetyStopController.swift; sourceTree = "<group>"; };
+		FA2000000000000000000009 /* ScubaDiveEngineTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScubaDiveEngineTests.swift; sourceTree = "<group>"; };
+		FA200000000000000000000A /* ScubaDiveEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScubaDiveEngine.swift; sourceTree = "<group>"; };
+		FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSamplerTests.swift; sourceTree = "<group>"; };
+		FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStoreTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		13B07F8C1A680F5B00A75B9A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0C80B921A6F3F58F76C31292 /* libPods-Divenary.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		1C701E1018527EDDA039AF59 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA4000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		13B07FAE1A68108700A75B9A /* Divenary */ = {
+			isa = PBXGroup;
+			children = (
+				13B07FB51A68108700A75B9A /* Images.xcassets */,
+				761780EC2CA45674006654EE /* AppDelegate.swift */,
+				D00000000000000000000001 /* WatchConnectivityInbox.swift */,
+				D00000000000000000000002 /* WatchConnectivityModule.swift */,
+				D00000000000000000000003 /* WatchConnectivityModuleBridge.m */,
+				D00000000000000000000004 /* WatchProfileStorageModule.swift */,
+				D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */,
+				E10000000000000000000001 /* ReverseGeocoderModule.swift */,
+				E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */,
+				13B07FB61A68108700A75B9A /* Info.plist */,
+				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
+				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+			);
+			name = Divenary;
+			sourceTree = "<group>";
+		};
+		16C1CD0EF7BD44D4C334ABC3 /* DivenaryWatchApp */ = {
+			isa = PBXGroup;
+			children = (
+				895332B886DE77424F1410C1 /* DivenaryWatchApp.swift */,
+				66C077D411D8E510F33267A1 /* Models */,
+				E01C29F743F7AC71BB250F07 /* Recording */,
+				B30000000000000000000001 /* Runtime */,
+				8500806367AB67E6834194EA /* Sensors */,
+				8F2F8F15CA5FAA9EAB959C88 /* Storage */,
+				C92F451D86433739DA2613A0 /* Sync */,
+				C2D0DFFB26398A6FE9F151FC /* Views */,
+				B20000000000000000000004 /* Info.plist */,
+				541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */,
+			);
+			path = DivenaryWatchApp;
+			sourceTree = "<group>";
+		};
+		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
+				5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */,
+				5A9933860BF96837F6CEB506 /* watchOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		5A9933860BF96837F6CEB506 /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				972E39BFCAB25BD1867935E1 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
+		66C077D411D8E510F33267A1 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				6DE78178255421044754FD2F /* DepthSample.swift */,
+				8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */,
+				FA2000000000000000000005 /* DiveSessionRecord.swift */,
+				490329F69552608512F0258A /* DiveSessionSummary.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		832341AE1AAA6A7D00B99B32 /* Libraries */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Libraries;
+			sourceTree = "<group>";
+		};
+		83CBB9F61A601CBA00E9B192 = {
+			isa = PBXGroup;
+			children = (
+				13B07FAE1A68108700A75B9A /* Divenary */,
+				832341AE1AAA6A7D00B99B32 /* Libraries */,
+				83CBBA001A601CBA00E9B192 /* Products */,
+				2D16E6871FA4F8E400B85C8A /* Frameworks */,
+				BBD78D7AC51CEA395F1C20DB /* Pods */,
+				16C1CD0EF7BD44D4C334ABC3 /* DivenaryWatchApp */,
+				FA5000000000000000000001 /* DivenaryWatchAppTests */,
+			);
+			indentWidth = 2;
+			sourceTree = "<group>";
+			tabWidth = 2;
+			usesTabs = 0;
+		};
+		83CBBA001A601CBA00E9B192 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				13B07F961A680F5B00A75B9A /* Divenary.app */,
+				6359F0F795514043D38F67FB /* DivenaryWatchApp.app */,
+				FA2000000000000000000003 /* DivenaryWatchAppTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		8500806367AB67E6834194EA /* Sensors */ = {
+			isa = PBXGroup;
+			children = (
+				50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */,
+				B20000000000000000000002 /* DepthSensorAvailability.swift */,
+				B20000000000000000000001 /* DemoDepthSensorProvider.swift */,
+				39957D0BC852B0FDF38FABA2 /* MockDepthSensorProvider.swift */,
+				1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */,
+			);
+			path = Sensors;
+			sourceTree = "<group>";
+		};
+		8F2F8F15CA5FAA9EAB959C88 /* Storage */ = {
+			isa = PBXGroup;
+			children = (
+				D5B5388708193690CDCF20BB /* DiveSessionStore.swift */,
+				A20000000000000000000002 /* DiveProfileArtifactStore.swift */,
+			);
+			path = Storage;
+			sourceTree = "<group>";
+		};
+		B30000000000000000000001 /* Runtime */ = {
+			isa = PBXGroup;
+			children = (
+				B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */,
+			);
+			path = Runtime;
+			sourceTree = "<group>";
+		};
+		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
+			isa = PBXGroup;
+			children = (
+				3B4392A12AC88292D35C810B /* Pods-Divenary.debug.xcconfig */,
+				5709B34CF0A7D63546082F79 /* Pods-Divenary.release.xcconfig */,
+			);
+			path = Pods;
+			sourceTree = "<group>";
+		};
+		C2D0DFFB26398A6FE9F151FC /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */,
+				2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */,
+				6BE6A545437839029CC97811 /* HomeView.swift */,
+				1E2C63175E91C4718DBE3923 /* RecordingView.swift */,
+				4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */,
+				956EB9D331534828E0706E5C /* SessionListView.swift */,
+				8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		C92F451D86433739DA2613A0 /* Sync */ = {
+			isa = PBXGroup;
+			children = (
+				2F26525BE2C876EE578F3C9A /* WatchSyncEnvelope.swift */,
+				3BB8558F91BE7C8E9EA22C1A /* WatchSyncTransport.swift */,
+			);
+			path = Sync;
+			sourceTree = "<group>";
+		};
+		E01C29F743F7AC71BB250F07 /* Recording */ = {
+			isa = PBXGroup;
+			children = (
+				F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */,
+				A20000000000000000000001 /* OneHertzProfileSampler.swift */,
+				FA2000000000000000000006 /* FreeDiveSessionEngine.swift */,
+				FA2000000000000000000008 /* SafetyStopController.swift */,
+				FA200000000000000000000A /* ScubaDiveEngine.swift */,
+			);
+			path = Recording;
+			sourceTree = "<group>";
+		};
+		FA5000000000000000000001 /* DivenaryWatchAppTests */ = {
+			isa = PBXGroup;
+			children = (
+				FA2000000000000000000001 /* EngineTestFixtures.swift */,
+				FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */,
+				FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */,
+				FA2000000000000000000007 /* SafetyStopControllerTests.swift */,
+				FA2000000000000000000009 /* ScubaDiveEngineTests.swift */,
+				FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */,
+				FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */,
+			);
+			path = DivenaryWatchAppTests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		13B07F861A680F5B00A75B9A /* Divenary */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Divenary" */;
+			buildPhases = (
+				C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */,
+				4E7B2CC02D9B000100000001 /* Start Packager */,
+				13B07F871A680F5B00A75B9A /* Sources */,
+				13B07F8C1A680F5B00A75B9A /* Frameworks */,
+				13B07F8E1A680F5B00A75B9A /* Resources */,
+				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
+				00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */,
+				E235C05ADACE081382539298 /* [CP] Copy Pods Resources */,
+				9B16606204BFD47B4C9DB8FB /* Embed Watch Content */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B7BD3A22F0E6CE3FBD7340FE /* PBXTargetDependency */,
+			);
+			name = Divenary;
+			productName = Divenary;
+			productReference = 13B07F961A680F5B00A75B9A /* Divenary.app */;
+			productType = "com.apple.product-type.application";
+		};
+		5E4C91BDE6F8F1CE9908A029 /* DivenaryWatchApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B61C9015B445537153F41C3D /* Build configuration list for PBXNativeTarget "DivenaryWatchApp" */;
+			buildPhases = (
+				E3A8DB1C792D6C28097C1986 /* Sources */,
+				1C701E1018527EDDA039AF59 /* Frameworks */,
+				528DE67ECA1B1608EA4978A8 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = DivenaryWatchApp;
+			productName = DivenaryWatchApp;
+			productReference = 6359F0F795514043D38F67FB /* DivenaryWatchApp.app */;
+			productType = "com.apple.product-type.application";
+		};
+		FA6000000000000000000001 /* DivenaryWatchAppTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = FA8000000000000000000003 /* Build configuration list for PBXNativeTarget "DivenaryWatchAppTests" */;
+			buildPhases = (
+				FA4000000000000000000003 /* Sources */,
+				FA4000000000000000000001 /* Frameworks */,
+				FA4000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FA7000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = DivenaryWatchAppTests;
+			productName = DivenaryWatchAppTests;
+			productReference = FA2000000000000000000003 /* DivenaryWatchAppTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		83CBB9F71A601CBA00E9B192 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1210;
+				TargetAttributes = {
+					13B07F861A680F5B00A75B9A = {
+						LastSwiftMigration = 1120;
+					};
+					FA6000000000000000000001 = {
+						LastSwiftMigration = 1120;
+					};
+				};
+			};
+			buildConfigurationList = 83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Divenary" */;
+			compatibilityVersion = "Xcode 12.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				ko,
+			);
+			mainGroup = 83CBB9F61A601CBA00E9B192;
+			productRefGroup = 83CBBA001A601CBA00E9B192 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				13B07F861A680F5B00A75B9A /* Divenary */,
+				5E4C91BDE6F8F1CE9908A029 /* DivenaryWatchApp */,
+				FA6000000000000000000001 /* DivenaryWatchAppTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		13B07F8E1A680F5B00A75B9A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
+				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		528DE67ECA1B1608EA4978A8 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */,
+				72F99C297E562922D87444A0 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA4000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/.xcode.env",
+			);
+			name = "Bundle React Native code and images";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nREACT_NATIVE_XCODE=\"$REACT_NATIVE_PATH/scripts/react-native-xcode.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$REACT_NATIVE_XCODE\\\"\"\n";
+		};
+		00EEFC60759A1932668264C0 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-frameworks-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+		4E7B2CC02D9B000100000001 /* Start Packager */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/.xcode.env.local",
+				"$(SRCROOT)/.xcode.env",
+				"$(SRCROOT)/start-packager.sh",
+			);
+			name = "Start Packager";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -e\n\nWITH_ENVIRONMENT=\"$REACT_NATIVE_PATH/scripts/xcode/with-environment.sh\"\nSTART_PACKAGER=\"$SRCROOT/start-packager.sh\"\n\n/bin/sh -c \"\\\"$WITH_ENVIRONMENT\\\" \\\"$START_PACKAGER\\\"\"\n";
+		};
+		C38B50BA6285516D6DCD4F65 /* [CP] Check Pods Manifest.lock */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${PODS_PODFILE_DIR_PATH}/Podfile.lock",
+				"${PODS_ROOT}/Manifest.lock",
+			);
+			name = "[CP] Check Pods Manifest.lock";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(DERIVED_FILE_DIR)/Pods-Divenary-checkManifestLockResult.txt",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
+			showEnvVarsInLog = 0;
+		};
+		E235C05ADACE081382539298 /* [CP] Copy Pods Resources */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-resources-${CONFIGURATION}-input-files.xcfilelist",
+			);
+			name = "[CP] Copy Pods Resources";
+			outputFileListPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Divenary/Pods-Divenary-resources.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		13B07F871A680F5B00A75B9A /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				C00000000000000000000001 /* WatchConnectivityInbox.swift in Sources */,
+				C00000000000000000000002 /* WatchConnectivityModule.swift in Sources */,
+				C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */,
+				C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */,
+				C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */,
+				E00000000000000000000001 /* ReverseGeocoderModule.swift in Sources */,
+				E00000000000000000000002 /* ReverseGeocoderModuleBridge.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E3A8DB1C792D6C28097C1986 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				775F06ECDC0D3A395069DC74 /* DivenaryWatchApp.swift in Sources */,
+				55EABF84D85DF352419E66E8 /* DepthSample.swift in Sources */,
+				D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */,
+				FA1000000000000000000004 /* DiveSessionRecord.swift in Sources */,
+				891A9C77F34BCA25DA0C9AC3 /* DiveSessionSummary.swift in Sources */,
+				C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */,
+				A10000000000000000000001 /* OneHertzProfileSampler.swift in Sources */,
+				FA1000000000000000000006 /* FreeDiveSessionEngine.swift in Sources */,
+				FA1000000000000000000008 /* SafetyStopController.swift in Sources */,
+				FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */,
+				11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */,
+				B10000000000000000000002 /* DepthSensorAvailability.swift in Sources */,
+				B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */,
+				6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */,
+				AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */,
+				B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */,
+				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
+				A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */,
+				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
+				6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */,
+				08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */,
+				8097168CBD59D256F2B105FC /* DiveFormatters.swift in Sources */,
+				646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */,
+				079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */,
+				FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */,
+				0DA3A8DE547E6EA68A8F60D0 /* SessionListView.swift in Sources */,
+				65B418949D09CE62247AEB33 /* SummaryView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA4000000000000000000003 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */,
+				FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */,
+				FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */,
+				FA1000000000000000000007 /* SafetyStopControllerTests.swift in Sources */,
+				FA1000000000000000000009 /* ScubaDiveEngineTests.swift in Sources */,
+				FA100000000000000000000B /* OneHertzProfileSamplerTests.swift in Sources */,
+				FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		B7BD3A22F0E6CE3FBD7340FE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DivenaryWatchApp;
+			target = 5E4C91BDE6F8F1CE9908A029 /* DivenaryWatchApp */;
+			targetProxy = 20E16BA1C517607E9CCABB8A /* PBXContainerItemProxy */;
+		};
+		FA7000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = DivenaryWatchApp;
+			target = 5E4C91BDE6F8F1CE9908A029 /* DivenaryWatchApp */;
+			targetProxy = FA3000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		13B07F941A680F5B00A75B9A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 3B4392A12AC88292D35C810B /* Pods-Divenary.debug.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Divenary/Divenary.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CXSWPUW5XA;
+				ENABLE_BITCODE = NO;
+				GOOGLE_IOS_REVERSED_CLIENT_ID = "";
+				INFOPLIST_FILE = Divenary/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app;
+				PRODUCT_NAME = Divenary;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Debug;
+		};
+		13B07F951A680F5B00A75B9A /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 5709B34CF0A7D63546082F79 /* Pods-Divenary.release.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = Divenary/Divenary.entitlements;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CXSWPUW5XA;
+				GOOGLE_IOS_REVERSED_CLIENT_ID = "";
+				INFOPLIST_FILE = Divenary/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+					"-lc++",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app;
+				PRODUCT_NAME = Divenary;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
+		83CBBA201A601CBA00E9B192 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_SYMBOLS_PRIVATE_EXTERN = NO;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					/usr/lib/swift,
+					"$(inherited)",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"\"$(SDKROOT)/usr/lib/swift\"",
+					"\"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)\"",
+					"\"$(inherited)\"",
+				);
+				MTL_ENABLE_DEBUG_INFO = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-DFOLLY_NO_CONFIG",
+					"-DFOLLY_MOBILE=1",
+					"-DFOLLY_USE_LIBCPP=1",
+					"-DFOLLY_CFG_NO_COROUTINES=1",
+					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/react-native";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				USE_HERMES = true;
+			};
+			name = Debug;
+		};
+		83CBBA211A601CBA00E9B192 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "iPhone Developer";
+				COPY_PHASE_STRIP = YES;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				GCC_C_LANGUAGE_STANDARD = gnu99;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					/usr/lib/swift,
+					"$(inherited)",
+				);
+				LIBRARY_SEARCH_PATHS = (
+					"\"$(SDKROOT)/usr/lib/swift\"",
+					"\"$(TOOLCHAIN_DIR)/usr/lib/swift/$(PLATFORM_NAME)\"",
+					"\"$(inherited)\"",
+				);
+				MTL_ENABLE_DEBUG_INFO = NO;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				OTHER_CPLUSPLUSFLAGS = (
+					"$(OTHER_CFLAGS)",
+					"-DFOLLY_NO_CONFIG",
+					"-DFOLLY_MOBILE=1",
+					"-DFOLLY_USE_LIBCPP=1",
+					"-DFOLLY_CFG_NO_COROUTINES=1",
+					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
+					"-DRCT_REMOVE_LEGACY_ARCH=1",
+				);
+				REACT_NATIVE_PATH = "${PODS_ROOT}/../../../../node_modules/react-native";
+				SDKROOT = iphoneos;
+				SWIFT_ENABLE_EXPLICIT_MODULES = NO;
+				USE_HERMES = true;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		D2388F5831CBB4A9A7F5AE22 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = CXSWPUW5XA;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DivenaryWatchApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		F85BD7A3A832F215EEE52819 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_ASSET_PATHS = "";
+				DEVELOPMENT_TEAM = CXSWPUW5XA;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = DivenaryWatchApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		FA8000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DivenaryWatchApp.app/DivenaryWatchApp";
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		FA8000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.divenary.app.watchkitapp.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SUPPORTED_PLATFORMS = "watchos watchsimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DivenaryWatchApp.app/DivenaryWatchApp";
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Divenary" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				13B07F941A680F5B00A75B9A /* Debug */,
+				13B07F951A680F5B00A75B9A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		83CBB9FA1A601CBA00E9B192 /* Build configuration list for PBXProject "Divenary" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				83CBBA201A601CBA00E9B192 /* Debug */,
+				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		B61C9015B445537153F41C3D /* Build configuration list for PBXNativeTarget "DivenaryWatchApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F85BD7A3A832F215EEE52819 /* Release */,
+				D2388F5831CBB4A9A7F5AE22 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		FA8000000000000000000003 /* Build configuration list for PBXNativeTarget "DivenaryWatchAppTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FA8000000000000000000002 /* Release */,
+				FA8000000000000000000001 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 83CBB9F71A601CBA00E9B192 /* Project object */;
+}

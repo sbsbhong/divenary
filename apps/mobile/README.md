@@ -11,8 +11,8 @@ This app was initialized from the React Native CLI template and then adapted for
 - `src/components/navigation` is the navigation boundary.
 - `src/components/ui` contains reusable UI primitives and composed components.
 - `src/screens/<area>/screen.tsx` contains route-level screen containers.
-- `ios/DiveMobile.xcodeproj` owns the iPhone app target `DiveMobile` and the embedded watchOS companion target `DiveWatchApp`.
-- `ios/DiveWatchApp` contains the SwiftUI watchOS companion source.
+- `ios/Divenary.xcodeproj` owns the iPhone app target `Divenary` and the embedded watchOS companion target `DivenaryWatchApp`.
+- `ios/DivenaryWatchApp` contains the SwiftUI watchOS companion source.
 
 ## Scripts
 
@@ -66,13 +66,13 @@ For Xcode builds, open the CocoaPods workspace, not the app project:
 yarn workspace @repo/mobile ios:xcode
 ```
 
-Opening `ios/DiveMobile.xcodeproj` directly can leave the Swift `AppDelegate` without the React pod modules (`React`, `React_RCTAppDelegate`, and `ReactAppDependencyProvider`).
+Opening `ios/Divenary.xcodeproj` directly can leave the Swift `AppDelegate` without the React pod modules (`React`, `React_RCTAppDelegate`, and `ReactAppDependencyProvider`).
 
 The CLI `ios:build` is an unsigned simulator gate. Passing it does not prove Apple capability, provisioning, signed entitlements, Google callback configuration, or physical provider login.
 
 ## watchOS Companion
 
-The watch app is embedded through the mobile iOS project instead of a standalone workspace. Keep watch source under `ios/DiveWatchApp`, and update target membership in `ios/DiveMobile.xcodeproj`.
+The watch app is embedded through the mobile iOS project instead of a standalone workspace. Keep watch source under `ios/DivenaryWatchApp`, and update target membership in `ios/Divenary.xcodeproj`.
 
 The watch-only CLI build uses the project directly:
 

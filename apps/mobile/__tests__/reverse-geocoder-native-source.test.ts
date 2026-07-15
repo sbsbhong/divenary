@@ -21,10 +21,10 @@ describe('Reverse geocoder native source contract', () => {
     expect(wrapper).toContain('administrativeArea');
   });
 
-  it('uses CLGeocoder on iOS and includes the bridge in the DiveMobile target', () => {
-    const module = readRepoFile('apps/mobile/ios/DiveMobile/ReverseGeocoderModule.swift');
-    const bridge = readRepoFile('apps/mobile/ios/DiveMobile/ReverseGeocoderModuleBridge.m');
-    const project = readRepoFile('apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj');
+  it('uses CLGeocoder on iOS and includes the bridge in the Divenary target', () => {
+    const module = readRepoFile('apps/mobile/ios/Divenary/ReverseGeocoderModule.swift');
+    const bridge = readRepoFile('apps/mobile/ios/Divenary/ReverseGeocoderModuleBridge.m');
+    const project = readRepoFile('apps/mobile/ios/Divenary.xcodeproj/project.pbxproj');
 
     expect(module).toContain('import CoreLocation');
     expect(module).toContain('@objc(ReverseGeocoderModule)');

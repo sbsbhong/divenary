@@ -20,7 +20,7 @@
 
 - 루트: Yarn 1 workspaces와 Turborepo를 사용한다. `packageManager`는 `yarn@1.22.22`다. npm, pnpm, bun으로 lockfile을 갱신하지 않는다.
 - 이 저장소는 모노레포다. `apps/` 아래 workspace 변경도 루트 저장소 기준으로 추적한다.
-- `apps/mobile`: Bare React Native 모바일 앱 workspace. React Native `0.85.3`을 사용한다. iOS native project는 `apps/mobile/ios/DiveMobile.xcodeproj`이며, iPhone app target `DiveMobile`과 companion watchOS target `DiveWatchApp`를 함께 소유한다. Watch source는 `apps/mobile/ios/DiveWatchApp` 아래에 둔다. 앱별 상세 지침은 `apps/mobile/AGENTS.md`를 따른다.
+- `apps/mobile`: Bare React Native 모바일 앱 workspace. React Native `0.85.3`을 사용한다. iOS native project는 `apps/mobile/ios/Divenary.xcodeproj`이며, iPhone app target `Divenary`과 companion watchOS target `DivenaryWatchApp`를 함께 소유한다. Watch source는 `apps/mobile/ios/DivenaryWatchApp` 아래에 둔다. 앱별 상세 지침은 `apps/mobile/AGENTS.md`를 따른다.
 - `packages/contracts`: watch sync contract의 JSON Schema 원본과 generated TypeScript/Swift 출력물을 관리한다.
 - `packages/supabase`: generated database type, typed client factory, onboarding parser와 provider-independent Auth repository를 관리한다. React Native UI나 native provider SDK를 넣지 않는다.
 - `packages/shared-utils`: 예약된 공유 package다. 실제 source 구현은 아직 없다.
@@ -37,7 +37,7 @@
 
 ### watchOS companion
 
-watchOS 앱은 SwiftUI 기반 Apple Watch recording surface다. 현재 active source는 `apps/mobile/ios/DiveWatchApp`이며, `apps/mobile/ios/DiveMobile.xcodeproj`의 `DiveWatchApp` target/scheme으로 빌드된다. 별도 watch workspace는 유지하지 않는다.
+watchOS 앱은 SwiftUI 기반 Apple Watch recording surface다. 현재 active source는 `apps/mobile/ios/DivenaryWatchApp`이며, `apps/mobile/ios/Divenary.xcodeproj`의 `DivenaryWatchApp` target/scheme으로 빌드된다. 별도 watch workspace는 유지하지 않는다.
 
 watch 앱은 pre-dive metadata capture, 모바일 planned dive 시작, `CMWaterSubmersionManager` 기반 real provider와 명시적 demo provider를 통한 live recording, local persistence, summary, saved session list/detail, sync-ready JSON export의 책임을 갖는다. 실제 underwater sensor behavior는 아직 지원 hardware에서 검증해야 한다. 복잡한 account 관리, 전체 로그북 관리, Supabase schema-specific business logic, Auth entitlement와 provider callback은 watch 앱에 넣지 않는다.
 
@@ -68,7 +68,7 @@ watch 앱은 pre-dive metadata capture, 모바일 planned dive 시작, `CMWaterS
 
 - TypeScript/JavaScript는 기존 ESM script 스타일을 따른다.
 - Node script는 작고 결정적이며 의존성이 적어야 한다.
-- Swift code는 `apps/mobile/ios/DiveWatchApp`의 기존 SwiftUI 구조를 따른다.
+- Swift code는 `apps/mobile/ios/DivenaryWatchApp`의 기존 SwiftUI 구조를 따른다.
 - 실제 call site가 둘 이상 생기기 전에는 speculative shared utility를 만들지 않는다.
 - 명확한 이름과 작은 type을 선호하고, 넓은 abstraction은 피한다.
 

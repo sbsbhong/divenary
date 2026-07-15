@@ -1,11 +1,11 @@
 import { readFileSync, statSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 
-const workspacePath = 'ios/DiveMobile.xcworkspace';
+const workspacePath = 'ios/Divenary.xcworkspace';
 const workspaceDataPath = `${workspacePath}/contents.xcworkspacedata`;
 const requiredPodArtifacts = [
-  'ios/Pods/Target Support Files/Pods-DiveMobile/Pods-DiveMobile.debug.xcconfig',
-  'ios/Pods/Target Support Files/Pods-DiveMobile/Pods-DiveMobile.release.xcconfig',
+  'ios/Pods/Target Support Files/Pods-Divenary/Pods-Divenary.debug.xcconfig',
+  'ios/Pods/Target Support Files/Pods-Divenary/Pods-Divenary.release.xcconfig',
   'ios/Pods/Headers/Public/ReactAppDependencyProvider/ReactAppDependencyProvider.modulemap',
   'ios/Pods/Headers/Public/ReactCodegen/ReactCodegen.modulemap',
   'ios/Pods/React-Core-prebuilt/React-VFS.yaml',
@@ -36,7 +36,7 @@ const workspaceReferencesPods = () => {
 
   const workspaceData = readFileSync(workspaceDataPath, 'utf8');
   return (
-    workspaceData.includes('DiveMobile.xcodeproj') &&
+    workspaceData.includes('Divenary.xcodeproj') &&
     workspaceData.includes('Pods/Pods.xcodeproj')
   );
 };
@@ -119,13 +119,13 @@ const args = [
   '-workspace',
   workspacePath,
   '-scheme',
-  'DiveMobile',
+  'Divenary',
   '-configuration',
   'Debug',
   '-destination',
   'generic/platform=iOS Simulator',
   '-derivedDataPath',
-  '/private/tmp/DiveMobileDerivedData',
+  '/private/tmp/DivenaryDerivedData',
   'CODE_SIGNING_ALLOWED=NO',
   'RCT_NO_LAUNCH_PACKAGER=1',
   'build',
