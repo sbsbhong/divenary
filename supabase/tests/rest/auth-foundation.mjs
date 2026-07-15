@@ -13,9 +13,20 @@ const supabaseCli = path.join(
 );
 
 function readLocalStatus() {
+  const localEnvironment = {...process.env};
+
+  for (const name of [
+    'PINTERNET_SUPABASE_PROJECT_ID',
+    'SUPABASE_ACCESS_TOKEN',
+    'SUPABASE_PROJECT_ID',
+  ]) {
+    delete localEnvironment[name];
+  }
+
   const stdout = execFileSync(supabaseCli, ['status', '-o', 'json'], {
     cwd: repositoryRoot,
     encoding: 'utf8',
+    env: localEnvironment,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   const status = JSON.parse(stdout);
