@@ -562,6 +562,7 @@ Expected: tests and typecheck pass before commit.
 - Create: apps/mobile/src/auth/membership-cache.ts
 - Create: apps/mobile/__tests__/auth-state.test.tsx
 - Modify: apps/mobile/src/providers.tsx
+- Modify: apps/mobile/jest.setup.ts
 
 **Interfaces:**
 - Consumes: `AuthRepository`, native adapters, recent-provider storage, Keychain-backed client, validated environment, and AppState.
@@ -603,12 +604,14 @@ Persist only `userId`, `serverVerifiedAt`, `onboardingCompletedAt`, and the sort
 
 The URL polyfill is already the first import in `index.js`. Place `AuthProvider` within `QueryClientProvider`/`AppPreferencesProvider` and above navigation. The provider must not alter existing Logbook/Planbook repositories or Watch sync providers.
 
+Add deterministic global Jest shims for both native provider SDKs because the top-level composition root imports their adapters even when public Auth environment values are absent. Task-specific adapter/UI tests may override these shims with stricter mocks; production runtime behavior is unchanged.
+
 - [ ] **Step 5: Verify and commit**
 
 ~~~bash
 yarn workspace @repo/mobile test --runInBand auth-state
 yarn mobile:typecheck
-git add apps/mobile/src/states/auth.tsx apps/mobile/src/auth/create-mobile-auth.ts apps/mobile/src/auth/membership-cache.ts apps/mobile/src/providers.tsx apps/mobile/__tests__/auth-state.test.tsx
+git add apps/mobile/src/states/auth.tsx apps/mobile/src/auth/create-mobile-auth.ts apps/mobile/src/auth/membership-cache.ts apps/mobile/src/providers.tsx apps/mobile/jest.setup.ts apps/mobile/__tests__/auth-state.test.tsx docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md
 git commit -m "feat: add mobile auth state machine"
 ~~~
 

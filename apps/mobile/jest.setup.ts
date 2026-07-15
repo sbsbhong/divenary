@@ -92,3 +92,31 @@ jest.mock('@react-native-community/geolocation', () => {
     default: geolocation,
   };
 });
+
+jest.mock('@react-native-google-signin/google-signin', () => ({
+  GoogleSignin: {
+    configure: jest.fn(),
+    signIn: jest.fn(),
+  },
+  GoogleSigninButton: 'GoogleSigninButton',
+  isCancelledResponse: (response: {type?: string}) =>
+    response.type === 'cancelled',
+  isSuccessResponse: (response: {type?: string}) => response.type === 'success',
+}));
+
+jest.mock('@invertase/react-native-apple-authentication', () => {
+  const appleAuth = {
+    isSupported: false,
+    performRequest: jest.fn(),
+    Error: {CANCELED: '1001'},
+    Operation: {LOGIN: 1},
+    Scope: {EMAIL: 0, FULL_NAME: 1},
+  };
+
+  return {
+    __esModule: true,
+    appleAuth,
+    default: appleAuth,
+    AppleButton: 'AppleButton',
+  };
+});
