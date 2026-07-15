@@ -48,7 +48,7 @@
 - apps/mobile/src/auth/recent-social-provider.ts: non-secret recent-provider preference.
 - apps/mobile/src/states/auth.tsx: one Auth listener, state transitions, refresh lifecycle, and public actions.
 - apps/mobile/src/screens/auth/*.tsx: login and required consent UI.
-- apps/mobile/ios/DiveMobile/DiveMobile.entitlements: Sign in with Apple for the iPhone target only.
+- apps/mobile/ios/Divenary/Divenary.entitlements: Sign in with Apple for the iPhone target only.
 
 ## Execution Preflight
 
@@ -667,10 +667,10 @@ Expected: UI/i18n tests and typecheck pass.
 ### Task 7: Configure iOS native capabilities and provider callbacks
 
 **Files:**
-- Create: apps/mobile/ios/DiveMobile/DiveMobile.entitlements
-- Modify: apps/mobile/ios/DiveMobile/Info.plist
-- Modify: apps/mobile/ios/DiveMobile/PrivacyInfo.xcprivacy
-- Modify: apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj
+- Create: apps/mobile/ios/Divenary/Divenary.entitlements
+- Modify: apps/mobile/ios/Divenary/Info.plist
+- Modify: apps/mobile/ios/Divenary/PrivacyInfo.xcprivacy
+- Modify: apps/mobile/ios/Divenary.xcodeproj/project.pbxproj
 - Modify: apps/mobile/ios/Podfile
 - Modify: apps/mobile/ios/Podfile.lock
 - Modify: apps/mobile/.env.development.example
@@ -682,7 +682,7 @@ Expected: UI/i18n tests and typecheck pass.
 
 - [ ] **Step 1: Write the failing native-configuration test**
 
-Parse `project.pbxproj`, iPhone `Info.plist`, Watch `Info.plist`, and entitlements as text/plist. Assert Debug and Release `DiveMobile` configurations reference `DiveMobile/DiveMobile.entitlements`; the entitlement contains only `com.apple.developer.applesignin = Default`; no `DiveWatchApp` configuration references it; iPhone URL types contain `$(GOOGLE_IOS_REVERSED_CLIENT_ID)`; Watch URL types do not; and the project defines that build-setting name without a secret value. Run `yarn workspace @repo/mobile test --runInBand ios-auth-configuration` and expect FAIL because the files/settings are absent.
+Parse `project.pbxproj`, iPhone `Info.plist`, Watch `Info.plist`, and entitlements as text/plist. Assert Debug and Release `Divenary` configurations reference `Divenary/Divenary.entitlements`; the entitlement contains only `com.apple.developer.applesignin = Default`; no `DivenaryWatchApp` configuration references it; iPhone URL types contain `$(GOOGLE_IOS_REVERSED_CLIENT_ID)`; Watch URL types do not; and the project defines that build-setting name without a secret value. Run `yarn workspace @repo/mobile test --runInBand ios-auth-configuration` and expect FAIL because the files/settings are absent.
 
 - [ ] **Step 2: Add Apple entitlement to iPhone only**
 
@@ -701,7 +701,7 @@ Create:
 </plist>
 ~~~
 
-Set CODE_SIGN_ENTITLEMENTS for DiveMobile Debug/Release only. Confirm DiveWatchApp does not reference this file.
+Set CODE_SIGN_ENTITLEMENTS for Divenary Debug/Release only. Confirm DivenaryWatchApp does not reference this file.
 
 - [ ] **Step 3: Configure Google and public environment values**
 
@@ -727,7 +727,7 @@ Expected: configuration test, pods, and both unsigned simulator builds pass; Wat
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/mobile/ios/DiveMobile/DiveMobile.entitlements apps/mobile/ios/DiveMobile/Info.plist apps/mobile/ios/DiveMobile/PrivacyInfo.xcprivacy apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj apps/mobile/ios/Podfile apps/mobile/ios/Podfile.lock apps/mobile/.env.development.example apps/mobile/__tests__/ios-auth-configuration.test.ts docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md
+git add apps/mobile/ios/Divenary/Divenary.entitlements apps/mobile/ios/Divenary/Info.plist apps/mobile/ios/Divenary/PrivacyInfo.xcprivacy apps/mobile/ios/Divenary.xcodeproj/project.pbxproj apps/mobile/ios/Podfile apps/mobile/ios/Podfile.lock apps/mobile/.env.development.example apps/mobile/__tests__/ios-auth-configuration.test.ts docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md
 git commit -m "feat: configure iOS social authentication"
 ~~~
 
@@ -785,7 +785,9 @@ Record these external values without committing secrets: stable owned iOS bundle
 
 If any item is absent, mark only this promotion gate pending and continue documentation/automated checkpoint work. Do not insert placeholders into a hosted project or tracked native configuration.
 
-Once the user supplies/approves the owned identifiers, apply them as one promotion-only native change: set iPhone Debug/Release `PRODUCT_BUNDLE_IDENTIFIER`; update the Watch app identifier and `WKCompanionAppBundleIdentifier` together if the iPhone prefix changes; set the real public `GOOGLE_IOS_REVERSED_CLIENT_ID`; select the approved iPhone and Watch teams/profiles; and enable Sign in with Apple for that exact iPhone App ID. Re-run `ios-auth-configuration`, `yarn ios:build`, and `yarn watch:build`, then build/install a signed device configuration. Inspect both the signed `<DiveMobile.app>` and its embedded `<DiveWatchApp.app>` with `codesign -d --entitlements :-`: the iPhone app must contain `com.apple.developer.applesignin` and the Watch app must not. Do not infer signed capability from the unsigned simulator build.
+Once the user supplies/approves the owned identifiers, apply them as one promotion-only native change: set iPhone Debug/Release `PRODUCT_BUNDLE_IDENTIFIER`; update the Watch app identifier and `WKCompanionAppBundleIdentifier` together if the iPhone prefix changes; set the real public `GOOGLE_IOS_REVERSED_CLIENT_ID`; select the approved iPhone and Watch teams/profiles; and enable Sign in with Apple for that exact iPhone App ID. Re-run `ios-auth-configuration`, `yarn ios:build`, and `yarn watch:build`, then build/install a signed device configuration. Inspect both the signed `<Divenary.app>` and its embedded `<DivenaryWatchApp.app>` with `codesign --display --entitlements - --xml`: the iPhone app must contain `com.apple.developer.applesignin` and the Watch app must not. Do not infer signed capability from the unsigned simulator build.
+
+**Promotion audit, 2026-07-15:** The stable identifiers are now `com.divenary.app` and `com.divenary.app.watchkitapp`. A generic physical-device Debug build succeeded with Xcode-managed provisioning, embedded Watch validation, and Apple Development signing. In a macOS trust context, strict `codesign` verification passed for both apps; the signed iPhone app contains `com.apple.developer.applesignin = Default`, while the Watch app does not. The ignored development environment contains the hosted Supabase URL/publishable key and Google web client ID, but `GOOGLE_IOS_CLIENT_ID` is absent, the checked-in reversed-client build setting remains empty, and the signed app therefore has an empty Google callback scheme. The user reports that the native Apple Client ID `com.divenary.app` is configured in Supabase, but provider-dashboard completeness, production legal URLs/current versions, hosted schema state, token audiences, and physical login have not been independently verified. Step 3 and Step 4 remain open; no placeholder is committed.
 
 - [ ] **Step 3: Run the physical iPhone Auth matrix when prerequisites exist**
 

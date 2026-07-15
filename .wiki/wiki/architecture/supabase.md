@@ -1,16 +1,18 @@
 # Supabase 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Supabase Auth 2.110.2 lock strategy correction, 2026-07-15; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
-Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Supabase Auth 2.110.2 lock strategy correction](../../raw/architecture/2026-07-15-supabase-auth-lock-strategy.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Supabase Auth 2.110.2 lock strategy correction, 2026-07-15; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15
+Raw: [Pre-Karpathy: Supabase 구조](../../raw/architecture/supabase.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Supabase Auth 2.110.2 lock strategy correction](../../raw/architecture/2026-07-15-supabase-auth-lock-strategy.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md)
 Updated: 2026-07-15
 
 ## 요약
 
-Wave 3A의 local Supabase/Auth 자동화 기반은 구현됐다. Hosted provider·법률 문서·서명·physical Auth 승격 gate는 대기 중이며, remote data는 3B, local-first sync는 3C, account lifecycle은 3D에서 순서대로 구현한다.
+Wave 3A의 local Supabase/Auth 자동화 기반과 Divenary iPhone/Watch 실기기용 서명 검증은 완료됐다. Google iOS client/callback, hosted provider·법률 문서와 physical Auth 승격 gate는 대기 중이며, remote data는 3B, local-first sync는 3C, account lifecycle은 3D에서 순서대로 구현한다.
 
 ## 현재 상태
 
 Wave 3A 자동 구현 checkpoint는 완료됐다. Root `supabase/`에는 local config, Auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경 변수에서 격리된 local CLI wrapper가 있다. `packages/supabase`에는 generated database type, typed client factory, runtime onboarding parser와 provider-independent Auth repository가 있다. Mobile에는 Keychain-compatible session, native Google/Apple credential adapter, restore/revalidation state, guest-preserving login과 versioned mandatory-consent UI가 있다. Remote data, outbox와 account deletion은 아직 없다. 사용자가 실기기 foreground에서 약 4분 세션의 pairing, 모바일 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 이는 Auth 도입 전 기준선이며 post-Auth regression, reconnect, background, killed-app, large transfer 증거는 아니다.
+
+Divenary rename 뒤 `com.divenary.app`과 embedded `com.divenary.app.watchkitapp`의 generic physical-device Debug build, automatic provisioning, strict signature verification이 통과했다. Signed iPhone app에만 Apple Sign In entitlement가 있고 Watch app에는 없다. 다만 ignored development env에 Google iOS client ID가 없고 checked-in reversed-client setting과 signed callback URL scheme도 비어 있어 Google native login은 아직 실행할 수 없다. Apple provider 설정은 사용자 보고 상태이며 hosted provider audience, production legal URL/current pointer와 실제 Auth token exchange는 physical matrix에서 검증해야 한다.
 
 3A는 iOS native Google/Apple login과 Keychain-compatible session을 구현한다. 데이터베이스는 `app_memberships`, immutable `legal_documents`, kind별 `current_legal_documents` pointer, append-only `consent_records`를 분리한다. User id 인자가 없는 status RPC가 현재 필수 동의 coverage를 계산하므로 membership이 이미 있어도 새 current version에는 재동의해야 한다. Completion RPC는 current terms/privacy exact set만 원자적으로 기록하고 active Auth session을 확인한다. Login과 consent는 기존 guest Logbook/Planbook을 claim, upload, delete, partition하거나 영구히 숨기지 않으며 `cloudSyncStatus: notConfigured`를 유지한다.
 
@@ -37,7 +39,7 @@ Signed-in write는 local save 뒤 idempotent outbox가 전달한다. Remote row 
 
 3D의 계정 삭제는 앱 안에서 재확인 뒤 즉시 영구 삭제한다. 7일 유예 soft deletion/recovery는 후속 기능이다. `service_role`과 provider secret은 mobile bundle에 두지 않는다. Local seed의 `.invalid` legal URL은 test fixture이며 production 법률 문서가 아니다.
 
-Stable owned App ID, provider console 설정, 실제 immutable 약관/개인정보 URL, signed provisioning, hosted test project, physical iPhone은 자동 구현과 분리된 승격 gate다. 3A는 앱 내 계정 삭제가 추가되는 3D 전까지 App Store release 대상이 아니다.
+Stable Divenary App ID와 signed provisioning은 확보됐다. Google iOS client/reversed callback, provider console 전체 설정, 실제 immutable 약관/개인정보 URL과 hosted 적용 상태, physical iPhone Auth/re-consent와 post-Auth Watch regression은 여전히 자동 구현과 분리된 승격 gate다. 3A는 앱 내 계정 삭제가 추가되는 3D 전까지 App Store release 대상이 아니다.
 
 ## 관련 문서
 

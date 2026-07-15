@@ -1,12 +1,12 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md)
 Updated: 2026-07-15
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Wave 3A 자동 구현 checkpoint는 완료됐고 hosted provider/legal/signing, physical Auth/re-consent와 post-Auth Watch regression 승격 gate가 현재 우선순위다. 이 증거 전에는 3B를 시작하지 않으며 Wave 1의 나머지 물리 항목과 Wave 2도 유지한다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Wave 3A 자동 구현과 Divenary signed provisioning 검증은 완료됐고 Google iOS client/callback, hosted provider/legal, physical Auth/re-consent와 post-Auth Watch regression 승격 gate가 현재 우선순위다. 이 증거 전에는 3B를 시작하지 않으며 Wave 1의 나머지 물리 항목과 Wave 2도 유지한다.
 
 ## 현재 상태
 
@@ -39,7 +39,7 @@ Updated: 2026-07-15
 
 ## P0 Wave 3: Supabase와 인증
 
-- 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 계속 local-only이고 `notConfigured`다. Hosted provider/legal/signing, physical Auth/re-consent와 post-Auth Watch regression은 pending이다.
+- 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 계속 local-only이고 `notConfigured`다. Divenary iPhone/Watch signed provisioning과 Apple entitlement 검증은 통과했지만 Google iOS client/callback, hosted provider/legal, physical Auth/re-consent와 post-Auth Watch regression은 pending이다.
 - 3B: user-owned Logbook/Planbook schema와 RLS, keyset cursor infinite pagination, private immutable 1Hz profile Storage와 detail-only fetch를 만든다.
 - 3C: `guest`/`user:<uuid>` local partition, persistent manifest와 bounded batch를 쓰는 explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
 - 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.

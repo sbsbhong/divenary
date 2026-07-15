@@ -1,5 +1,19 @@
 # Wiki Log
 
+## [2026-07-15] ingest | Divenary Auth promotion readiness
+- Added: Divenary Auth promotion readiness evidence raw source
+- Updated: Supabase 구조
+- Updated: 구현 우선순위 기록
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - Divenary iPhone/embedded Watch generic device build, automatic provisioning, strict signature verification과 embedded binary validation 통과
+  - Signed iPhone에만 Apple Sign In entitlement가 있고 Watch에는 없음을 확인
+  - Local Supabase 67 pgTAP, REST smoke, lint/advisor, generated type drift, Supabase 20 tests, mobile 40 suite/418 tests와 typecheck 재검증
+  - Google iOS client ID와 reversed callback scheme이 비어 있어 physical Google Auth가 차단됨을 확인
+- 요약:
+  - App ID와 signed provisioning은 승격됐지만 Google iOS client/callback, hosted provider/legal과 physical Auth/re-consent, post-Auth Watch regression은 계속 3B 전 gate다.
+
 ## [2026-07-15] ingest | Wave 3A Supabase Auth foundation implementation
 - Added: Wave 3A Supabase Auth foundation 구현 증거 raw source
 - Updated: 프로젝트 개요
