@@ -669,7 +669,9 @@ Expected: UI/i18n tests and typecheck pass.
 **Files:**
 - Create: apps/mobile/ios/DiveMobile/DiveMobile.entitlements
 - Modify: apps/mobile/ios/DiveMobile/Info.plist
+- Modify: apps/mobile/ios/DiveMobile/PrivacyInfo.xcprivacy
 - Modify: apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj
+- Modify: apps/mobile/ios/Podfile
 - Modify: apps/mobile/ios/Podfile.lock
 - Modify: apps/mobile/.env.development.example
 - Create: apps/mobile/__tests__/ios-auth-configuration.test.ts
@@ -705,6 +707,8 @@ Set CODE_SIGN_ENTITLEMENTS for DiveMobile Debug/Release only. Confirm DiveWatchA
 
 Add `$(GOOGLE_IOS_REVERSED_CLIENT_ID)` as the iPhone-only reversed-client URL scheme. Add the same user-defined build-setting key to iPhone Debug/Release with an empty checked-in value so unsigned automated builds remain deterministic; a real public value is injected/committed only after the owned Google iOS client exists. `GoogleSignin.configure` was wired in Task 4 with `webClientId`, `iosClientId`, and `offlineAccess: false`. Extend `.env.development.example` with empty public `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `GOOGLE_WEB_CLIENT_ID`, and `GOOGLE_IOS_CLIENT_ID`; keep `OPEN_METEO_API_KEY`. Never place reversed IDs in Babel expecting them to populate Info.plist.
 
+Google Sign-In 9.x brings `AppCheckCore` into the existing static-library Pods setup. Enable modular headers only for its non-modular `GoogleUtilities` and `RecaptchaInterop` dependencies; do not enable `use_modular_headers!` globally. Commit the resulting lockfile and CocoaPods-generated privacy-manifest aggregation.
+
 Do not change the current placeholder bundle IDs without an owned identifier decision. Record that physical Apple login is blocked until the real stable App ID is enabled for Sign in with Apple and the matching provisioning profile/Google iOS client exist.
 
 - [ ] **Step 4: Verify the configuration contract, install pods, and inspect targets**
@@ -723,7 +727,7 @@ Expected: configuration test, pods, and both unsigned simulator builds pass; Wat
 - [ ] **Step 5: Commit**
 
 ~~~bash
-git add apps/mobile/ios/DiveMobile/DiveMobile.entitlements apps/mobile/ios/DiveMobile/Info.plist apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj apps/mobile/ios/Podfile.lock apps/mobile/.env.development.example apps/mobile/__tests__/ios-auth-configuration.test.ts
+git add apps/mobile/ios/DiveMobile/DiveMobile.entitlements apps/mobile/ios/DiveMobile/Info.plist apps/mobile/ios/DiveMobile/PrivacyInfo.xcprivacy apps/mobile/ios/DiveMobile.xcodeproj/project.pbxproj apps/mobile/ios/Podfile apps/mobile/ios/Podfile.lock apps/mobile/.env.development.example apps/mobile/__tests__/ios-auth-configuration.test.ts docs/superpowers/plans/2026-07-13-supabase-auth-foundation.md
 git commit -m "feat: configure iOS social authentication"
 ~~~
 
