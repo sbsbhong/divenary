@@ -21,13 +21,14 @@
 - First social sign-in must complete current required terms/privacy onboarding before active membership.
 - Disable anonymous sign-in. A membership write RPC must also reject an `is_anonymous = true` JWT.
 - Validate a restored session online with `getClaims()` and `getUser()` before treating it as authenticated. `getClaims()` may need the network for a JWKS cache miss or symmetric signing, so a transport failure is not an invalid-token verdict. `getSession()` alone is storage retrieval, not online authorization evidence.
-- Use `processLock`, `autoRefreshToken: true`, and one AppState listener calling `startAutoRefresh()`/`stopAutoRefresh()`.
+- Use the `auth-js@2.110.2` default single-flight/commit-guard concurrency path, `autoRefreshToken: true`, and one AppState listener calling `startAutoRefresh()`/`stopAutoRefresh()`. Do not pass the deprecated `processLock` custom option.
 - Guest local data remains usable. Wave 3A does not claim, delete, upload, partition, or permanently hide it.
 - Watch session.syncStatus: synced remains iPhone local-import acknowledgement and never waits for Supabase.
 - Logbook/Planbook remain local-only with cloudSyncStatus: notConfigured through Wave 3A.
 - The app remains a non-certified logging and review companion; Auth/cloud state cannot affect underwater safety behavior.
 - Wave 3A is an internal checkpoint and must not ship to the App Store before Wave 3D adds in-app permanent account deletion.
-- Create migrations with yarn supabase migration new; never hand-invent migration timestamps.
+- Create migrations with `yarn supabase:local migration new`; never hand-invent migration timestamps.
+- Run every local CLI operation through `yarn supabase:local` or the dedicated local scripts so unrelated shell-level hosted `SUPABASE_PROJECT_ID`/access-token variables cannot select another project. Keep hosted promotion commands explicit and separate.
 - Treat hosted Supabase provider configuration, real immutable terms/privacy URLs, stable owned bundle ID/App ID, Google OAuth clients, Apple signing, and a physical iPhone as an external promotion gate. Automated implementation may finish without falsely passing that gate.
 
 ---
@@ -100,7 +101,7 @@ yarn supabase init --help
 yarn supabase migration --help
 yarn supabase migration new --help
 yarn supabase init
-yarn supabase migration new create_auth_foundation
+yarn supabase:local migration new create_auth_foundation
 ~~~
 
 Expected: config.toml and exactly one CLI-timestamped create_auth_foundation migration exist.
@@ -210,7 +211,7 @@ yarn supabase:reset
 yarn supabase:test:db
 yarn supabase:lint:db
 yarn supabase:advisors
-yarn supabase migration list --local
+yarn supabase:local migration list --local
 ~~~
 
 Expected: reset from empty state succeeds, every pgTAP assertion passes, lint/advisors report no auth-foundation security issue, and the local migration list contains the one applied migration.
@@ -385,7 +386,7 @@ export interface AuthRepository {
 }
 ~~~
 
-Configure `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`, injected Keychain storage, and `lock: processLock`. `signOut()` uses explicit `{ scope: 'local' }`; Wave 3A logout should end the current device session without unexpectedly revoking every device. The mobile provider owns the foreground start/stop lifecycle, not refresh-token implementation.
+Configure `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`, `throwOnError: false`, and injected Keychain storage. Keep the `auth-js@2.110.2` default single-flight/commit-guard path; do not pass deprecated `lock: processLock`. `signOut()` uses explicit `{ scope: 'local' }`; Wave 3A logout should end the current device session without unexpectedly revoking every device. The mobile provider owns the foreground start/stop lifecycle, not refresh-token implementation.
 
 - [ ] **Step 5: Verify package behavior and generated-type drift**
 
@@ -742,7 +743,7 @@ yarn supabase:reset
 yarn supabase:test:db
 yarn supabase:lint:db
 yarn supabase:advisors
-yarn supabase migration list --local
+yarn supabase:local migration list --local
 node supabase/tests/rest/auth-foundation.mjs
 yarn generate:supabase
 git diff --exit-code packages/supabase/src/database.types.ts

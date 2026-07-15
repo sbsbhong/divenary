@@ -518,7 +518,7 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - Pin `supabase@2.109.1`, `@supabase/supabase-js@2.110.2`, `@react-native-google-signin/google-signin@16.1.2`, `@invertase/react-native-apple-authentication@2.5.1`, `react-native-keychain@10.0.0`, and `react-native-url-polyfill@3.0.0` with Yarn 1 exact versions.
   - Add `app_memberships`, immutable `legal_documents`, `current_legal_documents`, `consent_records`, explicit Data API grants, RLS policies, a snapshot `get_onboarding_status()` RPC, and an idempotent exact-set `complete_onboarding()` RPC that derives ownership from `auth.uid()`.
   - Generate database types instead of maintaining handwritten schema types.
-  - Store Supabase sessions in Keychain, validate restored claims and server user identity, use `processLock`/foreground auto-refresh, exchange Google native ID tokens directly, and exchange Apple ID tokens with the Invertase response's raw nonce through `signInWithIdToken`.
+  - Store Supabase sessions in Keychain, validate restored claims and server user identity, use the `auth-js@2.110.2` default single-flight/commit-guard concurrency path plus foreground auto-refresh, exchange Google native ID tokens directly, and exchange Apple ID tokens with the Invertase response's raw nonce through `signInWithIdToken`.
   - Implement `bootstrapping`, `guest`, `authenticating`, `pendingOnboarding`, `authenticated`, and `authenticatedOffline` states.
   - Boot the existing guest app without constructing a client when public Supabase configuration is absent, and keep provider/server errors free of token/email values.
   - Keep current local repositories and `cloudSyncStatus: notConfigured` unchanged throughout 3A.

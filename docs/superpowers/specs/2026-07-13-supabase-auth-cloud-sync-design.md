@@ -66,7 +66,7 @@ bootstrapping
 - session과 `get_onboarding_status()`가 반환한 현재 필수 문서 전체의 동의를 모두 확인해야 `authenticated`가 된다. membership row가 이미 있어도 새 필수 version이 생기면 다시 `pendingOnboarding`이 된다.
 - online bootstrap과 foreground에서는 claims/server user 검증 뒤 onboarding status를 조회한다. network transport failure는 invalid session과 구분한다. Offline fallback은 저장 session의 `expires_at`과 `session.user.id`가 아직 유효하고 정확히 일치하는 last-server-verified cache가 있을 때만 허용한다. 이는 token authenticity나 current legal status를 새로 증명하지 않는 bounded local trust이므로 `authenticatedOffline`은 local-only이며 cloud action을 허용하지 않는다.
 - 명백한 token invalidation/revocation만 logout으로 처리한다.
-- Supabase client는 `processLock`, `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`를 사용한다. Auth listener와 AppState listener는 provider lifetime에 각각 한 번만 등록하고 foreground에서 `startAutoRefresh()`, background에서 `stopAutoRefresh()`를 호출한다.
+- Supabase client는 `auth-js@2.110.2`의 기본 lockless single-flight/commit-guard concurrency path와 `persistSession: true`, `autoRefreshToken: true`, `detectSessionInUrl: false`, `throwOnError: false`를 사용한다. Deprecated `processLock` custom option은 새 client에 넣지 않는다. Auth listener와 AppState listener는 provider lifetime에 각각 한 번만 등록하고 foreground에서 `startAutoRefresh()`, background에서 `stopAutoRefresh()`를 호출한다.
 
 ### Native Social Login
 

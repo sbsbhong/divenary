@@ -11,6 +11,7 @@
     "check:quick": "yarn generate",
     "codex:check": "yarn check:quick && yarn mobile:typecheck && yarn watch:build",
     "generate": "turbo run generate",
+    "generate:supabase": "yarn workspace @repo/supabase generate:types",
     "ios:build": "yarn workspace @repo/mobile ios:build",
     "lint": "turbo run lint",
     "mobile:typecheck": "yarn workspace @repo/mobile typecheck",

@@ -1,5 +1,16 @@
 # Wiki Log
 
+## [2026-07-15] ingest | Supabase Auth 2.110.2 lock strategy correction
+- Added: Supabase Auth 2.110.2 lock strategy correction raw source
+- Updated: Supabase 구조
+- Updated: Knowledge Base Index
+- 근거:
+  - 설치된 `@supabase/auth-js@2.110.2` source에서 custom `auth.lock`와 `processLock`이 deprecated이고 v3 제거 예정임을 확인
+  - SDK 기본 경로가 lockless single-flight와 commit guard로 동시 refresh/session commit을 조정함을 확인
+  - 셸에 주입된 무관한 hosted Supabase project 환경 변수가 local CLI context를 오염시키는 것을 확인하고 전용 local wrapper로 격리
+- 요약:
+  - 새 React Native client는 deprecated custom lock을 전달하지 않고 SDK 기본 concurrency path를 사용한다. Local CLI/type generation은 hosted project 환경 변수를 제거한 독립 context를 사용한다. Keychain persistence, online claims/user 검증, foreground auto-refresh와 bounded offline trust 정책은 유지한다.
+
 ## [2026-07-13] ingest | Wave 3 Supabase/Auth 승인 결정
 - Added: Wave 3 Supabase/Auth 승인 결정 raw source
 - Updated: Supabase 구조
