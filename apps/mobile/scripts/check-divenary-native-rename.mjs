@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = process.cwd();
@@ -12,8 +12,29 @@ const expectPath = (path) => {
     addFailure(`${path} is missing`);
   }
 };
-const expectNoPath = (path) => {
-  if (exists(path)) {
+const hasOnlyXcodeUserData = (path) => {
+  const absolutePath = join(root, path);
+  if (!existsSync(absolutePath)) {
+    return true;
+  }
+
+  const visit = (currentPath, relativeParts) => {
+    const stat = statSync(currentPath);
+    if (stat.isFile()) {
+      return relativeParts.includes('xcuserdata');
+    }
+    if (!stat.isDirectory()) {
+      return false;
+    }
+
+    const entries = readdirSync(currentPath);
+    return entries.every((entry) => visit(join(currentPath, entry), [...relativeParts, entry]));
+  };
+
+  return visit(absolutePath, path.split('/'));
+};
+const expectNoSourcePath = (path) => {
+  if (exists(path) && !hasOnlyXcodeUserData(path)) {
     addFailure(`${path} should be renamed`);
   }
 };
@@ -55,7 +76,7 @@ for (const path of expectedPaths) {
 }
 
 for (const path of obsoletePaths) {
-  expectNoPath(path);
+  expectNoSourcePath(path);
 }
 
 if (exists('app.json')) {
