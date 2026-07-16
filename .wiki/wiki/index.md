@@ -28,12 +28,12 @@
 | Article                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                | Updated    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Wave 3A automated와 Divenary signed provisioning 뒤 Google iOS client, hosted physical Auth/re-consent와 post-Auth Watch regression을 3B 전 승격 gate로 둔다. | 2026-07-15 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Wave 3A automated, Divenary signed provisioning과 Google iOS callback 뒤 hosted physical Auth/re-consent와 post-Auth Watch regression을 3B 전 승격 gate로 둔다. | 2026-07-16 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Local-first guest 로그북 위에 3A Auth를 추가했고 remote pagination, principal sync와 account lifecycle은 3B-3D로 분리한다. | 2026-07-15 |
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 local-first guest data를 유지하면서 Keychain-compatible native social Auth와 versioned mandatory consent를 소유한다. | 2026-07-15 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch의 bounded 1Hz local profile과 file transport를 유지하며 remote profile table/Storage는 3B 후속으로 분리한다. | 2026-07-15 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 workspace 앱·공유 package와 root local Supabase/Auth migration/test 경계를 함께 관리한다. | 2026-07-15 |
-| [Supabase 구조](architecture/supabase.md)                                      | 구현된 3A local Auth/RLS/consent와 signed Divenary 경로, pending Google iOS/hosted physical gate를 구분하고 3B-3D 경계를 정리한다. | 2026-07-15 |
+| [Supabase 구조](architecture/supabase.md)                                      | 구현된 3A local Auth/RLS/consent, signed Divenary와 Google iOS callback, pending hosted physical gate를 구분하고 3B-3D 경계를 정리한다. | 2026-07-16 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch acknowledgement와 cloud 상태를 분리하며, mobile Auth가 있어도 Watch payload와 guest repository에는 principal을 붙이지 않는다. | 2026-07-15 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Watch 수온은 optional이며 0°C fallback을 쓰지 않는다. DEBUG `Test Large Sync`는 8,000-sample record를 일반 저장·file-transfer 경로로 보낸다. | 2026-07-12 |
 
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | 남은 Watch·센서 검증, Google iOS client와 Wave 3A hosted provider/legal/physical Auth 승격 gate, 3B-3D, Memory/share, 실제 잠수 gate를 기록한다. | 2026-07-15 |
+| [열린 질문](questions/open-questions.md) | 남은 Watch·센서 검증, Wave 3A hosted provider/legal/physical Auth 승격 gate, 3B-3D, Memory/share, 실제 잠수 gate를 기록한다. | 2026-07-16 |

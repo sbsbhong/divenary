@@ -46,6 +46,8 @@ const environmentExample = readRepoFile(
   'apps/mobile/.env.development.example',
 );
 const podfile = readRepoFile('apps/mobile/ios/Podfile');
+const googleIosReversedClientId =
+  'com.googleusercontent.apps.1011917902092-71ie1fvrcp3m4l9kb09g3nbvhofpjcd5';
 
 const mobileConfigurations = [
   buildConfiguration(project, '13B07F941A680F5B00A75B9A'),
@@ -87,7 +89,9 @@ describe('iOS social-auth native configuration', () => {
     expect(watchInfoPlist).not.toContain('GOOGLE_IOS_REVERSED_CLIENT_ID');
 
     for (const configuration of mobileConfigurations) {
-      expect(configuration).toContain('GOOGLE_IOS_REVERSED_CLIENT_ID = "";');
+      expect(configuration).toContain(
+        `GOOGLE_IOS_REVERSED_CLIENT_ID = "${googleIosReversedClientId}";`,
+      );
     }
     for (const configuration of watchConfigurations) {
       expect(configuration).not.toContain('GOOGLE_IOS_REVERSED_CLIENT_ID');

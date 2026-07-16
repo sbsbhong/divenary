@@ -1,5 +1,18 @@
 # Wiki Log
 
+## [2026-07-16] ingest | Google iOS client and callback correction
+- Added: Google iOS client and callback correction raw source
+- Updated: Supabase 구조
+- Updated: 구현 우선순위 기록
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 사용자가 Google iOS Client ID가 main checkout에 있음을 정정
+  - ignored `.env.development`가 별도 Git worktree에 복사되지 않아 발생한 이전 누락 판정 오류를 확인
+  - Client ID에서 산출한 reversed scheme을 Divenary iPhone Debug/Release에 설정하고 Watch에는 넣지 않음
+- 요약:
+  - Google iOS client/callback 준비는 완료됐지만 hosted provider/legal, physical Auth/re-consent와 post-Auth Watch regression은 계속 3B 전 gate다.
+
 ## [2026-07-15] ingest | Divenary Auth promotion readiness
 - Added: Divenary Auth promotion readiness evidence raw source
 - Updated: Supabase 구조
