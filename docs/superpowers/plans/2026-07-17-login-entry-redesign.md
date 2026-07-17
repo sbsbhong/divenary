@@ -4,7 +4,7 @@
 
 **Goal:** Replace the heavy Home login CTA and uneven native provider controls with a guest-only text action and a content-fit, layout-stable unified login sheet.
 
-**Architecture:** `RootNavigation` continues to own auth-state routing and changes only sheet presentation. `HomeScreen` renders a local text pressable from existing props. `LoginScreen` keeps orchestration while a new screen-local `SocialLoginButton` owns provider branding, fixed 44/center/44 geometry, recent status, and spinner presentation.
+**Architecture:** `RootNavigation` continues to own auth-state routing and selects a content-fit sheet with iOS 15 system medium/large detents. `HomeScreen` renders a local text pressable from existing props. `LoginScreen` keeps orchestration while a screen-local `SocialLoginButton` owns compliant provider artwork, typography, and spinner presentation; recent-provider metadata stays outside the branded button.
 
 **Tech Stack:** React Native 0.85.3, React Navigation native stack, gluestack-ui v4 primitives, NativeWind, react-i18next, Jest with react-test-renderer, existing Google/Apple credential adapters
 
@@ -14,11 +14,21 @@
 - Keep `auth.signIn(provider)`, provider availability, session persistence, recent-provider storage, Supabase repository behavior, and guest local-data semantics unchanged.
 - Show Home login only for `guest`; keep it hidden for authenticated, authenticated-offline, bootstrap, signing-in, and onboarding states.
 - Home login target is at least 52pt wide and 44pt high with no capsule, background, border, or icon.
-- Both provider rows are 54pt high with 8pt radius and fixed 44pt icon / flexible title / 44pt status columns.
+- Both provider rows are 44pt high with 8pt radius, provider-correct artwork proportions, a flexible title, and symmetric icon/status columns.
 - Use official Google multicolor G and Apple-provided logo-only artwork; do not draw either brand logo manually.
-- Keep a visible `최근` / `Recent` label in the recent provider's fixed status column and include `최근 사용` / `Recently used` in its accessibility label.
+- Keep a visible `최근 사용` / `Recently used` label outside the branded button and include it in the recent provider's accessibility label.
 - Keep the status/error row at least 44pt high so sheet height does not change.
 - Keep legal consent, Auth error handling, and the repository safety boundary unchanged.
+
+## Review Amendment
+
+The pre-merge review identified provider-brand and iOS 15 compatibility constraints that supersede the initial 54pt/internal-status proposal:
+
+- Apple logo-only PNG artwork is rendered at its supported 44pt size, and the Apple title uses the corresponding 19pt system proportion.
+- Google artwork preserves its 20pt aspect ratio and the title uses bundled Google Sans Medium at 14/20.
+- Recent-provider metadata remains visible above the ordered provider list instead of adding non-brand content inside either button.
+- Provider labels stay on one line, use `adjustsFontSizeToFit`, and cap scaling at 1.5 to avoid clipping in the fixed brand geometry.
+- `fitToContents` is used on iOS 16+ and Android; iOS 15 uses system medium/large detents because `react-native-screens` rejects content-fit detents below iOS 16. Unknown iOS version strings take the compatible fallback.
 
 ---
 
@@ -35,7 +45,7 @@
 - Produces: `SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Element`
 - Produces props: `provider`, `label`, `accessibilityLabel`, `busyLabel`, `recentLabel?`, `busy`, `disabled`, and `onPress`
 
-- [ ] **Step 1: Add failing geometry, status, busy, and accessibility tests**
+- [x] **Step 1: Add failing geometry, status, busy, and accessibility tests**
 
 Create `apps/mobile/__tests__/social-login-button.test.tsx` with focused renders for both providers:
 
@@ -98,7 +108,7 @@ test('uses the fixed status slot for recent and busy states', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run:
 
@@ -108,7 +118,7 @@ yarn workspace @repo/mobile test social-login-button.test.tsx --runInBand
 
 Expected: FAIL because `social-login-button.tsx` does not exist.
 
-- [ ] **Step 3: Download official provider artwork**
+- [x] **Step 3: Download official provider artwork**
 
 Create the asset directory, download the official Google G, and generate Apple's official white logo-only artwork:
 
@@ -126,7 +136,7 @@ file apps/mobile/src/assets/auth/google-g-logo.png apps/mobile/src/assets/auth/a
 
 Expected: both lines report `PNG image data`.
 
-- [ ] **Step 4: Implement the screen-local provider row**
+- [x] **Step 4: Implement the screen-local provider row**
 
 Create `apps/mobile/src/screens/auth/social-login-button.tsx` with this public shape and fixed layout:
 
@@ -194,7 +204,7 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
 }
 ```
 
-- [ ] **Step 5: Run the focused test and verify GREEN**
+- [x] **Step 5: Run the focused test and verify GREEN**
 
 Run:
 
@@ -204,7 +214,7 @@ yarn workspace @repo/mobile test social-login-button.test.tsx --runInBand
 
 Expected: 1 suite passes with all provider geometry and state tests green.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add apps/mobile/src/assets/auth apps/mobile/src/screens/auth/social-login-button.tsx apps/mobile/__tests__/social-login-button.test.tsx
@@ -226,7 +236,7 @@ git commit -m "feat: add unified social login control"
 - Keeps: `auth.signIn(provider: SocialProvider): Promise<void>`
 - Produces: ordered provider rows with stable recent, busy, and error status slots
 
-- [ ] **Step 1: Replace native-control expectations with failing unified-screen tests**
+- [x] **Step 1: Replace native-control expectations with failing unified-screen tests**
 
 Remove the Google and Apple native button mocks and replace `findNativeProviderButton` with:
 
@@ -264,7 +274,7 @@ test('renders a compact non-scrolling sheet body with stable status space', asyn
 
 Update the busy test to expect `auth-login-spinner-google` and the fixed status row without changing its class.
 
-- [ ] **Step 2: Run Auth and i18n tests and verify RED**
+- [x] **Step 2: Run Auth and i18n tests and verify RED**
 
 Run:
 
@@ -274,7 +284,7 @@ yarn workspace @repo/mobile test auth-screens.test.tsx i18n.test.ts --runInBand
 
 Expected: FAIL on native controls, old order, old title/copy, ScrollView, and missing fixed status row.
 
-- [ ] **Step 3: Implement ordered unified provider rows**
+- [x] **Step 3: Implement ordered unified provider rows**
 
 In `login-screen.tsx`, remove native button imports, `ScrollView`, `ProviderControl`, and `nativeProviderButtonStyle`. Add:
 
@@ -372,7 +382,7 @@ Render a fixed non-scrolling VStack with decorative D mark, heading, close contr
 
 Keep the existing unavailable state in place of the provider VStack and retain the close control.
 
-- [ ] **Step 4: Update exact localized copy**
+- [x] **Step 4: Update exact localized copy**
 
 In both Korean and English resources:
 
@@ -396,7 +406,7 @@ signingIn: 'Signing in',
 
 Remove `guestBoundaryNote` in both languages and update `i18n.test.ts` to assert the new title and short recent label.
 
-- [ ] **Step 5: Run Auth and i18n tests and verify GREEN**
+- [x] **Step 5: Run Auth and i18n tests and verify GREEN**
 
 Run:
 
@@ -406,7 +416,7 @@ yarn workspace @repo/mobile test auth-screens.test.tsx i18n.test.ts social-login
 
 Expected: all 3 suites pass.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add apps/mobile/src/screens/auth/login-screen.tsx apps/mobile/src/i18n/resources.ts apps/mobile/__tests__/auth-screens.test.tsx apps/mobile/__tests__/i18n.test.ts
@@ -427,7 +437,7 @@ git commit -m "feat: rebuild login sheet layout"
 - Keeps: `HomeScreenProps.showLogin?: boolean` and `onOpenLogin?: () => void`
 - Changes: `authLogin` sheet detents from `[0.62, 0.9]` to `'fitToContents'`
 
-- [ ] **Step 1: Write failing Home-action and sheet-option tests**
+- [x] **Step 1: Write failing Home-action and sheet-option tests**
 
 Update `App.test.tsx` assertions:
 
@@ -444,7 +454,7 @@ expect(navigationSource).not.toContain('sheetAllowedDetents: [0.62, 0.9]');
 
 Update `apple-design-system.test.tsx` to require the Home login source to use `Pressable` and reject an `InstrumentButton` with `testID="home-login-action"`.
 
-- [ ] **Step 2: Run App and design tests and verify RED**
+- [x] **Step 2: Run App and design tests and verify RED**
 
 Run:
 
@@ -454,7 +464,7 @@ yarn workspace @repo/mobile test App.test.tsx apple-design-system.test.tsx --run
 
 Expected: FAIL because Home still renders a filled `InstrumentButton` and navigation still uses two numeric detents.
 
-- [ ] **Step 3: Implement the text action and content-fit sheet**
+- [x] **Step 3: Implement the text action and content-fit sheet**
 
 Import `Pressable` in Home and replace only the login action:
 
@@ -480,7 +490,7 @@ options={{
 }}
 ```
 
-- [ ] **Step 4: Run App and design tests and verify GREEN**
+- [x] **Step 4: Run App and design tests and verify GREEN**
 
 Run:
 
@@ -490,7 +500,7 @@ yarn workspace @repo/mobile test App.test.tsx apple-design-system.test.tsx --run
 
 Expected: both suites pass.
 
-- [ ] **Step 5: Commit Task 3**
+- [x] **Step 5: Commit Task 3**
 
 ```bash
 git add apps/mobile/src/screens/home/screen.tsx apps/mobile/src/components/navigation/index.tsx apps/mobile/__tests__/App.test.tsx apps/mobile/__tests__/apple-design-system.test.tsx
@@ -507,33 +517,33 @@ git commit -m "feat: refine login entry presentation"
 **Interfaces:**
 - Verifies all Task 1-3 deliverables without changing Auth contracts or native provider adapters
 
-- [ ] **Step 1: Run focused regression tests**
+- [x] **Step 1: Run focused regression tests**
 
 ```bash
 yarn workspace @repo/mobile test social-login-button.test.tsx auth-screens.test.tsx App.test.tsx apple-design-system.test.tsx i18n.test.ts --runInBand
 ```
 
-Expected: all focused suites pass.
+Result: 4 focused suites passed with 43 tests after the review amendment.
 
-- [ ] **Step 2: Run complete static and test gates**
+- [x] **Step 2: Run complete static and test gates**
 
 ```bash
 yarn mobile:typecheck
 yarn workspace @repo/mobile test --runInBand
 ```
 
-Expected: TypeScript exits 0 and every mobile Jest suite passes.
+Result: TypeScript exited 0; 43 Jest suites passed with 429 tests.
 
-- [ ] **Step 3: Run native mobile build gates**
+- [x] **Step 3: Run native mobile build gates**
 
 ```bash
 yarn ios:build
 cd apps/mobile/android && ./gradlew assembleDebug
 ```
 
-Expected: iOS reports `BUILD SUCCEEDED`; Android reports `BUILD SUCCESSFUL`.
+Result: iOS reported `BUILD SUCCEEDED`; Android reported `BUILD SUCCESSFUL`. The font was also verified in both the iOS app bundle and Android APK.
 
-- [ ] **Step 4: Review the final diff**
+- [x] **Step 4: Review the final diff**
 
 Confirm all of the following:
 
@@ -541,12 +551,12 @@ Confirm all of the following:
 - No native credential adapter, Supabase repository, consent, or guest-data code changed.
 - No unrelated dirty file is staged.
 - Both brand assets came from the official URLs recorded in Task 1.
-- Provider rows stay 54pt and status slots stay 44pt in idle, recent, busy, and error states.
+- Provider rows stay 44pt with compliant provider artwork and a symmetric busy-status slot.
 - Home login remains guest-only and has no filled InstrumentButton styling.
-- Login sheet has no ScrollView, guest boundary copy, numeric detent, or layout-shifting overlay dot.
+- Login sheet has no ScrollView, guest boundary copy, or layout-shifting overlay dot; only iOS 15 receives the required medium/large fallback detents.
 ```
 
-- [ ] **Step 5: Mark plan complete and commit verification metadata**
+- [x] **Step 5: Mark plan complete and commit verification metadata**
 
 Change every completed checkbox in this plan to `[x]`, then:
 
