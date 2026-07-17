@@ -8,7 +8,6 @@ import ReactTestRenderer from 'react-test-renderer';
 import { AppState } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
-import { Menu } from '../src/components/ui/menu';
 import i18n from '../src/i18n';
 import { defaultDiveLogRepository } from '../src/repositories/default-dive-log-repository';
 
@@ -287,7 +286,8 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'nav-tab-planning' })).toBeTruthy();
     expect(root.findByProps({ testID: 'nav-tab-settings' })).toBeTruthy();
     expect(() => root.findByProps({ testID: 'nav-tab-memory' })).toThrow();
-    expect(root.findByProps({ testID: 'language-menu-trigger' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'home-login-action' })).toBeTruthy();
+    expect(root.findAllByProps({ testID: 'language-menu-trigger' })).toHaveLength(0);
 
     await ReactTestRenderer.act(async () => {
       root.findByProps({ testID: 'nav-tab-settings' }).props.onPress();
@@ -330,7 +330,10 @@ describe('App navigation', () => {
     expect(navigationSource).toContain('authLogin: undefined');
     expect(navigationSource).toContain('authOnboarding: undefined');
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authLogin"/);
-    expect(navigationSource).toContain("presentation: 'modal'");
+    expect(navigationSource).toContain("presentation: 'formSheet'");
+    expect(navigationSource).toContain('sheetAllowedDetents: [0.62, 0.9]');
+    expect(navigationSource).toContain('sheetGrabberVisible: true');
+    expect(navigationSource).toContain('sheetCornerRadius: 28');
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authOnboarding"/);
     expect(navigationSource).toContain('gestureEnabled: false');
     expect(navigationSource).toContain('usePreventRemove');
@@ -523,7 +526,7 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'logbook-create-action' })).toBeTruthy();
   });
 
-  test('switches language from the restored Home language menu', async () => {
+  test('opens login from Home while the user is a guest', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -532,22 +535,25 @@ describe('App navigation', () => {
     });
 
     const root = renderer!.root;
+    const loginAction = root.findByProps({ testID: 'home-login-action' });
+    const loginActionClassNames = root
+      .findAllByProps({ testID: 'home-login-action' })
+      .map(node => node.props.className)
+      .filter((className): className is string => typeof className === 'string');
+
+    expect(loginActionClassNames.some(className => className.includes('min-h-12'))).toBe(true);
+    expect(loginActionClassNames.every(className => !className.includes('min-h-10'))).toBe(true);
 
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'language-menu-trigger' }).props.onPress();
+      loginAction.props.onPress();
     });
+    await waitForRenderedTestID(renderer!, 'auth-login-screen');
 
-    expect(root.findByProps({ testID: 'language-menu-option-en' })).toBeTruthy();
-
-    await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'language-menu-option-en' }).props.onPress();
-    });
-
-    expect(i18n.language).toBe('en');
-    expect(root.findByProps({ testID: 'nav-tab-home' }).props.children[1].props.children).toBe('Home');
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-login-screen')).toHaveLength(1);
   });
 
-  test('renders the Home language selector with the gluestack Menu component', async () => {
+  test('hides the Home login action for authenticated membership', async () => {
+    mockAuthState = { status: 'authenticated', userId: 'member-user' };
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -555,7 +561,7 @@ describe('App navigation', () => {
       renderers.push(renderer);
     });
 
-    expect(renderer!.root.findByType(Menu)).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'home-login-action' })).toHaveLength(0);
   });
 
   test('shows a tappable toast for automatic watch imports and opens the imported log', async () => {

@@ -287,11 +287,7 @@ describe('Home conditions interface', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'home-conditions-unavailable' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'home-reminder-alert' })).toBeTruthy();
-    const reminderIcon = root.findByProps({ testID: 'home-reminder-alert-icon' });
-    expect(reminderIcon.props.className).toEqual(expect.stringContaining('rounded-full'));
-    expect(reminderIcon.props.className).toEqual(expect.stringContaining('bg-primary/10'));
-    expect(root.findAll(node => node.props.children === '알림')).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'home-reminder-alert' })).toHaveLength(0);
     expect(root.findByProps({ testID: 'home-open-logbook-action-icon' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-open-planning-action-icon' })).toBeTruthy();
 

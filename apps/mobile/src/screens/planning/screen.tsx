@@ -212,12 +212,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="sm">
-          <HStack className="items-center justify-between">
-            <StatusPill label={t('status.planning', { defaultValue: 'Planning' })} />
-            <StatusPill label={t('status.assist', { defaultValue: 'Assist' })} tone="secondary" />
-          </HStack>
           <Text className="text-3xl font-semibold text-foreground">{t('planning.title')}</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{t('planning.subtitle')}</Text>
           {lastScrollTarget === undefined ? null : (
             <Text testID="planning-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
           )}
@@ -449,11 +444,6 @@ function CompletionPrompt(props: { plan: DivePlan; onLater: () => void; onCreate
           eyebrow={t('planning.completedPromptEyebrow', { defaultValue: 'Plan completed' })}
           title={t('planning.completedPromptTitle', { defaultValue: 'Create a log draft now?' })}
         />
-        <Text className="text-sm leading-5 text-card-foreground">
-          {t('planning.completedPromptBody', {
-            defaultValue: 'The plan is marked completed. You can create a Logbook draft from safe metadata now or do it later.',
-          })}
-        </Text>
         <HStack space="sm">
           <InstrumentButton testID="planning-complete-later" className="flex-1" label={t('planning.later', { defaultValue: 'Later' })} onPress={props.onLater} />
           <InstrumentButton

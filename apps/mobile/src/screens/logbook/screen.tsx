@@ -209,10 +209,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       <VStack space="lg">
         <VStack space="md">
           <HStack className="items-center justify-between">
-            <VStack space="xs" className="flex-1">
-              <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.reviewEyebrow')}</Text>
-              <Text className="text-3xl font-semibold leading-9 text-foreground">{t('logbook.title')}</Text>
-            </VStack>
+            <Text className="flex-1 text-3xl font-semibold leading-9 text-foreground">{t('logbook.title')}</Text>
             <HStack space="sm">
               <InstrumentButton
                 testID="logbook-create-action"
@@ -331,9 +328,6 @@ function EmptyLogbook(): React.JSX.Element {
     <DiveSummaryCard>
       <VStack testID="logbook-empty-state" space="lg">
         <DiveSummaryCard.Header eyebrow={t('logbook.emptyEyebrow')} title={t('logbook.noImportedDives')} />
-        <DiveSummaryCard.Footer>
-          <Text className="text-sm leading-5 text-muted-foreground">{t('logbook.emptyBody')}</Text>
-        </DiveSummaryCard.Footer>
       </VStack>
     </DiveSummaryCard>
   );

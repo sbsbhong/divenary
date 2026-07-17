@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
+import { InstrumentButton, SafetyText } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
 import { ScrollView } from '../../components/ui/scroll-view';
 import { Text } from '../../components/ui/text';
@@ -30,14 +30,7 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
   return (
     <ScrollView className="flex-1 bg-background" contentContainerClassName="px-5 pt-4 pb-6" contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
-        <VStack space="sm">
-          <HStack className="items-center justify-between">
-            <StatusPill label={t('status.memory')} />
-            <StatusPill label={t('status.static')} tone="secondary" />
-          </HStack>
-          <Text className="text-3xl font-semibold text-foreground">{t('memory.title')}</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{t('memory.subtitle')}</Text>
-        </VStack>
+        <Text className="text-3xl font-semibold text-foreground">{t('memory.title')}</Text>
 
         <DiveSummaryCard accent="primary">
           <DiveSummaryCard.Header
@@ -64,19 +57,6 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
           </DiveSummaryCard.Body>
         </DiveSummaryCard>
 
-        <DiveSummaryCard accent="secondary">
-          <DiveSummaryCard.Header eyebrow={t('memory.exportStatus')} title={t('memory.futureWorkflow')} />
-          <DiveSummaryCard.Body>
-            <DiveSummaryCard.Metric label={t('memory.imageRender')} value={t('memory.placeholder')} />
-            <DiveSummaryCard.Metric label={t('memory.socialSharing')} value={t('memory.separateSpec')} />
-            <DiveSummaryCard.Metric
-              label={t('memory.mediaWorkflow')}
-              value={t('memory.placeholders', { count: session?.mediaPlaceholders.length ?? 0 })}
-            />
-            <DiveSummaryCard.Metric label={t('memory.colorCorrection')} value={t('memory.researchOnly')} />
-          </DiveSummaryCard.Body>
-        </DiveSummaryCard>
-
         <DiveSummaryCard accent="primary">
           <DiveSummaryCard.Header eyebrow={t('memory.safeAnalytics')} title={t('memory.reviewSummaries')} />
           <DiveSummaryCard.Body>
@@ -92,15 +72,9 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
               }
             />
           </DiveSummaryCard.Body>
-          <DiveSummaryCard.Footer>
-            <Text className="text-sm leading-5 text-muted-foreground">{t('memory.reviewOnlySummaries')}</Text>
-          </DiveSummaryCard.Footer>
         </DiveSummaryCard>
 
-        <VStack space="md">
-          <InstrumentButton label={t('memory.savePreview')} variant="primary" onPress={() => undefined} />
-          <InstrumentButton label={t('memory.openLogbook')} onPress={props.onOpenLogbook} />
-        </VStack>
+        <InstrumentButton label={t('memory.openLogbook')} onPress={props.onOpenLogbook} />
 
         <SafetyText>{t('memory.safetyText')}</SafetyText>
       </VStack>

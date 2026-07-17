@@ -409,6 +409,8 @@ export default function RootNavigation(): React.JSX.Element {
                         sessions={logbook.sessions}
                         onOpenLogbook={openLogbook}
                         onOpenPlanning={openPlanning}
+                        onOpenLogin={openAuthLogin}
+                        showLogin={state.status === 'guest'}
                         onRefresh={logbook.refresh}
                         isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
@@ -469,7 +471,14 @@ export default function RootNavigation(): React.JSX.Element {
                 </AppTabs.Navigator>
               )}
             </Stack.Screen>
-            <Stack.Screen name="authLogin" options={{ presentation: 'modal' }}>
+            <Stack.Screen
+              name="authLogin"
+              options={{
+                presentation: 'formSheet',
+                sheetAllowedDetents: [0.62, 0.9],
+                sheetGrabberVisible: true,
+                sheetCornerRadius: 28,
+              }}>
               {props => <LoginScreen onClose={() => props.navigation.goBack()} />}
             </Stack.Screen>
             <Stack.Screen name="authOnboarding" options={{ gestureEnabled: false, presentation: 'modal' }}>

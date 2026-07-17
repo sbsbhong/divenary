@@ -130,6 +130,7 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('게스트로 사용 중');
+    expect(root.findAllByProps({ testID: 'settings-account-description' })).toHaveLength(0);
     await ReactTestRenderer.act(async () => {
       root.findByProps({ testID: 'settings-account-action' }).props.onPress();
     });
@@ -168,6 +169,7 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('로그인됨');
+    expect(root.findAllByProps({ testID: 'settings-account-description' })).toHaveLength(0);
     await ReactTestRenderer.act(async () => {
       await root.findByProps({ testID: 'settings-account-action' }).props.onPress();
     });

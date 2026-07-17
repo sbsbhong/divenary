@@ -6,6 +6,15 @@ import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider'
 import { colors } from '../src/components/ui/gluestack-ui-provider/config';
 import { useAppPreferences } from '../src/states/app-preferences';
 
+jest.mock('../src/states/auth', () => {
+  const ReactModule = require('react') as typeof import('react');
+
+  return {
+    AuthProvider: ({ children }: { children?: React.ReactNode }) =>
+      ReactModule.createElement(ReactModule.Fragment, null, children),
+  };
+});
+
 jest.mock('react-native-safe-area-context', () => {
   const ReactModule = require('react') as typeof import('react');
   const actual = jest.requireActual('react-native-safe-area-context');

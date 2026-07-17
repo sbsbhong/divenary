@@ -1,17 +1,14 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, AlertIcon, AlertText } from '../../components/ui/alert';
 import { Box } from '../../components/ui/box';
-import { Button, ButtonIcon, ButtonSpinner, ButtonText } from '../../components/ui/button';
+import { Button, ButtonIcon, ButtonSpinner } from '../../components/ui/button';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
+import { InstrumentButton, SafetyText } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
 import {
   AlertCircleIcon,
-  BellIcon,
   CalendarDaysIcon,
   ChevronRightIcon,
-  GlobeIcon,
   Icon,
   MapPinIcon,
   RepeatIcon,
@@ -19,7 +16,6 @@ import {
   SunIcon,
   WavesIcon,
 } from '../../components/ui/icon';
-import { Menu, MenuItem, MenuItemLabel } from '../../components/ui/menu';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScrollView } from '../../components/ui/scroll-view';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
@@ -30,8 +26,6 @@ import { type HomeConditionsProvider, type HomeConditionsSnapshot } from '../../
 import { type LocationService } from '../../conditions/location-service';
 import { createOpenMeteoHomeConditionsProvider } from '../../conditions/open-meteo-home-conditions-provider';
 import { useHomeConditions } from '../../conditions/use-home-conditions';
-import { supportedLanguages, type SupportedLanguage } from '../../i18n';
-import { useAppPreferences } from '../../states/app-preferences';
 import type { MobileDiveSession } from '../../types/dive-session';
 import { formatDate, formatDepth, formatDuration, formatTemperature } from '../../utils/dive-formatters';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
@@ -40,6 +34,8 @@ type HomeScreenProps = {
   sessions: MobileDiveSession[];
   onOpenLogbook: () => void;
   onOpenPlanning: () => void;
+  onOpenLogin?: () => void;
+  showLogin?: boolean;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -90,11 +86,17 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
       <VStack space="lg">
         <VStack space="md" className="pt-2">
           <HStack className="items-start justify-between">
-            <StatusPill label={t('status.watchAssistant')} />
-            <LanguageMenu />
+            <Text className="text-4xl font-semibold leading-10 text-foreground">Divenary</Text>
+            {props.showLogin === true && props.onOpenLogin !== undefined ? (
+              <InstrumentButton
+                testID="home-login-action"
+                label={t('home.login')}
+                className="px-4 py-2"
+                onPress={props.onOpenLogin}
+                variant="primary"
+              />
+            ) : null}
           </HStack>
-          <Text className="text-4xl font-semibold leading-10 text-foreground">Divenary</Text>
-          <Text className="text-base leading-6 text-muted-foreground">{t('home.subtitle')}</Text>
           <HStack space="xs" className="items-baseline">
             <Text className="text-2xl font-semibold text-primary">{props.sessions.length}</Text>
             <Text className="text-sm font-semibold text-muted-foreground">{t('home.logsImported')}</Text>
@@ -122,21 +124,6 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           <LatestLogEmptyCard />
         )}
 
-        <Alert testID="home-reminder-alert" className="rounded-2xl border-border bg-card px-4 py-4">
-          <Box testID="home-reminder-alert-icon" className="mt-0.5 h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
-            <AlertIcon as={BellIcon} className="text-primary" />
-          </Box>
-          <AlertText className="leading-5 text-card-foreground">
-            <Text className="text-base font-semibold text-card-foreground">{t('home.watchReminderStatus')}</Text>
-            {'\n'}
-            <Text className="text-sm leading-5 text-muted-foreground">{t('home.reminderReview')}</Text>
-            {'\n'}
-            <Text className="text-xs font-semibold uppercase leading-5 text-muted-foreground">
-              {t('home.ascent')}: {t('home.reviewOnly')} · {t('home.safetyStop')}: {t('home.planningReminder')}
-            </Text>
-          </AlertText>
-        </Alert>
-
         <VStack space="md">
           <InstrumentButton
             testID="home-open-logbook-action"
@@ -160,66 +147,6 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   );
 }
 
-function LanguageMenu(): React.JSX.Element {
-  const { t } = useTranslation();
-  const { language, setLanguage } = useAppPreferences();
-  const [isOpen, setIsOpen] = React.useState(false);
-  const activeLabel = getLanguageLabel(language, t);
-
-  const handleSelectLanguage = React.useCallback(
-    async (nextLanguage: SupportedLanguage) => {
-      await setLanguage(nextLanguage);
-      setIsOpen(false);
-    },
-    [setLanguage],
-  );
-
-  return (
-    <Menu
-      placement="bottom right"
-      offset={4}
-      closeOnSelect
-      onOpen={() => setIsOpen(true)}
-      onClose={() => setIsOpen(false)}
-      trigger={({ ...triggerProps }) => (
-        <Button
-          {...triggerProps}
-          testID="language-menu-trigger"
-          accessibilityLabel={t(isOpen ? 'language.closeMenu' : 'language.openMenu')}
-          variant="secondary"
-          size="sm"
-          className="rounded-full">
-          <ButtonIcon as={GlobeIcon} className="text-primary" />
-          <ButtonText className="text-sm font-semibold text-primary">{activeLabel}</ButtonText>
-        </Button>
-      )}>
-      {supportedLanguages.map(option => {
-        const isSelected = language === option;
-        const optionLabel = getLanguageLabel(option, t);
-
-        return (
-          <MenuItem
-            key={option}
-            testID={`language-menu-option-${option}`}
-            textValue={optionLabel}
-            accessibilityState={{ selected: isSelected }}
-            accessibilityLabel={t('language.switchTo', { language: optionLabel })}
-            className={isSelected ? 'bg-primary' : 'bg-transparent'}
-            onPress={() => handleSelectLanguage(option)}>
-            <MenuItemLabel className={isSelected ? 'font-semibold text-primary-foreground' : 'font-semibold text-popover-foreground'}>
-              {optionLabel}
-            </MenuItemLabel>
-          </MenuItem>
-        );
-      })}
-    </Menu>
-  );
-}
-
-function getLanguageLabel(language: SupportedLanguage, t: ReturnType<typeof useTranslation>['t']): string {
-  return language === 'ko' ? t('settings.language.korean') : t('settings.language.english');
-}
-
 function LatestLogLoadingCard(): React.JSX.Element {
   return (
     <DiveSummaryCard>
@@ -239,7 +166,6 @@ function LatestLogEmptyCard(): React.JSX.Element {
     <DiveSummaryCard>
       <VStack testID="home-latest-empty-state" space="md">
         <DiveSummaryCard.Header eyebrow={t('home.latestLog')} title={t('home.noRecentLog')} />
-        <Text className="text-sm leading-5 text-muted-foreground">{t('home.noRecentLogBody')}</Text>
       </VStack>
     </DiveSummaryCard>
   );
@@ -332,14 +258,9 @@ function HomeConditionsBand(props: {
     return (
       <DiveSummaryCard>
         <VStack space="md">
-          <VStack space="xs">
-            <Text testID="home-conditions-unavailable" className="text-base font-semibold text-card-foreground">
-              {t(isError ? 'home.conditions.apiError' : 'home.conditions.unavailable')}
-            </Text>
-            <Text className="text-sm leading-5 text-muted-foreground">
-              {t(isError ? 'home.conditions.apiErrorBody' : 'home.conditions.unavailableBody')}
-            </Text>
-          </VStack>
+          <Text testID="home-conditions-unavailable" className="text-base font-semibold text-card-foreground">
+            {t(isError ? 'home.conditions.apiError' : 'home.conditions.unavailable')}
+          </Text>
           <InstrumentButton
             testID="home-conditions-retry-action"
             label={t('home.conditions.tryAgain')}

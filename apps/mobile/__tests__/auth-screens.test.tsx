@@ -25,7 +25,7 @@ jest.mock('@invertase/react-native-apple-authentication', () => {
   const AppleButton = (props: Record<string, unknown>) => ReactModule.createElement('mock-apple-button', props);
 
   Object.assign(AppleButton, {
-    Style: { BLACK: 'Black', DEFAULT: 'Default', WHITE: 'White' },
+    Style: { BLACK: 'Black', DEFAULT: 'Default', WHITE: 'White', WHITE_OUTLINE: 'WhiteOutline' },
     Type: { CONTINUE: 'Continue', DEFAULT: 'Default', SIGN_IN: 'SignIn' },
   });
 
@@ -235,8 +235,34 @@ describe('LoginScreen', () => {
     createAuthFixture({ recentProvider: 'apple' });
     const renderer = await render(<LoginScreen />);
 
-    expect(renderer.root.findByProps({ testID: 'auth-login-recent-apple' }).props.children).toBe('최근 사용');
+    const recentMarker = renderer.root.findByProps({ testID: 'auth-login-recent-apple' });
+    const appleButton = findNativeProviderButton(renderer.root, 'apple');
+    expect(recentMarker.props.className).toContain('absolute');
+    expect(recentMarker.props.pointerEvents).toBe('none');
+    expect(recentMarker.props.accessible).toBe(false);
+    expect(appleButton.props.accessibilityLabel).toBe('Apple로 계속하기, 최근 사용');
+    expect(recentMarker.props.children).toBeUndefined();
     expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-google' })).toHaveLength(0);
+  });
+
+  test('applies only the bottom safe area inside the navigation form sheet', async () => {
+    createAuthFixture();
+    const renderer = await render(<LoginScreen />);
+
+    expect(renderer.root.findByProps({ testID: 'auth-login-safe-area' }).props.edges).toEqual(['bottom']);
+  });
+
+  test('uses one light visual grammar for both provider controls', async () => {
+    createAuthFixture();
+    const renderer = await render(<LoginScreen />);
+    const google = findNativeProviderButton(renderer.root, 'google');
+    const apple = findNativeProviderButton(renderer.root, 'apple');
+
+    expect(StyleSheet.flatten(google.props.style)).toMatchObject({ height: 52, width: '100%' });
+    expect(StyleSheet.flatten(apple.props.style)).toMatchObject({ height: 52, width: '100%' });
+    expect(google.props.color).toBe('light');
+    expect(apple.props.buttonStyle).toBe('White');
+    expect(apple.props.cornerRadius).toBe(8);
   });
 
   test('keeps cancellation neutral and leaves the login screen usable', async () => {

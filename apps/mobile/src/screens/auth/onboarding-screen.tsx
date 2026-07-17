@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { Checkbox, CheckboxIcon, CheckboxIndicator, CheckboxLabel } from '../../components/ui/checkbox';
 import { CheckIcon } from '../../components/ui/icon';
-import { InstrumentButton, StatusPill } from '../../components/ui/instrument';
+import { InstrumentButton } from '../../components/ui/instrument';
 import { Pressable } from '../../components/ui/pressable';
 import { SafeAreaView } from '../../components/ui/safe-area-view';
 import { ScrollView } from '../../components/ui/scroll-view';
@@ -90,11 +90,7 @@ export default function OnboardingScreen(): React.JSX.Element {
     <SafeAreaView className="flex-1 bg-background">
       <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
         <VStack testID="auth-onboarding-screen" className="gap-6 px-5 pb-10 pt-6">
-          <VStack className="gap-3">
-            <StatusPill label={t('auth.onboarding.eyebrow')} />
-            <Text className="text-3xl font-semibold leading-9 text-foreground">{t('auth.onboarding.title')}</Text>
-            <Text className="text-base leading-6 text-muted-foreground">{t('auth.onboarding.subtitle')}</Text>
-          </VStack>
+          <Text className="text-3xl font-semibold leading-9 text-foreground">{t('auth.onboarding.title')}</Text>
 
           <VStack className="gap-4">
             {documents.map(document => {

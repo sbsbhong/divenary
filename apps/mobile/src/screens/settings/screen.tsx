@@ -33,7 +33,6 @@ type SettingRowProps = {
 };
 
 type OptionRowProps = {
-  description?: string;
   label: string;
   rowTestID: string;
   selected: boolean;
@@ -157,9 +156,6 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.theme.title')} onBack={closeRoute} />
-        <Text size="sm" className="leading-5 text-muted-foreground">
-          {t('settings.theme.subtitle')}
-        </Text>
 
         <OptionGroup value={themePreference} onChange={nextValue => setThemePreference(nextValue as ThemePreference)}>
           {themeOptions.map(option => (
@@ -167,7 +163,6 @@ export default function SettingsScreen({
               key={option}
               rowTestID={`settings-option-theme-${option}`}
               label={getThemeLabel(option, t)}
-              description={t(`settings.theme.${option}Description`)}
               selected={themePreference === option}
               onPress={() => setThemePreference(option)}
               value={option}
@@ -182,9 +177,6 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.language.title')} onBack={closeRoute} />
-        <Text size="sm" className="leading-5 text-muted-foreground">
-          {t('settings.language.subtitle')}
-        </Text>
 
         <OptionGroup
           value={language}
@@ -219,15 +211,11 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.notifications.title')} onBack={closeRoute} />
-        <Text size="sm" className="leading-5 text-muted-foreground">
-          {t('settings.notifications.subtitle')}
-        </Text>
 
         <VStack className="overflow-hidden rounded-2xl bg-card">
           <ToggleRow
             rowTestID="settings-option-watch-sync-notifications"
             label={t('settings.notifications.watchSyncTitle')}
-            description={t('settings.notifications.watchSyncDescription')}
             selected={watchSyncNotificationsEnabled}
             onPress={async () => {
               if (notificationToggleBusy.current) {
@@ -281,14 +269,9 @@ export default function SettingsScreen({
 
   return (
     <SettingsScaffold>
-      <VStack space="xs">
-        <Text testID="settings-screen-title" size="3xl" className="font-semibold text-foreground">
-          {t('settings.title')}
-        </Text>
-        <Text size="sm" className="leading-5 text-muted-foreground">
-          {t('settings.subtitle')}
-        </Text>
-      </VStack>
+      <Text testID="settings-screen-title" size="3xl" className="font-semibold text-foreground">
+        {t('settings.title')}
+      </Text>
 
       <VStack space="sm">
         <Text testID="settings-section-account" size="xs" bold className="uppercase text-muted-foreground">
@@ -388,9 +371,11 @@ function AccountCard(props: {
         <Text testID="settings-account-status" size="lg" bold className="text-card-foreground">
           {content.status}
         </Text>
-        <Text testID="settings-account-description" size="sm" className="leading-5 text-muted-foreground">
-          {content.description}
-        </Text>
+        {content.description ? (
+          <Text testID="settings-account-description" size="sm" className="leading-5 text-muted-foreground">
+            {content.description}
+          </Text>
+        ) : null}
       </VStack>
       {canLogin ? (
         <InstrumentButton
@@ -420,7 +405,7 @@ function getAccountCardContent(
   authState: AuthState,
   isConfigured: boolean,
   t: ReturnType<typeof useTranslation>['t'],
-): { status: string; description: string; action?: 'login' | 'signOut' } {
+): { status: string; description?: string; action?: 'login' | 'signOut' } {
   if (!isConfigured) {
     return {
       status: t('settings.account.unconfiguredStatus'),
@@ -432,18 +417,15 @@ function getAccountCardContent(
     case 'guest':
       return {
         status: t('settings.account.guestStatus'),
-        description: t('settings.account.guestDescription'),
         action: 'login',
       };
     case 'pendingOnboarding':
       return {
         status: t('settings.account.pendingStatus'),
-        description: t('settings.account.pendingDescription'),
       };
     case 'authenticated':
       return {
         status: t('settings.account.authenticatedStatus'),
-        description: t('settings.account.authenticatedDescription'),
         action: 'signOut',
       };
     case 'authenticatedOffline':
@@ -456,7 +438,6 @@ function getAccountCardContent(
     case 'authenticating':
       return {
         status: t('settings.account.signingInStatus'),
-        description: t('settings.account.signingInDescription'),
       };
   }
 }
@@ -539,14 +520,7 @@ function OptionRow(props: OptionRowProps): React.JSX.Element {
       className={props.selected ? 'bg-primary/10 px-4 py-4' : 'bg-card px-4 py-4'}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
       <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
-        <VStack space="xs" className="flex-1 pr-3">
-          <RadioLabel className={labelClassName}>{props.label}</RadioLabel>
-          {props.description ? (
-            <Text size="sm" className="leading-5 text-muted-foreground">
-              {props.description}
-            </Text>
-          ) : null}
-        </VStack>
+        <RadioLabel className={`${labelClassName} flex-1 pr-3`}>{props.label}</RadioLabel>
         <RadioIndicator>
           <RadioIcon as={CircleIcon} />
         </RadioIndicator>
@@ -556,7 +530,6 @@ function OptionRow(props: OptionRowProps): React.JSX.Element {
 }
 
 function ToggleRow(props: {
-  description: string;
   label: string;
   rowTestID: string;
   selected: boolean;
@@ -570,12 +543,9 @@ function ToggleRow(props: {
       className={props.selected ? 'bg-primary/10 px-4 py-4' : 'bg-card px-4 py-4'}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
       <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
-        <VStack space="xs" className="flex-1 pr-3">
-          <Text className={props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground'}>{props.label}</Text>
-          <Text size="sm" className="leading-5 text-muted-foreground">
-            {props.description}
-          </Text>
-        </VStack>
+        <Text className={`${props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground'} flex-1 pr-3`}>
+          {props.label}
+        </Text>
         <Switch
           testID={`${props.rowTestID}-switch`}
           value={props.selected}
