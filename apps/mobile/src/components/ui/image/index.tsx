@@ -29,16 +29,18 @@ const Image = React.forwardRef<
   React.ComponentRef<typeof UIImage>,
   ImageProps & { className?: string }
 >(function Image({ size = 'md', className, ...props }, ref) {
+  const { style, ...imageProps } = props;
+
   return (
     <UIImage
       className={imageStyle({ size, class: className })}
-      {...props}
+      {...imageProps}
       ref={ref}
       // @ts-expect-error : web only
       style={
         Platform.OS === 'web'
-          ? { height: 'revert-layer', width: 'revert-layer' }
-          : undefined
+          ? [style, { height: 'revert-layer', width: 'revert-layer' }]
+          : style
       }
     />
   );

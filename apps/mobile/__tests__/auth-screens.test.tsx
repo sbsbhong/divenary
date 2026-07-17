@@ -204,7 +204,7 @@ describe('LoginScreen', () => {
     expect(renderer.root.findByProps({ testID: 'auth-login-safe-area' }).props.edges).toEqual(['bottom']);
   });
 
-  test('renders a compact non-scrolling sheet body with stable status space', async () => {
+  test('renders a compact non-scrolling sheet body without an idle footer', async () => {
     createAuthFixture();
     const renderer = await render(<LoginScreen />);
 
@@ -214,7 +214,8 @@ describe('LoginScreen', () => {
     expect(brandMark.props.accessibilityElementsHidden).toBe(true);
     expect(brandMark.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(heading.props.maxFontSizeMultiplier).toBe(1.5);
-    expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
+    expect(renderer.root.findByProps({ testID: 'auth-login-screen' }).props).toMatchObject({ space: 'md' });
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-status-row' })).toHaveLength(0);
     expect(JSON.stringify(renderer.toJSON())).not.toContain('기존 기록은 이 기기에 유지됩니다.');
   });
 
@@ -249,7 +250,7 @@ describe('LoginScreen', () => {
     expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(true);
     expect(findProviderButton(renderer.root, 'apple').props.disabled).toBe(true);
     expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' })).toBeTruthy();
-    expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-status-row' })).toHaveLength(0);
 
     deferred.reject(new Error('raw-provider-payload@example.com'));
     await flush();
@@ -258,6 +259,7 @@ describe('LoginScreen', () => {
     const error = renderer.root.findByProps({ testID: 'auth-login-error' });
     expect(rendered).toContain('다시 시도');
     expect(rendered).not.toContain('raw-provider-payload@example.com');
+    expect(renderer.root.findByProps({ testID: 'auth-login-status-row' })).toBeTruthy();
     expect(error.props.maxFontSizeMultiplier).toBe(1.5);
     expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(false);
   });

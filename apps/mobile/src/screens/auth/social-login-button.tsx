@@ -26,6 +26,21 @@ const providerLogo = {
 export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Element {
   const slotWidth = Platform.OS === 'ios' ? 52 : 44;
   const isGoogle = props.provider === 'google';
+  const logo = (
+    <Image
+      testID={`auth-login-${props.provider}-logo`}
+      accessible={false}
+      alt=""
+      source={providerLogo[props.provider]}
+      size="none"
+      resizeMode="contain"
+      style={
+        isGoogle
+          ? { height: 20, width: 20 }
+          : { height: 44, left: -10, maxWidth: 44, position: 'absolute', top: -10, width: 44 }
+      }
+    />
+  );
 
   return (
     <Pressable
@@ -38,15 +53,16 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
       onPress={props.onPress}
       style={{ height: 44, borderColor: '#747775', borderRadius: 8 }}>
       <Box testID={`auth-login-${props.provider}-icon-slot`} className="items-center justify-center" style={{ width: slotWidth }}>
-        <Image
-          testID={`auth-login-${props.provider}-logo`}
-          accessible={false}
-          alt=""
-          source={providerLogo[props.provider]}
-          size="none"
-          resizeMode="contain"
-          style={isGoogle ? { height: 20, width: 20 } : { height: 44, width: 44 }}
-        />
+        {isGoogle ? (
+          logo
+        ) : (
+          <Box
+            testID="auth-login-apple-logo-viewport"
+            className="items-center justify-center"
+            style={{ height: 24, overflow: 'hidden', width: 24 }}>
+            {logo}
+          </Box>
+        )}
       </Box>
       <Text
         testID={`auth-login-${props.provider}-label`}

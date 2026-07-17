@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { Image as NativeImage, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { SocialLoginButton } from '../src/screens/auth/social-login-button';
@@ -69,15 +69,28 @@ describe('SocialLoginButton', () => {
         onPress={jest.fn()}
       />,
     );
-    const googleLogo = google.root.findByProps({ testID: 'auth-login-google-logo' });
-    const appleLogo = apple.root.findByProps({ testID: 'auth-login-apple-logo' });
+    const googleLogo = google.root.findAllByType(NativeImage).find(node => node.props.testID === 'auth-login-google-logo');
+    const appleLogo = apple.root.findAllByType(NativeImage).find(node => node.props.testID === 'auth-login-apple-logo');
+    const appleLogoViewport = apple.root.findByProps({ testID: 'auth-login-apple-logo-viewport' });
     const googleLabel = google.root.findByProps({ testID: 'auth-login-google-label' });
     const appleLabel = apple.root.findByProps({ testID: 'auth-login-apple-label' });
 
-    expect(StyleSheet.flatten(googleLogo.props.style)).toMatchObject({ height: 20, width: 20 });
-    expect(googleLogo.props.resizeMode).toBe('contain');
-    expect(StyleSheet.flatten(appleLogo.props.style)).toMatchObject({ height: 44, width: 44 });
-    expect(appleLogo.props.resizeMode).toBe('contain');
+    expect(StyleSheet.flatten(googleLogo?.props.style)).toMatchObject({ height: 20, width: 20 });
+    expect(googleLogo?.props.resizeMode).toBe('contain');
+    expect(StyleSheet.flatten(appleLogo?.props.style)).toMatchObject({
+      height: 44,
+      left: -10,
+      maxWidth: 44,
+      position: 'absolute',
+      top: -10,
+      width: 44,
+    });
+    expect(appleLogo?.props.resizeMode).toBe('contain');
+    expect(StyleSheet.flatten(appleLogoViewport.props.style)).toMatchObject({
+      height: 24,
+      overflow: 'hidden',
+      width: 24,
+    });
     expect(StyleSheet.flatten(googleLabel.props.style)).toMatchObject({
       fontFamily: 'GoogleSans-Medium',
       fontSize: 14,

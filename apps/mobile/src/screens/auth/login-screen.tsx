@@ -49,7 +49,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
 
   return (
     <SafeAreaView testID="auth-login-safe-area" edges={['bottom']} className="bg-background">
-      <VStack testID="auth-login-screen" space="lg" className="px-5 pb-5 pt-4">
+      <VStack testID="auth-login-screen" space="md" className="px-5 pb-2 pt-3">
         <Box className="relative min-h-11 justify-center">
           <Box
             testID="auth-login-brand-mark"
@@ -124,8 +124,8 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           </Box>
         )}
 
-        <Box testID="auth-login-status-row" className="min-h-11 justify-center">
-          {hasError ? (
+        {hasError ? (
+          <Box testID="auth-login-status-row" className="justify-center py-1">
             <Text
               testID="auth-login-error"
               accessibilityRole="alert"
@@ -133,8 +133,8 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
               className="text-center text-sm leading-5 text-destructive">
               {t('auth.login.error')}
             </Text>
-          ) : null}
-        </Box>
+          </Box>
+        ) : null}
       </VStack>
     </SafeAreaView>
   );
