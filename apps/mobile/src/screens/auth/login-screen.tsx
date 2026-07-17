@@ -75,7 +75,13 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           ) : null}
         </Box>
 
-        <Text accessibilityRole="header" className="text-center text-2xl font-semibold leading-8 text-foreground">
+        <Text
+          accessibilityRole="header"
+          adjustsFontSizeToFit
+          maxFontSizeMultiplier={1.5}
+          minimumFontScale={0.85}
+          numberOfLines={2}
+          className="text-center text-2xl font-semibold leading-8 text-foreground">
           {t('auth.login.title')}
         </Text>
 
@@ -123,6 +129,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
             <Text
               testID="auth-login-error"
               accessibilityRole="alert"
+              maxFontSizeMultiplier={1.5}
               className="text-center text-sm leading-5 text-destructive">
               {t('auth.login.error')}
             </Text>

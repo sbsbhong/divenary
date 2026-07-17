@@ -78,7 +78,11 @@ describe('SocialLoginButton', () => {
     expect(googleLogo.props.resizeMode).toBe('contain');
     expect(StyleSheet.flatten(appleLogo.props.style)).toMatchObject({ height: 44, width: 44 });
     expect(appleLogo.props.resizeMode).toBe('contain');
-    expect(StyleSheet.flatten(googleLabel.props.style)).toMatchObject({ fontFamily: 'Google Sans', fontSize: 14, lineHeight: 20 });
+    expect(StyleSheet.flatten(googleLabel.props.style)).toMatchObject({
+      fontFamily: 'GoogleSans-Medium',
+      fontSize: 14,
+      lineHeight: 20,
+    });
     expect(StyleSheet.flatten(appleLabel.props.style)).toMatchObject({ fontSize: 19 });
     expect(googleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
     expect(appleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });

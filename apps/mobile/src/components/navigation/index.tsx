@@ -98,9 +98,9 @@ export function resolveAuthLoginSheetAllowedDetents(
   platformOS: string,
   platformVersion: number | string,
 ): NonNullable<NativeStackNavigationOptions['sheetAllowedDetents']> {
-  const majorVersion = Math.trunc(Number(platformVersion));
+  const majorVersion = Number.parseInt(String(platformVersion).split('.')[0] ?? '', 10);
 
-  return platformOS === 'ios' && Number.isFinite(majorVersion) && majorVersion < 16 ? [0.5] : 'fitToContents';
+  return platformOS === 'ios' && (!Number.isFinite(majorVersion) || majorVersion < 16) ? [0.5, 1] : 'fitToContents';
 }
 
 export default function RootNavigation(): React.JSX.Element {

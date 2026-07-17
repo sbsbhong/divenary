@@ -152,6 +152,6 @@ describe('Apple design system mapping', () => {
 
     expect(iosInfoPlist).toContain('<string>GoogleSans-Medium.ttf</string>');
     expect(iosProject).toContain('GoogleSans-Medium.ttf in Resources');
-    expect(androidGradle).toContain('assets.srcDirs += ["../../src/assets/fonts"]');
+    expect(androidGradle).toContain('assets.srcDirs += ["../../src/assets"]');
   });
 });

@@ -79,7 +79,7 @@ android {
 
     sourceSets {
         main {
-            assets.srcDirs += ["../../src/assets/fonts"]
+            assets.srcDirs += ["../../src/assets"]
         }
     }
 

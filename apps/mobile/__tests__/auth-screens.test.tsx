@@ -210,8 +210,10 @@ describe('LoginScreen', () => {
 
     expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
     const brandMark = renderer.root.findByProps({ testID: 'auth-login-brand-mark' });
+    const heading = renderer.root.findByProps({ accessibilityRole: 'header' });
     expect(brandMark.props.accessibilityElementsHidden).toBe(true);
     expect(brandMark.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(heading.props.maxFontSizeMultiplier).toBe(1.5);
     expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
     expect(JSON.stringify(renderer.toJSON())).not.toContain('기존 기록은 이 기기에 유지됩니다.');
   });
@@ -253,8 +255,10 @@ describe('LoginScreen', () => {
     await flush();
 
     const rendered = JSON.stringify(renderer.toJSON());
+    const error = renderer.root.findByProps({ testID: 'auth-login-error' });
     expect(rendered).toContain('다시 시도');
     expect(rendered).not.toContain('raw-provider-payload@example.com');
+    expect(error.props.maxFontSizeMultiplier).toBe(1.5);
     expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(false);
   });
 

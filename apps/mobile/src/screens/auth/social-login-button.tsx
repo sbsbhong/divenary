@@ -57,7 +57,7 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
         className="flex-1 text-center text-black"
         style={
           isGoogle
-            ? { color: '#1f1f1f', fontFamily: 'Google Sans', fontSize: 14, lineHeight: 20 }
+            ? { color: '#1f1f1f', fontFamily: 'GoogleSans-Medium', fontSize: 14, lineHeight: 20 }
             : { color: '#000000', fontSize: 19, fontWeight: '500', lineHeight: 23 }
         }>
         {props.label}

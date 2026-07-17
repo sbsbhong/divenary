@@ -344,8 +344,9 @@ describe('App navigation', () => {
   });
 
   test('falls back to the medium login sheet detent below iOS 16', () => {
-    expect(resolveAuthLoginSheetAllowedDetents('ios', 15.1)).toEqual([0.5]);
-    expect(resolveAuthLoginSheetAllowedDetents('ios', '15.7')).toEqual([0.5]);
+    expect(resolveAuthLoginSheetAllowedDetents('ios', 15.1)).toEqual([0.5, 1]);
+    expect(resolveAuthLoginSheetAllowedDetents('ios', '15.7.1')).toEqual([0.5, 1]);
+    expect(resolveAuthLoginSheetAllowedDetents('ios', 'unknown')).toEqual([0.5, 1]);
     expect(resolveAuthLoginSheetAllowedDetents('ios', 16)).toBe('fitToContents');
     expect(resolveAuthLoginSheetAllowedDetents('android', 36)).toBe('fitToContents');
   });
