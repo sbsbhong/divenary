@@ -8,6 +8,7 @@ import ReactTestRenderer from 'react-test-renderer';
 import { AppState } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
+import { resolveAuthLoginSheetAllowedDetents } from '../src/components/navigation';
 import i18n from '../src/i18n';
 import { defaultDiveLogRepository } from '../src/repositories/default-dive-log-repository';
 
@@ -331,7 +332,7 @@ describe('App navigation', () => {
     expect(navigationSource).toContain('authOnboarding: undefined');
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authLogin"/);
     expect(navigationSource).toContain("presentation: 'formSheet'");
-    expect(navigationSource).toContain("sheetAllowedDetents: 'fitToContents'");
+    expect(navigationSource).toContain('sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS');
     expect(navigationSource).not.toContain('sheetAllowedDetents: [0.62, 0.9]');
     expect(navigationSource).toContain('sheetGrabberVisible: true');
     expect(navigationSource).toContain('sheetCornerRadius: 28');
@@ -340,6 +341,13 @@ describe('App navigation', () => {
     expect(navigationSource).toContain('usePreventRemove');
     expect(navigationSource).toContain("state.status === 'pendingOnboarding'");
     expect(navigationSource).toContain('onOpenLogin={openAuthLogin}');
+  });
+
+  test('falls back to the medium login sheet detent below iOS 16', () => {
+    expect(resolveAuthLoginSheetAllowedDetents('ios', 15.1)).toEqual([0.5]);
+    expect(resolveAuthLoginSheetAllowedDetents('ios', '15.7')).toEqual([0.5]);
+    expect(resolveAuthLoginSheetAllowedDetents('ios', 16)).toBe('fitToContents');
+    expect(resolveAuthLoginSheetAllowedDetents('android', 36)).toBe('fitToContents');
   });
 
   test('moves a configured guest through login and required consent, then returns an explicit cancellation to the same local tabs', async () => {

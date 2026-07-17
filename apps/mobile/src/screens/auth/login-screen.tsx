@@ -54,6 +54,8 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           <Box
             testID="auth-login-brand-mark"
             accessible={false}
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
             className="mx-auto h-11 w-11 items-center justify-center rounded-xl bg-primary">
             <Text className="text-xl font-bold text-white">D</Text>
           </Box>
@@ -79,6 +81,14 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
 
         {orderedProviders.length > 0 ? (
           <VStack space="sm">
+            {auth.recentProvider && orderedProviders.includes(auth.recentProvider) ? (
+              <Text
+                testID="auth-login-recent-provider"
+                maxFontSizeMultiplier={1.5}
+                className="text-xs font-semibold text-muted-foreground">
+                {t('auth.login.recent')}
+              </Text>
+            ) : null}
             {orderedProviders.map(provider => {
               const isRecent = auth.recentProvider === provider;
 
@@ -95,7 +105,6 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                     t('auth.login.recent'),
                   )}
                   busyLabel={t('auth.login.signingIn')}
-                  recentLabel={isRecent ? t('auth.login.recentShort') : undefined}
                   busy={busyProvider === provider}
                   disabled={isBusy}
                   onPress={() => signIn(provider)}

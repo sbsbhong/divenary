@@ -77,6 +77,12 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    sourceSets {
+        main {
+            assets.srcDirs += ["../../src/assets/fonts"]
+        }
+    }
+
     namespace "com.divemobile"
     defaultConfig {
         applicationId "com.divemobile"

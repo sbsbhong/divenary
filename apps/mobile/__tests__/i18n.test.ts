@@ -23,8 +23,10 @@ describe('mobile i18n', () => {
   test('ships complete social login, consent, and account status copy', () => {
     expect(i18n.t('auth.login.title')).toBe('Divenary 로그인');
     expect(i18n.getResource('en', 'translation', 'auth.login.title')).toBe('Log in to Divenary');
-    expect(i18n.t('auth.login.recentShort')).toBe('최근');
-    expect(i18n.getResource('en', 'translation', 'auth.login.recentShort')).toBe('Recent');
+    expect(i18n.t('auth.login.google')).toBe('Google로 계속하기');
+    expect(i18n.t('auth.login.apple')).toBe('Apple로 계속하기');
+    expect(i18n.t('auth.login.recent')).toBe('최근 사용');
+    expect(i18n.getResource('en', 'translation', 'auth.login.recent')).toBe('Recently used');
     expect(i18n.t('auth.onboarding.submit')).toBe('동의하고 계속');
     expect(i18n.getResource('en', 'translation', 'auth.onboarding.submit')).toBe('Agree and continue');
     expect(i18n.t('settings.account.offlineDescription')).toContain('로컬 데이터');

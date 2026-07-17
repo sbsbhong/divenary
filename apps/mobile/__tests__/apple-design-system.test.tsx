@@ -144,4 +144,14 @@ describe('Apple design system mapping', () => {
     expect(source).toMatch(/<Pressable[\s\S]*?testID="home-login-action"/);
     expect(source).not.toMatch(/<InstrumentButton[\s\S]{0,200}?testID="home-login-action"/);
   });
+
+  test('registers Google Sans Medium for the custom Google sign-in label', () => {
+    const iosInfoPlist = readSource('ios', 'Divenary', 'Info.plist');
+    const iosProject = readSource('ios', 'Divenary.xcodeproj', 'project.pbxproj');
+    const androidGradle = readSource('android', 'app', 'build.gradle');
+
+    expect(iosInfoPlist).toContain('<string>GoogleSans-Medium.ttf</string>');
+    expect(iosProject).toContain('GoogleSans-Medium.ttf in Resources');
+    expect(androidGradle).toContain('assets.srcDirs += ["../../src/assets/fonts"]');
+  });
 });

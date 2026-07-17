@@ -26,7 +26,7 @@ describe('SocialLoginButton', () => {
     });
   });
 
-  test.each(['google', 'apple'] as const)('renders a fixed unified %s row', async provider => {
+  test.each(['google', 'apple'] as const)('renders a unified 44-point %s row', async provider => {
     const renderer = await render(
       <SocialLoginButton
         provider={provider}
@@ -41,14 +41,50 @@ describe('SocialLoginButton', () => {
     const button = renderer.root.findByProps({ testID: `auth-login-${provider}` });
     const style = StyleSheet.flatten(button.props.style);
 
-    expect(style).toMatchObject({ height: 54, borderRadius: 8 });
-    expect(renderer.root.findByProps({ testID: `auth-login-${provider}-icon-slot` }).props.className).toContain('w-11');
-    expect(renderer.root.findByProps({ testID: `auth-login-${provider}-status-slot` }).props.className).toContain('w-11');
+    expect(style).toMatchObject({ height: 44, borderRadius: 8 });
     expect(button.props.accessibilityRole).toBe('button');
     expect(button.props.accessibilityState).toEqual({ busy: false, disabled: false });
   });
 
-  test('uses the fixed status slot for recent and busy states', async () => {
+  test('preserves official provider artwork proportions and text sizing', async () => {
+    const google = await render(
+      <SocialLoginButton
+        provider="google"
+        label="Continue with Google"
+        accessibilityLabel="Continue with Google"
+        busyLabel="Signing in"
+        busy={false}
+        disabled={false}
+        onPress={jest.fn()}
+      />,
+    );
+    const apple = await render(
+      <SocialLoginButton
+        provider="apple"
+        label="Continue with Apple"
+        accessibilityLabel="Continue with Apple"
+        busyLabel="Signing in"
+        busy={false}
+        disabled={false}
+        onPress={jest.fn()}
+      />,
+    );
+    const googleLogo = google.root.findByProps({ testID: 'auth-login-google-logo' });
+    const appleLogo = apple.root.findByProps({ testID: 'auth-login-apple-logo' });
+    const googleLabel = google.root.findByProps({ testID: 'auth-login-google-label' });
+    const appleLabel = apple.root.findByProps({ testID: 'auth-login-apple-label' });
+
+    expect(StyleSheet.flatten(googleLogo.props.style)).toMatchObject({ height: 20, width: 20 });
+    expect(googleLogo.props.resizeMode).toBe('contain');
+    expect(StyleSheet.flatten(appleLogo.props.style)).toMatchObject({ height: 44, width: 44 });
+    expect(appleLogo.props.resizeMode).toBe('contain');
+    expect(StyleSheet.flatten(googleLabel.props.style)).toMatchObject({ fontFamily: 'Google Sans', fontSize: 14, lineHeight: 20 });
+    expect(StyleSheet.flatten(appleLabel.props.style)).toMatchObject({ fontSize: 19 });
+    expect(googleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
+    expect(appleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
+  });
+
+  test('uses the fixed status slot for the busy state', async () => {
     const onPress = jest.fn();
     const renderer = await render(
       <SocialLoginButton
@@ -56,14 +92,11 @@ describe('SocialLoginButton', () => {
         label="Google로 계속"
         accessibilityLabel="Google로 계속하기, 최근 사용"
         busyLabel="로그인 중"
-        recentLabel="최근"
         busy={false}
         disabled={false}
         onPress={onPress}
       />,
     );
-
-    expect(renderer.root.findByProps({ testID: 'auth-login-recent-google' }).props.children).toBe('최근');
 
     await ReactTestRenderer.act(async () => {
       renderer.root.findByProps({ testID: 'auth-login-google' }).props.onPress();
@@ -77,7 +110,6 @@ describe('SocialLoginButton', () => {
           label="Google로 계속"
           accessibilityLabel="Google로 계속하기, 최근 사용"
           busyLabel="로그인 중"
-          recentLabel="최근"
           busy
           disabled
           onPress={onPress}
@@ -85,7 +117,6 @@ describe('SocialLoginButton', () => {
       );
     });
 
-    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-google' })).toHaveLength(0);
     expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' }).props['aria-label']).toBe('로그인 중');
   });
 });

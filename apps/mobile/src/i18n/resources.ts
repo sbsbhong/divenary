@@ -64,10 +64,9 @@ const resources = {
       auth: {
         login: {
           title: 'Divenary 로그인',
-          google: 'Google로 계속',
-          apple: 'Apple로 계속',
+          google: 'Google로 계속하기',
+          apple: 'Apple로 계속하기',
           recent: '최근 사용',
-          recentShort: '최근',
           signingIn: '로그인 중',
           unavailableTitle: '로그인을 사용할 수 없습니다',
           error: '로그인하지 못했습니다. 다시 시도하세요.',
@@ -468,7 +467,6 @@ const resources = {
           google: 'Continue with Google',
           apple: 'Continue with Apple',
           recent: 'Recently used',
-          recentShort: 'Recent',
           signingIn: 'Signing in',
           unavailableTitle: 'Sign-in is unavailable',
           error: 'Could not sign in. Try again.',

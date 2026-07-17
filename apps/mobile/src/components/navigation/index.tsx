@@ -12,9 +12,14 @@ import {
   type ParamListBase,
   type TabNavigationState,
 } from '@react-navigation/native';
-import { createNativeStackNavigator, type NativeStackNavigationProp, type NativeStackScreenProps } from '@react-navigation/native-stack';
+import {
+  createNativeStackNavigator,
+  type NativeStackNavigationOptions,
+  type NativeStackNavigationProp,
+  type NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import type { DiveLogbookSection } from '../../types/dive-session';
@@ -87,6 +92,16 @@ const AppTabs = createNavigatorFactory(AppTabNavigator)();
 const rootStackNavigationRef = createNavigationContainerRef<RootStackParamList>();
 const AUTO_IMPORT_TOAST_EDGE_GAP = 16;
 const AUTO_IMPORT_TOAST_TAB_OFFSET = 68;
+const AUTH_LOGIN_SHEET_ALLOWED_DETENTS = resolveAuthLoginSheetAllowedDetents(Platform.OS, Platform.Version);
+
+export function resolveAuthLoginSheetAllowedDetents(
+  platformOS: string,
+  platformVersion: number | string,
+): NonNullable<NativeStackNavigationOptions['sheetAllowedDetents']> {
+  const majorVersion = Math.trunc(Number(platformVersion));
+
+  return platformOS === 'ios' && Number.isFinite(majorVersion) && majorVersion < 16 ? [0.5] : 'fitToContents';
+}
 
 export default function RootNavigation(): React.JSX.Element {
   const { t } = useTranslation();
@@ -475,7 +490,7 @@ export default function RootNavigation(): React.JSX.Element {
               name="authLogin"
               options={{
                 presentation: 'formSheet',
-                sheetAllowedDetents: 'fitToContents',
+                sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS,
                 sheetGrabberVisible: true,
                 sheetCornerRadius: 28,
               }}>

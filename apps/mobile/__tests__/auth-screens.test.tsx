@@ -184,7 +184,7 @@ describe('LoginScreen', () => {
     expect(fixture.signIn).toHaveBeenCalledTimes(2);
   });
 
-  test('orders the recent provider first and keeps its visible fixed-slot label', async () => {
+  test('orders the recent provider first and keeps its visible label outside the branded button', async () => {
     createAuthFixture({ recentProvider: 'apple' });
     const renderer = await render(<LoginScreen />);
 
@@ -192,9 +192,9 @@ describe('LoginScreen', () => {
     const appleButton = findProviderButton(renderer.root, 'apple');
 
     expect(providerRows.map(node => node.props.provider)).toEqual(['apple', 'google']);
-    expect(renderer.root.findByProps({ testID: 'auth-login-recent-apple' }).props.children).toBe('최근');
+    expect(renderer.root.findByProps({ testID: 'auth-login-recent-provider' }).props.children).toBe('최근 사용');
     expect(appleButton.props.accessibilityLabel).toBe('Apple로 계속하기, 최근 사용');
-    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-google' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-apple' })).toHaveLength(0);
   });
 
   test('applies only the bottom safe area inside the navigation form sheet', async () => {
@@ -209,7 +209,9 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
 
     expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'auth-login-brand-mark' })).toBeTruthy();
+    const brandMark = renderer.root.findByProps({ testID: 'auth-login-brand-mark' });
+    expect(brandMark.props.accessibilityElementsHidden).toBe(true);
+    expect(brandMark.props.importantForAccessibility).toBe('no-hide-descendants');
     expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
     expect(JSON.stringify(renderer.toJSON())).not.toContain('기존 기록은 이 기기에 유지됩니다.');
   });

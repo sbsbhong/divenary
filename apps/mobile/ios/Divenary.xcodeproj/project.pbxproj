@@ -13,6 +13,7 @@
 		0DA3A8DE547E6EA68A8F60D0 /* SessionListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 956EB9D331534828E0706E5C /* SessionListView.swift */; };
 		11B4EA76620FF25E2CEF98CF /* DepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		13B07FC01A68108700A75B9A /* GoogleSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FC11A68108700A75B9A /* GoogleSans-Medium.ttf */; };
 		3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F26525BE2C876EE578F3C9A /* WatchSyncEnvelope.swift */; };
 		55EABF84D85DF352419E66E8 /* DepthSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DE78178255421044754FD2F /* DepthSample.swift */; };
 		646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE6A545437839029CC97811 /* HomeView.swift */; };
@@ -95,6 +96,7 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Divenary/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Divenary/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = Divenary/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		13B07FC11A68108700A75B9A /* GoogleSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = "GoogleSans-Medium.ttf"; path = "../src/assets/fonts/GoogleSans-Medium.ttf"; sourceTree = "<group>"; };
 		1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDepthSensorProvider.swift; sourceTree = "<group>"; };
 		1E2C63175E91C4718DBE3923 /* RecordingView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingView.swift; sourceTree = "<group>"; };
 		2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveFormatters.swift; sourceTree = "<group>"; };
@@ -191,6 +193,7 @@
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				13B07FC11A68108700A75B9A /* GoogleSans-Medium.ttf */,
 			);
 			name = Divenary;
 			sourceTree = "<group>";
@@ -467,6 +470,7 @@
 			files = (
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
+				13B07FC01A68108700A75B9A /* GoogleSans-Medium.ttf in Resources */,
 				EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
