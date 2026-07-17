@@ -1,50 +1,3 @@
-jest.mock('@react-native-google-signin/google-signin', () => {
-  const ReactModule = require('react') as typeof import('react');
-
-  const GoogleSigninButton = (props: Record<string, unknown>) => ReactModule.createElement('mock-google-signin-button', props);
-
-  Object.assign(GoogleSigninButton, {
-    Color: { Dark: 'dark', Light: 'light' },
-    Size: { Icon: 0, Standard: 1, Wide: 2 },
-  });
-
-  return {
-    GoogleSignin: {
-      configure: jest.fn(),
-      signIn: jest.fn(),
-    },
-    GoogleSigninButton,
-    isCancelledResponse: (response: { type?: string }) => response.type === 'cancelled',
-    isSuccessResponse: (response: { type?: string }) => response.type === 'success',
-  };
-});
-
-jest.mock('@invertase/react-native-apple-authentication', () => {
-  const ReactModule = require('react') as typeof import('react');
-
-  const AppleButton = (props: Record<string, unknown>) => ReactModule.createElement('mock-apple-button', props);
-
-  Object.assign(AppleButton, {
-    Style: { BLACK: 'Black', DEFAULT: 'Default', WHITE: 'White', WHITE_OUTLINE: 'WhiteOutline' },
-    Type: { CONTINUE: 'Continue', DEFAULT: 'Default', SIGN_IN: 'SignIn' },
-  });
-
-  const appleAuth = {
-    isSupported: true,
-    performRequest: jest.fn(),
-    Error: { CANCELED: '1001' },
-    Operation: { LOGIN: 1 },
-    Scope: { EMAIL: 0, FULL_NAME: 1 },
-  };
-
-  return {
-    __esModule: true,
-    AppleButton,
-    appleAuth,
-    default: appleAuth,
-  };
-});
-
 let mockAuth: AuthContextValue;
 
 jest.mock('../src/states/auth', () => ({
@@ -57,8 +10,10 @@ import { Linking, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import i18n from '../src/i18n';
+import { ScrollView } from '../src/components/ui/scroll-view';
 import LoginScreen from '../src/screens/auth/login-screen';
 import OnboardingScreen from '../src/screens/auth/onboarding-screen';
+import { SocialLoginButton } from '../src/screens/auth/social-login-button';
 import type { SocialProvider } from '../src/auth/native-social-auth';
 import type { AuthContextValue, AuthState } from '../src/states/auth';
 
@@ -151,10 +106,8 @@ async function flush() {
   }
 }
 
-function findNativeProviderButton(root: ReactTestRenderer.ReactTestInstance, provider: SocialProvider) {
-  const hostType = provider === 'google' ? 'mock-google-signin-button' : 'mock-apple-button';
-
-  return root.findAll(node => (node.type as unknown) === hostType)[0];
+function findProviderButton(root: ReactTestRenderer.ReactTestInstance, provider: SocialProvider) {
+  return root.findAllByProps({ testID: `auth-login-${provider}` })[0];
 }
 
 function expectAtLeast44Points(node: ReactTestRenderer.ReactTestInstance) {
@@ -202,16 +155,16 @@ describe('LoginScreen', () => {
     createAuthFixture({ availableProviders: ['google'] });
     const renderer = await render(<LoginScreen />);
 
-    expect(findNativeProviderButton(renderer.root, 'google')).toBeTruthy();
-    expect(findNativeProviderButton(renderer.root, 'apple')).toBeUndefined();
+    expect(findProviderButton(renderer.root, 'google')).toBeTruthy();
+    expect(findProviderButton(renderer.root, 'apple')).toBeUndefined();
 
     createAuthFixture({ isConfigured: false, availableProviders: [] });
     await ReactTestRenderer.act(async () => {
       renderer.update(<LoginScreen />);
     });
 
-    expect(findNativeProviderButton(renderer.root, 'google')).toBeUndefined();
-    expect(findNativeProviderButton(renderer.root, 'apple')).toBeUndefined();
+    expect(findProviderButton(renderer.root, 'google')).toBeUndefined();
+    expect(findProviderButton(renderer.root, 'apple')).toBeUndefined();
     expect(renderer.root.findByProps({ testID: 'auth-login-screen' })).toBeTruthy();
   });
 
@@ -220,10 +173,10 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
 
     await ReactTestRenderer.act(async () => {
-      await findNativeProviderButton(renderer.root, 'google').props.onPress();
+      await findProviderButton(renderer.root, 'google').props.onPress();
     });
     await ReactTestRenderer.act(async () => {
-      await findNativeProviderButton(renderer.root, 'apple').props.onPress();
+      await findProviderButton(renderer.root, 'apple').props.onPress();
     });
 
     expect(fixture.signIn).toHaveBeenNthCalledWith(1, 'google');
@@ -231,17 +184,16 @@ describe('LoginScreen', () => {
     expect(fixture.signIn).toHaveBeenCalledTimes(2);
   });
 
-  test('renders the recent-provider label without exposing account data', async () => {
+  test('orders the recent provider first and keeps its visible fixed-slot label', async () => {
     createAuthFixture({ recentProvider: 'apple' });
     const renderer = await render(<LoginScreen />);
 
-    const recentMarker = renderer.root.findByProps({ testID: 'auth-login-recent-apple' });
-    const appleButton = findNativeProviderButton(renderer.root, 'apple');
-    expect(recentMarker.props.className).toContain('absolute');
-    expect(recentMarker.props.pointerEvents).toBe('none');
-    expect(recentMarker.props.accessible).toBe(false);
+    const providerRows = renderer.root.findAllByType(SocialLoginButton);
+    const appleButton = findProviderButton(renderer.root, 'apple');
+
+    expect(providerRows.map(node => node.props.provider)).toEqual(['apple', 'google']);
+    expect(renderer.root.findByProps({ testID: 'auth-login-recent-apple' }).props.children).toBe('최근');
     expect(appleButton.props.accessibilityLabel).toBe('Apple로 계속하기, 최근 사용');
-    expect(recentMarker.props.children).toBeUndefined();
     expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-google' })).toHaveLength(0);
   });
 
@@ -252,17 +204,14 @@ describe('LoginScreen', () => {
     expect(renderer.root.findByProps({ testID: 'auth-login-safe-area' }).props.edges).toEqual(['bottom']);
   });
 
-  test('uses one light visual grammar for both provider controls', async () => {
+  test('renders a compact non-scrolling sheet body with stable status space', async () => {
     createAuthFixture();
     const renderer = await render(<LoginScreen />);
-    const google = findNativeProviderButton(renderer.root, 'google');
-    const apple = findNativeProviderButton(renderer.root, 'apple');
 
-    expect(StyleSheet.flatten(google.props.style)).toMatchObject({ height: 52, width: '100%' });
-    expect(StyleSheet.flatten(apple.props.style)).toMatchObject({ height: 52, width: '100%' });
-    expect(google.props.color).toBe('light');
-    expect(apple.props.buttonStyle).toBe('White');
-    expect(apple.props.cornerRadius).toBe(8);
+    expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'auth-login-brand-mark' })).toBeTruthy();
+    expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('기존 기록은 이 기기에 유지됩니다.');
   });
 
   test('keeps cancellation neutral and leaves the login screen usable', async () => {
@@ -272,12 +221,12 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
 
     await ReactTestRenderer.act(async () => {
-      await findNativeProviderButton(renderer.root, 'google').props.onPress();
+      await findProviderButton(renderer.root, 'google').props.onPress();
     });
 
     expect(fixture.signIn).toHaveBeenCalledWith('google');
     expect(renderer.root.findAllByProps({ testID: 'auth-login-error' })).toHaveLength(0);
-    expect(findNativeProviderButton(renderer.root, 'google').props.disabled).toBe(false);
+    expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(false);
   });
 
   test('locks both actions while signing in and replaces provider errors with retry copy', async () => {
@@ -288,13 +237,15 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
 
     await ReactTestRenderer.act(async () => {
-      findNativeProviderButton(renderer.root, 'google').props.onPress();
+      findProviderButton(renderer.root, 'google').props.onPress();
       await Promise.resolve();
     });
 
     expect(fixture.signIn).toHaveBeenCalledTimes(1);
-    expect(findNativeProviderButton(renderer.root, 'google').props.disabled).toBe(true);
-    expect(findNativeProviderButton(renderer.root, 'apple').props.disabled).toBe(true);
+    expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(true);
+    expect(findProviderButton(renderer.root, 'apple').props.disabled).toBe(true);
+    expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' })).toBeTruthy();
+    expect(renderer.root.findByProps({ testID: 'auth-login-status-row' }).props.className).toContain('min-h-11');
 
     deferred.reject(new Error('raw-provider-payload@example.com'));
     await flush();
@@ -302,15 +253,15 @@ describe('LoginScreen', () => {
     const rendered = JSON.stringify(renderer.toJSON());
     expect(rendered).toContain('다시 시도');
     expect(rendered).not.toContain('raw-provider-payload@example.com');
-    expect(findNativeProviderButton(renderer.root, 'google').props.disabled).toBe(false);
+    expect(findProviderButton(renderer.root, 'google').props.disabled).toBe(false);
   });
 
-  test('gives both native provider buttons accessible 44-point targets', async () => {
+  test('gives both provider buttons accessible 44-point targets', async () => {
     createAuthFixture();
     const renderer = await render(<LoginScreen />);
 
-    expectAccessibleControl(findNativeProviderButton(renderer.root, 'google'), 'button');
-    expectAccessibleControl(findNativeProviderButton(renderer.root, 'apple'), 'button');
+    expectAccessibleControl(findProviderButton(renderer.root, 'google'), 'button');
+    expectAccessibleControl(findProviderButton(renderer.root, 'apple'), 'button');
   });
 });
 

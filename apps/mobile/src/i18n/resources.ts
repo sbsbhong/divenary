@@ -63,9 +63,12 @@ const resources = {
       },
       auth: {
         login: {
-          title: '로그인',
-          guestBoundaryNote: '기존 기록은 이 기기에 유지됩니다.',
+          title: 'Divenary 로그인',
+          google: 'Google로 계속',
+          apple: 'Apple로 계속',
           recent: '최근 사용',
+          recentShort: '최근',
+          signingIn: '로그인 중',
           unavailableTitle: '로그인을 사용할 수 없습니다',
           error: '로그인하지 못했습니다. 다시 시도하세요.',
           close: '닫기',
@@ -461,9 +464,12 @@ const resources = {
       },
       auth: {
         login: {
-          title: 'Log in',
-          guestBoundaryNote: 'Existing records stay on this device.',
+          title: 'Log in to Divenary',
+          google: 'Continue with Google',
+          apple: 'Continue with Apple',
           recent: 'Recently used',
+          recentShort: 'Recent',
+          signingIn: 'Signing in',
           unavailableTitle: 'Sign-in is unavailable',
           error: 'Could not sign in. Try again.',
           close: 'Close',
