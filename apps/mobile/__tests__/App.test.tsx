@@ -331,7 +331,8 @@ describe('App navigation', () => {
     expect(navigationSource).toContain('authOnboarding: undefined');
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authLogin"/);
     expect(navigationSource).toContain("presentation: 'formSheet'");
-    expect(navigationSource).toContain('sheetAllowedDetents: [0.62, 0.9]');
+    expect(navigationSource).toContain("sheetAllowedDetents: 'fitToContents'");
+    expect(navigationSource).not.toContain('sheetAllowedDetents: [0.62, 0.9]');
     expect(navigationSource).toContain('sheetGrabberVisible: true');
     expect(navigationSource).toContain('sheetCornerRadius: 28');
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authOnboarding"/);
@@ -541,8 +542,10 @@ describe('App navigation', () => {
       .map(node => node.props.className)
       .filter((className): className is string => typeof className === 'string');
 
-    expect(loginActionClassNames.some(className => className.includes('min-h-12'))).toBe(true);
-    expect(loginActionClassNames.every(className => !className.includes('min-h-10'))).toBe(true);
+    expect(loginActionClassNames.some(className => className.includes('min-h-11'))).toBe(true);
+    expect(loginActionClassNames.some(className => className.includes('min-w-[52px]'))).toBe(true);
+    expect(loginActionClassNames.some(className => className.includes('bg-transparent'))).toBe(true);
+    expect(root.findAllByProps({ testID: 'home-login-action-icon' })).toHaveLength(0);
 
     await ReactTestRenderer.act(async () => {
       loginAction.props.onPress();

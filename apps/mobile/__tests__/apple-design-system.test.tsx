@@ -137,4 +137,11 @@ describe('Apple design system mapping', () => {
     expect(statusPillStyles).not.toContain('bg-secondary text-secondary-foreground');
     expect(statusPillStyles).toContain('bg-primary/10');
   });
+
+  test('uses a lightweight text Pressable for the Home login entry', () => {
+    const source = readSource('src', 'screens', 'home', 'screen.tsx');
+
+    expect(source).toMatch(/<Pressable[\s\S]*?testID="home-login-action"/);
+    expect(source).not.toMatch(/<InstrumentButton[\s\S]{0,200}?testID="home-login-action"/);
+  });
 });

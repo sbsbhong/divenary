@@ -17,6 +17,7 @@ import {
   WavesIcon,
 } from '../../components/ui/icon';
 import { RefreshControl } from '../../components/ui/refresh-control';
+import { Pressable } from '../../components/ui/pressable';
 import { ScrollView } from '../../components/ui/scroll-view';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
 import { Text } from '../../components/ui/text';
@@ -88,13 +89,14 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           <HStack className="items-start justify-between">
             <Text className="text-4xl font-semibold leading-10 text-foreground">Divenary</Text>
             {props.showLogin === true && props.onOpenLogin !== undefined ? (
-              <InstrumentButton
+              <Pressable
                 testID="home-login-action"
-                label={t('home.login')}
-                className="px-4 py-2"
-                onPress={props.onOpenLogin}
-                variant="primary"
-              />
+                accessibilityLabel={t('home.login')}
+                accessibilityRole="button"
+                className="min-h-11 min-w-[52px] items-center justify-center bg-transparent px-1 active:opacity-60"
+                onPress={props.onOpenLogin}>
+                <Text className="text-base font-semibold text-primary">{t('home.login')}</Text>
+              </Pressable>
             ) : null}
           </HStack>
           <HStack space="xs" className="items-baseline">

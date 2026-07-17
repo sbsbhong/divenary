@@ -475,7 +475,7 @@ export default function RootNavigation(): React.JSX.Element {
               name="authLogin"
               options={{
                 presentation: 'formSheet',
-                sheetAllowedDetents: [0.62, 0.9],
+                sheetAllowedDetents: 'fitToContents',
                 sheetGrabberVisible: true,
                 sheetCornerRadius: 28,
               }}>
