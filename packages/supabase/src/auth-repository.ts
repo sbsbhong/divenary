@@ -17,6 +17,8 @@ export type SocialIdTokenInput =
   | {provider: 'google'; token: string}
   | {provider: 'apple'; token: string; nonce: string};
 
+export type PasswordSignInInput = {email: string; password: string};
+
 export type StoredSessionEvidence = {
   session: Session;
   userId: string;
@@ -45,6 +47,7 @@ export class AuthRepositoryError extends Error {
 
 export interface AuthRepository {
   signInWithIdToken(input: SocialIdTokenInput): Promise<Session>;
+  signInWithPassword(input: PasswordSignInInput): Promise<Session>;
   getStoredSessionEvidence(): Promise<StoredSessionEvidence | undefined>;
   verifyClaims(
     accessToken: string,
@@ -148,6 +151,24 @@ export function createAuthRepository(
 
         if (result.error !== null) {
           throw repositoryError(result.error, 'sign-in');
+        }
+
+        if (result.data.session === null) {
+          throw new AuthRepositoryError('server');
+        }
+
+        return result.data.session;
+      } catch (error) {
+        throw repositoryError(error, 'sign-in');
+      }
+    },
+
+    async signInWithPassword(input) {
+      try {
+        const result = await client.auth.signInWithPassword(input);
+
+        if (result.error !== null) {
+          throw repositoryError(result.error, 'sign-in', result.error.status);
         }
 
         if (result.data.session === null) {

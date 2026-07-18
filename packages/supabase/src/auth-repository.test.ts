@@ -68,6 +68,9 @@ type MockOptions = {
   sessionError?: unknown;
   signInSession?: Session | null;
   signInError?: unknown;
+  passwordSignInSession?: Session | null;
+  passwordSignInError?: unknown;
+  passwordSignInThrows?: unknown;
   claimsData?: {claims: Record<string, unknown>} | null;
   claimsError?: unknown;
   userId?: string | null;
@@ -84,6 +87,7 @@ type MockOptions = {
 function createClientMock(options: MockOptions = {}) {
   const calls = {
     signIn: [] as unknown[],
+    signInWithPassword: [] as unknown[],
     getSession: 0,
     getClaims: [] as string[],
     getUser: [] as string[],
@@ -107,6 +111,22 @@ function createClientMock(options: MockOptions = {}) {
             user: null,
           },
           error: options.signInError ?? null,
+        };
+      },
+      async signInWithPassword(input: unknown) {
+        calls.signInWithPassword.push(input);
+        if (options.passwordSignInThrows !== undefined) {
+          throw options.passwordSignInThrows;
+        }
+
+        return {
+          data: {
+            session: options.passwordSignInSession === undefined
+              ? createSession()
+              : options.passwordSignInSession,
+            user: null,
+          },
+          error: options.passwordSignInError ?? null,
         };
       },
       async getSession() {
@@ -294,6 +314,91 @@ describe('AuthRepository', () => {
         token: 'rejected-provider-token',
       }),
       'server',
+    );
+  });
+
+  test('exchanges an email and password and returns the session', async () => {
+    const {client, calls} = createClientMock();
+    const repository = createAuthRepository(client);
+
+    const session = await repository.signInWithPassword({
+      email: 'diver@example.invalid',
+      password: 'local-password',
+    });
+
+    assert.equal(session.user.id, USER_ID);
+    assert.deepEqual(calls.signInWithPassword, [{
+      email: 'diver@example.invalid',
+      password: 'local-password',
+    }]);
+  });
+
+  test('maps a missing password session to a generic server error', async () => {
+    const {client} = createClientMock({passwordSignInSession: null});
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assert.ok(error instanceof AuthRepositoryError);
+        assert.equal(error.kind, 'server');
+        assert.equal(error.message, 'Authentication operation failed');
+        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        return true;
+      },
+    );
+  });
+
+  test('maps a password Auth error to a generic server error without credentials', async () => {
+    const {client} = createClientMock({
+      passwordSignInSession: null,
+      passwordSignInError: new AuthApiError(
+        'Invalid credentials for diver@example.invalid with local-password',
+        401,
+        'invalid_credentials',
+      ),
+    });
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assert.ok(error instanceof AuthRepositoryError);
+        assert.equal(error.kind, 'server');
+        assert.equal(error.message, 'Authentication operation failed');
+        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        return true;
+      },
+    );
+  });
+
+  test('maps a password transport failure to a generic network error without credentials', async () => {
+    const {client} = createClientMock({
+      passwordSignInThrows: new AuthRetryableFetchError(
+        'request for diver@example.invalid with local-password failed',
+        0,
+      ),
+    });
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assert.ok(error instanceof AuthRepositoryError);
+        assert.equal(error.kind, 'network');
+        assert.equal(error.message, 'Authentication operation failed');
+        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        return true;
+      },
     );
   });
 
