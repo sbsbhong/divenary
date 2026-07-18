@@ -32,7 +32,7 @@ final class DiveActionButtonIntentTests: XCTestCase {
         XCTAssertTrue(coordinator.isRecording)
     }
 
-    func testStartIntentInvokesActionButtonSourceOnceAndReturnsEndAction() async throws {
+    func testStartIntentRoutesToActionButtonBridgeOnce() async throws {
         let coordinator = FakeRealDiveActionController()
         let intent = DivenaryStartDiveIntent(
             bridge: DiveActionButtonBridge(controller: coordinator)
@@ -41,6 +41,66 @@ final class DiveActionButtonIntentTests: XCTestCase {
         _ = try await intent.perform()
 
         XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
+    }
+
+    func testEndIntentRoutesAcceptedEndRequestToBridgeOnce() async throws {
+        let coordinator = FakeRealDiveActionController(acceptsEndRequest: true)
+        let intent = DivenaryEndDiveIntent(
+            bridge: DiveActionButtonBridge(controller: coordinator)
+        )
+
+        _ = try await intent.perform()
+
+        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
+        XCTAssertFalse(coordinator.isRecording)
+    }
+
+    func testEndIntentRoutesRejectedEndRequestToBridgeOnceAndKeepsRecording() async throws {
+        let coordinator = FakeRealDiveActionController(acceptsEndRequest: false)
+        let intent = DivenaryEndDiveIntent(
+            bridge: DiveActionButtonBridge(controller: coordinator)
+        )
+
+        _ = try await intent.perform()
+
+        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
+        XCTAssertTrue(coordinator.isRecording)
+    }
+
+    func testDonorInvokesInjectedDonationOperationOnce() async {
+        let invoked = expectation(description: "donation operation invoked")
+        let recorder = DonationOperationRecorder()
+        let donor = DiveActionButtonDonor {
+            recorder.recordInvocation()
+            invoked.fulfill()
+        }
+
+        donor.donateEndAction()
+
+        await fulfillment(of: [invoked], timeout: 1)
+        XCTAssertEqual(recorder.callCount, 1)
+    }
+
+    func testDonorCatchesInjectedDonationFailureWithoutEscaping() async {
+        let invoked = expectation(description: "donation operation invoked")
+        let failureObserved = expectation(description: "donation failure observed")
+        let recorder = DonationOperationRecorder()
+        let donor = DiveActionButtonDonor(
+            donationOperation: {
+                recorder.recordInvocation()
+                invoked.fulfill()
+                throw TestDonationError.expected
+            },
+            onDonationFailure: { error in
+                XCTAssertEqual(error as? TestDonationError, .expected)
+                failureObserved.fulfill()
+            }
+        )
+
+        donor.donateEndAction()
+
+        await fulfillment(of: [invoked, failureObserved], timeout: 1)
+        XCTAssertEqual(recorder.callCount, 1)
     }
 }
 
@@ -68,4 +128,17 @@ private final class FakeRealDiveActionController: RealDiveActionControlling {
         }
         return acceptsEndRequest
     }
+}
+
+@MainActor
+private final class DonationOperationRecorder {
+    private(set) var callCount = 0
+
+    func recordInvocation() {
+        callCount += 1
+    }
+}
+
+private enum TestDonationError: Error, Equatable {
+    case expected
 }

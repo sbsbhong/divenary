@@ -28,19 +28,35 @@ final class DiveActionButtonBridge: Sendable {
 
 @MainActor
 final class DiveActionButtonDonor: DiveActionButtonDonating {
+    typealias DonationOperation = @MainActor () async throws -> Void
+    typealias DonationFailureObserver = @MainActor (Error) -> Void
+
     private let logger = Logger(
         subsystem: "com.divenary.app.watchkitapp",
         category: "DiveActionButton"
     )
+    private let donationOperation: DonationOperation
+    private let onDonationFailure: DonationFailureObserver
+
+    init(
+        donationOperation: @escaping DonationOperation = {
+            _ = try await DivenaryStartDiveIntent().donate(
+                result: .result(actionButtonIntent: DivenaryEndDiveIntent())
+            )
+        },
+        onDonationFailure: @escaping DonationFailureObserver = { _ in }
+    ) {
+        self.donationOperation = donationOperation
+        self.onDonationFailure = onDonationFailure
+    }
 
     func donateEndAction() {
-        Task {
+        Task { @MainActor in
             do {
-                _ = try await DivenaryStartDiveIntent().donate(
-                    result: .result(actionButtonIntent: DivenaryEndDiveIntent())
-                )
+                try await donationOperation()
             } catch {
                 logger.error("Action Button donation failed: \(error.localizedDescription)")
+                onDonationFailure(error)
             }
         }
     }
