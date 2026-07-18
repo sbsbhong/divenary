@@ -1,10 +1,18 @@
 import React from 'react';
-import { Image as NativeImage, StyleSheet } from 'react-native';
+import { Image as NativeImage, Platform, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import { SocialLoginButton } from '../src/screens/auth/social-login-button';
 
 const mountedRenderers: ReactTestRenderer.ReactTestRenderer[] = [];
+const originalPlatformOS = Object.getOwnPropertyDescriptor(Platform, 'OS');
+
+function setPlatformOS(platformOS: 'ios' | 'android') {
+  Object.defineProperty(Platform, 'OS', {
+    configurable: true,
+    value: platformOS,
+  });
+}
 
 async function render(element: React.ReactElement) {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
@@ -24,6 +32,12 @@ describe('SocialLoginButton', () => {
         renderer.unmount();
       }
     });
+
+    if (originalPlatformOS) {
+      Object.defineProperty(Platform, 'OS', originalPlatformOS);
+    } else {
+      Reflect.deleteProperty(Platform, 'OS');
+    }
   });
 
   test.each(['google', 'apple'] as const)('renders a unified 44-point %s row', async provider => {
@@ -135,5 +149,33 @@ describe('SocialLoginButton', () => {
     });
 
     expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' }).props['aria-label']).toBe('로그인 중');
+  });
+
+  test.each([
+    ['ios', 52],
+    ['android', 44],
+  ] as const)('uses %s %d-point icon and status slots', async (platformOS, expectedSlotWidth) => {
+    setPlatformOS(platformOS);
+
+    for (const provider of ['google', 'apple'] as const) {
+      const renderer = await render(
+        <SocialLoginButton
+          provider={provider}
+          label={`Continue with ${provider}`}
+          accessibilityLabel={`Continue with ${provider}`}
+          busyLabel="Signing in"
+          busy={false}
+          disabled={false}
+          onPress={jest.fn()}
+        />,
+      );
+
+      expect(StyleSheet.flatten(renderer.root.findByProps({ testID: `auth-login-${provider}-icon-slot` }).props.style)).toMatchObject({
+        width: expectedSlotWidth,
+      });
+      expect(StyleSheet.flatten(renderer.root.findByProps({ testID: `auth-login-${provider}-status-slot` }).props.style)).toMatchObject({
+        width: expectedSlotWidth,
+      });
+    }
   });
 });

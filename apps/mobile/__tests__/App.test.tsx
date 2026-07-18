@@ -27,6 +27,29 @@ type MockAuthState =
   | { status: 'authenticated'; userId: string }
   | { status: 'authenticatedOffline'; userId: string };
 
+const nonGuestHomeStateFixtures: ReadonlyArray<Exclude<MockAuthState, { status: 'guest' }>> = [
+  { status: 'authenticated', userId: 'authenticated-member-user' },
+  { status: 'authenticatedOffline', userId: 'offline-member-user' },
+  {
+    status: 'pendingOnboarding',
+    userId: 'pending-member-user',
+    documents: [
+      {
+        kind: 'terms',
+        version: '2026-07-13',
+        effectiveAt: '2026-07-13T00:00:00Z',
+        documentUrl: 'https://legal.example.com/terms/2026-07-13',
+      },
+      {
+        kind: 'privacy',
+        version: '2026-07-13',
+        effectiveAt: '2026-07-13T00:00:00Z',
+        documentUrl: 'https://legal.example.com/privacy/2026-07-13',
+      },
+    ],
+  },
+];
+
 let mockAuthState: MockAuthState = { status: 'guest' };
 let mockAuthConfigured = false;
 let mockAuthProviders: Array<'google' | 'apple'> = [];
@@ -564,8 +587,8 @@ describe('App navigation', () => {
     expect(findRenderedNodesByTestID(renderer!.toJSON(), 'auth-login-screen')).toHaveLength(1);
   });
 
-  test('hides the Home login action for authenticated membership', async () => {
-    mockAuthState = { status: 'authenticated', userId: 'member-user' };
+  test.each(nonGuestHomeStateFixtures)('hides the Home login action for $status membership', async authState => {
+    mockAuthState = authState;
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
