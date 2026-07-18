@@ -69,6 +69,7 @@ type MockOptions = {
   signInSession?: Session | null;
   signInError?: unknown;
   passwordSignInSession?: Session | null;
+  passwordSignInSessionUndefined?: boolean;
   passwordSignInError?: unknown;
   passwordSignInThrows?: unknown;
   claimsData?: {claims: Record<string, unknown>} | null;
@@ -121,7 +122,9 @@ function createClientMock(options: MockOptions = {}) {
 
         return {
           data: {
-            session: options.passwordSignInSession === undefined
+            session: options.passwordSignInSessionUndefined
+              ? undefined
+              : options.passwordSignInSession === undefined
               ? createSession()
               : options.passwordSignInSession,
             user: null,
@@ -372,9 +375,33 @@ describe('AuthRepository', () => {
         assert.ok(error instanceof AuthRepositoryError);
         assert.equal(error.kind, 'server');
         assert.equal(error.message, 'Authentication operation failed');
-        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        assert.deepEqual({
+          name: error.name,
+          message: error.message,
+          kind: error.kind,
+          cause: error.cause,
+        }, {
+          name: 'AuthRepositoryError',
+          message: 'Authentication operation failed',
+          kind: 'server',
+          cause: undefined,
+        });
+        assert.doesNotMatch(JSON.stringify(error), /diver@example\.invalid|local-password/);
         return true;
       },
+    );
+  });
+
+  test('maps an undefined password session to a generic server error', async () => {
+    const {client} = createClientMock({passwordSignInSessionUndefined: true});
+    const repository = createAuthRepository(client);
+
+    await expectRepositoryError(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      'server',
     );
   });
 
@@ -394,9 +421,18 @@ describe('AuthRepository', () => {
       }),
       error => {
         assert.ok(error instanceof AuthRepositoryError);
-        assert.equal(error.kind, 'network');
-        assert.equal(error.message, 'Authentication operation failed');
-        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        assert.deepEqual({
+          name: error.name,
+          message: error.message,
+          kind: error.kind,
+          cause: error.cause,
+        }, {
+          name: 'AuthRepositoryError',
+          message: 'Authentication operation failed',
+          kind: 'network',
+          cause: undefined,
+        });
+        assert.doesNotMatch(JSON.stringify(error), /diver@example\.invalid|local-password/);
         return true;
       },
     );

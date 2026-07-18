@@ -141,6 +141,14 @@ function invalidSession(cause?: unknown): AuthRepositoryError {
   return new AuthRepositoryError('invalid-session', {cause});
 }
 
+function publicPasswordSignInError(
+  error: unknown,
+  status?: number,
+): AuthRepositoryError {
+  const mapped = repositoryError(error, 'sign-in', status);
+  return new AuthRepositoryError(mapped.kind);
+}
+
 export function createAuthRepository(
   client: SupabaseClient<Database>,
 ): AuthRepository {
@@ -171,13 +179,13 @@ export function createAuthRepository(
           throw repositoryError(result.error, 'sign-in', result.error.status);
         }
 
-        if (result.data.session === null) {
+        if (!result.data.session) {
           throw new AuthRepositoryError('server');
         }
 
         return result.data.session;
       } catch (error) {
-        throw repositoryError(error, 'sign-in');
+        throw publicPasswordSignInError(error);
       }
     },
 
