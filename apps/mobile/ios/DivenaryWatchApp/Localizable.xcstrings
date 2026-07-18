@@ -897,6 +897,22 @@
         }
       }
     },
+    "End Divenary Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Divenary Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary 다이빙 종료"
+          }
+        }
+      }
+    },
     "End to save session." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1288,6 +1304,22 @@
         }
       }
     },
+    "No depth samples captured" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No depth samples captured"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 샘플이 기록되지 않았습니다"
+          }
+        }
+      }
+    },
     "No logs" : {
       "localizations" : {
         "en" : {
@@ -1416,18 +1448,18 @@
         }
       }
     },
-    "Outside supported depth" : {
+    "Outside sensor-authorized depth" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Outside supported depth"
+            "value" : "Outside sensor-authorized depth"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "지원 수심 범위 밖"
+            "value" : "센서 허가 수심 범위 밖"
           }
         }
       }
@@ -2166,6 +2198,22 @@
         }
       }
     },
+    "Start Divenary Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Divenary Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary 다이빙 시작"
+          }
+        }
+      }
+    },
     "Start Planned Dive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2600,6 +2648,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "타이머 일시정지"
+          }
+        }
+      }
+    },
+    "To end the dive immediately, press and hold the Digital Crown while out of the water." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To end the dive immediately, press and hold the Digital Crown while out of the water."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "즉시 다이빙을 종료하려면 물 밖에서 Digital Crown을 길게 누르세요."
           }
         }
       }

@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 enum WatchRecordingMode: Equatable {
@@ -15,23 +14,21 @@ enum WatchRecordingMode: Equatable {
         }
     }
 
-    @MainActor
-    func sensorProvider() -> DepthSensorProvider {
+    var controlPolicy: RecordingControlPolicy {
         switch self {
         case .real:
-            return RealDepthSensorProvider()
+            return .real
         case .demo, .debugTest:
-            return DemoDepthSensorProvider()
+            return .simulated
         }
     }
 
-    var usesCrownDepthControl: Bool {
-        switch self {
-        case .real:
-            return false
-        case .demo, .debugTest:
-            return true
+    @MainActor
+    func makeSimulatedSensorProvider() -> DepthSensorProvider? {
+        guard self != .real else {
+            return nil
         }
+        return DemoDepthSensorProvider()
     }
 
     var markerTitle: String? {
@@ -53,6 +50,38 @@ enum WatchRecordingMode: Equatable {
         var taggedPlan = plan
         taggedPlan.userTags.append(DiveSessionRecord.debugTestTag)
         return taggedPlan
+    }
+}
+
+enum RecordingControlPolicy: Equatable {
+    case real
+    case simulated
+
+    var usesCrownDepthControl: Bool {
+        self == .simulated
+    }
+
+    var exposesTouchEndControl: Bool {
+        self == .simulated
+    }
+
+    var usesSurfaceEndDiveGate: Bool {
+        self == .simulated
+    }
+}
+
+enum RecordingControlRowLayout {
+    static let leadingReservedWidth = DepthGaugeRail.layoutWidth + 9
+    static let minimumHeight: CGFloat = 30
+    static let maximumHeight: CGFloat = 36
+}
+
+enum RecordingDepthPolicy {
+    static func sensorDisplayLimit(maximumDepthMeters: Double?) -> Double {
+        min(
+            maximumDepthMeters ?? DiveDepthSupport.supportedWatchDepthLimitMeters,
+            DiveDepthSupport.supportedWatchDepthLimitMeters
+        )
     }
 }
 
@@ -90,142 +119,73 @@ struct SurfaceEndDiveGate {
     }
 }
 
-struct RecordingView: View {
-    @ObservedObject var store: DiveSessionStore
+struct RecordingInstrumentView: View {
+    @ObservedObject var recorder: DiveSessionRecorder
     let plan: PreDivePlan
-    let recordingMode: WatchRecordingMode
-    @StateObject private var recorder: DiveSessionRecorder
-    @State private var completedSession: DiveSessionRecord?
-    @State private var controlledDepthMeters: Double = 0
-    @State private var surfaceEndGate = SurfaceEndDiveGate()
-    @FocusState private var crownDepthControlFocused: Bool
-    @Environment(\.dismiss) private var dismiss
-    private let surfaceGateTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    init(store: DiveSessionStore, plan: PreDivePlan, recordingMode: WatchRecordingMode = .real) {
-        self.store = store
-        self.plan = plan
-        self.recordingMode = recordingMode
-        let sensorProvider = recordingMode.sensorProvider()
-        _recorder = StateObject(
-            wrappedValue: DiveSessionRecorder(
-                sensorProvider: sensorProvider,
-                captureMode: recordingMode.captureMode
-            )
-        )
-    }
+    let controlPolicy: RecordingControlPolicy
+    let maximumDepthMeters: Double?
+    let showsTouchEndControl: Bool
+    let onTouchEnd: () -> Void
 
     var body: some View {
-        Group {
-            if let completedSession {
-                SummaryView(
-                    session: completedSession,
-                    onSave: { session in
-                        store.save(session)
-                        dismiss()
-                    },
-                    onDiscard: {
-                        dismiss()
-                    }
-                )
-            } else {
-                crownControlledRecordingContent
-            }
-        }
-        .navigationBarBackButtonHidden(recorder.isRecording)
-        .onAppear {
-            recorder.startSession(plan: recordingMode.prepare(plan: plan))
-        }
-        .onDisappear {
-            if completedSession == nil {
-                recorder.cancelSession()
-            }
-        }
-        .onChange(of: recorder.currentDepth) { _, _ in
-            updateSurfaceEndGate()
-        }
-        .onReceive(surfaceGateTimer) { timestamp in
-            guard completedSession == nil else { return }
-            updateSurfaceEndGate(at: timestamp)
-        }
-    }
-
-    @ViewBuilder
-    private var crownControlledRecordingContent: some View {
-        if recordingMode.usesCrownDepthControl {
-            recordingContent
-                .focusable(recordingMode.usesCrownDepthControl)
-                .focused($crownDepthControlFocused)
-                .digitalCrownRotation(
-                    $controlledDepthMeters,
-                    from: 0,
-                    through: 60,
-                    by: 0.1,
-                    sensitivity: .medium,
-                    isContinuous: false,
-                    isHapticFeedbackEnabled: true
-                )
-                .onAppear {
-                    recorder.setDemoDepthMeters(controlledDepthMeters)
-                    crownDepthControlFocused = true
-                }
-                .onChange(of: controlledDepthMeters) { _, nextDepthMeters in
-                    recorder.setDemoDepthMeters(nextDepthMeters)
-                }
-        } else {
-            recordingContent
-        }
-    }
-
-    private var recordingContent: some View {
         GeometryReader { proxy in
-            VStack(spacing: recordingVerticalSpacing) {
+            VStack(spacing: 6) {
                 liveInstrument
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .layoutPriority(1)
 
+                recordingControlRow
+
                 recordingDisclaimer
             }
-            .padding(.bottom, recordingContentBottomPadding)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-            .overlay(alignment: .bottomTrailing) {
-                compactEndDiveButton
-                    .padding(.trailing, 1)
-                    .padding(.bottom, surfaceEndGate.isVisible ? 18 : 0)
-            }
         }
-        .padding(.horizontal, recordingHorizontalPadding)
+        .padding(.horizontal, 4)
         .padding(.bottom, 5)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var compactEndDiveButton: some View {
-        Button(role: .destructive) {
-            completedSession = recorder.stopSession()
-        } label: {
-            Label("End Dive", systemImage: "stop.fill")
+    private var recordingControlRow: some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: RecordingControlRowLayout.leadingReservedWidth)
+
+            Group {
+                switch controlPolicy {
+                case .real:
+                    Text("To end the dive immediately, press and hold the Digital Crown while out of the water.")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.75)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                case .simulated:
+                    Button(role: .destructive, action: onTouchEnd) {
+                        Label("End Dive", systemImage: "stop.fill")
+                    }
+                    .buttonStyle(CompactDiveEndButtonStyle())
+                    .opacity(showsTouchEndControl ? 1 : 0)
+                    .allowsHitTesting(showsTouchEndControl)
+                    .accessibilityHidden(!showsTouchEndControl)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         }
-        .buttonStyle(CompactDiveEndButtonStyle())
-        .opacity(surfaceEndGate.isVisible ? 1 : 0)
-        .allowsHitTesting(surfaceEndGate.isVisible)
-        .accessibilityHidden(!surfaceEndGate.isVisible)
+        .frame(
+            minHeight: RecordingControlRowLayout.minimumHeight,
+            idealHeight: 33,
+            maxHeight: RecordingControlRowLayout.maximumHeight
+        )
     }
 
     private var recordingDisclaimer: some View {
         DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
     }
 
-    private var recordingVerticalSpacing: CGFloat {
-        6
-    }
-
-    private var recordingContentBottomPadding: CGFloat {
-        surfaceEndGate.isVisible ? 2 : 0
-    }
-
-    private var recordingHorizontalPadding: CGFloat {
-        4
+    private var sensorDisplayLimitMeters: Double {
+        RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: maximumDepthMeters)
     }
 
     @ViewBuilder
@@ -237,7 +197,8 @@ struct RecordingView: View {
             if shouldShowSafetyStopInstrument {
                 SafetyStopInstrument(
                     currentDepthMeters: recorder.currentDepth,
-                    safetyStop: recorder.scubaSafetyStop
+                    safetyStop: recorder.scubaSafetyStop,
+                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
                 )
             } else {
                 ScubaLiveInstrument(
@@ -245,7 +206,8 @@ struct RecordingView: View {
                     elapsedTime: recorder.elapsedTime,
                     displayedMaxDepthMeters: recorder.maxDepth,
                     ascentRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute,
-                    waterTemperatureCelsius: recorder.waterTemperatureCelsius
+                    waterTemperatureCelsius: recorder.waterTemperatureCelsius,
+                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
                 )
             }
         }
@@ -259,14 +221,16 @@ struct RecordingView: View {
                 currentDepthMeters: recorder.currentDepth,
                 sessionTime: recorder.elapsedTime,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                diveCount: snapshot.diveCount
+                diveCount: snapshot.diveCount,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         case .diveActive:
             FreeDiveActiveInstrument(
                 currentDepthMeters: recorder.currentDepth,
                 activeDiveTime: snapshot.activeSegment?.durationSeconds ?? 0,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                ascentRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute
+                ascentRateMetersPerMinute: recorder.latestAscentRateMetersPerMinute,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         case .surfaceInterval:
             FreeSurfaceIntervalInstrument(
@@ -274,7 +238,8 @@ struct RecordingView: View {
                 surfaceRestTime: surfaceRestTime(for: snapshot),
                 lastSegment: snapshot.segments.last,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                diveCount: snapshot.diveCount
+                diveCount: snapshot.diveCount,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         case .summary:
             FreeDiveSummaryInstrument(
@@ -282,7 +247,8 @@ struct RecordingView: View {
                 surfaceRestTime: surfaceRestTime(for: snapshot),
                 lastSegment: snapshot.segments.last,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                diveCount: snapshot.diveCount
+                diveCount: snapshot.diveCount,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         }
     }
@@ -314,24 +280,85 @@ struct RecordingView: View {
 
         return max(0, Date().timeIntervalSince(lastEndTime))
     }
+}
 
-    private func updateSurfaceEndGate(at timestamp: Date = Date()) {
-        surfaceEndGate.update(depthMeters: recorder.currentDepth, at: timestamp)
+#if DEBUG
+enum RecordingLayoutFixture: String {
+    case real
+    case demo
+    case debug
+
+    var recordingMode: WatchRecordingMode {
+        switch self {
+        case .real:
+            return .real
+        case .demo:
+            return .demo
+        case .debug:
+            return .debugTest
+        }
+    }
+
+    var diveMode: DiveMode {
+        self == .debug ? .freedive : .scuba
     }
 }
+
+struct RecordingLayoutFixtureView: View {
+    let fixture: RecordingLayoutFixture
+
+    @StateObject private var recorder: DiveSessionRecorder
+
+    init(fixture: RecordingLayoutFixture) {
+        self.fixture = fixture
+        _recorder = StateObject(
+            wrappedValue: DiveSessionRecorder(
+                sensorProvider: DemoDepthSensorProvider(),
+                captureMode: .demo
+            )
+        )
+    }
+
+    var body: some View {
+        RecordingInstrumentView(
+            recorder: recorder,
+            plan: plan,
+            controlPolicy: fixture.recordingMode.controlPolicy,
+            maximumDepthMeters: fixture == .real ? 6 : nil,
+            showsTouchEndControl: fixture != .real,
+            onTouchEnd: {}
+        )
+        .onAppear {
+            recorder.startSession(plan: plan)
+            recorder.setDemoDepthMeters(fixture == .real ? 8 : 0)
+        }
+        .onDisappear {
+            _ = recorder.cancelSession()
+        }
+    }
+
+    private var plan: PreDivePlan {
+        var plan = PreDivePlan()
+        plan.diveMode = fixture.diveMode
+        return fixture.recordingMode.prepare(plan: plan)
+    }
+}
+#endif
 
 private struct FreeSurfaceReadyInstrument: View {
     let currentDepthMeters: Double
     let sessionTime: TimeInterval
     let maxDepthMeters: Double
     let diveCount: Int
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: nil,
-            targetDepthMeters: nil
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             StatusPill(title: String(localized: "Surface ready"), color: DiveWatchTheme.secondary)
 
@@ -369,13 +396,15 @@ private struct FreeDiveActiveInstrument: View {
     let activeDiveTime: TimeInterval
     let maxDepthMeters: Double
     let ascentRateMetersPerMinute: Double
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: nil,
-            targetDepthMeters: nil
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
@@ -416,6 +445,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
     let maxScaleMeters: Double
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
+    let sensorDisplayLimitMeters: Double
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -428,7 +458,10 @@ private struct InstrumentDepthLayout<Content: View>: View {
             )
 
             VStack(alignment: .leading, spacing: 8) {
-                UnsupportedDepthWarning(currentDepthMeters: currentDepthMeters)
+                UnsupportedDepthWarning(
+                    currentDepthMeters: currentDepthMeters,
+                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
+                )
 
                 content
             }
@@ -441,10 +474,11 @@ private struct InstrumentDepthLayout<Content: View>: View {
 
 private struct UnsupportedDepthWarning: View {
     let currentDepthMeters: Double
+    let sensorDisplayLimitMeters: Double
 
     var body: some View {
-        if currentDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters {
-            Text(String(localized: "Outside supported depth"))
+        if currentDepthMeters > sensorDisplayLimitMeters {
+            Text(String(localized: "Outside sensor-authorized depth"))
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .lineLimit(1)
@@ -465,13 +499,15 @@ private struct FreeSurfaceIntervalInstrument: View {
     let lastSegment: FreeDiveSegment?
     let maxDepthMeters: Double
     let diveCount: Int
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: nil,
-            targetDepthMeters: nil
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             StatusPill(title: String(localized: "Surface interval"), color: DiveWatchTheme.secondary)
 
@@ -517,13 +553,15 @@ private struct FreeDiveSummaryInstrument: View {
     let lastSegment: FreeDiveSegment?
     let maxDepthMeters: Double
     let diveCount: Int
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: nil,
-            targetDepthMeters: nil
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             StatusPill(title: String(localized: "Summary"), color: DiveWatchTheme.secondary)
 
@@ -569,13 +607,15 @@ private struct ScubaLiveInstrument: View {
     let displayedMaxDepthMeters: Double
     let ascentRateMetersPerMinute: Double
     let waterTemperatureCelsius: Double?
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: nil,
-            targetDepthMeters: nil
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             Text(DiveFormatters.depth(currentDepthMeters))
                 .font(DiveWatchTheme.metricFont(size: 40, weight: .semibold))
@@ -604,13 +644,15 @@ private struct ScubaLiveInstrument: View {
 private struct SafetyStopInstrument: View {
     let currentDepthMeters: Double
     let safetyStop: SafetyStopRecord
+    var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
             maxScaleMeters: maxScaleMeters,
             stopZone: safetyStop.minDepthMeters...safetyStop.maxDepthMeters,
-            targetDepthMeters: safetyStop.targetDepthMeters
+            targetDepthMeters: safetyStop.targetDepthMeters,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             warningBand
 

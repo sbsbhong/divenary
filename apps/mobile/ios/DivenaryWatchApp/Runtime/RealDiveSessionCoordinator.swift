@@ -12,6 +12,15 @@ enum RealDivePhase {
     case recording(source: RealDiveStartSource)
     case summary(DiveSessionRecord)
     case noSamples
+
+    var presentsRecordingFlow: Bool {
+        switch self {
+        case .idle:
+            return false
+        case .recording, .summary, .noSamples:
+            return true
+        }
+    }
 }
 
 @MainActor

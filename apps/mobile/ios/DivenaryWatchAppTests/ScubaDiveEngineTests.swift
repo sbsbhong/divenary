@@ -212,9 +212,20 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
     }
 
-    func testDemoAndDebugUseDemoDepthProvider() {
-        XCTAssertTrue(WatchRecordingMode.demo.sensorProvider() is DemoDepthSensorProvider)
-        XCTAssertTrue(WatchRecordingMode.debugTest.sensorProvider() is DemoDepthSensorProvider)
+    func testRealModeExcludesSimulatedProviderCrownAndTouchEndPolicies() {
+        XCTAssertNil(WatchRecordingMode.real.makeSimulatedSensorProvider())
+        XCTAssertFalse(WatchRecordingMode.real.controlPolicy.usesCrownDepthControl)
+        XCTAssertFalse(WatchRecordingMode.real.controlPolicy.exposesTouchEndControl)
+        XCTAssertFalse(WatchRecordingMode.real.controlPolicy.usesSurfaceEndDiveGate)
+    }
+
+    func testDemoAndDebugUseDemoProviderCrownAndSurfaceGatedTouchEndPolicies() {
+        for mode in [WatchRecordingMode.demo, .debugTest] {
+            XCTAssertTrue(mode.makeSimulatedSensorProvider() is DemoDepthSensorProvider)
+            XCTAssertTrue(mode.controlPolicy.usesCrownDepthControl)
+            XCTAssertTrue(mode.controlPolicy.exposesTouchEndControl)
+            XCTAssertTrue(mode.controlPolicy.usesSurfaceEndDiveGate)
+        }
     }
 
     func testDebugTestAddsDurableTestProvenanceWithoutChangingTheSyncContract() {
@@ -223,5 +234,28 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
         XCTAssertTrue(preparedPlan.tags.contains(DiveSessionRecord.debugTestTag))
         XCTAssertFalse(WatchRecordingMode.demo.prepare(plan: PreDivePlan()).tags.contains(DiveSessionRecord.debugTestTag))
+    }
+
+    func testRealFlowNavigationIsDerivedFromCoordinatorPhase() {
+        XCTAssertFalse(RealDivePhase.idle.presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.recording(source: .systemAutoLaunch).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.summary(DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.noSamples.presentsRecordingFlow)
+    }
+
+    func testControlRowReservesRailColumnAndStaysWithinBoundedHeight() {
+        XCTAssertEqual(DepthGaugeRail.layoutWidth, 62)
+        XCTAssertEqual(
+            RecordingControlRowLayout.leadingReservedWidth,
+            DepthGaugeRail.layoutWidth + 9
+        )
+        XCTAssertEqual(RecordingControlRowLayout.minimumHeight, 30)
+        XCTAssertEqual(RecordingControlRowLayout.maximumHeight, 36)
+    }
+
+    func testSensorDisplayLimitUsesSignedMaximumWithoutExceedingProductBoundary() {
+        XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: nil), 40)
+        XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: 6), 6)
+        XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: 80), 40)
     }
 }

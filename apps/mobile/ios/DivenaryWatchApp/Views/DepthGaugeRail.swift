@@ -1,12 +1,13 @@
 import SwiftUI
 
 struct DepthGaugeRail: View {
+    static let layoutWidth: CGFloat = 62
+
     let depthMeters: Double
     let maxScaleMeters: Double
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
 
-    private let gaugeWidth: CGFloat = 62
     private let railX: CGFloat = 32
     private let railWidth: CGFloat = 20
 
@@ -39,7 +40,7 @@ struct DepthGaugeRail: View {
                 currentDepthMarker(height: height)
             }
         }
-        .frame(width: gaugeWidth)
+        .frame(width: Self.layoutWidth)
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Depth gauge"))
