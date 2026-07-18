@@ -28,6 +28,7 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
 - `supabase`:
   - local Supabase configuration, Auth foundation migration/seed, pgTAP와 REST smoke test
   - immutable legal document/current pointer, append-only consent, membership와 RLS/RPC 경계
+  - local password fixture와 staging-only promotion/verification 명령
 - `packages/supabase`:
   - generated database type, typed client factory, onboarding parser와 provider-independent Auth repository
 - `apps/mobile/ios/DivenaryWatchApp`:
@@ -110,9 +111,41 @@ yarn ios:build
 - `Sync`: `WatchSyncEnvelope`, `WatchSyncTransport`
 - `Views`: Home, Recording, Summary, Session list/detail 화면
 
+## Auth 로컬 및 staging 개발
+
+일상적인 인증 화면 개발은 실제 Docker local Supabase를 사용합니다. local stack을 시작하거나 초기화한 뒤 fixture를 준비하고, 해당 플랫폼 명령으로 앱을 실행합니다.
+
+```bash
+yarn supabase:start
+yarn supabase:reset
+yarn mobile:auth:local:prepare
+yarn mobile:ios:local
+# 또는
+yarn mobile:android:local
+# Metro만 별도로 실행해야 할 때
+yarn mobile:start:local
+```
+
+`yarn mobile:auth:local:prepare`는 실제 local Auth 사용자를 만들고 `apps/mobile/.env.local`을 생성합니다. 이 파일은 ignored, mode `0600`, local-only 파일이며 생성된 password, session, key를 문서나 추적 파일에 기록하지 않습니다. Local password fixture를 hosted 환경에 사용하거나 hosted 설정과 섞지 않습니다.
+
+Hosted 프로젝트 `mclvhwzsuvsxjerdouka`는 production이 아닌 staging 전용입니다. 이 환경에는 migration `20260713135707`이 적용되어 있고, 현재 법률 문서 version은 `2026-07-18-staging.1`입니다. terms/privacy URL은 promotion 당시의 immutable commit URL을 가리킵니다. staging 명령은 이 project ref만 허용합니다.
+
+```bash
+yarn supabase:staging:link
+yarn supabase:staging:migrations
+yarn supabase:staging:push:dry-run
+yarn supabase:staging:push
+yarn supabase:staging:seed:auth
+yarn supabase:staging:verify:auth
+```
+
+Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. 이후 commit에서도 verifier는 deployed legal URL에서 promotion SHA를 추론하고, seed는 현재 `HEAD`로 새 immutable URL을 만듭니다.
+
+Google/Apple native token exchange, cancellation/repeat, signed callback, session restore는 signed physical device와 수동 상호작용이 필요한 별도 gate이며 아직 통과로 기록하지 않습니다. Auth 여부와 관계없이 guest Logbook/Planbook은 local-only이고 cloud sync나 account claim은 없습니다.
+
 ## 다음 단계
 
-1. Stable owned App ID, signing profile, Google/Apple provider, hosted Supabase와 실제 immutable legal URL을 준비하고 physical iPhone Auth/re-consent matrix를 검증
+1. staging이 아닌 production Supabase 프로젝트와 production 법률 문서를 준비하고 physical iPhone에서 Google/Apple Auth/re-consent matrix를 검증
 2. Auth 도입 뒤 guest Logbook/Planbook 보존과 foreground Watch pairing/import/local acknowledgement 회귀를 확인
 3. WatchConnectivity reconnect, background/force-quit, retry와 large transfer를 paired hardware에서 검증
 4. `CMWaterSubmersionManager` 기반 실제 underwater sensor behavior를 지원 hardware의 통제된 환경에서 검증

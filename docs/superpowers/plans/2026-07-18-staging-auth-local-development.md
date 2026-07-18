@@ -250,7 +250,7 @@
 - Consumes: completed local and hosted gates.
 - Produces: exact day-to-day commands, staging status, and remaining signed-device social Auth gate.
 
-- [ ] **Step 1: Document the workflows and evidence**
+- [x] **Step 1: Document the workflows and evidence**
 
   Record local fixture commands, staging guard commands, exact applied migration/version, and that actual Google/Apple token exchange still requires signed-device user interaction.
 

@@ -1,5 +1,16 @@
 # Wiki Log
 
+## [2026-07-18] ingest | Wave 3A staging and local Auth development
+- Updated: Supabase 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - local Docker Supabase password fixture와 ignored `apps/mobile/.env.local`의 day-to-day 개발 경계
+  - staging project `mclvhwzsuvsxjerdouka`의 applied migration `20260713135707`, legal version `2026-07-18-staging.1`, immutable promotion URL verifier
+  - exact legal row/effective time/URL, `get_onboarding_status() -> jsonb`, anonymous `42501`, Google/Apple enabled flag 검증
+- 요약:
+  - local password fixture와 hosted staging provider callback을 분리했다. staging은 production이 아니며 Google/Apple native token exchange, cancellation/repeat, signed callback, restore는 signed physical device 수동 gate로 남는다. Guest Logbook/Planbook의 local-only 경계와 비안전-critical 기록 제품 범위는 유지한다.
+
 ## [2026-07-16] ingest | Google iOS client and callback correction
 - Added: Google iOS client and callback correction raw source
 - Updated: Supabase 구조
