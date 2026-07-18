@@ -61,6 +61,8 @@
 		C20000000000000000000002 /* WaterSubmersionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */; };
 		C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */; };
 		C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000003 /* DiveRuntimeSessionController.swift */; };
+		C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */; };
+		C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000003 /* RealDiveSessionCoordinator.swift */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -157,6 +159,8 @@
 		C20000000000000000000003 /* WaterSubmersionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaterSubmersionCoordinator.swift; sourceTree = "<group>"; };
 		C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionControllerTests.swift; sourceTree = "<group>"; };
 		C30000000000000000000003 /* DiveRuntimeSessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionController.swift; sourceTree = "<group>"; };
+		C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinatorTests.swift; sourceTree = "<group>"; };
+		C40000000000000000000003 /* RealDiveSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinator.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -312,6 +316,7 @@
 			children = (
 				B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */,
 				C30000000000000000000003 /* DiveRuntimeSessionController.swift */,
+				C40000000000000000000003 /* RealDiveSessionCoordinator.swift */,
 			);
 			path = Runtime;
 			sourceTree = "<group>";
@@ -372,6 +377,7 @@
 				FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */,
 				C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */,
 				C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */,
+				C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */,
 			);
 			path = DivenaryWatchAppTests;
 			sourceTree = "<group>";
@@ -636,6 +642,7 @@
 				C20000000000000000000004 /* WaterSubmersionCoordinator.swift in Sources */,
 				B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */,
 				C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */,
+				C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */,
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
 				A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */,
 				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
@@ -663,6 +670,7 @@
 				FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */,
 				C20000000000000000000002 /* WaterSubmersionCoordinatorTests.swift in Sources */,
 				C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */,
+				C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

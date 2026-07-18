@@ -56,7 +56,8 @@ final class DiveSessionStore: ObservableObject {
         syncTransport.activate()
     }
 
-    func save(_ session: DiveSessionRecord) {
+    @discardableResult
+    func save(_ session: DiveSessionRecord) -> Bool {
         let safeSession = session.sanitizedForPersistence()
         do {
             let entry = try profileStore.finalize(record: safeSession)
@@ -68,14 +69,15 @@ final class DiveSessionStore: ObservableObject {
             try profileStore.updateDisplayRecord(displayRecord)
             sessions.removeAll { $0.id == displayRecord.id }
             sessions.insert(displayRecord, at: 0)
-            try? profileStore.clearActiveRecording(sessionID: safeSession.id)
+            try profileStore.clearActiveRecording(sessionID: safeSession.id)
         } catch {
             assertionFailure("Failed to finalize dive profile: \(error)")
-            return
+            return false
         }
         if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
+        return true
     }
 
     func replacePlannedDives(_ nextPlannedDives: [WatchPlannedDive]) {

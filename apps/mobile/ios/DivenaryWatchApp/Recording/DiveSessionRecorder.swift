@@ -2,12 +2,13 @@ import Combine
 import Foundation
 
 @MainActor
-final class DiveSessionRecorder: ObservableObject {
+final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var samples: [DepthSample] = []
     @Published private(set) var currentDepth: Double = 0
     @Published private(set) var maxDepth: Double = 0
     @Published private(set) var waterTemperatureCelsius: Double?
     @Published private(set) var elapsedTime: TimeInterval = 0
+    var hasCapturedDepthSample: Bool { lastRawSample != nil }
     @Published private(set) var latestAscentRateMetersPerMinute: Double = 0
     @Published private(set) var safetyStopRemainingSeconds: TimeInterval = 180
     @Published private(set) var safetyStopActive = false
