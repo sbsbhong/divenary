@@ -2,130 +2,209 @@
 
 ## Context
 
-Real-device shallow water testing showed that Apple Watch's built-in Depth app reports approximately `0.1m` in a controlled bag/tank setup, while DivenaryWatch did not visibly react. The test also exposed that underwater touch controls are the wrong primary ending mechanism because Water Lock prevents tapping the current `End Dive` button.
+Real-device shallow-water testing showed that Apple Watch's built-in Depth app reports approximately `0.1m` in a controlled 15cm bag/tank setup, while DivenaryWatch did not visibly react. The test also exposed that underwater touch controls are the wrong primary ending mechanism because Water Lock prevents tapping the current `End Dive` button.
 
 Current implementation state:
 
-- `RealDepthSensorProvider` uses `CMWaterSubmersionManager` for live depth, pressure, and optional temperature samples.
-- `RecordingView` starts `DiveSessionRecorder` from explicit navigation and currently shows a surface-gated touch `End Dive` button.
-- `HomeView` has an internal `DiveAutoStartMonitor` with a `3m` activation threshold.
-- The watch `Info.plist` declares `WKBackgroundModes` with `underwater-depth`, but the project does not show a watch target entitlements file or `CODE_SIGN_ENTITLEMENTS` for `DivenaryWatchApp`.
-- There is no Divenary-owned `WKExtendedRuntimeSession` controller and no app launch/runtime handoff path that starts recording when the app is selected in Settings > General > Auto-Launch > When Submerged.
+- `RealDepthSensorProvider` owns a `CMWaterSubmersionManager` and emits depth, pressure, and optional temperature samples.
+- `RecordingView` owns `DiveSessionRecorder`, starts recording from `onAppear`, and currently shows a surface-gated touch `End Dive` button.
+- `HomeView` owns a second real sensor provider through `DiveAutoStartMonitor` and uses a `3m` activation threshold.
+- The watch `Info.plist` declares `WKBackgroundModes` with `underwater-depth`, but the watch target has no entitlements file and no `CODE_SIGN_ENTITLEMENTS` setting.
+- The app has no `WKApplicationDelegate` handoff for a system-created extended runtime session and no App Intent support for the Apple Watch Ultra Action Button.
 
-Apple's relevant public behavior:
+Verified Apple behavior and API contracts:
 
-- The Depth app can start manually, via Action Button, or automatically when depth exceeds 1 meter and the watch has been submerged for more than 5 seconds.
-- The Depth app ends manually by holding the Digital Crown after surfacing, via Action Button on Apple Watch Ultra when configured for Dive, or automatically after Apple Watch has been out of the water for 10 minutes.
-- If the wearer descends again within 10 minutes without ending, the underwater time is added to the same dive.
-- Apple developer documentation says `underwater-depth` lets an app remain frontmost during a dive, can add the app to the underwater auto-launch list, and that apps need the submersion data entitlement/setup. It also describes system auto runtime behavior around the `submergedDeep` state.
+- The `underwater-depth` background mode makes an app eligible for underwater auto-launch and keeps it frontmost. If the app does not explicitly start a runtime session, watchOS can create one when the watch reaches `submergedDeep`, which begins below approximately 1 meter.
+- A manually started underwater `WKExtendedRuntimeSession` automatically enables Water Lock.
+- An underwater runtime session ends when the app invalidates it, the wearer turns off Water Lock, or the watch remains `notSubmerged` for more than 10 minutes.
+- `WKApplicationDelegate.handle(_:)` receives a system-created or recovered runtime session. The app must assign the session delegate before that callback returns or watchOS ends the session.
+- The public runtime API does not expose a separate "Digital Crown unlocked" callback. Divenary observes the resulting runtime invalidation.
+- A third-party dive app does not receive an Action Button end event automatically. It must implement `StartDiveIntent`, donate a next `AppIntent`, and route that next action to its own end path.
+- `CMWaterSubmersionManager` requires a depth-and-pressure entitlement for samples. The public Shallow Depth and Pressure capability is limited to the manager's authorized maximum depth; deeper access requires Apple's managed entitlement.
+
+The 15cm setup can verify a manually started Divenary session and shallow sensor updates after entitlement/signing is correct. It cannot verify `When Submerged` auto-launch, because the system's automatic runtime criterion is around `submergedDeep`, not a 10-15cm shallow reading. Auto-launch requires a controlled depth greater than 1 meter or Xcode Easy Submersion on a paired device.
 
 References:
 
-- Apple Support, "Measure underwater temperature, duration, and depth on Apple Watch": https://support.apple.com/en-ca/guide/watch/apd9073c83d6/watchos
+- Apple Support, "Log your underwater activity with the Depth app on Apple Watch": https://support.apple.com/en-nz/guide/watch/apdd1a0ae6f4/watchos
 - Apple Developer, "Accessing submersion data": https://developer.apple.com/documentation/CoreMotion/accessing-submersion-data
+- Apple Developer, `WKApplicationDelegate.handle(_:)`: https://developer.apple.com/documentation/watchkit/wkapplicationdelegate/handle(_:)-7kiwx
+- Apple Developer, "Responding to the Action button on Apple Watch Ultra": https://developer.apple.com/documentation/AppIntents/ActionButtonArticle
 - Apple Developer, `WKBackgroundModes`: https://developer.apple.com/documentation/BundleResources/Information-Property-List/WKBackgroundModes
 
 ## Decision
 
-Real underwater recording must follow the Apple underwater extended runtime lifecycle.
+Real underwater recording follows the Apple underwater extended runtime lifecycle.
 
-Divenary will treat `WKExtendedRuntimeSession` as the lifecycle owner for real underwater recording and `CMWaterSubmersionManager` as the sample source. `DiveSessionRecorder` remains the Divenary recording/storage/sync owner, but it starts and stops in response to the runtime/submersion lifecycle rather than an underwater touch button.
+Divenary treats `WKExtendedRuntimeSession` as the lifecycle owner for a real underwater session and `CMWaterSubmersionManager` as the sample and submersion-state source. An app-scoped `RealDiveSessionCoordinator` joins those system objects to `DiveSessionRecorder`, which remains responsible for sample processing, profile persistence, record construction, and sync-ready output.
 
-Demo and debug-test recording do not use the underwater runtime lifecycle. They continue using `DemoDepthSensorProvider`, Digital Crown depth control, and a visible end button because they cannot satisfy real submersion, Water Lock, or 10-minute surface exit conditions.
+Demo and debug-test recording remain local view-scoped flows. They use `DemoDepthSensorProvider`, Digital Crown depth control, and a visible end button. They never request, fake, or depend on a real underwater runtime session.
 
 ## Goals
 
-- Make Divenary eligible for the `When Submerged` auto-launch app list on supported Apple Watch hardware, subject to required Apple entitlements/provisioning.
-- If Divenary is selected in `When Submerged`, opening the app through submersion should start a Divenary recording session without requiring a tap.
-- Match Apple's three real-session ending paths:
-  - hold Digital Crown after surfacing to turn off Water Lock and end immediately,
-  - Action Button Dive ending on supported/configured Apple Watch Ultra,
-  - automatic end after 10 minutes out of water.
-- Preserve the "descend again within 10 minutes continues the same dive" behavior.
-- Remove the real underwater touch `End Dive` button and replace it with compact instructional copy.
-- Keep demo/debug workflows usable with the existing end button.
-- Smooth the displayed ascent-rate value so small shallow-water movement does not create rapid spikes, while preserving raw samples.
+- Make the signed Divenary watch app eligible for `When Submerged` on supported hardware.
+- Start a Divenary real recording without a tap when watchOS launches Divenary as the selected underwater app.
+- Preserve the last selected `DiveMode` as the automatic and Action Button start mode.
+- Match the three requested real-session ending paths:
+  - hold Digital Crown after surfacing, causing Water Lock to turn off and the underwater runtime to invalidate,
+  - press the Action Button after surfacing when Divenary is configured as the Dive app and the session is eligible to end,
+  - let watchOS invalidate the runtime after more than 10 minutes continuously out of water.
+- Preserve the same session when the wearer submerges again before the system's 10-minute end condition.
+- Remove the real-session touch end button and replace it with compact instructional copy.
+- Keep demo/debug sessions independently startable and endable.
+- Stabilize the live ascent-rate display without changing raw or persisted profile samples.
 
 ## Non-Goals
 
 - No decompression obligation, tissue loading, NDL, ceiling, gas-switching safety, emergency decision, or certified dive-computer behavior.
 - No claim that Divenary is a certified depth gauge, dive computer, medical device, or emergency system.
-- No in-app fake `WKExtendedRuntimeSession` or fake submersion API. Development simulation remains outside production app behavior.
-- No attempt to override system Water Lock interaction rules.
-- No cloud, Supabase, mobile logbook, or WatchConnectivity redesign.
-- No release claim that physical underwater behavior is verified beyond explicitly documented manual tests.
+- No in-app fake `WKExtendedRuntimeSession` or fake submersion API. Unit-test fakes remain behind test-only protocols; device simulation uses Xcode Easy Submersion.
+- No attempt to programmatically turn Water Lock off.
+- No cloud, Supabase, mobile logbook, contract schema, or WatchConnectivity redesign.
+- No persistence of a selected planned dive solely for automatic launch. Automatic and Action Button starts use the persisted mode, not an implicitly selected plan.
+- No claim that the existing 40m product target is enabled by the shallow entitlement. Full-depth access remains an external managed-entitlement gate.
+- No release claim that physical underwater behavior is verified beyond explicitly recorded manual tests.
 
 ## Architecture
 
+### App-Scoped Composition
+
+Add a watch-only composition root, `DiveAppServices`, created before SwiftUI navigation and shared by system entry points. It owns:
+
+- the existing `DiveSessionStore`,
+- one `WaterSubmersionCoordinator`,
+- one `DiveRuntimeSessionController`,
+- one `RealDiveSessionCoordinator` and its real `DiveSessionRecorder`.
+
+`DivenaryWatchApp` uses `@WKApplicationDelegateAdaptor` with `DivenaryWatchApplicationDelegate`. The application delegate forwards `handle(_ extendedRuntimeSession:)` synchronously to `DiveAppServices`. The runtime controller assigns itself as the runtime delegate before the application-delegate callback returns.
+
+The same app-scoped coordinator is registered with `AppDependencyManager` for Action Button intents. This avoids separate runtime, recorder, and sensor objects being created by SwiftUI navigation, auto-launch, and App Intents.
+
 ### Runtime Session Controller
 
-Add a watch-only runtime coordinator, tentatively `DiveRuntimeSessionController`, responsible for:
+`DiveRuntimeSessionController` is responsible only for `WKExtendedRuntimeSession` ownership and delegate translation.
 
-- Creating and starting `WKExtendedRuntimeSession` for real recording when the app is active and a real session is manually started.
-- Handling runtime session delegate callbacks and errors.
-- Accepting or recovering system-started underwater runtime behavior when the app is launched by `When Submerged`.
-- Observing `CMWaterSubmersionEvent` state transitions from the real sensor provider or a shared submersion coordinator.
-- Publishing a small state model that `HomeView`/`RecordingView` can use to navigate into recording, show lifecycle status, and stop/save the session.
+It supports two starts:
 
-The controller must not own sampled profile persistence. It coordinates lifecycle only. `DiveSessionRecorder` remains responsible for sample append, engine updates, profile artifact writing, final payload normalization, and record creation.
+- `startManualSession()`: create a new runtime session, assign the delegate, retain it, and call `start()` while the app is active.
+- `adoptSystemSession(_:)`: retain the session supplied through `WKApplicationDelegate.handle(_:)` and assign the delegate synchronously. Do not call `start()` on the supplied session.
 
-### Sensor Provider Boundary
+It publishes normalized events to `RealDiveSessionCoordinator`:
 
-`RealDepthSensorProvider` should stop being the only owner of the Core Motion manager. Introduce a small `WaterSubmersionCoordinator` that owns a single `CMWaterSubmersionManager` and fan-outs samples/events. This avoids separate manager instances and keeps the runtime lifecycle and sample stream aligned.
+- `adoptedSystemSession`, emitted only after the supplied session delegate is attached,
+- `didStart`,
+- `willExpire`,
+- `didInvalidate(reason:error:)`.
 
-The coordinator exposes clear outputs:
+The coordinator starts automatic recording from `adoptedSystemSession` rather than waiting for
+`didStart`, because a session supplied to `WKApplicationDelegate.handle(_:)` may already be
+running and is not required to emit a second start callback after adoption.
 
-- depth samples to `DiveSessionRecorder`,
-- submersion/runtime events to `DiveRuntimeSessionController`.
+It exposes `invalidate()` for Divenary-owned Action Button ending. It does not own profile samples, create a 10-minute timer, or infer that a single `notSubmerged` event ends a dive. The watchOS underwater runtime owns the Water Lock and 10-minute rules.
+
+Production code wraps runtime creation and invalidation behind a small protocol so unit tests can send deterministic lifecycle events without pretending a fake runtime is a production feature.
+
+### Water Submersion Coordinator
+
+`WaterSubmersionCoordinator` is the only production owner of `CMWaterSubmersionManager`.
+
+It starts monitoring during app-service initialization on supported hardware and keeps the manager delegate attached while the app is alive. It publishes:
+
+- valid `DepthSample` values,
+- normalized `CMWaterSubmersionEvent.State` values,
+- measurement depth states such as `submergedShallow`, `submergedDeep`, and sensor error,
+- Core Motion errors,
+- the manager's authorized `maximumDepth` when available.
+
+`RealDepthSensorProvider` becomes a lightweight adapter over this coordinator. Starting or stopping a recorder subscribes or unsubscribes that recorder from samples; it does not create a second manager or disable app-level submersion monitoring.
+
+### Real Recording Coordinator
+
+`RealDiveSessionCoordinator` owns the state machine that joins runtime and recording behavior. It retains one reusable real `DiveSessionRecorder` and publishes an app-navigation state such as idle, recording, pending summary, no-sample result, or failed start.
+
+It also records a start source:
+
+- manual touch start,
+- system underwater auto-launch,
+- Action Button start.
+
+All end signals pass through one idempotent finalization method. Duplicate runtime callbacks or repeated Action Button requests must not create multiple records or summaries.
 
 ### Recording Start
 
 Manual real start:
 
-1. User taps `Free Session Start`, `Scuba Start`, or a planned dive.
-2. Home updates `preferredDiveMode` exactly as it does today.
-3. `RecordingView` starts real recording and asks `DiveRuntimeSessionController` to start or attach to an underwater runtime session.
-4. `DiveSessionRecorder` starts immediately with the selected `PreDivePlan`.
-5. Samples append only when Core Motion emits valid submersion measurements.
+1. The user taps `Free Session Start`, `Scuba Start`, or a planned dive.
+2. Home persists the chosen mode as it does today.
+3. `RealDiveSessionCoordinator` starts the recorder with that explicit `PreDivePlan` and asks the runtime controller to start a manual underwater runtime.
+4. Runtime start enables Water Lock; valid Core Motion samples flow through the shared coordinator.
+5. SwiftUI navigation reacts to coordinator state and presents the real recording screen.
 
-Auto-launch real start:
+System auto-launch start:
 
-1. User has selected Divenary in Settings > General > Auto-Launch > When Submerged.
-2. watchOS launches or foregrounds Divenary when the submerged condition is met.
-3. Divenary initializes its real submersion coordinator early enough to receive event/measurement callbacks.
-4. The runtime controller starts recording with the last selected `preferredDiveMode`.
-5. If a planned dive had been selected before launch, its `PreDivePlan` is used; otherwise Divenary builds an explicit start plan for the preferred mode.
+1. The user selects Divenary in Settings > General > Auto-Launch > When Submerged.
+2. When watchOS reaches its underwater launch criterion, it launches or foregrounds Divenary and supplies a runtime session through `WKApplicationDelegate.handle(_:)`.
+3. Divenary assigns the runtime delegate before `handle(_:)` returns.
+4. `RealDiveSessionCoordinator` starts the recorder with a default `PreDivePlan` built from `DiveSessionStore.preferredDiveMode`. Scuba defaults keep the existing `Air` label behavior.
+5. Home navigation presents the same real recording screen used by a manual start.
 
-The current internal `3m` auto-start threshold should not remain the primary automatic start criterion. Apple's underwater launch/deep-submersion behavior is the real criterion. If a fallback monitor remains, it must use Apple-aligned thresholds and must not conflict with system auto-launch.
+Action Button start:
+
+1. `DivenaryStartDiveIntent: StartDiveIntent` makes Divenary selectable as the Apple Watch Ultra Dive app.
+2. Its `perform()` method starts a real session through the app-scoped coordinator using the persisted preferred mode.
+3. The intent result donates `DivenaryEndDiveIntent` as the next Action Button action.
+4. Manual and system auto-launched sessions also donate the same next action. watchOS uses it only when Divenary is configured as the Action Button Dive app.
+
+Both intents live directly in the watch app target, not an App Intents extension. Divenary does not override the
+`StartDiveIntent` default foreground-launch behavior.
+
+Remove `DiveAutoStartMonitor` and its `3m` threshold. It is neither the system auto-launch criterion nor a reliable fallback, and it creates a second live Core Motion manager.
 
 ### Recording End
 
-For `real` mode, remove the touch `End Dive` button. Stop/save is triggered by runtime lifecycle:
+For real mode, no touch end button is present.
 
-- Water Lock off / Digital Crown hold after surfacing: stop the active recorder, build the session record, show Summary.
-- Action Button Dive end: same stop/save path if watchOS reports the runtime invalidation/end event.
-- Out of water for 10 minutes: stop the active recorder automatically, build the session record, show Summary or save pending summary state.
+Digital Crown after surfacing:
 
-If the wearer returns underwater before the 10-minute surface timeout, keep the same recorder active and continue appending samples to the same session. Do not split into a second Divenary session.
+1. The wearer holds Digital Crown to turn off Water Lock.
+2. watchOS invalidates the underwater runtime.
+3. The runtime delegate forwards invalidation to `RealDiveSessionCoordinator`.
+4. The coordinator finalizes the recorder once and presents the summary.
 
-If runtime invalidation occurs without enough samples, still end deterministically:
+Action Button:
 
-- If there are valid samples, build the best available record.
-- If there are no valid samples after a manual start, show a compact "No depth samples captured" summary state and do not save a log.
-- If there are no valid samples after an auto-launched attempt that never reached a recording-worthy depth state, cancel silently and return to Home.
+1. `DivenaryEndDiveIntent` asks the app-scoped coordinator to end.
+2. To match the Depth app's surfaced ending semantics, Divenary accepts the request only while the latest event is `notSubmerged` and elapsed recording time is at least 3 minutes. An in-water or too-early press leaves the session active and keeps the end intent donated.
+3. An accepted request calls `WKExtendedRuntimeSession.invalidate()`.
+4. The normal runtime invalidation callback performs the same single finalization path as Digital Crown ending.
+
+Automatic end:
+
+1. A `notSubmerged` event updates UI/coordinator state but does not stop recording.
+2. If the watch remains out of water for more than 10 minutes, watchOS invalidates the underwater runtime.
+3. The runtime invalidation callback performs the same finalization path.
+4. If the watch submerges again before invalidation, the existing runtime and recorder continue. Divenary creates no second session and runs no competing timer.
+
+Runtime error or no samples:
+
+- If at least one valid depth sample was captured, finalize the best available record and present Summary even when the runtime ends with an error.
+- If a manual or Action Button start ends without a valid sample, cancel the active profile artifact, show a compact `No depth samples captured` result, and do not save a log.
+- If a system auto-launched attempt ends without a valid sample, cancel it silently and return to Home.
+
+Summary completion:
+
+- Saving finalizes the profile artifact first; the coordinator returns to idle only after storage reports success.
+- Discarding clears the active profile journal before returning to idle, so a discarded summary cannot reappear later as an interrupted recovery.
 
 ### Demo And Debug Exceptions
 
 `demo` and `debugTest` remain separate from real runtime behavior:
 
-- Use `DemoDepthSensorProvider`.
+- Use `DemoDepthSensorProvider` owned by the simulated recording view.
 - Keep Digital Crown depth control.
-- Keep the visible end button.
+- Keep `SurfaceEndDiveGate` and the compact `End Dive` button for demo/debug only.
 - Preserve Demo/Test markers in watch and mobile sync payloads.
-- Do not request underwater runtime session.
-- Do not require Water Lock, 10-minute surface timeout, or supported underwater hardware.
-
-This preserves testability and avoids pretending that `WKExtendedRuntimeSession` has a production in-app demo API.
+- Do not access `DiveRuntimeSessionController`, `WaterSubmersionCoordinator`, App Intent ending, Water Lock, or the 10-minute rule.
 
 ## Watch UI
 
@@ -133,111 +212,158 @@ This preserves testability and avoids pretending that `WKExtendedRuntimeSession`
 
 The real recording screen remains instrument-first:
 
-- Left depth rail.
-- Right live values.
-- No cards inside the recording instrument.
-- No large explanatory banner.
-- No touch end button.
+- left depth rail,
+- right live values,
+- no cards inside the recording instrument,
+- no large explanatory banner,
+- no touch end button.
 
-Replace the button with compact helper copy:
+Replace the real button with localized compact helper copy:
 
 > 즉시 다이빙을 종료하려면 물 밖에서 Digital Crown을 길게 누르세요.
 
 Layout constraints:
 
-- Use 10-11 pt muted text.
-- Limit to 2 lines.
-- Apply `minimumScaleFactor`.
-- Place near the bottom of the right-side value column or under the live metrics, not over the depth rail.
-- Keep current depth, elapsed time, max depth, safety-stop reminder, and unsupported-depth warning visually higher priority.
-- Do not add a dismissible card, modal, or large instruction block.
+- Render the helper in a stable control row between the live instrument and the existing disclaimer instead of a floating overlay.
+- Align it to the right-value column by reserving the rail width on the leading side.
+- Use 10pt muted text, at most 2 lines, and `minimumScaleFactor(0.75)`.
+- Keep the row height bounded so 41/42mm, 45/46mm, and 49mm layouts do not push depth, elapsed time, max depth, reminder state, or unsupported-depth warning off-screen.
+- Keep the existing disclaimer visually subordinate but readable.
 
-The wording must remain instruction about ending the recording only. It must not imply ascent permission, emergency guidance, decompression status, or certified safety state.
+The text explains recording termination only. It must not imply ascent permission, emergency guidance, decompression status, or certified safety state.
 
-### Demo/Debug Recording
+### Demo And Debug Recording
 
-Demo/debug shows the existing end button because the user must be able to finish a simulated session. The button may keep the current compact style. It should remain visually associated with the Demo/Test badge so users do not confuse this with the real underwater path.
+Demo/debug uses the same bounded control-row slot for the compact end button. The Demo/Test marker remains visible so the touch ending path cannot be mistaken for real underwater behavior. Its existing surface gate remains active.
 
-## Auto-Launch Eligibility And Diagnostics
+### No-Sample Result
 
-Implementation must verify both project metadata and signed build output:
+After Water Lock is already off, a manual no-sample result may show one compact message and a single `Done` action. It must not construct or save an empty `DiveSessionRecord`.
 
-- `WKBackgroundModes` includes `underwater-depth` in the watch app `Info.plist`.
-- The watch target has the required Apple submersion entitlement configured in build settings/provisioning.
-- Signed watch app entitlements contain the expected submersion entitlement.
-- The embedded provisioning profile contains the expected submersion entitlement.
-- Add `WKSupportsAutomaticDepthLaunch` only if current Apple tooling/watchOS behavior or signed-build inspection shows it is required for `When Submerged` listing. Do not treat it as a substitute for entitlement/provisioning.
-- `WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus` still feeds compact status copy on Home.
+## Auto-Launch Eligibility And Signing
 
-If the app still does not appear in `When Submerged`, the blocker should be reported as signing/provisioning/App Store capability state, not hidden behind UI.
+Repository metadata and signed-device state are separate checks.
 
-## Ascent Rate Display
+Repository changes:
 
-Current ascent-rate display is an instantaneous two-sample calculation:
+- Keep `WKBackgroundModes` with `underwater-depth` in the watch app `Info.plist`.
+- Add a watch target entitlements file and configure `CODE_SIGN_ENTITLEMENTS` for Debug and Release.
+- Use Xcode's public Shallow Depth and Pressure capability (`com.apple.developer.submerged-shallow-depth-and-pressure`) for the first shallow-device implementation. This unblocks the 15cm/manual and <=6m development path without claiming 40m authorization.
+- Read `CMWaterSubmersionManager.maximumDepth` and use it as the watch's active sensor authorization limit when available.
+- Do not add `WKSupportsAutomaticDepthLaunch`; it is not part of the public setup documented by Apple and does not appear in the installed SDK.
+
+External signing gate:
+
+- The App ID and provisioning profile must include the same shallow capability for a signed device build.
+- A future 40m build requires approval and provisioning for Apple's managed Submerged Depth and Pressure entitlement. Until then, Divenary must not present the shallow-signed build as 40m sensor-authorized.
+- Inspect the signed watch app's `Info.plist`, code-signing entitlements, and embedded provisioning profile. A simulator build with `CODE_SIGNING_ALLOWED=NO` cannot prove this gate.
+- Confirm the watch app is installed, reinstall after capability changes, and verify that the installed build contains `underwater-depth` before diagnosing a missing `When Submerged` list entry.
+- Continue showing compact `requestAutoLaunchAuthorizationStatus` output on Home. `.active` means Divenary is the selected default responder; `.inactive` does not mean the sensor entitlement is valid.
+
+If Divenary still does not appear after signed metadata and installation are verified, record the exact hardware, watchOS version, app version, authorization status, and provisioning evidence. Do not hide the failure behind generic UI copy.
+
+## Live Ascent Rate Display
+
+The current live value is calculated from two adjacent raw callbacks:
 
 `(previous.depthMeters - current.depthMeters) / elapsedSeconds * 60`
 
-This is expected to spike in shallow water when the watch moves, then immediately return to `0` when the next sample is flat or deeper.
+At roughly three callbacks per second, a small upward movement is multiplied into a large per-minute number. The next flat or deeper callback immediately evaluates to `0`, which explains the observed rapid spike-and-zero behavior.
 
-Change display ascent rate to a smoothed reference value:
+Introduce `DisplayAscentRateEstimator` for the live recording UI:
 
-- Preserve raw samples exactly.
-- Keep persisted profile samples unchanged unless a later implementation explicitly adds derived metadata.
-- Compute UI ascent rate from a short recent window, preferably 3-5 seconds or from finalized 1Hz buckets.
-- Apply a small depth-change deadband, initially `0.1m` to `0.2m`, so tiny shallow-water movement does not show as meaningful ascent.
-- Clamp invalid, negative, or non-finite values to `0`.
-- Keep enough responsiveness that a real rapid ascent is not hidden by excessive smoothing.
+- Keep valid recent samples for at most 5 seconds.
+- Do not produce a rate until the oldest and newest usable samples span at least 3 seconds.
+- Compute the net upward depth change across that window, not a sum of adjacent positive movements.
+- Return `0` when the net upward change is `0.15m` or less, the newest point is flat/deeper relative to the window start, timestamps are non-increasing, or any input is invalid/non-finite.
+- Otherwise return `(netDepthDecrease / elapsedSeconds) * 60`.
+- Feed `DiveSessionRecorder.latestAscentRateMetersPerMinute` and its transient warning flag from this estimator.
 
-This value remains a non-certified reference. UI copy and tests must continue to avoid "safe to ascend", "상승 가능", "이제 안전합니다", "감압 완료", "deco clear", and equivalent safety guarantees.
+This pass deliberately leaves raw Core Motion callbacks, 1Hz persisted profile samples, sync contracts, and historical stored ascent fields unchanged. The displayed value remains a non-certified reference.
 
 ## Testing
 
 Automated tests:
 
-- Runtime controller unit tests with fake runtime events:
-  - manual start creates active lifecycle state,
-  - Water Lock/runtime invalidation ends and saves,
-  - 10-minute surface timeout ends,
-  - resubmersion before 10 minutes keeps the same session,
-  - no-sample runtime end cancels or shows no-sample state deterministically.
-- Recording mode tests:
-  - `real` uses runtime lifecycle and no touch end button,
-  - `demo`/`debugTest` do not request runtime lifecycle and keep end button.
-- Ascent smoothing tests:
-  - tiny jitter does not spike,
-  - sustained ascent produces a positive smoothed value,
-  - flat/deeper samples return `0`,
-  - non-finite samples are ignored or clamped.
-- Watch UI language guard continues to reject safety-guarantee phrases.
+- `DiveRuntimeSessionControllerTests` with a fake runtime adapter:
+  - manual start assigns delegate before start,
+  - system adoption assigns delegate without calling start and emits `adoptedSystemSession`,
+  - invalidation is forwarded once,
+  - explicit Action Button invalidation calls the runtime once.
+- `RealDiveSessionCoordinatorTests`:
+  - manual, system, and Action Button starts use the intended plan/source,
+  - system start uses the persisted preferred mode,
+  - runtime invalidation with samples creates one pending summary,
+  - `notSubmerged` alone does not end,
+  - resubmersion before runtime invalidation keeps the same recorder/session,
+  - manual no-sample end shows a no-sample result without saving,
+  - automatic no-sample end returns silently to idle,
+  - duplicate invalidation does not duplicate finalization,
+  - failed summary persistence remains present for retry and discard clears its active journal.
+- `DiveActionButtonIntentTests` through an injectable action bridge:
+  - first press starts using the preferred mode and donates the end action,
+  - underwater or under-3-minute end requests do not invalidate,
+  - surfaced eligible requests invalidate once.
+- `WaterSubmersionCoordinatorTests` for conversion of sample, event, error, and maximum-depth values through testable pure helpers.
+- Recording mode/UI policy tests:
+  - `real` uses the app-scoped lifecycle and has helper text but no touch end action,
+  - `demo`/`debugTest` never request runtime lifecycle and retain `SurfaceEndDiveGate` plus the end button.
+- `DisplayAscentRateEstimatorTests`:
+  - 0.1m jitter stays at zero,
+  - no value is emitted before a 3-second span,
+  - sustained ascent produces a finite positive rate,
+  - flat/deeper, out-of-order, and non-finite inputs produce zero without corrupting later samples.
+- Existing watch UI language guard continues to reject safety-guarantee phrases.
+
+Automated commands:
+
+- Watch unit tests on an installed simulator: `xcodebuild -project apps/mobile/ios/Divenary.xcodeproj -scheme DivenaryWatchAppTests -configuration Debug -destination 'platform=watchOS Simulator,name=Apple Watch Ultra 3 (49mm)' -derivedDataPath /private/tmp/DivenaryWatchAppTestsDerivedData test`
+- Watch compile gate: `yarn watch:build`
+- Repository handoff gate after native and wiki changes: `yarn codex:check`
 
 Manual real-device tests:
 
-- Build and inspect signed watch entitlements.
-- Confirm Divenary appears in Settings > General > Auto-Launch > When Submerged on supported hardware after the required entitlement/provisioning is active.
-- Select Divenary in `When Submerged`, submerge using a safe shallow setup or Xcode Easy Submersion, and confirm app launch and recording start.
-- Confirm Water Lock behavior and Digital Crown hold ends the recording after surfacing.
-- Confirm Action Button Dive ending if available/configured.
-- Confirm out-of-water 10-minute automatic end.
-- Confirm resubmersion within 10 minutes continues the same session.
-- Confirm demo/debug still start, adjust depth by Crown, and end by button.
-- Confirm 41mm/45mm/Ultra layouts do not clip current depth, metrics, or the new helper copy.
+- Inspect the signed watch bundle and profile for the expected shallow entitlement and `underwater-depth` mode.
+- Reinstall the watch app and confirm Divenary appears in Settings > General > Auto-Launch > When Submerged.
+- In the 15cm setup, manually start a real session and confirm a value near `0.1m` appears and Water Lock activates.
+- Verify that the 15cm setup does not falsely count as a successful automatic-launch test.
+- Use Xcode Easy Submersion or a safely controlled depth greater than 1 meter to verify system auto-launch, `handle(_:)`, preferred-mode recording start, and the same real recording UI.
+- Surface and hold Digital Crown; confirm exactly one summary appears.
+- Configure Divenary as the Action Button Dive app; verify first press start and surfaced eligible next-press ending.
+- Remain out of water for more than 10 minutes; confirm system-driven automatic ending.
+- Resubmerge before 10 minutes; confirm the same local session ID continues.
+- Confirm demo/debug still start, adjust depth by Crown, reveal the surface-gated end button, and finish without Water Lock.
+- Check 42mm, 46mm, and 49mm layouts for clipping or overlap of depth, metrics, helper/button row, and disclaimer.
 
-Verification commands:
+## Implementation Plan Split
 
-- `yarn watch:build`
-- If project metadata or architecture docs are changed with implementation, `yarn codex:check`
+The work is split into two implementation plans because ascent smoothing is independent from runtime, signing, auto-launch, Action Button, and recording navigation:
+
+1. Watch underwater runtime lifecycle: entitlement/signing metadata, app-scoped services, shared submersion manager, runtime handoff, real recording state machine, Action Button intents, real/demo end UI, and physical-device checklist.
+2. Watch live ascent-rate smoothing: estimator, recorder integration, focused tests, and display verification.
+
+Each plan must leave the watch app buildable and independently testable.
 
 ## Risks
 
-- Apple submersion entitlements may require developer account capability approval or provisioning updates outside the repository.
-- The app may still not appear in `When Submerged` until signed with the right entitlement even if local `Info.plist` and code are correct.
-- Runtime invalidation callbacks may not map one-to-one to the visible Water Lock UX; this must be validated on hardware.
-- Easy Submersion is a development aid, not proof of real underwater behavior.
-- Smoothing ascent rate improves readability but must not be framed as safety-critical truth.
+- `underwater-depth` should make the installed app an auto-launch candidate, but stale installation, wrong target metadata, hardware/watchOS support, or signing state can still obscure the list entry.
+- The shallow capability only authorizes the public shallow range. The product's 40m target remains blocked until Apple grants and provisions the managed entitlement.
+- Runtime invalidation reasons do not name the visible Digital Crown gesture. The device test must verify that Water Lock removal reaches the expected delegate path.
+- Action Button behavior depends on the user selecting Divenary as the Dive app and on successful next-action donation.
+- Easy Submersion validates system integration but is not proof of physical underwater behavior.
+- The app-scoped real recorder must survive SwiftUI navigation changes without `onDisappear` canceling an active runtime session.
+- Smoothing improves readability but does not make ascent data safety-certified.
 
 ## Implementation Decisions
 
-- Use `WaterSubmersionCoordinator` as the single `CMWaterSubmersionManager` owner for real mode.
-- Manual no-sample ends show a no-sample summary and do not save.
-- Clearly abandoned auto-launched no-sample attempts cancel silently.
-- `WKSupportsAutomaticDepthLaunch` is a conditional compatibility key, not a primary capability. Entitlement/provisioning remains the primary eligibility requirement.
+- Use `DiveAppServices` as the single composition root for store, real sensor, runtime, and real recording coordination.
+- Use `WaterSubmersionCoordinator` as the only production `CMWaterSubmersionManager` owner.
+- Receive system-created sessions through `WKApplicationDelegate.handle(_:)` and assign the runtime delegate before returning.
+- Remove the internal `3m` `DiveAutoStartMonitor`; do not replace it with an app timer or depth threshold.
+- Let watchOS own Water Lock removal and the continuous 10-minute out-of-water timeout.
+- Implement Action Button start/end through `StartDiveIntent` plus a donated next `AppIntent`.
+- Use the public shallow entitlement first and treat full 40m entitlement as an external release gate.
+- Automatic and Action Button starts use only the persisted last selected mode, not a persisted planned-dive selection.
+- Manual/Action Button no-sample ends show a no-sample result; system auto-launch no-sample attempts cancel silently.
+- Keep demo/debug recorder ownership and touch ending separate from all real runtime services.
+- Implement live ascent smoothing in a separate focused plan and leave persisted profile data unchanged.
