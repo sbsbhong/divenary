@@ -893,6 +893,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = CXSWPUW5XA;
@@ -922,6 +923,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = CXSWPUW5XA;
