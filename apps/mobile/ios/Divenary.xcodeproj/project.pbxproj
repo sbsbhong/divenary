@@ -71,6 +71,7 @@
 		D60000000000000000000007 /* SimulatedRecordingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000008 /* SimulatedRecordingFlowView.swift */; };
 		D70000000000000000000003 /* DisplayAscentRateEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000004 /* DisplayAscentRateEstimator.swift */; };
 		D70000000000000000000002 /* DisplayAscentRateEstimatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */; };
+		D80000000000000000000002 /* DiveSessionRecorderAscentRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -177,6 +178,7 @@
 		D60000000000000000000008 /* SimulatedRecordingFlowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SimulatedRecordingFlowView.swift; sourceTree = "<group>"; };
 		D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimatorTests.swift; sourceTree = "<group>"; };
 		D70000000000000000000004 /* DisplayAscentRateEstimator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimator.swift; sourceTree = "<group>"; };
+		D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecorderAscentRateTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -391,6 +393,7 @@
 			isa = PBXGroup;
 			children = (
 				D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */,
+				D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */,
 				FA2000000000000000000001 /* EngineTestFixtures.swift */,
 				FA2000000000000000000002 /* FreeDiveSessionEngineTests.swift */,
 				FA2000000000000000000004 /* DiveSessionRecordMigrationTests.swift */,
@@ -692,6 +695,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D70000000000000000000002 /* DisplayAscentRateEstimatorTests.swift in Sources */,
+				D80000000000000000000002 /* DiveSessionRecorderAscentRateTests.swift in Sources */,
 				FA1000000000000000000001 /* EngineTestFixtures.swift in Sources */,
 				FA1000000000000000000002 /* FreeDiveSessionEngineTests.swift in Sources */,
 				FA1000000000000000000003 /* DiveSessionRecordMigrationTests.swift in Sources */,

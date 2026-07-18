@@ -30,6 +30,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     private var scubaEngine: ScubaDiveEngine?
     private var profileSampler: OneHertzProfileSampler?
     private var lastRawSample: DepthSample?
+    private var displayAscentRateEstimator = DisplayAscentRateEstimator()
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
 
@@ -61,6 +62,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         freeSnapshot = nil
         scubaSafetyStop = .legacyUnknown
         recordingPersistenceError = nil
+        displayAscentRateEstimator.reset()
         activePlan = plan
         let startedAt = now()
         let sessionID = UUID()
@@ -169,6 +171,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
 
     @discardableResult
     func cancelSession() -> Bool {
+        displayAscentRateEstimator.reset()
         stopCaptureAndResetSessionState()
         guard let sessionID = activeRecordID else {
             return true
@@ -213,14 +216,13 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             return
         }
 
-        let previousSample = lastRawSample
         lastRawSample = sample
         currentDepth = sample.depthMeters
         maxDepth = max(maxDepth, sample.depthMeters)
         if let measuredTemperature = sample.waterTemperatureCelsius {
             waterTemperatureCelsius = measuredTemperature
         }
-        latestAscentRateMetersPerMinute = ascentRate(from: previousSample, to: sample)
+        latestAscentRateMetersPerMinute = displayAscentRateEstimator.append(sample)
         ascentWarningActive = latestAscentRateMetersPerMinute > recommendedAscentRateMetersPerMinute
 
         if let finalized = profileSampler?.append(sample) {
@@ -251,13 +253,6 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         }
 
         elapsedTime = max(0, now().timeIntervalSince(startedAt))
-    }
-
-    private func ascentRate(from previous: DepthSample?, to current: DepthSample) -> Double {
-        guard let previous else { return 0 }
-        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
-        return (previous.depthMeters - current.depthMeters) / elapsed * 60
     }
 
     private func flushFinalProfileSample() {
