@@ -63,6 +63,8 @@
 		C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000003 /* DiveRuntimeSessionController.swift */; };
 		C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */; };
 		C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000003 /* RealDiveSessionCoordinator.swift */; };
+		C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000001 /* DiveActionButtonIntentTests.swift */; };
+		C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003 /* DiveActionButtonIntents.swift */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -161,6 +163,8 @@
 		C30000000000000000000003 /* DiveRuntimeSessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionController.swift; sourceTree = "<group>"; };
 		C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinatorTests.swift; sourceTree = "<group>"; };
 		C40000000000000000000003 /* RealDiveSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinator.swift; sourceTree = "<group>"; };
+		C50000000000000000000001 /* DiveActionButtonIntentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntentTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000003 /* DiveActionButtonIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -317,6 +321,7 @@
 				B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */,
 				C30000000000000000000003 /* DiveRuntimeSessionController.swift */,
 				C40000000000000000000003 /* RealDiveSessionCoordinator.swift */,
+				C50000000000000000000003 /* DiveActionButtonIntents.swift */,
 			);
 			path = Runtime;
 			sourceTree = "<group>";
@@ -378,6 +383,7 @@
 				C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */,
 				C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */,
 				C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */,
+				C50000000000000000000001 /* DiveActionButtonIntentTests.swift */,
 			);
 			path = DivenaryWatchAppTests;
 			sourceTree = "<group>";
@@ -643,6 +649,7 @@
 				B10000000000000000000003 /* DepthAutoLaunchAuthorization.swift in Sources */,
 				C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */,
 				C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */,
+				C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */,
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
 				A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */,
 				3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */,
@@ -671,6 +678,7 @@
 				C20000000000000000000002 /* WaterSubmersionCoordinatorTests.swift in Sources */,
 				C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */,
 				C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */,
+				C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
