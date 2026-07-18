@@ -272,7 +272,7 @@
 
   Expected: every command exits 0.
 
-- [ ] **Step 3: Request final code review**
+- [x] **Step 3: Request final code review**
 
   Review security boundaries, release isolation, project-ref guards, secret handling, RLS/RPC correctness, and mobile Auth concurrency. Resolve all Critical and Important findings.
 
