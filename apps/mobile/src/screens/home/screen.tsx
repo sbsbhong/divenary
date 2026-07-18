@@ -167,7 +167,7 @@ function LatestLogEmptyCard(): React.JSX.Element {
   return (
     <DiveSummaryCard>
       <VStack testID="home-latest-empty-state" space="md">
-        <DiveSummaryCard.Header eyebrow={t('home.latestLog')} title={t('home.noRecentLog')} />
+        <DiveSummaryCard.Header title={t('home.noRecentLog')} />
       </VStack>
     </DiveSummaryCard>
   );

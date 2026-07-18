@@ -5,6 +5,10 @@ function readScreen(relativePath: string): string {
   return readFileSync(resolve(process.cwd(), 'src/screens', relativePath), 'utf8');
 }
 
+function readResourceValues(): string {
+  return readFileSync(resolve(process.cwd(), 'src/i18n/resources.ts'), 'utf8');
+}
+
 describe('mobile visible-copy policy', () => {
   test('keeps screen chrome free of repeated guidance and placeholder workflow copy', () => {
     const home = readScreen('home/screen.tsx');
@@ -14,6 +18,7 @@ describe('mobile visible-copy policy', () => {
     const planning = readScreen('planning/screen.tsx');
     const memory = readScreen('memory/screen.tsx');
     const settings = readScreen('settings/screen.tsx');
+    const resources = readResourceValues();
 
     expect(home).not.toContain("t('home.subtitle')");
     expect(home).not.toContain('home-reminder-alert');
@@ -31,5 +36,12 @@ describe('mobile visible-copy policy', () => {
     expect(settings).not.toContain("t('settings.theme.subtitle')");
     expect(settings).not.toContain("t('settings.language.subtitle')");
     expect(settings).not.toContain("t('settings.notifications.subtitle')");
+    expect(home).not.toContain("<DiveSummaryCard.Header eyebrow={t('home.latestLog')} title={t('home.noRecentLog')} />");
+    expect(logbook).not.toContain("t('logbook.emptyEyebrow')");
+    expect(planning).not.toContain("t('planning.emptyEyebrow')");
+    expect(memory).not.toContain("t('memory.staticPreview')");
+    expect(memory).not.toContain("t('memory.safeAnalytics')");
+    expect(resources).not.toContain('photoImportPlaceholder');
+    expect(resources).not.toMatch(/:\s*'[^']*(?:this build|이 빌드|placeholder|플레이스홀더)/i);
   });
 });

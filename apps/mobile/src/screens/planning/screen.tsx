@@ -465,7 +465,7 @@ function EmptyPlanbook(): React.JSX.Element {
   return (
     <DiveSummaryCard>
       <VStack testID="planning-empty-state" space="lg">
-        <DiveSummaryCard.Header eyebrow={t('planning.emptyEyebrow', { defaultValue: 'Empty' })} title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />
+        <DiveSummaryCard.Header title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />
       </VStack>
     </DiveSummaryCard>
   );

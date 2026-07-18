@@ -235,21 +235,15 @@ export default function SettingsScreen({
                   return;
                 }
                 Alert.alert(
-                  t('settings.notifications.permissionRequired', {
-                    defaultValue: '알림 권한이 필요합니다',
-                  }),
-                  t('settings.notifications.openSettingsDescription', {
-                    defaultValue: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
-                  }),
+                  t('settings.notifications.permissionRequired'),
+                  t('settings.notifications.openSettingsDescription'),
                   [
                     {
-                      text: t('common.cancel', { defaultValue: '취소' }),
+                      text: t('common.cancel'),
                       style: 'cancel',
                     },
                     {
-                      text: t('settings.notifications.openSettings', {
-                        defaultValue: '설정 열기',
-                      }),
+                      text: t('settings.notifications.openSettings'),
                       onPress: () => {
                         awaitingNotificationSettings.current = true;
                         void openNotificationSettings();

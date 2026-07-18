@@ -279,6 +279,31 @@ describe('SettingsScreen', () => {
     expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(false);
   });
 
+  test('uses English resource copy when notification permission is denied', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    const renderer = await renderSettings({
+      requestWatchSyncNotificationPermission: jest.fn().mockResolvedValue(false),
+      route: 'notifications',
+    });
+    const root = renderer.root;
+
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+    });
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
+    });
+
+    expect(alert).toHaveBeenCalledWith(
+      'Notification permission needed',
+      'Allow notifications for this app in iPhone Settings, then return to turn this on automatically.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        expect.objectContaining({ text: 'Open Settings' }),
+      ],
+    );
+  });
+
   test('enables the toggle after a physical-device permission change in iOS Settings', async () => {
     let appStateListener: ((state: AppStateStatus) => void) | undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
@@ -369,7 +394,7 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe(
-      '워치 연동 모듈을 반영하려면 iOS 앱을 다시 빌드하세요',
+      '워치 연동을 사용하려면 앱을 업데이트하세요',
     );
   });
 

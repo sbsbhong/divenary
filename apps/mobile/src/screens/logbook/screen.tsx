@@ -327,7 +327,7 @@ function EmptyLogbook(): React.JSX.Element {
   return (
     <DiveSummaryCard>
       <VStack testID="logbook-empty-state" space="lg">
-        <DiveSummaryCard.Header eyebrow={t('logbook.emptyEyebrow')} title={t('logbook.noImportedDives')} />
+        <DiveSummaryCard.Header title={t('logbook.noImportedDives')} />
       </VStack>
     </DiveSummaryCard>
   );

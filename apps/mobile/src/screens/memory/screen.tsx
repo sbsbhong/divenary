@@ -34,7 +34,6 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
 
         <DiveSummaryCard accent="primary">
           <DiveSummaryCard.Header
-            eyebrow={t('memory.staticPreview')}
             title={session?.siteName ?? t('memory.importDive')}
             right={
               <Text className="text-sm font-semibold text-muted-foreground">
@@ -58,7 +57,7 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
         </DiveSummaryCard>
 
         <DiveSummaryCard accent="primary">
-          <DiveSummaryCard.Header eyebrow={t('memory.safeAnalytics')} title={t('memory.reviewSummaries')} />
+          <DiveSummaryCard.Header title={t('memory.reviewSummaries')} />
           <DiveSummaryCard.Body>
             <DiveSummaryCard.Metric label={t('memory.loggedDives')} value={`${props.sessions.length}`} />
             <DiveSummaryCard.Metric label={t('memory.totalBottomTime')} value={formatOptionalDuration(totalDuration)} />
