@@ -21,6 +21,7 @@ function jsonResponse(status, body) {
 }
 
 function createFixture({
+  existingUserPages = [[{id: 'previous-user', email}]],
   requiredDocuments = [
     {kind: 'terms', version: '2026-07-13'},
     {kind: 'privacy', version: '2026-07-13'},
@@ -31,7 +32,9 @@ function createFixture({
   const fileOperations = [];
   const logs = [];
   const responses = [
-    jsonResponse(200, {users: [{id: 'previous-user', email}]}),
+    ...existingUserPages.map(users =>
+      jsonResponse(200, {aud: 'authenticated', users}),
+    ),
     jsonResponse(204),
     jsonResponse(201, {id: 'replacement-user', email, email_confirmed_at: '2026-07-18T00:00:00.000Z'}),
     jsonResponse(200, {access_token: 'local-session-token'}),
@@ -126,6 +129,31 @@ test('recreates a confirmed local user, verifies pending onboarding, and atomica
     ['rename', temporaryEnvPath, envPath],
   ]);
   assert.deepEqual(fixture.logs, []);
+});
+
+test('finds and deletes the fixture user on a later admin list page', async () => {
+  const firstPageUsers = Array.from({length: 1000}, (_, index) => ({
+    id: `other-user-${index}`,
+    email: `other-user-${index}@development.invalid`,
+  }));
+  const fixture = createFixture({
+    existingUserPages: [
+      firstPageUsers,
+      [{id: 'later-page-user', email}],
+    ],
+  });
+
+  const result = await prepareLocalMobileAuth(fixture.options);
+
+  assert.deepEqual(result, {email, envPath});
+  assert.deepEqual(
+    fixture.requests.slice(0, 3).map(({url, method}) => ({url, method})),
+    [
+      {url: `${apiUrl}/auth/v1/admin/users?page=1&per_page=1000`, method: 'GET'},
+      {url: `${apiUrl}/auth/v1/admin/users?page=2&per_page=1000`, method: 'GET'},
+      {url: `${apiUrl}/auth/v1/admin/users/later-page-user`, method: 'DELETE'},
+    ],
+  );
 });
 
 test('accepts exactly terms and privacy regardless of RPC order', async () => {

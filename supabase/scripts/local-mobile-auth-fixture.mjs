@@ -4,6 +4,8 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const fixtureEmail = 'divenary-local@development.invalid';
+const adminUserPageSize = 1000;
+const maximumAdminUserPages = 1000;
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const defaultEnvPath = path.join(repositoryRoot, 'apps/mobile/.env.local');
 
@@ -86,6 +88,53 @@ function createEnvironment({apiUrl, androidUrl, publishableKey, password}) {
   ].join('\n');
 }
 
+async function listFixtureUserIds(fetchImpl, apiUrl, adminHeaders) {
+  const userIds = new Set();
+
+  for (let page = 1; page <= maximumAdminUserPages; page += 1) {
+    const response = await fetchImpl(
+      `${apiUrl}/auth/v1/admin/users?page=${page}&per_page=${adminUserPageSize}`,
+      {method: 'GET', headers: adminHeaders},
+    );
+    const body = await readResponse(
+      response,
+      'list local fixture users',
+      [200],
+    );
+
+    if (
+      body === null ||
+      typeof body !== 'object' ||
+      Array.isArray(body) ||
+      !Array.isArray(body.users) ||
+      body.users.length > adminUserPageSize
+    ) {
+      throw new Error('Local fixture user list is invalid.');
+    }
+
+    for (const user of body.users) {
+      if (
+        user === null ||
+        typeof user !== 'object' ||
+        Array.isArray(user) ||
+        typeof user.id !== 'string'
+      ) {
+        throw new Error('Local fixture user list is invalid.');
+      }
+
+      if (user.email === fixtureEmail) {
+        userIds.add(user.id);
+      }
+    }
+
+    if (body.users.length < adminUserPageSize) {
+      return [...userIds];
+    }
+  }
+
+  throw new Error('Local fixture user list exceeded the safe page limit.');
+}
+
 export async function prepareLocalMobileAuth(options) {
   const {
     readLocalStatus,
@@ -106,23 +155,7 @@ export async function prepareLocalMobileAuth(options) {
   const androidUrl = createAndroidUrl(apiUrl);
   const password = randomBytesImpl(32).toString('base64url');
   const adminHeaders = createHeaders(secretKey);
-  const existingUsersResponse = await fetchImpl(
-    `${apiUrl}/auth/v1/admin/users?page=1&per_page=1000`,
-    {method: 'GET', headers: adminHeaders},
-  );
-  const existingUsers = await readResponse(
-    existingUsersResponse,
-    'list local fixture users',
-    [200],
-  );
-  const userIds = existingUsers?.users
-    ?.filter(user => user?.email === fixtureEmail)
-    .map(user => user.id)
-    .filter(userId => typeof userId === 'string');
-
-  if (!Array.isArray(userIds)) {
-    throw new Error('Local fixture user list is invalid.');
-  }
+  const userIds = await listFixtureUserIds(fetchImpl, apiUrl, adminHeaders);
 
   for (const userId of userIds) {
     const deleteResponse = await fetchImpl(
