@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url';
 
 export const STAGING_PROJECT_REF = 'mclvhwzsuvsxjerdouka';
 export const STAGING_LEGAL_VERSION = '2026-07-18-staging.1';
+export const STAGING_LEGAL_EFFECTIVE_AT = '2026-07-18T00:00:00.000Z';
 export const ONBOARDING_RPC_METADATA_SQL = [
   'select',
   '  procedure.proname as name,',
@@ -31,7 +32,6 @@ const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const projectRefPath = path.join(repositoryRoot, 'supabase/.temp/project-ref');
 const stagingLegalBaseUrl = 'https://raw.githubusercontent.com/sbsbhong/divenary';
 const legalDocumentPath = 'docs/legal/staging/2026-07-18';
-const stagingEffectiveAt = '2026-07-18T00:00:00.000Z';
 
 function assertPromotionCommit(commitSha) {
   if (!/^[0-9a-f]{40}$/.test(commitSha)) {
@@ -92,8 +92,8 @@ export function buildStagingLegalSql(commitSha) {
     'begin',
     '  insert into public.legal_documents (kind, version, effective_at, document_url)',
     '  values',
-    `    (${sqlLiteral('terms')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(stagingEffectiveAt)}, ${sqlLiteral(urls.terms)}),`,
-    `    (${sqlLiteral('privacy')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(stagingEffectiveAt)}, ${sqlLiteral(urls.privacy)})`,
+    `    (${sqlLiteral('terms')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(STAGING_LEGAL_EFFECTIVE_AT)}, ${sqlLiteral(urls.terms)}),`,
+    `    (${sqlLiteral('privacy')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(STAGING_LEGAL_EFFECTIVE_AT)}, ${sqlLiteral(urls.privacy)})`,
     '  on conflict (kind, version) do update',
     '  set effective_at = excluded.effective_at,',
     '      document_url = excluded.document_url',

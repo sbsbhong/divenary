@@ -16,6 +16,45 @@ import {
 } from './staging-project.mjs';
 
 const commitSha = '0123456789abcdef0123456789abcdef01234567';
+const expectedEffectiveAt = '2026-07-18T00:00:00.000Z';
+
+function jsonResponse(status, body) {
+  return {
+    status,
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+function createInjectedLinkState({exists = true, ref = STAGING_PROJECT_REF} = {}) {
+  let currentExists = exists;
+  let currentRef = ref;
+  const calls = [];
+
+  return {
+    calls,
+    options: {
+      projectRefExists: async () => currentExists,
+      readProjectRef: async () => {
+        if (!currentExists) {
+          const error = new Error('project ref does not exist');
+          error.code = 'ENOENT';
+          throw error;
+        }
+        return `${currentRef}\n`;
+      },
+      spawnSyncImpl: (...arguments_) => {
+        calls.push(arguments_);
+        return {status: 0, stdout: '{"rows":[]}'};
+      },
+    },
+    setLink(nextRef) {
+      currentExists = true;
+      currentRef = nextRef;
+    },
+  };
+}
 
 test('removes unrelated project identifiers and preserves the access token', () => {
   const environment = buildStagingEnvironment({
@@ -157,21 +196,153 @@ test('rejects a legal document with another exact version line', async () => {
 });
 
 test('accepts the stable anonymous RPC permission code without matching its message', async () => {
-  const result = await stagingVerification.verifyAnonymousOnboardingRpc({
-    publicApiKey: 'public-key',
-    fetchImpl: async () => ({
-      status: 401,
-      async text() {
-        return JSON.stringify({
+  for (const publicApiKey of [
+    'sb_publishable_opaque-key',
+    'eyJhbGciOiJIUzI1NiJ9.legacy-anon.signature',
+  ]) {
+    const requests = [];
+    const result = await stagingVerification.verifyAnonymousOnboardingRpc({
+      publicApiKey,
+      fetchImpl: async (url, options) => {
+        requests.push({url, options});
+        return jsonResponse(401, {
           code: '42501',
           message: 'localized permission denied text',
         });
       },
-    }),
-  });
+    });
 
-  assert.equal(result, undefined);
+    assert.equal(result, undefined);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].options, {
+      method: 'POST',
+      headers: {
+        apikey: publicApiKey,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    });
+  }
 });
+
+test('verifies exact legal rows and uses only apikey for both public key formats', async () => {
+  const expectedBase =
+    `https://raw.githubusercontent.com/sbsbhong/divenary/${commitSha}` +
+    '/docs/legal/staging/2026-07-18';
+
+  for (const publicApiKey of [
+    'sb_publishable_opaque-key',
+    'eyJhbGciOiJIUzI1NiJ9.legacy-anon.signature',
+  ]) {
+    const requests = [];
+    const responses = [
+      jsonResponse(200, [
+        {kind: 'terms', document_version: STAGING_LEGAL_VERSION},
+        {kind: 'privacy', document_version: STAGING_LEGAL_VERSION},
+      ]),
+      jsonResponse(200, [
+        {
+          kind: 'terms',
+          version: STAGING_LEGAL_VERSION,
+          effective_at: '2026-07-18T09:00:00+09:00',
+          document_url: `${expectedBase}/terms.md`,
+        },
+      ]),
+      jsonResponse(200, [
+        {
+          kind: 'privacy',
+          version: STAGING_LEGAL_VERSION,
+          effective_at: expectedEffectiveAt,
+          document_url: `${expectedBase}/privacy.md`,
+        },
+      ]),
+    ];
+
+    const legalDocuments = await stagingVerification.verifyPublicLegalDocuments({
+      publicApiKey,
+      commitSha,
+      fetchImpl: async (url, options) => {
+        requests.push({url, options});
+        return responses.shift();
+      },
+    });
+
+    assert.deepEqual(
+      legalDocuments.map(document => document.effectiveAt),
+      [expectedEffectiveAt, expectedEffectiveAt],
+    );
+    assert.equal(requests.length, 3);
+    for (const request of requests) {
+      assert.deepEqual(request.options, {headers: {apikey: publicApiKey}});
+      assert.doesNotMatch(JSON.stringify(request.options), /authorization/i);
+    }
+    assert.match(requests[1].url, /effective_at/);
+    assert.match(requests[2].url, /effective_at/);
+  }
+});
+
+test('reads public Auth settings with only apikey for both public key formats', async () => {
+  for (const publicApiKey of [
+    'sb_publishable_opaque-key',
+    'eyJhbGciOiJIUzI1NiJ9.legacy-anon.signature',
+  ]) {
+    const requests = [];
+    const providers = await stagingVerification.verifyProviderFlags({
+      publicApiKey,
+      fetchImpl: async (url, options) => {
+        requests.push({url, options});
+        return jsonResponse(200, {external: {google: true, apple: true}});
+      },
+    });
+
+    assert.deepEqual(providers, {google: true, apple: true});
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].options, {headers: {apikey: publicApiKey}});
+    assert.doesNotMatch(JSON.stringify(requests[0].options), /authorization/i);
+  }
+});
+
+for (const [label, effectiveAt] of [
+  ['invalid', 'not-a-timestamp'],
+  ['mismatched', '2026-07-18T00:00:01.000Z'],
+]) {
+  test(`rejects a legal document with a ${label} effective timestamp`, async () => {
+    const expectedBase =
+      `https://raw.githubusercontent.com/sbsbhong/divenary/${commitSha}` +
+      '/docs/legal/staging/2026-07-18';
+    const responses = [
+      jsonResponse(200, [
+        {kind: 'terms', document_version: STAGING_LEGAL_VERSION},
+        {kind: 'privacy', document_version: STAGING_LEGAL_VERSION},
+      ]),
+      jsonResponse(200, [
+        {
+          kind: 'terms',
+          version: STAGING_LEGAL_VERSION,
+          effective_at: effectiveAt,
+          document_url: `${expectedBase}/terms.md`,
+        },
+      ]),
+      jsonResponse(200, [
+        {
+          kind: 'privacy',
+          version: STAGING_LEGAL_VERSION,
+          effective_at: expectedEffectiveAt,
+          document_url: `${expectedBase}/privacy.md`,
+        },
+      ]),
+    ];
+
+    await assert.rejects(
+      stagingVerification.verifyPublicLegalDocuments({
+        publicApiKey: 'sb_publishable_opaque-key',
+        commitSha,
+        fetchImpl: async () => responses.shift(),
+      }),
+      /effective timestamp/i,
+    );
+  });
+}
 
 test('rejects the old PT401 anonymous RPC contract', async () => {
   await assert.rejects(
@@ -247,21 +418,21 @@ test('rejects onboarding RPC metadata without the CLI rows envelope', () => {
 });
 
 test('allows only the exact read-only onboarding metadata query', async () => {
-  const calls = [];
+  const linkState = createInjectedLinkState();
   await stagingRunner.runStagingSupabase(
     stagingVerification.ONBOARDING_RPC_METADATA_COMMAND,
     {
-      spawnSyncImpl: (...arguments_) => {
-        calls.push(arguments_);
-        return {status: 0, stdout: '{"rows":[]}'};
-      },
+      ...linkState.options,
       stdio: ['ignore', 'pipe', 'pipe'],
       encoding: 'utf8',
     },
   );
 
-  assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0][1], stagingVerification.ONBOARDING_RPC_METADATA_COMMAND);
+  assert.equal(linkState.calls.length, 1);
+  assert.deepEqual(
+    linkState.calls[0][1],
+    stagingVerification.ONBOARDING_RPC_METADATA_COMMAND,
+  );
 
   await assert.rejects(
     stagingRunner.runStagingSupabase(
@@ -270,6 +441,71 @@ test('allows only the exact read-only onboarding metadata query', async () => {
     ),
     /unsupported staging/i,
   );
+});
+
+test('runner fails closed when injected linked project state is missing', async () => {
+  const linkState = createInjectedLinkState({exists: false});
+
+  await assert.rejects(
+    stagingRunner.runStagingSupabase(['migration', 'list', '--linked'], linkState.options),
+    /project[- ]ref|linked project/i,
+  );
+  assert.equal(linkState.calls.length, 0);
+});
+
+test('runner fails closed when injected linked project state is mismatched', async () => {
+  const linkState = createInjectedLinkState({ref: 'another-project'});
+
+  await assert.rejects(
+    stagingRunner.runStagingSupabase(['migration', 'list', '--linked'], linkState.options),
+    /linked project ref.*another-project/i,
+  );
+  assert.equal(linkState.calls.length, 0);
+});
+
+test('runner accepts a valid injected linked project state', async () => {
+  const linkState = createInjectedLinkState();
+
+  await stagingRunner.runStagingSupabase(
+    ['migration', 'list', '--linked'],
+    linkState.options,
+  );
+
+  assert.equal(linkState.calls.length, 1);
+});
+
+test('runner validates injected project state after linking', async () => {
+  const linkState = createInjectedLinkState({exists: false});
+  const spawnSyncImpl = (...arguments_) => {
+    linkState.calls.push(arguments_);
+    linkState.setLink(STAGING_PROJECT_REF);
+    return {status: 0};
+  };
+
+  await stagingRunner.runStagingSupabase(['link', '--project-ref', STAGING_PROJECT_REF], {
+    ...linkState.options,
+    spawnSyncImpl,
+  });
+
+  assert.equal(linkState.calls.length, 1);
+});
+
+test('runner fails closed when post-link injected project state is mismatched', async () => {
+  const linkState = createInjectedLinkState({exists: false});
+  const spawnSyncImpl = (...arguments_) => {
+    linkState.calls.push(arguments_);
+    linkState.setLink('another-project');
+    return {status: 0};
+  };
+
+  await assert.rejects(
+    stagingRunner.runStagingSupabase(['link', '--project-ref', STAGING_PROJECT_REF], {
+      ...linkState.options,
+      spawnSyncImpl,
+    }),
+    /linked project ref.*another-project/i,
+  );
+  assert.equal(linkState.calls.length, 1);
 });
 
 test('sanitizes staging verification output with an allowlisted public summary', () => {

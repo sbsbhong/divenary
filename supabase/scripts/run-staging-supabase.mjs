@@ -51,17 +51,17 @@ async function assertAllowedStagingCommand(arguments_) {
   }
 }
 
-async function assertLinkIsSafe(arguments_) {
+async function assertLinkIsSafe(arguments_, {projectRefExists, readProjectRef}) {
   if (arguments_[0] !== 'link') {
-    await assertStagingProjectRef();
+    await assertStagingProjectRef({readProjectRef});
     return;
   }
 
-  if (!existsSync(projectRefPath)) {
+  if (!(await projectRefExists())) {
     return;
   }
 
-  await assertStagingProjectRef();
+  await assertStagingProjectRef({readProjectRef});
 }
 
 export async function runStagingSupabase(arguments_, {
@@ -69,9 +69,11 @@ export async function runStagingSupabase(arguments_, {
   environment = process.env,
   stdio = 'inherit',
   encoding,
+  projectRefExists = () => existsSync(projectRefPath),
+  readProjectRef = () => readFile(projectRefPath, 'utf8'),
 } = {}) {
   await assertAllowedStagingCommand(arguments_);
-  await assertLinkIsSafe(arguments_);
+  await assertLinkIsSafe(arguments_, {projectRefExists, readProjectRef});
 
   const result = spawnSyncImpl(supabaseCli, arguments_, {
     cwd: repositoryRoot,
@@ -90,7 +92,7 @@ export async function runStagingSupabase(arguments_, {
   }
 
   if (arguments_[0] === 'link') {
-    await assertStagingProjectRef();
+    await assertStagingProjectRef({readProjectRef});
   }
 
   return result;

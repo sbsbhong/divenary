@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 
 import {
   ONBOARDING_RPC_METADATA_COMMAND,
+  STAGING_LEGAL_EFFECTIVE_AT,
   STAGING_LEGAL_VERSION,
   STAGING_PROJECT_REF,
   assertStagingProjectRef,
@@ -112,8 +113,18 @@ async function fetchJson(fetchImpl, url, options, label, statuses = [200]) {
 function assertExactLegalDocuments(rows, commitSha) {
   const expectedUrls = buildStagingLegalUrls(commitSha);
   const expected = [
-    {kind: 'terms', version: STAGING_LEGAL_VERSION, documentUrl: expectedUrls.terms},
-    {kind: 'privacy', version: STAGING_LEGAL_VERSION, documentUrl: expectedUrls.privacy},
+    {
+      kind: 'terms',
+      version: STAGING_LEGAL_VERSION,
+      effectiveAt: STAGING_LEGAL_EFFECTIVE_AT,
+      documentUrl: expectedUrls.terms,
+    },
+    {
+      kind: 'privacy',
+      version: STAGING_LEGAL_VERSION,
+      effectiveAt: STAGING_LEGAL_EFFECTIVE_AT,
+      documentUrl: expectedUrls.privacy,
+    },
   ];
 
   if (!Array.isArray(rows) || rows.length !== expected.length) {
@@ -125,6 +136,7 @@ function assertExactLegalDocuments(rows, commitSha) {
     if (
       actual[index]?.kind !== document.kind ||
       actual[index]?.version !== document.version ||
+      actual[index]?.effectiveAt !== document.effectiveAt ||
       actual[index]?.documentUrl !== document.documentUrl
     ) {
       throw new Error('Staging public legal document rows do not match the promotion commit.');
@@ -134,8 +146,71 @@ function assertExactLegalDocuments(rows, commitSha) {
   return actual;
 }
 
-async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) {
-  const headers = {apikey: publicApiKey, Authorization: `Bearer ${publicApiKey}`};
+function normalizeLegalEffectiveAt(value) {
+  if (typeof value !== 'string') {
+    throw new Error('Staging legal document effective timestamp is invalid.');
+  }
+
+  const match = value.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|([+-])(\d{2}):(\d{2}))$/,
+  );
+  if (!match) {
+    throw new Error('Staging legal document effective timestamp is invalid.');
+  }
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText] = match;
+  const fraction = match[7] ?? '';
+  const zone = match[8];
+  const offsetSign = match[9];
+  const offsetHour = Number(match[10] ?? 0);
+  const offsetMinute = Number(match[11] ?? 0);
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const milliseconds = Number(fraction.padEnd(3, '0').slice(0, 3));
+
+  if (
+    month < 1 || month > 12 ||
+    hour > 23 || minute > 59 || second > 59 ||
+    offsetHour > 14 || offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0) ||
+    fraction.slice(3).replaceAll('0', '') !== ''
+  ) {
+    throw new Error('Staging legal document effective timestamp is invalid.');
+  }
+
+  const localTime = new Date(0);
+  localTime.setUTCFullYear(year, month - 1, day);
+  localTime.setUTCHours(hour, minute, second, milliseconds);
+  if (
+    localTime.getUTCFullYear() !== year ||
+    localTime.getUTCMonth() !== month - 1 ||
+    localTime.getUTCDate() !== day ||
+    localTime.getUTCHours() !== hour ||
+    localTime.getUTCMinutes() !== minute ||
+    localTime.getUTCSeconds() !== second ||
+    localTime.getUTCMilliseconds() !== milliseconds
+  ) {
+    throw new Error('Staging legal document effective timestamp is invalid.');
+  }
+
+  const offsetDirection = zone === 'Z' ? 0 : offsetSign === '+' ? 1 : -1;
+  const timestamp =
+    localTime.getTime() -
+    offsetDirection * (offsetHour * 60 + offsetMinute) * 60_000;
+  const normalized = new Date(timestamp).toISOString();
+  if (normalized !== STAGING_LEGAL_EFFECTIVE_AT) {
+    throw new Error('Staging legal document effective timestamp does not match staging.');
+  }
+
+  return normalized;
+}
+
+export async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) {
+  const headers = {apikey: publicApiKey};
   const pointers = await fetchJson(
     fetchImpl,
     `${stagingApiUrl}/rest/v1/current_legal_documents?select=kind,document_version&order=kind.asc`,
@@ -156,7 +231,7 @@ async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) 
 
     const documents = await fetchJson(
       fetchImpl,
-      `${stagingApiUrl}/rest/v1/legal_documents?kind=eq.${kind}&version=eq.${encodeURIComponent(pointer.document_version)}&select=kind,version,document_url`,
+      `${stagingApiUrl}/rest/v1/legal_documents?kind=eq.${kind}&version=eq.${encodeURIComponent(pointer.document_version)}&select=kind,version,effective_at,document_url`,
       {headers},
       `Staging ${kind} legal document`,
     );
@@ -167,6 +242,7 @@ async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) 
     rows.push({
       kind: documents[0].kind,
       version: documents[0].version,
+      effectiveAt: normalizeLegalEffectiveAt(documents[0].effective_at),
       documentUrl: documents[0].document_url,
     });
   }
@@ -182,7 +258,6 @@ export async function verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey}) {
       method: 'POST',
       headers: {
         apikey: publicApiKey,
-        Authorization: `Bearer ${publicApiKey}`,
         'Content-Type': 'application/json',
       },
       body: '{}',
@@ -232,7 +307,7 @@ async function readOnboardingRpcMetadata() {
   return parseOnboardingRpcMetadata(result.stdout);
 }
 
-async function verifyProviderFlags({fetchImpl, publicApiKey}) {
+export async function verifyProviderFlags({fetchImpl, publicApiKey}) {
   const settings = await fetchJson(
     fetchImpl,
     `${stagingApiUrl}/auth/v1/settings`,
@@ -263,8 +338,8 @@ export async function verifyStagingAuth({
     verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}),
     readRpcMetadata(),
     verifyProviderFlags({fetchImpl, publicApiKey}),
-    verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey}),
   ]);
+  await verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey});
 
   return sanitizeStagingAuthVerification({
     projectRef: STAGING_PROJECT_REF,
