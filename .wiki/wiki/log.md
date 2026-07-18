@@ -1,29 +1,5 @@
 # Wiki Log
 
-## [2026-07-18] ingest | Watch underwater runtime verification review correction
-- Updated: Watch 앱 구조
-- Updated: Diving App / QA and Test Plan
-- Updated: 열린 질문
-- 근거:
-  - Action Button 수중/unknown/early rejection은 diver interaction이 아니라 existing unit test 또는 controlled developer harness로 제한
-  - Xcode Easy Submersion의 simulator adoption/UI 범위와 physical sensor, actual hardware `When Submerged`, Water Lock, release readiness 경계 분리
-  - Action Button `>=180s (3 minutes)`, watchOS timeout `>600s (10 minutes)`, D8 device timeline과 app-timer source/test audit 분리
-- 요약:
-  - 실기기 Action Button 단계는 surfaced eligible end만 다룬다. simulator integration evidence와 physical release evidence를 섞지 않으며, app-side timer 부재는 device log가 아닌 source/test audit으로 확인한다.
-
-## [2026-07-18] ingest | Watch underwater runtime lifecycle implementation and device boundary
-- Added: Watch underwater runtime lifecycle implementation and device boundary raw source
-- Updated: Watch 앱 구조
-- Updated: Diving App / QA and Test Plan
-- Updated: 열린 질문
-- Updated: Knowledge Base Index
-- 근거:
-  - `DiveAppServices`의 app-scoped runtime, recorder, `WaterSubmersionCoordinator`와 `WKApplicationDelegate.handle(_:)` adoption 구현
-  - 공개 shallow entitlement와 `underwater-depth` repository metadata, real/demo end-path 분리
-  - signed bundle/profile 및 15cm manual sampling, `When Submerged`, Water Lock/Crown, Action Button, watchOS timeout의 물리 검증 경계
-- 요약:
-  - 자동 검증과 simulator evidence는 물리 lifecycle 성공이 아니다. 15cm test는 manually started shallow sampling만 검증하며, deeper managed entitlement/provisioning과 full physical matrix는 release 전 외부 gate로 남는다.
-
 ## [2026-07-16] ingest | Google iOS client and callback correction
 - Added: Google iOS client and callback correction raw source
 - Updated: Supabase 구조
@@ -836,8 +812,23 @@
 - Updated: 모바일 로그북 로드맵
 - Updated: 열린 질문
 
+## [2026-07-18] ingest | Watch underwater runtime lifecycle implementation and device boundary
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+
+## [2026-07-18] ingest | Watch underwater runtime verification review correction
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+
 ## [2026-07-18] ingest | Watch live ascent-rate smoothing boundary
 - Updated: Watch 앱 구조
 
 ## [2026-07-18] ingest | Watch 기록 내구성과 경로 복구 경계
 - Updated: Watch 앱 구조
+
+## [2026-07-18] ingest | Watch callback, retry, re-entry, navigation hardening
+- Updated: Watch 앱 구조
+- Updated: Knowledge Base Index

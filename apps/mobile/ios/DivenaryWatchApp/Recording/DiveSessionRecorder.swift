@@ -29,6 +29,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     private var freeEngine: FreeDiveSessionEngine?
     private var scubaEngine: ScubaDiveEngine?
     private var profileSampler: OneHertzProfileSampler?
+    private var unconfirmedProfileSamples: ArraySlice<DepthSample> = []
     private var lastRawSample: DepthSample?
     private var displayAscentRateEstimator = DisplayAscentRateEstimator()
     private var elapsedTimer: Timer?
@@ -64,6 +65,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         scubaSafetyStop = .legacyUnknown
         recordingPersistenceError = nil
         displayAscentRateEstimator.reset()
+        unconfirmedProfileSamples = []
         let startedAt = now()
         let sessionID = UUID()
         lastRawSample = nil
@@ -209,6 +211,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         freeEngine = nil
         scubaEngine = nil
         profileSampler = nil
+        unconfirmedProfileSamples = []
         lastRawSample = nil
         startedAt = nil
         isRecording = false
@@ -263,19 +266,34 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     private func flushFinalProfileSample() {
-        guard let finalized = profileSampler?.finish() else { return }
-        persistProfileSample(finalized)
+        if let finalized = profileSampler?.finish() {
+            persistProfileSample(finalized)
+        } else {
+            persistUnconfirmedProfileSamples()
+        }
     }
 
     private func persistProfileSample(_ sample: DepthSample) {
         samples.append(sample)
+        unconfirmedProfileSamples.append(sample)
+        persistUnconfirmedProfileSamples()
+    }
+
+    private func persistUnconfirmedProfileSamples() {
         guard let activeRecordID else { return }
-        do {
-            try profileStore.append(sample, to: activeRecordID)
-            recordingPersistenceError = nil
-        } catch {
-            recordingPersistenceError = error.localizedDescription
+
+        while let sample = unconfirmedProfileSamples.first {
+            do {
+                try profileStore.append(sample, to: activeRecordID)
+                _ = unconfirmedProfileSamples.popFirst()
+            } catch {
+                recordingPersistenceError = error.localizedDescription
+                return
+            }
         }
+
+        unconfirmedProfileSamples = []
+        recordingPersistenceError = nil
     }
 
     private func normalizeFreediveSession(

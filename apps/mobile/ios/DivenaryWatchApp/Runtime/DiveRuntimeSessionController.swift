@@ -38,7 +38,8 @@ protocol DiveRuntimeSessionAdapterFactory: AnyObject {
 @MainActor
 protocol DiveRuntimeSessionControlling: AnyObject {
     var onEvent: ((DiveRuntimeEvent) -> Void)? { get set }
-    func startManualSession()
+    @discardableResult
+    func startManualSession() -> Bool
     func adoptSystemSession(_ session: WKExtendedRuntimeSession)
     func invalidate()
 }
@@ -55,15 +56,17 @@ final class DiveRuntimeSessionController: DiveRuntimeSessionControlling {
         self.factory = factory ?? WatchExtendedRuntimeSessionAdapterFactory()
     }
 
-    func startManualSession() {
+    @discardableResult
+    func startManualSession() -> Bool {
         guard activeAdapter == nil else {
-            return
+            return false
         }
 
         let adapter = factory.makeManualAdapter()
         adapter.delegate = self
         activeAdapter = adapter
         adapter.start()
+        return true
     }
 
     func adoptSystemSession(_ session: WKExtendedRuntimeSession) {
@@ -114,12 +117,9 @@ extension DiveRuntimeSessionController: DiveRuntimeSessionAdapterDelegate {
             return
         }
 
+        activeAdapter = nil
+        isInvalidating = false
         onEvent?(.didInvalidate(reason: reason, errorDescription: error?.localizedDescription))
-
-        if isActive(adapter) {
-            activeAdapter = nil
-            isInvalidating = false
-        }
     }
 }
 

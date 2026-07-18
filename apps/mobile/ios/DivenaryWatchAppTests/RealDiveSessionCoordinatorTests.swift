@@ -48,8 +48,179 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.startManualCallCount, 0)
         XCTAssertEqual(runtime.invalidateCallCount, 1)
         XCTAssertEqual(donor.callCount, 0)
+        assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
+        coordinator.dismissPersistenceError()
+        assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
         assertPersistenceError(coordinator, source: .systemAutoLaunch)
+    }
+
+    func testAdoptedSetupFailureBlocksReentryUntilMatchingInvalidationAndIgnoresStaleCallback() {
+        let adoptedAdapter = CoordinatorRuntimeAdapter()
+        let manualAdapter = CoordinatorRuntimeAdapter()
+        let runtime = DiveRuntimeSessionController(
+            factory: CoordinatorRuntimeAdapterFactory(
+                manualAdapters: [manualAdapter],
+                adoptedAdapters: [adoptedAdapter]
+            )
+        )
+        let calls = LifecycleCallLog()
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            startResults: [false, true]
+        )
+        let donor = FakeActionButtonDonor(calls: calls)
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: donor
+        )
+
+        runtime.adoptSystemSession(WKExtendedRuntimeSession())
+
+        assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
+        coordinator.dismissPersistenceError()
+        XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
+        XCTAssertFalse(coordinator.startFromActionButton())
+        assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
+        XCTAssertEqual(recorder.startedPlans.count, 1)
+        XCTAssertEqual(adoptedAdapter.calls, [.setDelegate, .invalidate])
+        XCTAssertEqual(donor.callCount, 0)
+
+        adoptedAdapter.emitInvalidation(reason: .none, error: nil)
+
+        assertPersistenceError(coordinator, source: .systemAutoLaunch)
+        coordinator.dismissPersistenceError()
+        assertIdle(coordinator)
+        XCTAssertEqual(recorder.cancelCallCount, 1)
+
+        XCTAssertTrue(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(manualAdapter.calls, [.setDelegate, .start])
+        XCTAssertEqual(donor.callCount, 1)
+
+        adoptedAdapter.emitInvalidation(reason: .expired, error: nil)
+
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+    }
+
+    func testManualRuntimeAcquisitionFailureCleansRecorderWithoutRecordingOrDonation() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls, startResults: [false])
+        let recorder = FakeDiveRecorder(calls: calls)
+        let donor = FakeActionButtonDonor(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, donor: donor)
+
+        XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
+
+        XCTAssertEqual(
+            calls.values,
+            ["recorder.start", "runtime.startManual", "recorder.cancel", "runtime.invalidate"]
+        )
+        XCTAssertEqual(recorder.cancelCallCount, 1)
+        XCTAssertEqual(donor.callCount, 0)
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        coordinator.dismissPersistenceError()
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertPersistenceError(coordinator, source: .manual)
+    }
+
+    func testActionRuntimeAcquisitionFailureCleansRecorderWithoutExposingRecording() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls, startResults: [false])
+        let recorder = FakeDiveRecorder(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+
+        XCTAssertFalse(coordinator.startFromActionButton())
+
+        XCTAssertEqual(
+            calls.values,
+            ["recorder.start", "runtime.startManual", "recorder.cancel", "runtime.invalidate"]
+        )
+        XCTAssertEqual(recorder.cancelCallCount, 1)
+        assertAwaitingRuntimeInvalidation(coordinator, source: .actionButton)
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertPersistenceError(coordinator, source: .actionButton)
+    }
+
+    func testManualRuntimeCollisionWaitsForMatchingInvalidationBeforeRetryingFreshAdapter() {
+        let staleAdapter = CoordinatorRuntimeAdapter()
+        let freshAdapter = CoordinatorRuntimeAdapter()
+        let runtime = DiveRuntimeSessionController(
+            factory: CoordinatorRuntimeAdapterFactory(
+                manualAdapters: [staleAdapter, freshAdapter],
+                adoptedAdapters: []
+            )
+        )
+        XCTAssertTrue(runtime.startManualSession())
+        let calls = LifecycleCallLog()
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            startResults: [true, true]
+        )
+        let donor = FakeActionButtonDonor(calls: calls)
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: donor
+        )
+
+        XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
+
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        XCTAssertEqual(staleAdapter.calls, [.setDelegate, .start, .invalidate])
+        XCTAssertEqual(recorder.cancelCallCount, 1)
+        XCTAssertEqual(donor.callCount, 0)
+        coordinator.dismissPersistenceError()
+        XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .freedive)))
+        XCTAssertFalse(coordinator.startFromActionButton())
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        XCTAssertEqual(recorder.startedPlans.count, 1)
+
+        staleAdapter.emitInvalidation(reason: .none, error: nil)
+
+        assertPersistenceError(coordinator, source: .manual)
+        coordinator.dismissPersistenceError()
+        assertIdle(coordinator)
+
+        XCTAssertTrue(coordinator.startManual(plan: PreDivePlan(diveMode: .freedive)))
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(freshAdapter.calls, [.setDelegate, .start])
+        XCTAssertEqual(donor.callCount, 1)
+
+        staleAdapter.emitInvalidation(reason: .expired, error: nil)
+
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+    }
+
+    func testRuntimeAcquisitionCleanupFailureRemainsDismissibleOnlyAfterCleanupRetrySucceeds() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls, startResults: [false])
+        let recorder = FakeDiveRecorder(calls: calls, cancelResults: [false, false, true])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+
+        XCTAssertFalse(coordinator.startManual(plan: PreDivePlan()))
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        coordinator.dismissPersistenceError()
+        assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertPersistenceError(coordinator, source: .manual)
+
+        coordinator.dismissPersistenceError()
+        assertPersistenceError(coordinator, source: .manual)
+
+        coordinator.dismissPersistenceError()
+        assertIdle(coordinator)
+        XCTAssertEqual(recorder.cancelCallCount, 3)
     }
 
     func testManualStartPreservesPlanStartsRecorderBeforeRuntimeAndDonatesEndAction() {
@@ -577,6 +748,19 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(actualSource, source, file: file, line: line)
         XCTAssertTrue(coordinator.phase.presentsRecordingFlow, file: file, line: line)
     }
+
+    private func assertAwaitingRuntimeInvalidation(
+        _ coordinator: RealDiveSessionCoordinator,
+        source: RealDiveStartSource,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case let .awaitingRuntimeInvalidation(actualSource) = coordinator.phase else {
+            return XCTFail("Expected awaiting-runtime-invalidation phase", file: file, line: line)
+        }
+        XCTAssertEqual(actualSource, source, file: file, line: line)
+        XCTAssertTrue(coordinator.phase.presentsRecordingFlow, file: file, line: line)
+    }
 }
 
 @MainActor
@@ -593,16 +777,19 @@ private final class FakeDiveRuntime: DiveRuntimeSessionControlling {
     var onEvent: ((DiveRuntimeEvent) -> Void)?
 
     private let calls: LifecycleCallLog
+    private var startResults: [Bool]
     private(set) var startManualCallCount = 0
     private(set) var invalidateCallCount = 0
 
-    init(calls: LifecycleCallLog) {
+    init(calls: LifecycleCallLog, startResults: [Bool] = [true]) {
         self.calls = calls
+        self.startResults = startResults
     }
 
-    func startManualSession() {
+    func startManualSession() -> Bool {
         startManualCallCount += 1
         calls.append("runtime.startManual")
+        return startResults.isEmpty ? true : startResults.removeFirst()
     }
 
     func adoptSystemSession(_ session: WKExtendedRuntimeSession) {}
@@ -618,6 +805,58 @@ private final class FakeDiveRuntime: DiveRuntimeSessionControlling {
 }
 
 @MainActor
+private final class CoordinatorRuntimeAdapterFactory: DiveRuntimeSessionAdapterFactory {
+    private var manualAdapters: [CoordinatorRuntimeAdapter]
+    private var adoptedAdapters: [CoordinatorRuntimeAdapter]
+
+    init(
+        manualAdapters: [CoordinatorRuntimeAdapter],
+        adoptedAdapters: [CoordinatorRuntimeAdapter]
+    ) {
+        self.manualAdapters = manualAdapters
+        self.adoptedAdapters = adoptedAdapters
+    }
+
+    func makeManualAdapter() -> DiveRuntimeSessionAdapter {
+        manualAdapters.removeFirst()
+    }
+
+    func makeAdapter(for session: WKExtendedRuntimeSession) -> DiveRuntimeSessionAdapter {
+        adoptedAdapters.removeFirst()
+    }
+}
+
+@MainActor
+private final class CoordinatorRuntimeAdapter: DiveRuntimeSessionAdapter {
+    enum Call: Equatable {
+        case setDelegate
+        case start
+        case invalidate
+    }
+
+    weak var delegate: DiveRuntimeSessionAdapterDelegate? {
+        didSet { calls.append(.setDelegate) }
+    }
+
+    private(set) var calls: [Call] = []
+
+    func start() {
+        calls.append(.start)
+    }
+
+    func invalidate() {
+        calls.append(.invalidate)
+    }
+
+    func emitInvalidation(
+        reason: WKExtendedRuntimeSessionInvalidationReason,
+        error: Error?
+    ) {
+        delegate?.runtimeAdapter(self, didInvalidateWith: reason, error: error)
+    }
+}
+
+@MainActor
 private final class FakeDiveRecorder: DiveSessionRecording {
     var elapsedTime: TimeInterval
     var hasCapturedDepthSample: Bool
@@ -625,6 +864,7 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     private let calls: LifecycleCallLog
     private let stopResult: DiveSessionRecord?
     private var startResults: [Bool]
+    private var cancelResults: [Bool]
     private(set) var startedPlans: [PreDivePlan] = []
     private(set) var stopCallCount = 0
     private(set) var cancelCallCount = 0
@@ -635,13 +875,15 @@ private final class FakeDiveRecorder: DiveSessionRecording {
         elapsedTime: TimeInterval = 0,
         hasCapturedDepthSample: Bool = false,
         stopResult: DiveSessionRecord? = DiveSessionRecord.largeDebugFixture(sampleCount: 1),
-        startResults: [Bool] = [true]
+        startResults: [Bool] = [true],
+        cancelResults: [Bool] = [true]
     ) {
         self.calls = calls
         self.elapsedTime = elapsedTime
         self.hasCapturedDepthSample = hasCapturedDepthSample
         self.stopResult = stopResult
         self.startResults = startResults
+        self.cancelResults = cancelResults
     }
 
     func startSession(plan: PreDivePlan) -> Bool {
@@ -659,7 +901,7 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     func cancelSession() -> Bool {
         cancelCallCount += 1
         calls.append("recorder.cancel")
-        return true
+        return cancelResults.isEmpty ? true : cancelResults.removeFirst()
     }
 
     func resetCompletedSession() {

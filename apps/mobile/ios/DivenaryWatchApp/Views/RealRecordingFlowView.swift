@@ -34,8 +34,10 @@ struct RealRecordingFlowView: View {
                 )
             case .noSamples:
                 noSamplesView
+            case .awaitingRuntimeInvalidation:
+                persistenceErrorView(allowsDismissal: false)
             case .persistenceError:
-                persistenceErrorView
+                persistenceErrorView(allowsDismissal: true)
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -60,7 +62,7 @@ struct RealRecordingFlowView: View {
         .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
-    private var persistenceErrorView: some View {
+    private func persistenceErrorView(allowsDismissal: Bool) -> some View {
         VStack(spacing: 10) {
             Image(systemName: "externaldrive.badge.exclamationmark")
                 .font(.system(size: 24, weight: .semibold))
@@ -72,17 +74,22 @@ struct RealRecordingFlowView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
 
-            Text("Local recording storage could not be prepared.")
+            Text("Recording setup could not be completed.")
                 .font(.system(size: 11))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
                 .minimumScaleFactor(0.75)
 
-            Button("Done") {
-                coordinator.dismissPersistenceError()
+            if allowsDismissal {
+                Button("Done") {
+                    coordinator.dismissPersistenceError()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+            } else {
+                ProgressView()
+                    .tint(DiveWatchTheme.primary)
             }
-            .buttonStyle(DiveActionButtonStyle(kind: .primary))
         }
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

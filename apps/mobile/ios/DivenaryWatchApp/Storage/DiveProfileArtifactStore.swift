@@ -287,7 +287,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
 
         let line = try journalLine(for: sample)
-        if let resolvedLine = try resolvePendingAppend(sessionID: sessionID), resolvedLine == line {
+        if let resolvedSample = try resolvePendingAppend(sessionID: sessionID), resolvedSample == sample {
             return
         }
 
@@ -405,7 +405,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         return try handle.seekToEnd()
     }
 
-    private func resolvePendingAppend(sessionID: UUID) throws -> Data? {
+    private func resolvePendingAppend(sessionID: UUID) throws -> DepthSample? {
         let pendingURL = pendingAppendURL(for: sessionID)
         guard fileManager.fileExists(atPath: pendingURL.path) else {
             return nil
@@ -453,7 +453,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
 
         try fileManager.removeItem(at: pendingURL)
-        return pending.line
+        return sample
     }
 
     private func appendPendingLine(_ pending: PendingJournalAppend, to journalURL: URL) throws {

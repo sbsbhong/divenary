@@ -1,9 +1,118 @@
+import Combine
 import CoreMotion
 import XCTest
 @testable import DivenaryWatchApp
 
 @MainActor
 final class WaterSubmersionCoordinatorTests: XCTestCase {
+    func testBackgroundEventForwardingHopsToMainActorWithScalarSnapshot() async {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let delivered = expectation(description: "event delivered")
+        coordinator.onEvent = { state, timestamp in
+            MainActor.preconditionIsolated()
+            XCTAssertEqual(state, .submerged)
+            XCTAssertEqual(timestamp, self.date(2))
+            delivered.fulfill()
+        }
+
+        let ranOffMain = await Task.detached {
+            coordinator.forwardEvent(
+                state: .submerged,
+                at: EngineTestFixtures.date(2),
+                maximumDepthMeters: 12
+            )
+            return !Thread.isMainThread
+        }.value
+
+        XCTAssertTrue(ranOffMain)
+        await fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(coordinator.latestState, .submerged)
+        XCTAssertEqual(coordinator.maximumDepthMeters, 12)
+    }
+
+    func testBackgroundMeasurementForwardingHopsToMainActorWithScalarSnapshot() async throws {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let delivered = expectation(description: "sample delivered")
+        var receivedSample: DepthSample?
+        coordinator.onSample = { sample in
+            MainActor.preconditionIsolated()
+            receivedSample = sample
+            delivered.fulfill()
+        }
+
+        let ranOffMain = await Task.detached {
+            coordinator.forwardMeasurement(
+                timestamp: EngineTestFixtures.date(4),
+                depthMeters: 0.15,
+                pressureKPa: 102.8,
+                depthState: .submergedShallow,
+                maximumDepthMeters: 14
+            )
+            return !Thread.isMainThread
+        }.value
+
+        XCTAssertTrue(ranOffMain)
+        await fulfillment(of: [delivered], timeout: 1)
+        let sample = try XCTUnwrap(receivedSample)
+        XCTAssertEqual(sample.timestamp, date(4))
+        XCTAssertEqual(sample.depthMeters, 0.15, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(sample.pressureKPa), 102.8, accuracy: 0.001)
+        XCTAssertEqual(coordinator.latestDepthState, .submergedShallow)
+        XCTAssertEqual(coordinator.maximumDepthMeters, 14)
+    }
+
+    func testBackgroundTemperatureForwardingHopsToMainActorWithScalarSnapshot() async throws {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let delivered = expectation(description: "temperature delivered")
+        let cancellable = coordinator.$maximumDepthMeters.dropFirst().sink { maximumDepthMeters in
+            MainActor.preconditionIsolated()
+            if maximumDepthMeters == 16 {
+                delivered.fulfill()
+            }
+        }
+        defer { cancellable.cancel() }
+
+        let ranOffMain = await Task.detached {
+            coordinator.forwardTemperature(celsius: 18.4, maximumDepthMeters: 16)
+            return !Thread.isMainThread
+        }.value
+
+        XCTAssertTrue(ranOffMain)
+        await fulfillment(of: [delivered], timeout: 1)
+        var receivedSample: DepthSample?
+        coordinator.onSample = { receivedSample = $0 }
+        coordinator.receiveMeasurement(
+            timestamp: date(5),
+            depthMeters: 1,
+            pressureKPa: 103,
+            depthState: .submergedShallow
+        )
+        XCTAssertEqual(try XCTUnwrap(receivedSample?.waterTemperatureCelsius), 18.4, accuracy: 0.001)
+        XCTAssertEqual(coordinator.maximumDepthMeters, 16)
+    }
+
+    func testBackgroundErrorForwardingHopsToMainActorWithSendableDescription() async {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let delivered = expectation(description: "error delivered")
+        coordinator.onError = { error in
+            MainActor.preconditionIsolated()
+            XCTAssertEqual(error.localizedDescription, "pressure sensor unavailable")
+            delivered.fulfill()
+        }
+
+        let ranOffMain = await Task.detached {
+            coordinator.forwardError(
+                description: "pressure sensor unavailable",
+                maximumDepthMeters: 18
+            )
+            return !Thread.isMainThread
+        }.value
+
+        XCTAssertTrue(ranOffMain)
+        await fulfillment(of: [delivered], timeout: 1)
+        XCTAssertEqual(coordinator.maximumDepthMeters, 18)
+    }
+
     func testMapsEverySubmersionEventState() {
         XCTAssertEqual(WaterSubmersionCoordinator.waterState(for: .unknown), .unknown)
         XCTAssertEqual(WaterSubmersionCoordinator.waterState(for: .notSubmerged), .notSubmerged)

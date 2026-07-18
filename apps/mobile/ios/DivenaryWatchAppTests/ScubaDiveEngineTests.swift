@@ -237,6 +237,7 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertTrue(RealDivePhase.recording(source: .systemAutoLaunch).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.summary(DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.noSamples.presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.awaitingRuntimeInvalidation(source: .systemAutoLaunch).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.persistenceError(source: .manual).presentsRecordingFlow)
     }
 
@@ -303,6 +304,52 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         XCTAssertEqual(recorder.cancelCount, 0)
         XCTAssertEqual(recorder.startCount, 1)
         assertSummary(controller.phase, sessionID: session.id)
+    }
+
+    func testSummaryBackNavigationStaysManagedUntilDiscardCleanupSucceeds() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(
+            session: session,
+            cancelResults: [false, false, true]
+        )
+
+        XCTAssertFalse(controller.hidesSystemBackButton)
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        XCTAssertTrue(controller.hidesSystemBackButton)
+        controller.finishRecording()
+        XCTAssertTrue(controller.hidesSystemBackButton)
+
+        controller.handleFlowDisappearance()
+
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+        XCTAssertTrue(controller.hidesSystemBackButton)
+        assertSummary(controller.phase, sessionID: session.id)
+        XCTAssertFalse(controller.discardSummary())
+        XCTAssertTrue(controller.hidesSystemBackButton)
+
+        XCTAssertTrue(controller.discardSummary())
+        XCTAssertEqual(recorder.cancelCount, 3)
+        XCTAssertFalse(controller.hidesSystemBackButton)
+        assertCompleted(controller.phase)
+        XCTAssertTrue(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+    }
+
+    func testCleanupErrorKeepsBackManagedUntilExternalCleanupRetrySucceeds() {
+        let (controller, recorder, _) = makeSystem(cancelResults: [false, false, true])
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        controller.handleFlowDisappearance()
+
+        XCTAssertTrue(controller.hidesSystemBackButton)
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+        XCTAssertFalse(controller.retryExternalCleanup())
+        XCTAssertTrue(controller.hidesSystemBackButton)
+
+        XCTAssertTrue(controller.retryExternalCleanup())
+        XCTAssertEqual(recorder.cancelCount, 3)
+        XCTAssertFalse(controller.hidesSystemBackButton)
+        assertCompleted(controller.phase)
+        XCTAssertTrue(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
     }
 
     func testUnfinishedExternalDisappearanceCancelsExactlyOnce() {
@@ -410,12 +457,14 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
 
         XCTAssertFalse(controller.saveSummary(session))
         assertSummary(controller.phase, sessionID: session.id)
+        XCTAssertTrue(controller.hidesSystemBackButton)
         XCTAssertEqual(recorder.resetCount, 0)
         XCTAssertEqual(recorder.cancelCount, 0)
 
         XCTAssertTrue(controller.saveSummary(session))
         XCTAssertEqual(store.saveCount, 2)
         XCTAssertEqual(recorder.resetCount, 1)
+        XCTAssertFalse(controller.hidesSystemBackButton)
         assertCompleted(controller.phase)
     }
 

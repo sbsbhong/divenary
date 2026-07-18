@@ -10,7 +10,19 @@ final class DiveRuntimeSessionControllerTests: XCTestCase {
             factory: RecordingRuntimeSessionAdapterFactory(manualAdapters: [adapter])
         )
 
-        controller.startManualSession()
+        XCTAssertTrue(controller.startManualSession())
+
+        XCTAssertEqual(adapter.calls, [.setDelegate, .start])
+    }
+
+    func testManualStartReturnsFalseWhileAnAdapterIsActive() {
+        let adapter = FakeRuntimeSessionAdapter()
+        let controller = DiveRuntimeSessionController(
+            factory: RecordingRuntimeSessionAdapterFactory(manualAdapters: [adapter])
+        )
+
+        XCTAssertTrue(controller.startManualSession())
+        XCTAssertFalse(controller.startManualSession())
 
         XCTAssertEqual(adapter.calls, [.setDelegate, .start])
     }
@@ -111,6 +123,27 @@ final class DiveRuntimeSessionControllerTests: XCTestCase {
         XCTAssertEqual(firstAdapter.calls, [.setDelegate, .start])
         XCTAssertEqual(secondAdapter.calls, [.setDelegate, .start])
         XCTAssertEqual(eventNames, ["didInvalidate", "didStart"])
+    }
+
+    func testMatchingInvalidationClearsAdapterBeforePublishingEvent() {
+        let firstAdapter = FakeRuntimeSessionAdapter()
+        let secondAdapter = FakeRuntimeSessionAdapter()
+        let controller = DiveRuntimeSessionController(
+            factory: RecordingRuntimeSessionAdapterFactory(
+                manualAdapters: [firstAdapter, secondAdapter]
+            )
+        )
+        var replacementStarted = false
+        controller.onEvent = { event in
+            guard case .didInvalidate = event else { return }
+            replacementStarted = controller.startManualSession()
+        }
+
+        XCTAssertTrue(controller.startManualSession())
+        firstAdapter.emitInvalidation(reason: .none, error: nil)
+
+        XCTAssertTrue(replacementStarted)
+        XCTAssertEqual(secondAdapter.calls, [.setDelegate, .start])
     }
 
     private func name(for event: DiveRuntimeEvent) -> String {

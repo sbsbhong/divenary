@@ -53,6 +53,107 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
     }
 
     @MainActor
+    func testPreSidecarFailureRetriesOldestSampleBeforePersistingLaterSample() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let artifactStore = DiveProfileArtifactStore(rootURL: rootURL)
+        let profileStore = FailFirstAppendBeforeDelegationStore(delegate: artifactStore)
+        let sensor = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensor,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        XCTAssertTrue(recorder.startSession(plan: PreDivePlan(diveMode: .scuba)))
+        sensor.emit(sample(at: 0.1, depth: 2))
+        sensor.emit(sample(at: 1.2, depth: 4))
+        await Task.yield()
+
+        XCTAssertNotNil(recorder.recordingPersistenceError)
+        XCTAssertEqual(profileStore.attemptedDepths, [2])
+        XCTAssertTrue(try artifactStore.loadActiveRecordings().first?.samples.isEmpty == true)
+
+        sensor.emit(sample(at: 2.2, depth: 6))
+        await Task.yield()
+
+        XCTAssertEqual(profileStore.attemptedDepths, [2, 2, 4])
+        XCTAssertNil(recorder.recordingPersistenceError)
+        XCTAssertEqual(
+            try artifactStore.loadActiveRecordings().first?.samples.map(\.depthMeters),
+            [2, 4]
+        )
+        XCTAssertTrue(recorder.cancelSession())
+    }
+
+    @MainActor
+    func testFinalFlushRetriesPreSidecarFailureBeforeFinalBucket() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let artifactStore = DiveProfileArtifactStore(rootURL: rootURL)
+        let profileStore = FailFirstAppendBeforeDelegationStore(delegate: artifactStore)
+        let sensor = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensor,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        XCTAssertTrue(recorder.startSession(plan: PreDivePlan(diveMode: .scuba)))
+        sensor.emit(sample(at: 0.1, depth: 2))
+        sensor.emit(sample(at: 1.2, depth: 4))
+        await Task.yield()
+        XCTAssertNotNil(recorder.recordingPersistenceError)
+
+        let record = try XCTUnwrap(recorder.stopSession())
+
+        XCTAssertEqual(profileStore.attemptedDepths, [2, 2, 4])
+        XCTAssertNil(recorder.recordingPersistenceError)
+        XCTAssertEqual(record.samples.map(\.depthMeters), [2, 4])
+        XCTAssertEqual(
+            try artifactStore.loadActiveRecordings().first?.samples.map(\.depthMeters),
+            [2, 4]
+        )
+        XCTAssertTrue(recorder.cancelSession())
+    }
+
+    @MainActor
+    func testLongStorageOutageDrainsFiveThousandSamplesInStrictOrder() async {
+        let profileStore = RecoverableOutageProfileRecordingStore()
+        let sensor = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensor,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        let expectedDepths = (0..<5_000).map { Double(($0 % 30) + 1) }
+
+        XCTAssertTrue(recorder.startSession(plan: PreDivePlan(diveMode: .scuba)))
+        for (index, depth) in expectedDepths.enumerated() {
+            sensor.emit(sample(at: TimeInterval(index) + 0.1, depth: depth))
+        }
+        await Task.yield()
+        XCTAssertNotNil(recorder.recordingPersistenceError)
+
+        profileStore.recover()
+        sensor.emit(sample(at: 5_000.1, depth: 1))
+        await Task.yield()
+
+        XCTAssertNil(recorder.recordingPersistenceError)
+        XCTAssertEqual(profileStore.appendedSamples.map(\.depthMeters), expectedDepths)
+        XCTAssertTrue(recorder.cancelSession())
+    }
+
+    @MainActor
     func testRapidCallbackJitterDoesNotCreateLiveAscentRateOrWarning() async {
         let sensor = ManualDepthSensorProvider()
         let recorder = makeRecorder(sensor: sensor)
@@ -327,6 +428,53 @@ private final class FailFirstRecorderPendingRemovalFileManager: FileManager {
             throw CocoaError(.fileWriteNoPermission)
         }
         try super.removeItem(at: URL)
+    }
+}
+
+private final class FailFirstAppendBeforeDelegationStore: DiveProfileRecordingStoring {
+    private let delegate: DiveProfileRecordingStoring
+    private var shouldFailNextAppend = true
+    private(set) var attemptedDepths: [Double] = []
+
+    init(delegate: DiveProfileRecordingStoring) {
+        self.delegate = delegate
+    }
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
+        try delegate.beginRecording(metadata)
+    }
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {
+        attemptedDepths.append(sample.depthMeters)
+        if shouldFailNextAppend {
+            shouldFailNextAppend = false
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try delegate.append(sample, to: sessionID)
+    }
+
+    func clearActiveRecording(sessionID: UUID) throws {
+        try delegate.clearActiveRecording(sessionID: sessionID)
+    }
+}
+
+private final class RecoverableOutageProfileRecordingStore: DiveProfileRecordingStoring {
+    private var isUnavailable = true
+    private(set) var appendedSamples: [DepthSample] = []
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {}
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {
+        guard !isUnavailable else {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        appendedSamples.append(sample)
+    }
+
+    func clearActiveRecording(sessionID: UUID) throws {}
+
+    func recover() {
+        isUnavailable = false
     }
 }
 

@@ -2,13 +2,13 @@ import Combine
 import CoreMotion
 import Foundation
 
-enum WaterSubmersionState: Equatable {
+enum WaterSubmersionState: Equatable, Sendable {
     case unknown
     case notSubmerged
     case submerged
 }
 
-enum WaterDepthState: Equatable {
+enum WaterDepthState: Equatable, Sendable {
     case unknown
     case notSubmerged
     case submergedShallow
@@ -25,6 +25,10 @@ protocol WaterSubmersionStateReading: AnyObject {
 
 @MainActor
 final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmersionStateReading {
+    private struct ForwardedWaterSubmersionError: LocalizedError, Sendable {
+        let errorDescription: String?
+    }
+
     static let shared = WaterSubmersionCoordinator()
 
     var onSample: ((DepthSample) -> Void)?
@@ -64,7 +68,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         refreshMaximumDepth(from: manager)
     }
 
-    static func waterState(for state: CMWaterSubmersionEvent.State) -> WaterSubmersionState {
+    nonisolated static func waterState(for state: CMWaterSubmersionEvent.State) -> WaterSubmersionState {
         switch state {
         case .unknown:
             return .unknown
@@ -77,7 +81,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         }
     }
 
-    static func depthState(for state: CMWaterSubmersionMeasurement.DepthState) -> WaterDepthState {
+    nonisolated static func depthState(for state: CMWaterSubmersionMeasurement.DepthState) -> WaterDepthState {
         switch state {
         case .unknown:
             return .unknown
@@ -125,8 +129,55 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         )
     }
 
-    static func maximumDepthMeters(from maximumDepth: Measurement<UnitLength>?) -> Double? {
+    nonisolated static func maximumDepthMeters(from maximumDepth: Measurement<UnitLength>?) -> Double? {
         maximumDepth?.converted(to: .meters).value
+    }
+
+    nonisolated func forwardEvent(
+        state: WaterSubmersionState,
+        at timestamp: Date,
+        maximumDepthMeters: Double?
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            receiveEvent(state: state, at: timestamp)
+            receiveMaximumDepth(maximumDepthMeters)
+        }
+    }
+
+    nonisolated func forwardMeasurement(
+        timestamp: Date,
+        depthMeters: Double?,
+        pressureKPa: Double?,
+        depthState: WaterDepthState,
+        maximumDepthMeters: Double?
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            receiveMeasurement(
+                timestamp: timestamp,
+                depthMeters: depthMeters,
+                pressureKPa: pressureKPa,
+                depthState: depthState
+            )
+            receiveMaximumDepth(maximumDepthMeters)
+        }
+    }
+
+    nonisolated func forwardTemperature(celsius: Double, maximumDepthMeters: Double?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            receiveTemperature(celsius: celsius)
+            receiveMaximumDepth(maximumDepthMeters)
+        }
+    }
+
+    nonisolated func forwardError(description: String, maximumDepthMeters: Double?) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            receive(error: ForwardedWaterSubmersionError(errorDescription: description))
+            receiveMaximumDepth(maximumDepthMeters)
+        }
     }
 
     func receiveEvent(state: WaterSubmersionState, at timestamp: Date) {
@@ -165,42 +216,47 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         onError?(error)
     }
 
+    private func receiveMaximumDepth(_ maximumDepthMeters: Double?) {
+        self.maximumDepthMeters = maximumDepthMeters
+    }
+
     private func refreshMaximumDepth(from manager: CMWaterSubmersionManager) {
-        maximumDepthMeters = manager.maximumDepth?.converted(to: .meters).value
+        receiveMaximumDepth(Self.maximumDepthMeters(from: manager.maximumDepth))
     }
 }
 
 extension WaterSubmersionCoordinator: CMWaterSubmersionManagerDelegate {
     nonisolated func manager(_ manager: CMWaterSubmersionManager, didUpdate event: CMWaterSubmersionEvent) {
-        MainActor.assumeIsolated {
-            receiveEvent(state: Self.waterState(for: event.state), at: event.date)
-            refreshMaximumDepth(from: manager)
-        }
+        let state = Self.waterState(for: event.state)
+        let timestamp = event.date
+        let maximumDepthMeters = Self.maximumDepthMeters(from: manager.maximumDepth)
+        forwardEvent(state: state, at: timestamp, maximumDepthMeters: maximumDepthMeters)
     }
 
     nonisolated func manager(_ manager: CMWaterSubmersionManager, didUpdate measurement: CMWaterSubmersionMeasurement) {
-        MainActor.assumeIsolated {
-            receiveMeasurement(
-                timestamp: measurement.date,
-                depthMeters: measurement.depth?.converted(to: .meters).value,
-                pressureKPa: measurement.pressure?.converted(to: .kilopascals).value,
-                depthState: Self.depthState(for: measurement.submersionState)
-            )
-            refreshMaximumDepth(from: manager)
-        }
+        let timestamp = measurement.date
+        let depthMeters = measurement.depth?.converted(to: .meters).value
+        let pressureKPa = measurement.pressure?.converted(to: .kilopascals).value
+        let depthState = Self.depthState(for: measurement.submersionState)
+        let maximumDepthMeters = Self.maximumDepthMeters(from: manager.maximumDepth)
+        forwardMeasurement(
+            timestamp: timestamp,
+            depthMeters: depthMeters,
+            pressureKPa: pressureKPa,
+            depthState: depthState,
+            maximumDepthMeters: maximumDepthMeters
+        )
     }
 
     nonisolated func manager(_ manager: CMWaterSubmersionManager, didUpdate measurement: CMWaterTemperature) {
-        MainActor.assumeIsolated {
-            receiveTemperature(celsius: measurement.temperature.converted(to: .celsius).value)
-            refreshMaximumDepth(from: manager)
-        }
+        let celsius = measurement.temperature.converted(to: .celsius).value
+        let maximumDepthMeters = Self.maximumDepthMeters(from: manager.maximumDepth)
+        forwardTemperature(celsius: celsius, maximumDepthMeters: maximumDepthMeters)
     }
 
     nonisolated func manager(_ manager: CMWaterSubmersionManager, errorOccurred error: Error) {
-        MainActor.assumeIsolated {
-            receive(error: error)
-            refreshMaximumDepth(from: manager)
-        }
+        let description = error.localizedDescription
+        let maximumDepthMeters = Self.maximumDepthMeters(from: manager.maximumDepth)
+        forwardError(description: description, maximumDepthMeters: maximumDepthMeters)
     }
 }

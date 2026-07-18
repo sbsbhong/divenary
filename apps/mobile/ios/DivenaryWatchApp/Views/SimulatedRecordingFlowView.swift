@@ -33,6 +33,15 @@ extension DiveSessionStore: SimulatedRecordingSessionStoring {}
 final class SimulatedRecordingLifecycleController: ObservableObject {
     @Published private(set) var phase: SimulatedRecordingLifecyclePhase = .ready
 
+    var hidesSystemBackButton: Bool {
+        switch phase {
+        case .recording, .summary, .cleanupError:
+            return true
+        case .ready, .persistenceError, .completed:
+            return false
+        }
+    }
+
     private let recorder: any SimulatedRecordingLifecycleRecording
     private let store: any SimulatedRecordingSessionStoring
     private var didStart = false
@@ -196,7 +205,7 @@ struct SimulatedRecordingFlowView: View {
         ZStack {
             flowContent
         }
-        .navigationBarBackButtonHidden(hidesBackButton)
+        .navigationBarBackButtonHidden(lifecycle.hidesSystemBackButton)
         .onAppear {
             if lifecycle.handleFlowAppearance(plan: preparedPlan) {
                 dismiss()
@@ -320,13 +329,6 @@ struct SimulatedRecordingFlowView: View {
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
-    }
-
-    private var hidesBackButton: Bool {
-        if case .cleanupError = lifecycle.phase {
-            return true
-        }
-        return recorder.isRecording
     }
 
     private func endDive() {

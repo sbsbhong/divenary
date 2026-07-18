@@ -35,7 +35,7 @@
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 workspace 앱·공유 package와 root local Supabase/Auth migration/test 경계를 함께 관리한다. | 2026-07-15 |
 | [Supabase 구조](architecture/supabase.md)                                      | 구현된 3A local Auth/RLS/consent, signed Divenary와 Google iOS callback, pending hosted physical gate를 구분하고 3B-3D 경계를 정리한다. | 2026-07-16 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch acknowledgement와 cloud 상태를 분리하며, mobile Auth가 있어도 Watch payload와 guest repository에는 principal을 붙이지 않는다. | 2026-07-15 |
-| [Watch 앱 구조](architecture/watch-app.md)                                      | one app-scoped runtime/recorder를 유지하고, pending sidecar 기반 1Hz journal 복구와 session별 active-state quarantine, external real flow 뒤 simulated route dismissal/retry를 canonical artifact 및 physical hardware gate와 분리한다. | 2026-07-18 |
+| [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
 

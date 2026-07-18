@@ -1207,22 +1207,6 @@
         }
       }
     },
-    "Local recording storage could not be prepared." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Local recording storage could not be prepared."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "로컬 기록 저장소를 준비하지 못했습니다."
-          }
-        }
-      }
-    },
     "logs" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1753,6 +1737,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
+    "Recording setup could not be completed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording setup could not be completed."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 설정을 완료하지 못했습니다."
           }
         }
       }

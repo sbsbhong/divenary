@@ -12,13 +12,14 @@ enum RealDivePhase {
     case recording(source: RealDiveStartSource)
     case summary(DiveSessionRecord)
     case noSamples
+    case awaitingRuntimeInvalidation(source: RealDiveStartSource)
     case persistenceError(source: RealDiveStartSource)
 
     var presentsRecordingFlow: Bool {
         switch self {
         case .idle:
             return false
-        case .recording, .summary, .noSamples, .persistenceError:
+        case .recording, .summary, .noSamples, .awaitingRuntimeInvalidation, .persistenceError:
             return true
         }
     }
@@ -79,8 +80,10 @@ final class RealDiveSessionCoordinator: ObservableObject {
             phase = .persistenceError(source: .manual)
             return false
         }
+        guard acquireManualRuntime(source: .manual) else {
+            return false
+        }
         phase = .recording(source: .manual)
-        runtime.startManualSession()
         actionButtonDonor.donateEndAction()
         return true
     }
@@ -95,8 +98,10 @@ final class RealDiveSessionCoordinator: ObservableObject {
             phase = .persistenceError(source: .actionButton)
             return false
         }
+        guard acquireManualRuntime(source: .actionButton) else {
+            return false
+        }
         phase = .recording(source: .actionButton)
-        runtime.startManualSession()
         return true
     }
 
@@ -147,6 +152,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
         guard case .persistenceError = phase else {
             return
         }
+        guard recorder.cancelSession() else {
+            return
+        }
         phase = .idle
     }
 
@@ -155,7 +163,11 @@ final class RealDiveSessionCoordinator: ObservableObject {
         case .adoptedSystemSession:
             startAdoptedSystemSession()
         case .didInvalidate:
-            finalizeAfterRuntimeInvalidation()
+            if case let .awaitingRuntimeInvalidation(source) = phase {
+                phase = .persistenceError(source: source)
+            } else {
+                finalizeAfterRuntimeInvalidation()
+            }
         case .didStart, .willExpire:
             break
         }
@@ -167,7 +179,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
 
         guard recorder.startSession(plan: preferredPlan()) else {
-            phase = .persistenceError(source: .systemAutoLaunch)
+            phase = .awaitingRuntimeInvalidation(source: .systemAutoLaunch)
             runtime.invalidate()
             return
         }
@@ -177,6 +189,16 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     private func preferredPlan() -> PreDivePlan {
         PreDivePlan(diveMode: preferredMode())
+    }
+
+    private func acquireManualRuntime(source: RealDiveStartSource) -> Bool {
+        guard runtime.startManualSession() else {
+            _ = recorder.cancelSession()
+            phase = .awaitingRuntimeInvalidation(source: source)
+            runtime.invalidate()
+            return false
+        }
+        return true
     }
 
     private func finalizeAfterRuntimeInvalidation() {
