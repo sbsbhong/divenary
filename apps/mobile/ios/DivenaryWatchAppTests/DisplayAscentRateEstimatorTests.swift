@@ -44,6 +44,13 @@ final class DisplayAscentRateEstimatorTests: XCTestCase {
         XCTAssertGreaterThan(rate, 0)
     }
 
+    func testExactDeadbandAtNonZeroDepthReturnsZero() {
+        var estimator = DisplayAscentRateEstimator()
+
+        XCTAssertEqual(estimator.append(sample(at: 0, depth: 12.15)), 0)
+        XCTAssertEqual(estimator.append(sample(at: 3, depth: 12.0)), 0)
+    }
+
     func testFlatAndDeeperNewestSamplesReturnZero() {
         var estimator = DisplayAscentRateEstimator()
 
@@ -97,6 +104,21 @@ final class DisplayAscentRateEstimatorTests: XCTestCase {
         )
 
         assertRejectedSamplePreservesWindow(invalid)
+    }
+
+    func testRejectsFiniteTimestampsWithNonFiniteIntervalWithoutMutatingHistory() {
+        let lowerTimestamp = Date(timeIntervalSinceReferenceDate: -Double.greatestFiniteMagnitude)
+        let upperTimestamp = Date(timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude)
+        XCTAssertTrue(lowerTimestamp.timeIntervalSinceReferenceDate.isFinite)
+        XCTAssertTrue(upperTimestamp.timeIntervalSinceReferenceDate.isFinite)
+        XCTAssertFalse(upperTimestamp.timeIntervalSince(lowerTimestamp).isFinite)
+
+        var estimator = DisplayAscentRateEstimator()
+
+        XCTAssertEqual(estimator.append(sample(timestamp: lowerTimestamp, depth: 12)), 0)
+        XCTAssertEqual(estimator.append(sample(timestamp: upperTimestamp, depth: 0)), 0)
+        XCTAssertEqual(estimator.append(sample(at: 0, depth: 12)), 0)
+        XCTAssertEqual(estimator.append(sample(at: 3, depth: 10.5)), 30, accuracy: 0.000001)
     }
 
     func testRejectsDuplicateTimestampWithoutMutatingValidWindow() {

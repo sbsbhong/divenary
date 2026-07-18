@@ -65,11 +65,16 @@ struct DisplayAscentRateEstimator {
         guard elapsed.isFinite,
               elapsed >= minimumWindowDuration,
               netDepthDecrease.isFinite,
-              netDepthDecrease > depthDeadbandMeters else {
+              exceedsDeadbandIgnoringULPNoise(netDepthDecrease) else {
             return 0
         }
 
         let rate = netDepthDecrease / elapsed * 60
         return rate.isFinite && rate > 0 ? rate : 0
+    }
+
+    private func exceedsDeadbandIgnoringULPNoise(_ netDepthDecrease: Double) -> Bool {
+        let comparisonTolerance = max(depthDeadbandMeters.ulp, netDepthDecrease.ulp) * 16
+        return netDepthDecrease > depthDeadbandMeters + comparisonTolerance
     }
 }
