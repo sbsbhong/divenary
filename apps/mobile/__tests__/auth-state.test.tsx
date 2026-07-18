@@ -156,12 +156,17 @@ function createAuthFixture(options?: {
   status?: OnboardingStatus;
   cache?: MembershipCacheEntry;
   providers?: Partial<Record<'google' | 'apple', NativeSocialSignIn>>;
+  developmentSignIn?: MobileAuth['developmentSignIn'];
 }) {
   let authListener: ((session: Session | null) => void) | undefined;
   const unsubscribe = jest.fn();
   const repository = {
     signInWithIdToken: jest.fn(
       async (_input: Parameters<AuthRepository['signInWithIdToken']>[0]) =>
+        session,
+    ),
+    signInWithPassword: jest.fn(
+      async (_input: Parameters<AuthRepository['signInWithPassword']>[0]) =>
         session,
     ),
     getStoredSessionEvidence: jest.fn(async () => options?.evidence),
@@ -201,6 +206,7 @@ function createAuthFixture(options?: {
     membershipCache,
     recentProviderStore,
     providers: options?.providers ?? {},
+    developmentSignIn: options?.developmentSignIn,
     now: () => now,
   };
 
@@ -239,6 +245,34 @@ describe('AuthProvider', () => {
     expect(auth.isConfigured).toBe(false);
     expect(auth.state).toEqual({status: 'guest'});
     expect(appStateSpy).not.toHaveBeenCalled();
+  });
+
+  test('composes a local development action without social adapters', () => {
+    const createGoogleNativeAuth = jest.fn();
+    const isAppleNativeAuthAvailable = jest.fn(() => true);
+    const fixture = createAuthFixture();
+    const repository = fixture.repository;
+    const auth = createMobileAuth({
+      getSupabaseEnvironment: () => ({
+        url: 'http://127.0.0.1:54321',
+        publishableKey: 'local-key',
+      }),
+      getLocalDevelopmentAuthEnvironment: () => ({
+        email: 'divenary-local@development.invalid',
+        password: 'generated-password',
+      }),
+      createSupabaseClient: jest.fn() as never,
+      createAuthRepository: jest.fn(() => repository),
+      createMembershipCache: jest.fn(() => ({})) as never,
+      createRecentSocialProviderStore: jest.fn(() => ({})) as never,
+      createGoogleNativeAuth,
+      isAppleNativeAuthAvailable,
+    });
+
+    expect(auth?.providers).toEqual({});
+    expect(auth?.developmentSignIn).toEqual(expect.any(Function));
+    expect(createGoogleNativeAuth).not.toHaveBeenCalled();
+    expect(isAppleNativeAuthAvailable).not.toHaveBeenCalled();
   });
 
   test('boots guest with no stored session and owns one listener of each kind', async () => {
@@ -576,6 +610,64 @@ describe('AuthProvider', () => {
       await Promise.all([first, second]);
     });
     expect(fixture.repository.signInWithIdToken).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ['pending onboarding', pendingStatus, 'pendingOnboarding'],
+    ['completed onboarding', completeStatus, 'authenticated'],
+  ] as const)(
+    'runs development sign-in through shared revalidation for %s',
+    async (_name, status, expectedState) => {
+      const developmentSignIn = jest.fn(async () => session);
+      const fixture = createAuthFixture({
+        evidence,
+        status,
+        developmentSignIn,
+      });
+      fixture.repository.getStoredSessionEvidence
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue(evidence);
+      await mountAuth(fixture.mobileAuth);
+
+      await ReactTestRenderer.act(async () => {
+        await latestAuth.signInForDevelopment!();
+      });
+      await settle();
+
+      expect(developmentSignIn).toHaveBeenCalledTimes(1);
+      expect(latestAuth.state.status).toBe(expectedState);
+      expect(fixture.recentProviderStore.save).not.toHaveBeenCalled();
+    },
+  );
+
+  test('serializes and surfaces development sign-in failures without persisting a provider', async () => {
+    const exchange = createDeferred<Session>();
+    const developmentSignIn = jest.fn(() => exchange.promise);
+    const fixture = createAuthFixture({developmentSignIn});
+    await mountAuth(fixture.mobileAuth);
+
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      first = latestAuth.signInForDevelopment!();
+      second = latestAuth.signInForDevelopment!();
+    });
+
+    expect(first).toBe(second);
+    expect(developmentSignIn).toHaveBeenCalledTimes(1);
+    expect(latestAuth.state).toEqual({
+      status: 'authenticating',
+      provider: 'development',
+    });
+
+    exchange.reject(new AuthRepositoryError('server'));
+    await ReactTestRenderer.act(async () => {
+      await expect(first).rejects.toThrow('Authentication operation failed');
+    });
+    await settle();
+
+    expect(latestAuth.state).toEqual({status: 'guest'});
+    expect(fixture.recentProviderStore.save).not.toHaveBeenCalled();
   });
 
   test('keeps explicit sign-out authoritative over a late token exchange', async () => {

@@ -58,6 +58,8 @@ function createAuthFixture(options?: {
   availableProviders?: SocialProvider[];
   recentProvider?: SocialProvider;
   signIn?: (provider: SocialProvider) => Promise<void>;
+  isDevelopmentSignInAvailable?: boolean;
+  signInForDevelopment?: AuthContextValue['signInForDevelopment'];
   completeOnboarding?: AuthContextValue['completeOnboarding'];
 }) {
   const signIn = jest.fn(options?.signIn ?? (async (_provider: SocialProvider) => undefined));
@@ -72,19 +74,31 @@ function createAuthFixture(options?: {
   );
   const cancelOnboarding = jest.fn(async () => undefined);
   const signOut = jest.fn(async () => undefined);
+  const signInForDevelopment = jest.fn(
+    options?.signInForDevelopment ?? (async () => undefined),
+  );
 
   mockAuth = {
     state: options?.state ?? { status: 'guest' },
     isConfigured: options?.isConfigured ?? true,
     availableProviders: options?.availableProviders ?? ['google', 'apple'],
     recentProvider: options?.recentProvider,
+    isDevelopmentSignInAvailable:
+      options?.isDevelopmentSignInAvailable ?? false,
     signIn,
+    signInForDevelopment,
     completeOnboarding,
     cancelOnboarding,
     signOut,
   };
 
-  return { cancelOnboarding, completeOnboarding, signIn, signOut };
+  return {
+    cancelOnboarding,
+    completeOnboarding,
+    signIn,
+    signInForDevelopment,
+    signOut,
+  };
 }
 
 async function render(element: React.ReactElement) {
@@ -182,6 +196,62 @@ describe('LoginScreen', () => {
     expect(fixture.signIn).toHaveBeenNthCalledWith(1, 'google');
     expect(fixture.signIn).toHaveBeenNthCalledWith(2, 'apple');
     expect(fixture.signIn).toHaveBeenCalledTimes(2);
+  });
+
+  test('renders the local development action only when local credentials are available', async () => {
+    createAuthFixture({
+      availableProviders: [],
+      isDevelopmentSignInAvailable: true,
+    });
+    const renderer = await render(<LoginScreen />);
+
+    expect(
+      renderer.root.findByProps({testID: 'auth-login-development'}).props
+        .accessibilityLabel,
+    ).toBe('로컬 테스트 계정');
+
+    createAuthFixture({availableProviders: []});
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<LoginScreen />);
+    });
+
+    expect(
+      renderer.root.findAllByProps({testID: 'auth-login-development'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'auth-login-screen'}),
+    ).toBeTruthy();
+  });
+
+  test('locks the local development action, prevents close, and displays generic retry copy on failure', async () => {
+    const deferred = createDeferred<void>();
+    const fixture = createAuthFixture({
+      availableProviders: [],
+      isDevelopmentSignInAvailable: true,
+      signInForDevelopment: async () => deferred.promise,
+    });
+    const onClose = jest.fn();
+    const renderer = await render(<LoginScreen onClose={onClose} />);
+    const developmentButton = () =>
+      renderer.root.findByProps({testID: 'auth-login-development'});
+
+    await ReactTestRenderer.act(async () => {
+      developmentButton().props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(fixture.signInForDevelopment).toHaveBeenCalledTimes(1);
+    expect(developmentButton().props.disabled).toBe(true);
+    expect(renderer.root.findByProps({testID: 'auth-login-close'}).props.disabled).toBe(true);
+    expect(renderer.root.findByProps({testID: 'auth-login-spinner-development'})).toBeTruthy();
+
+    deferred.reject(new Error('raw-password@example.com'));
+    await flush();
+
+    const rendered = JSON.stringify(renderer.toJSON());
+    expect(rendered).toContain('다시 시도');
+    expect(rendered).not.toContain('raw-password@example.com');
+    expect(developmentButton().props.disabled).toBe(false);
   });
 
   test('orders the recent provider first and keeps its visible label outside the branded button', async () => {

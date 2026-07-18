@@ -5,6 +5,7 @@ const defaultDevelopmentEnvPath = path.resolve(
   __dirname,
   '../.env.development',
 );
+const defaultLocalEnvPath = path.resolve(__dirname, '../.env.local');
 
 const parseEnvironmentFile = source =>
   source.split(/\r?\n/).reduce((environment, line) => {
@@ -53,15 +54,26 @@ const loadMobileEnvironment = (options = {}) => {
   const nodeEnvironment = options.nodeEnvironment ?? process.env.NODE_ENV;
   const developmentEnvPath =
     options.developmentEnvPath ?? defaultDevelopmentEnvPath;
+  const localEnvPath = options.localEnvPath ?? defaultLocalEnvPath;
   const isProduction =
     babelEnvironment === 'production' || nodeEnvironment === 'production';
+  const selectedDevelopmentEnvPath =
+    environment.MOBILE_ENVIRONMENT === 'local'
+      ? localEnvPath
+      : developmentEnvPath;
   const developmentEnvironment = isProduction
     ? {}
-    : loadDevelopmentEnvironment(developmentEnvPath);
+    : loadDevelopmentEnvironment(selectedDevelopmentEnvPath);
+  const processEnvironment = toStringEnvironment(environment);
+
+  if (isProduction) {
+    delete processEnvironment.LOCAL_AUTH_EMAIL;
+    delete processEnvironment.LOCAL_AUTH_PASSWORD;
+  }
 
   return {
     ...developmentEnvironment,
-    ...toStringEnvironment(environment),
+    ...processEnvironment,
   };
 };
 

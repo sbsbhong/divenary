@@ -8,6 +8,7 @@ type MobileEnvironmentLoader = (options?: {
   babelEnvironment?: string;
   nodeEnvironment?: string;
   developmentEnvPath?: string;
+  localEnvPath?: string;
 }) => Record<string, string>;
 
 const {loadMobileEnvironment} = require('../scripts/load-mobile-env') as {
@@ -20,6 +21,9 @@ const authIdentifiers = `
     __SUPABASE_PUBLISHABLE_KEY__,
     __GOOGLE_WEB_CLIENT_ID__,
     __GOOGLE_IOS_CLIENT_ID__,
+    __SUPABASE_ANDROID_URL__,
+    __LOCAL_AUTH_EMAIL__,
+    __LOCAL_AUTH_PASSWORD__,
   ];
 `;
 
@@ -103,11 +107,59 @@ describe('mobile Babel environment injection', () => {
     ).toBeUndefined();
   });
 
+  test('selects the generated local file only for the explicit local mobile environment', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dive-mobile-env-'));
+    const developmentEnvPath = path.join(directory, '.env.development');
+    const localEnvPath = path.join(directory, '.env.local');
+    fs.writeFileSync(developmentEnvPath, 'SUPABASE_URL=https://staging.supabase.co\n', 'utf8');
+    fs.writeFileSync(localEnvPath, 'SUPABASE_URL=http://127.0.0.1:54321\n', 'utf8');
+
+    expect(
+      loadMobileEnvironment({
+        environment: {},
+        babelEnvironment: 'development',
+        nodeEnvironment: 'development',
+        developmentEnvPath,
+        localEnvPath,
+      }).SUPABASE_URL,
+    ).toBe('https://staging.supabase.co');
+    expect(
+      loadMobileEnvironment({
+        environment: {MOBILE_ENVIRONMENT: 'local'},
+        babelEnvironment: 'development',
+        nodeEnvironment: 'development',
+        developmentEnvPath,
+        localEnvPath,
+      }).SUPABASE_URL,
+    ).toBe('http://127.0.0.1:54321');
+  });
+
+  test('keeps both development files out of production transforms', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dive-mobile-env-'));
+    const developmentEnvPath = path.join(directory, '.env.development');
+    const localEnvPath = path.join(directory, '.env.local');
+    fs.writeFileSync(developmentEnvPath, 'SUPABASE_URL=https://staging.supabase.co\n', 'utf8');
+    fs.writeFileSync(localEnvPath, 'SUPABASE_URL=http://127.0.0.1:54321\n', 'utf8');
+
+    expect(
+      loadMobileEnvironment({
+        environment: {MOBILE_ENVIRONMENT: 'local'},
+        babelEnvironment: 'production',
+        nodeEnvironment: 'production',
+        developmentEnvPath,
+        localEnvPath,
+      }).SUPABASE_URL,
+    ).toBeUndefined();
+  });
+
   test('inlines process values while leaving unknown identifiers untouched', () => {
     process.env.SUPABASE_URL = 'https://process.supabase.co';
     process.env.SUPABASE_PUBLISHABLE_KEY = 'process-key';
     process.env.GOOGLE_WEB_CLIENT_ID = 'web-id';
     process.env.GOOGLE_IOS_CLIENT_ID = 'ios-id';
+    process.env.SUPABASE_ANDROID_URL = 'http://10.0.2.2:54321';
+    process.env.LOCAL_AUTH_EMAIL = 'divenary-local@development.invalid';
+    process.env.LOCAL_AUTH_PASSWORD = 'test-password';
 
     const code = transform(
       `${authIdentifiers}\nexport const untouched = __UNKNOWN_IDENTIFIER__;`,
@@ -118,6 +170,9 @@ describe('mobile Babel environment injection', () => {
     expect(code).toContain('process-key');
     expect(code).toContain('web-id');
     expect(code).toContain('ios-id');
+    expect(code).toContain('http://10.0.2.2:54321');
+    expect(code).toContain('divenary-local@development.invalid');
+    expect(code).toContain('test-password');
     expect(code).toContain('__UNKNOWN_IDENTIFIER__');
   });
 
@@ -136,11 +191,25 @@ describe('mobile Babel environment injection', () => {
     delete process.env.SUPABASE_PUBLISHABLE_KEY;
     delete process.env.GOOGLE_WEB_CLIENT_ID;
     delete process.env.GOOGLE_IOS_CLIENT_ID;
+    delete process.env.SUPABASE_ANDROID_URL;
+    delete process.env.LOCAL_AUTH_EMAIL;
+    delete process.env.LOCAL_AUTH_PASSWORD;
     delete process.env.NODE_ENV;
     delete process.env.BABEL_ENV;
 
     const code = transform(authIdentifiers, 'production');
-    expect(code.match(/""/g)?.length).toBe(4);
+    expect(code.match(/""/g)?.length).toBe(7);
+  });
+
+  test('production transforms do not inline local password credentials from the process environment', () => {
+    process.env.LOCAL_AUTH_EMAIL = 'divenary-local@development.invalid';
+    process.env.LOCAL_AUTH_PASSWORD = 'generated-password';
+    process.env.NODE_ENV = 'production';
+
+    const code = transform(authIdentifiers, 'production-local-credential-test');
+
+    expect(code).not.toContain('divenary-local@development.invalid');
+    expect(code).not.toContain('generated-password');
   });
 
   test('does not replace local bindings or non-computed object keys', () => {

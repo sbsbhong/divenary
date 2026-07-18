@@ -2,9 +2,14 @@ import {
   createAuthRepository,
   createSupabaseClient,
   type AuthRepository,
+  type Session,
 } from '@repo/supabase';
 
-import {getGoogleEnvironment, getSupabaseEnvironment} from '../config/env';
+import {
+  getGoogleEnvironment,
+  getLocalDevelopmentAuthEnvironment,
+  getSupabaseEnvironment,
+} from '../config/env';
 import {
   isAppleNativeAuthAvailable,
   signInWithApple,
@@ -29,11 +34,13 @@ export type MobileAuth = {
   membershipCache: MembershipCache;
   recentProviderStore: RecentSocialProviderStore;
   providers: Partial<Record<SocialProvider, NativeSocialSignIn>>;
+  developmentSignIn?: () => Promise<Session>;
   now: () => number;
 };
 
 export type CreateMobileAuthOptions = {
   getSupabaseEnvironment?: typeof getSupabaseEnvironment;
+  getLocalDevelopmentAuthEnvironment?: typeof getLocalDevelopmentAuthEnvironment;
   getGoogleEnvironment?: typeof getGoogleEnvironment;
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthRepository?: typeof createAuthRepository;
@@ -52,6 +59,9 @@ export function createMobileAuth(
     options.getSupabaseEnvironment ?? getSupabaseEnvironment;
   const readGoogleEnvironment =
     options.getGoogleEnvironment ?? getGoogleEnvironment;
+  const readLocalDevelopmentAuthEnvironment =
+    options.getLocalDevelopmentAuthEnvironment ??
+    getLocalDevelopmentAuthEnvironment;
   const makeClient = options.createSupabaseClient ?? createSupabaseClient;
   const makeRepository = options.createAuthRepository ?? createAuthRepository;
   const makeMembershipCache =
@@ -75,22 +85,32 @@ export function createMobileAuth(
       ...environment,
       storage: supabaseSessionStorage,
     });
+    const repository = makeRepository(client);
+    const localDevelopmentAuthEnvironment =
+      readLocalDevelopmentAuthEnvironment();
     const providers: MobileAuth['providers'] = {};
-    const googleEnvironment = readGoogleEnvironment();
 
-    if (googleEnvironment !== undefined) {
-      providers.google = makeGoogleAuth(googleEnvironment);
-    }
+    if (localDevelopmentAuthEnvironment === undefined) {
+      const googleEnvironment = readGoogleEnvironment();
 
-    if (appleIsAvailable()) {
-      providers.apple = appleSignIn;
+      if (googleEnvironment !== undefined) {
+        providers.google = makeGoogleAuth(googleEnvironment);
+      }
+
+      if (appleIsAvailable()) {
+        providers.apple = appleSignIn;
+      }
     }
 
     return {
-      repository: makeRepository(client),
+      repository,
       membershipCache: makeMembershipCache(),
       recentProviderStore: makeRecentProviderStore(),
       providers,
+      developmentSignIn:
+        localDevelopmentAuthEnvironment === undefined
+          ? undefined
+          : () => repository.signInWithPassword(localDevelopmentAuthEnvironment),
       now: options.now ?? (() => Math.floor(Date.now() / 1000)),
     };
   } catch {
