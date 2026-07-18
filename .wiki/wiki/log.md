@@ -1,5 +1,16 @@
 # Wiki Log
 
+## [2026-07-18] ingest | Watch underwater runtime verification review correction
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+- 근거:
+  - Action Button 수중/unknown/early rejection은 diver interaction이 아니라 existing unit test 또는 controlled developer harness로 제한
+  - Xcode Easy Submersion의 simulator adoption/UI 범위와 physical sensor, actual hardware `When Submerged`, Water Lock, release readiness 경계 분리
+  - Action Button `>=180s (3 minutes)`, watchOS timeout `>600s (10 minutes)`, D8 device timeline과 app-timer source/test audit 분리
+- 요약:
+  - 실기기 Action Button 단계는 surfaced eligible end만 다룬다. simulator integration evidence와 physical release evidence를 섞지 않으며, app-side timer 부재는 device log가 아닌 source/test audit으로 확인한다.
+
 ## [2026-07-18] ingest | Watch underwater runtime lifecycle implementation and device boundary
 - Added: Watch underwater runtime lifecycle implementation and device boundary raw source
 - Updated: Watch 앱 구조
