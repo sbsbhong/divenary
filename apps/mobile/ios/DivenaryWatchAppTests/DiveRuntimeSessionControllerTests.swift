@@ -65,6 +65,22 @@ final class DiveRuntimeSessionControllerTests: XCTestCase {
         XCTAssertEqual(adapter.calls, [.setDelegate, .start, .invalidate])
     }
 
+    func testExplicitInvalidationSuppressesDuplicatesResetsAfterCallbackAndStartsReplacement() {
+        let firstAdapter = FakeRuntimeSessionAdapter()
+        let secondAdapter = FakeRuntimeSessionAdapter()
+        let factory = RecordingRuntimeSessionAdapterFactory(manualAdapters: [firstAdapter, secondAdapter])
+        let controller = DiveRuntimeSessionController(factory: factory)
+
+        controller.startManualSession()
+        controller.invalidate()
+        controller.invalidate()
+        firstAdapter.emitInvalidation(reason: .none, error: nil)
+        controller.startManualSession()
+
+        XCTAssertEqual(firstAdapter.calls, [.setDelegate, .start, .invalidate])
+        XCTAssertEqual(secondAdapter.calls, [.setDelegate, .start])
+    }
+
     func testInvalidationClearsActiveAdapterAndStaleCallbacksDoNotCorruptReplacement() {
         let firstAdapter = FakeRuntimeSessionAdapter()
         let secondAdapter = FakeRuntimeSessionAdapter()

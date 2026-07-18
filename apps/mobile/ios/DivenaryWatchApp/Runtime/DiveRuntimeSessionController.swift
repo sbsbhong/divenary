@@ -157,7 +157,7 @@ final class WatchExtendedRuntimeSessionAdapter: NSObject, DiveRuntimeSessionAdap
 
 extension WatchExtendedRuntimeSessionAdapter: WKExtendedRuntimeSessionDelegate {
     nonisolated func extendedRuntimeSessionDidStart(_ extendedRuntimeSession: WKExtendedRuntimeSession) {
-        MainActor.assumeIsolated { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 return
             }
@@ -166,7 +166,7 @@ extension WatchExtendedRuntimeSessionAdapter: WKExtendedRuntimeSessionDelegate {
     }
 
     nonisolated func extendedRuntimeSessionWillExpire(_ extendedRuntimeSession: WKExtendedRuntimeSession) {
-        MainActor.assumeIsolated { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 return
             }
@@ -179,7 +179,7 @@ extension WatchExtendedRuntimeSessionAdapter: WKExtendedRuntimeSessionDelegate {
         didInvalidateWith reason: WKExtendedRuntimeSessionInvalidationReason,
         error: Error?
     ) {
-        MainActor.assumeIsolated { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else {
                 return
             }
