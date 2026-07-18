@@ -44,8 +44,17 @@ export type LocalDevelopmentAuthEnvironment = {
   password: string;
 };
 
+export const stagingSupabaseOrigin =
+  'https://mclvhwzsuvsxjerdouka.supabase.co';
+
 const invalidSupabaseUrl = () =>
   new Error('Invalid SUPABASE_URL configuration');
+
+const localSupabaseHosts = new Set([
+  'localhost',
+  '127.0.0.1',
+  '10.0.2.2',
+]);
 
 export const parseMobileEnvironmentMode = (
   value: string | undefined,
@@ -100,6 +109,39 @@ export const parseSupabaseEnvironment = (
   return {url, publishableKey};
 };
 
+export const isSupabaseEnvironmentForMobileMode = (
+  environment: SupabaseEnvironment,
+  mode: MobileEnvironmentMode,
+): boolean => {
+  if (mode === 'release') {
+    return false;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(environment.url);
+  } catch {
+    return false;
+  }
+
+  if (
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    return false;
+  }
+
+  if (mode === 'local') {
+    return url.protocol === 'http:' && localSupabaseHosts.has(url.hostname);
+  }
+
+  return url.origin === stagingSupabaseOrigin;
+};
+
 export const parseLocalDevelopmentAuthEnvironment = (
   input: LocalDevelopmentAuthEnvironmentInput,
   isDevelopment: boolean,
@@ -121,7 +163,7 @@ export const parseLocalDevelopmentAuthEnvironment = (
     return undefined;
   }
 
-  if (host !== 'localhost' && host !== '127.0.0.1' && host !== '10.0.2.2') {
+  if (!localSupabaseHosts.has(host)) {
     return undefined;
   }
 

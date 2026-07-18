@@ -22,6 +22,7 @@ const inlineMobileEnvironmentKeys = [
 const developmentConfigurationKeys = inlineMobileEnvironmentKeys.filter(
   key => key !== 'MOBILE_ENVIRONMENT_MODE',
 );
+const mobileEnvironmentModes = new Set(['local', 'staging', 'release']);
 
 const parseEnvironmentFile = source =>
   source.split(/\r?\n/).reduce((environment, line) => {
@@ -64,6 +65,27 @@ const toStringEnvironment = environment =>
     return result;
   }, {});
 
+const resolveMobileEnvironmentMode = ({
+  environment,
+  isDevelopmentBuild,
+}) => {
+  if (!isDevelopmentBuild) {
+    return 'release';
+  }
+
+  const requestedMode = environment.MOBILE_ENVIRONMENT;
+
+  if (requestedMode === undefined || requestedMode === '') {
+    return 'staging';
+  }
+
+  if (!mobileEnvironmentModes.has(requestedMode)) {
+    throw new Error('Invalid MOBILE_ENVIRONMENT configuration');
+  }
+
+  return requestedMode;
+};
+
 const loadMobileEnvironment = (options = {}) => {
   const environment = options.environment ?? process.env;
   const babelEnvironment = options.babelEnvironment ?? process.env.BABEL_ENV;
@@ -77,21 +99,21 @@ const loadMobileEnvironment = (options = {}) => {
     developmentBabelEnvironments.has(effectiveBabelEnvironment) &&
     (nodeEnvironment === undefined ||
       developmentBabelEnvironments.has(nodeEnvironment));
-  const mobileEnvironmentMode = isDevelopmentBuild
-    ? environment.MOBILE_ENVIRONMENT === 'local'
-      ? 'local'
-      : 'staging'
-    : 'release';
+  const mobileEnvironmentMode = resolveMobileEnvironmentMode({
+    environment,
+    isDevelopmentBuild,
+  });
   const selectedDevelopmentEnvPath =
     mobileEnvironmentMode === 'local'
       ? localEnvPath
       : developmentEnvPath;
-  const developmentEnvironment = isDevelopmentBuild
-    ? loadDevelopmentEnvironment(selectedDevelopmentEnvPath)
-    : {};
+  const developmentEnvironment =
+    isDevelopmentBuild && mobileEnvironmentMode !== 'release'
+      ? loadDevelopmentEnvironment(selectedDevelopmentEnvPath)
+      : {};
   const processEnvironment = toStringEnvironment(environment);
 
-  if (!isDevelopmentBuild) {
+  if (!isDevelopmentBuild || mobileEnvironmentMode === 'release') {
     for (const key of developmentConfigurationKeys) {
       delete processEnvironment[key];
     }

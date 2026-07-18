@@ -276,10 +276,11 @@ describe('AuthProvider', () => {
     expect(isAppleNativeAuthAvailable).not.toHaveBeenCalled();
   });
 
-  test('keeps explicit local mode social-free when credentials are missing or the endpoint is remote', () => {
+  test('rejects local mode before client creation when the endpoint is remote', () => {
     const createGoogleNativeAuth = jest.fn();
     const isAppleNativeAuthAvailable = jest.fn(() => true);
     const getLocalDevelopmentAuthEnvironment = jest.fn(() => undefined);
+    const createClient = jest.fn();
     const fixture = createAuthFixture();
     const auth = createMobileAuth({
       getMobileEnvironmentMode: () => 'local',
@@ -292,7 +293,7 @@ describe('AuthProvider', () => {
         webClientId: 'google-web-client-id',
         iosClientId: 'google-ios-client-id',
       }),
-      createSupabaseClient: jest.fn() as never,
+      createSupabaseClient: createClient,
       createAuthRepository: jest.fn(() => fixture.repository),
       createMembershipCache: jest.fn(() => ({})) as never,
       createRecentSocialProviderStore: jest.fn(() => ({})) as never,
@@ -300,11 +301,66 @@ describe('AuthProvider', () => {
       isAppleNativeAuthAvailable,
     });
 
-    expect(auth?.providers).toEqual({});
-    expect(auth?.developmentSignIn).toBeUndefined();
-    expect(getLocalDevelopmentAuthEnvironment).toHaveBeenCalledTimes(1);
+    expect(auth).toBeUndefined();
+    expect(createClient).not.toHaveBeenCalled();
+    expect(getLocalDevelopmentAuthEnvironment).not.toHaveBeenCalled();
     expect(createGoogleNativeAuth).not.toHaveBeenCalled();
     expect(isAppleNativeAuthAvailable).not.toHaveBeenCalled();
+  });
+
+  test('rejects local mode before client creation when generated credentials are missing', () => {
+    const createClient = jest.fn();
+
+    expect(
+      createMobileAuth({
+        getMobileEnvironmentMode: () => 'local',
+        getSupabaseEnvironment: () => ({
+          url: 'http://127.0.0.1:54321',
+          publishableKey: 'local-key',
+        }),
+        getLocalDevelopmentAuthEnvironment: () => undefined,
+        createSupabaseClient: createClient,
+      }),
+    ).toBeUndefined();
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  test('rejects staging mode before client creation when the endpoint is not the fixed staging project', () => {
+    const createClient = jest.fn();
+
+    for (const url of [
+      'http://127.0.0.1:54321',
+      'https://another-project.supabase.co',
+    ]) {
+      expect(
+        createMobileAuth({
+          getMobileEnvironmentMode: () => 'staging',
+          getSupabaseEnvironment: () => ({
+            url,
+            publishableKey: 'public-key',
+          }),
+          createSupabaseClient: createClient,
+        }),
+      ).toBeUndefined();
+    }
+
+    expect(createClient).not.toHaveBeenCalled();
+  });
+
+  test('rejects release mode before client creation even when Auth values are present', () => {
+    const createClient = jest.fn();
+
+    expect(
+      createMobileAuth({
+        getMobileEnvironmentMode: () => 'release',
+        getSupabaseEnvironment: () => ({
+          url: 'https://mclvhwzsuvsxjerdouka.supabase.co',
+          publishableKey: 'public-key',
+        }),
+        createSupabaseClient: createClient,
+      }),
+    ).toBeUndefined();
+    expect(createClient).not.toHaveBeenCalled();
   });
 
   test('keeps staging composition on social providers and ignores local credentials', () => {
@@ -318,7 +374,7 @@ describe('AuthProvider', () => {
     const auth = createMobileAuth({
       getMobileEnvironmentMode: () => 'staging',
       getSupabaseEnvironment: () => ({
-        url: 'https://staging.supabase.co',
+        url: 'https://mclvhwzsuvsxjerdouka.supabase.co',
         publishableKey: 'staging-key',
       }),
       getLocalDevelopmentAuthEnvironment,

@@ -136,6 +136,32 @@ describe('mobile Babel environment injection', () => {
     expect(local.MOBILE_ENVIRONMENT_MODE).toBe('local');
   });
 
+  test('rejects unknown explicit mobile environment selectors', () => {
+    expect(() =>
+      loadMobileEnvironment({
+        environment: {MOBILE_ENVIRONMENT: 'locla'},
+        babelEnvironment: 'development',
+        nodeEnvironment: 'development',
+      }),
+    ).toThrow('MOBILE_ENVIRONMENT');
+  });
+
+  test('keeps an explicit release selector unconfigured in development', () => {
+    const loaded = loadMobileEnvironment({
+      environment: {
+        MOBILE_ENVIRONMENT: 'release',
+        SUPABASE_URL: 'https://release-sentinel.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'release-publishable-sentinel',
+      },
+      babelEnvironment: 'development',
+      nodeEnvironment: 'development',
+    });
+
+    expect(loaded.MOBILE_ENVIRONMENT_MODE).toBe('release');
+    expect(loaded).not.toHaveProperty('SUPABASE_URL');
+    expect(loaded).not.toHaveProperty('SUPABASE_PUBLISHABLE_KEY');
+  });
+
   test('keeps both development files out of production transforms', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dive-mobile-env-'));
     const developmentEnvPath = path.join(directory, '.env.development');

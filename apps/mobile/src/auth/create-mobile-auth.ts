@@ -10,6 +10,7 @@ import {
   getLocalDevelopmentAuthEnvironment,
   getMobileEnvironmentMode,
   getSupabaseEnvironment,
+  isSupabaseEnvironmentForMobileMode,
 } from '../config/env';
 import {
   isAppleNativeAuthAvailable,
@@ -80,9 +81,32 @@ export function createMobileAuth(
 
   try {
     const mobileEnvironmentMode = readMobileEnvironmentMode();
+
+    if (mobileEnvironmentMode === 'release') {
+      return undefined;
+    }
+
     const environment = readSupabaseEnvironment();
 
-    if (environment === undefined) {
+    if (
+      environment === undefined ||
+      !isSupabaseEnvironmentForMobileMode(
+        environment,
+        mobileEnvironmentMode,
+      )
+    ) {
+      return undefined;
+    }
+
+    const localDevelopmentAuthEnvironment =
+      mobileEnvironmentMode === 'local'
+        ? readLocalDevelopmentAuthEnvironment()
+        : undefined;
+
+    if (
+      mobileEnvironmentMode === 'local' &&
+      localDevelopmentAuthEnvironment === undefined
+    ) {
       return undefined;
     }
 
@@ -91,10 +115,6 @@ export function createMobileAuth(
       storage: supabaseSessionStorage,
     });
     const repository = makeRepository(client);
-    const localDevelopmentAuthEnvironment =
-      mobileEnvironmentMode === 'local'
-        ? readLocalDevelopmentAuthEnvironment()
-        : undefined;
     const providers: MobileAuth['providers'] = {};
 
     if (mobileEnvironmentMode === 'staging') {

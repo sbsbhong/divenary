@@ -1,5 +1,10 @@
 # Wiki Log
 
+## [2026-07-18] ingest | Staging/local Auth fail-closed correction
+- Added: Staging/local Auth fail-closed 보정 raw source
+- Updated: Supabase 구조
+- Updated: Knowledge Base Index
+
 ## [2026-07-18] ingest | Wave 3A staging and local Auth development
 - Added: Staging/local Auth 개발 경계와 승격 증거 raw source
 - Updated: Supabase 구조
