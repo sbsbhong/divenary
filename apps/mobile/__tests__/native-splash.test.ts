@@ -60,9 +60,10 @@ describe('native splash screen', () => {
 
     for (const source of [storyboard, androidLaunchScreen, androidMark, android31Theme]) {
       expect(source).not.toContain('Powered by React Native');
-      expect(source).not.toMatch(/<text\\b/i);
+      expect(source).not.toMatch(/<text\b/i);
       expect(source).not.toContain('android:text=');
     }
+    expect(storyboard).not.toMatch(/<label\b/i);
 
     expect(android31Theme).toContain('android:windowSplashScreenBackground">@color/splash_background');
     expect(android31Theme).toContain('android:windowSplashScreenAnimatedIcon');

@@ -13,7 +13,9 @@ import i18n from '../src/i18n';
 import { defaultDiveLogRepository } from '../src/repositories/default-dive-log-repository';
 
 type MockAuthState =
+  | { status: 'bootstrapping' }
   | { status: 'guest' }
+  | { status: 'authenticating'; provider: 'google' | 'apple' }
   | {
       status: 'pendingOnboarding';
       userId: string;
@@ -28,6 +30,8 @@ type MockAuthState =
   | { status: 'authenticatedOffline'; userId: string };
 
 const nonGuestHomeStateFixtures: ReadonlyArray<Exclude<MockAuthState, { status: 'guest' }>> = [
+  { status: 'bootstrapping' },
+  { status: 'authenticating', provider: 'google' },
   { status: 'authenticated', userId: 'authenticated-member-user' },
   { status: 'authenticatedOffline', userId: 'offline-member-user' },
   {
