@@ -58,13 +58,16 @@ function assertPendingOnboarding(status) {
     throw new Error('Local fixture user must have pending onboarding.');
   }
 
-  const kinds = status.requiredDocuments?.map(document => document.kind);
+  const kinds = Array.isArray(status.requiredDocuments)
+    ? status.requiredDocuments.map(document => document.kind)
+    : [];
+  const uniqueKinds = new Set(kinds);
 
   if (
-    !Array.isArray(kinds) ||
     kinds.length !== 2 ||
-    kinds[0] !== 'terms' ||
-    kinds[1] !== 'privacy'
+    uniqueKinds.size !== 2 ||
+    !uniqueKinds.has('terms') ||
+    !uniqueKinds.has('privacy')
   ) {
     throw new Error(
       'Local fixture user must require exactly terms and privacy documents.',

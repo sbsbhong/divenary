@@ -20,7 +20,13 @@ function jsonResponse(status, body) {
   };
 }
 
-function createFixture(options = {}) {
+function createFixture({
+  requiredDocuments = [
+    {kind: 'terms', version: '2026-07-13'},
+    {kind: 'privacy', version: '2026-07-13'},
+  ],
+  ...options
+} = {}) {
   const requests = [];
   const fileOperations = [];
   const logs = [];
@@ -31,10 +37,7 @@ function createFixture(options = {}) {
     jsonResponse(200, {access_token: 'local-session-token'}),
     jsonResponse(200, {
       isComplete: false,
-      requiredDocuments: [
-        {kind: 'terms', version: '2026-07-13'},
-        {kind: 'privacy', version: '2026-07-13'},
-      ],
+      requiredDocuments,
     }),
   ];
 
@@ -123,6 +126,75 @@ test('recreates a confirmed local user, verifies pending onboarding, and atomica
     ['rename', temporaryEnvPath, envPath],
   ]);
   assert.deepEqual(fixture.logs, []);
+});
+
+test('accepts exactly terms and privacy regardless of RPC order', async () => {
+  const fixture = createFixture({
+    requiredDocuments: [
+      {kind: 'privacy', version: '2026-07-13'},
+      {kind: 'terms', version: '2026-07-13'},
+    ],
+  });
+
+  const result = await prepareLocalMobileAuth(fixture.options);
+
+  assert.deepEqual(result, {email, envPath});
+  assert.deepEqual(fixture.fileOperations.at(-1), [
+    'rename',
+    temporaryEnvPath,
+    envPath,
+  ]);
+});
+
+for (const [label, requiredDocuments] of [
+  [
+    'duplicate kinds',
+    [
+      {kind: 'terms', version: '2026-07-13'},
+      {kind: 'terms', version: '2026-07-13'},
+    ],
+  ],
+  [
+    'an extra kind',
+    [
+      {kind: 'terms', version: '2026-07-13'},
+      {kind: 'privacy', version: '2026-07-13'},
+      {kind: 'marketing', version: '2026-07-13'},
+    ],
+  ],
+  [
+    'a missing kind',
+    [{kind: 'terms', version: '2026-07-13'}],
+  ],
+]) {
+  test(`rejects required documents with ${label}`, async () => {
+    const fixture = createFixture({requiredDocuments});
+
+    await assert.rejects(
+      prepareLocalMobileAuth(fixture.options),
+      /exactly terms and privacy/,
+    );
+
+    assert.deepEqual(fixture.fileOperations, []);
+  });
+}
+
+test('rejects a non-loopback API URL before network or file access', async () => {
+  const fixture = createFixture({
+    readLocalStatus: async () => ({
+      API_URL: 'https://example.supabase.co',
+      PUBLISHABLE_KEY: publishableKey,
+      SECRET_KEY: secretKey,
+    }),
+  });
+
+  await assert.rejects(
+    prepareLocalMobileAuth(fixture.options),
+    /must use localhost or 127\.0\.0\.1/,
+  );
+
+  assert.deepEqual(fixture.requests, []);
+  assert.deepEqual(fixture.fileOperations, []);
 });
 
 test('does not write an environment file when onboarding verification fails', async () => {
