@@ -8,7 +8,7 @@
 | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------- |
 | [Diving App / Overview](project/diving-app-overview.md)               | Apple Watch Ultra급 워치를 중심으로 프리다이빙, Air-only safety-stop 리마인더를 포함한 레크리에이션 스쿠버, 로그 앱의 제품 방향을 정리하되, 현재 구현 상태와 certified dive-computer 기능을 분리한다.                                                                       | 2026-06-28 |
 | [Diving App / Product Roadmap](project/diving-app-product-roadmap.md) | 추천 제품 범위는 v1 Apple Watch 기반 40m 이하 Gauge + Freedive + Air-only safety stop + Log에서 시작하고, 40m 초과 값은 보존하되 unsupported warning 없이 정상 지원처럼 표시하지 않는다.                                                               | 2026-07-09 |
-| [Diving App / QA and Test Plan](project/diving-app-qa-test-plan.md)   | 자동 검증, 건식 실기기, 얕은 물 센서, cloud/product, 출시 준비와 실제 잠수 전용 gate를 분리하고 기록·동기화 제품의 안전 경계를 적용한 QA 기준을 정리한다.                                                                                                                | 2026-07-12 |
+| [Diving App / QA and Test Plan](project/diving-app-qa-test-plan.md)   | 자동 검증과 signed-device/얕은 물 underwater runtime gate를 분리하고, 15cm manual sampling이 `When Submerged` pass가 아님을 포함한 물리 QA 기준을 정리한다.                                                                                                                | 2026-07-18 |
 | [Diving App / References](project/diving-app-references.md)           | 알고리즘과 제품 요구사항을 검증할 때 먼저 확인할 Apple, Oceanic+, NOAA, PADI, DAN, DecoTengu, Shearwater, Subsurface reference를 used-for, confidence, notes 기준으로 정리한다.                                                                  | 2026-06-28 |
 | [프로젝트 개요](project/overview.md)                                        | React Native/iPhone-watch companion, 공유 contract, Wave 3A local Supabase/Auth foundation을 함께 관리하며 remote data와 physical Auth 승격 gate를 분리한다. | 2026-07-15 |
 | [위키 운영 방식](project/wiki-workflow.md)                                  | 이 저장소의 장기 지식 저장소는 Karpathy LLM Wiki 방식으로 관리한다. 이 저장소에서는 project root 대신 `.wiki/`를 wiki root로 보고, immutable source는 `.wiki/raw/`, compiled article은 `.wiki/wiki/`에 둔다.                                              | 2026-06-28 |
@@ -35,7 +35,7 @@
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 workspace 앱·공유 package와 root local Supabase/Auth migration/test 경계를 함께 관리한다. | 2026-07-15 |
 | [Supabase 구조](architecture/supabase.md)                                      | 3A local/staging/release 모드와 endpoint를 함께 검증하고, staging-only promotion, signed physical Google/Apple Auth gate 및 3B-3D 경계를 정리한다. | 2026-07-18 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch acknowledgement와 cloud 상태를 분리하며, mobile Auth가 있어도 Watch payload와 guest repository에는 principal을 붙이지 않는다. | 2026-07-15 |
-| [Watch 앱 구조](architecture/watch-app.md)                                      | Watch 수온은 optional이며 0°C fallback을 쓰지 않는다. DEBUG `Test Large Sync`는 8,000-sample record를 일반 저장·file-transfer 경로로 보낸다. | 2026-07-12 |
+| [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
 
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | 남은 Watch·센서 검증, staging 이후 signed physical Google/Apple Auth 승격 gate, production Auth 준비, 3B-3D, Memory/share, 실제 잠수 gate를 기록한다. | 2026-07-18 |
+| [열린 질문](questions/open-questions.md) | `When Submerged`, Water Lock/Crown, Action Button, watchOS timeout, entitlement와 남은 Watch·센서 물리 검증, staging 이후 signed Auth 승격, production Auth, 3B-3D, Memory/share 외부 gate를 기록한다. | 2026-07-18 |

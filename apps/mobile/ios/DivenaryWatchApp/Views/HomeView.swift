@@ -2,11 +2,12 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var store: DiveSessionStore
-    @StateObject private var autoStartMonitor = DiveAutoStartMonitor()
+    @ObservedObject var water: WaterSubmersionCoordinator
+    @ObservedObject var realRecorder: DiveSessionRecorder
+    @ObservedObject var realCoordinator: RealDiveSessionCoordinator
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
     @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
-    @State private var automaticDiveStartRequest: AutomaticDiveStartRequest?
 
     var body: some View {
         NavigationStack {
@@ -18,11 +19,8 @@ struct HomeView: View {
                         autoLaunchStatus: autoLaunchAuthorization.statusText
                     )
 
-                    NavigationLink {
-                        RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .real)
-                            .onAppear {
-                                selectStartMode(.freedive)
-                            }
+                    Button {
+                        startRealDive(mode: .freedive)
                     } label: {
                         StartSessionCard(
                             title: "Free Session Start",
@@ -34,11 +32,8 @@ struct HomeView: View {
                     .buttonStyle(.plain)
                     .disabled(!sensorAvailability.canStartRealDive)
 
-                    NavigationLink {
-                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .real)
-                            .onAppear {
-                                selectStartMode(.scuba)
-                            }
+                    Button {
+                        startRealDive(mode: .scuba)
                     } label: {
                         StartSessionCard(
                             title: "Scuba Start",
@@ -61,7 +56,11 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .demo)
+                        SimulatedRecordingFlowView(
+                            store: store,
+                            plan: explicitStartPlan(for: .scuba),
+                            recordingMode: .demo
+                        )
                     } label: {
                         StartSessionCard(
                             title: "Demo",
@@ -75,7 +74,11 @@ struct HomeView: View {
                     #if DEBUG
                     if showsDebugControls {
                         NavigationLink {
-                            RecordingView(store: store, plan: explicitStartPlan(for: .freedive), recordingMode: .debugTest)
+                            SimulatedRecordingFlowView(
+                                store: store,
+                                plan: explicitStartPlan(for: .freedive),
+                                recordingMode: .debugTest
+                            )
                         } label: {
                             StartSessionCard(
                                 title: "Test Freedive",
@@ -87,7 +90,11 @@ struct HomeView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            RecordingView(store: store, plan: explicitStartPlan(for: .scuba), recordingMode: .debugTest)
+                            SimulatedRecordingFlowView(
+                                store: store,
+                                plan: explicitStartPlan(for: .scuba),
+                                recordingMode: .debugTest
+                            )
                         } label: {
                             StartSessionCard(
                                 title: "Test Scuba",
@@ -128,19 +135,18 @@ struct HomeView: View {
             }
             .background(DiveWatchTheme.background.ignoresSafeArea())
             .navigationTitle("Dive")
-            .navigationDestination(item: $automaticDiveStartRequest) { request in
-                RecordingView(store: store, plan: request.plan, recordingMode: .real)
+            .navigationDestination(isPresented: realRecordingFlowIsPresented) {
+                RealRecordingFlowView(
+                    store: store,
+                    water: water,
+                    recorder: realRecorder,
+                    coordinator: realCoordinator
+                )
             }
             .onAppear {
                 applyPreferredDiveMode()
                 loadInitialSensorAvailability()
                 autoLaunchAuthorization.refresh()
-                autoStartMonitor.onAutoStart = {
-                    startAutomaticDive()
-                }
-            }
-            .onDisappear {
-                autoStartMonitor.stopMonitoring()
             }
         }
     }
@@ -159,6 +165,13 @@ struct HomeView: View {
             return String(localized: "Air · Stop 5m/3:00")
         }
         return "\(gasLabel) · \(String(localized: "Stop 5m/3:00"))"
+    }
+
+    private var realRecordingFlowIsPresented: Binding<Bool> {
+        Binding(
+            get: { realCoordinator.phase.presentsRecordingFlow },
+            set: { _ in }
+        )
     }
 
     private func explicitStartPlan(for diveMode: DiveMode) -> PreDivePlan {
@@ -183,98 +196,20 @@ struct HomeView: View {
     private func loadInitialSensorAvailability() {
         Task { @MainActor in
             await Task.yield()
-            let availability = DepthSensorAvailability.current
-            sensorAvailability = availability
-            if availability.canStartRealDive {
-                autoStartMonitor.startMonitoringIfAvailable(sensorProvider: RealDepthSensorProvider())
-            } else {
-                autoStartMonitor.stopMonitoring()
-            }
+            sensorAvailability = DepthSensorAvailability.current
         }
     }
 
-    private func selectStartMode(_ diveMode: DiveMode) {
-        plan.diveMode = diveMode
+    private func startRealDive(mode diveMode: DiveMode) {
+        let startPlan = explicitStartPlan(for: diveMode)
+        plan = startPlan
         store.updatePreferredDiveMode(diveMode)
-    }
-
-    private func startAutomaticDive() {
-        store.updatePreferredDiveMode(plan.diveMode)
-        automaticDiveStartRequest = AutomaticDiveStartRequest(plan: plan)
+        realCoordinator.startManual(plan: startPlan)
     }
 
     private func apply(plannedDive: WatchPlannedDive) {
         plan = plannedDive.preDivePlan
         store.updatePreferredDiveMode(plan.diveMode)
-    }
-}
-
-private struct AutomaticDiveStartRequest: Identifiable, Hashable {
-    let id = UUID()
-    let plan: PreDivePlan
-
-    static func == (lhs: AutomaticDiveStartRequest, rhs: AutomaticDiveStartRequest) -> Bool {
-        lhs.id == rhs.id
-    }
-
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(id)
-    }
-}
-
-@MainActor
-private final class DiveAutoStartMonitor: ObservableObject {
-    @Published private(set) var latestDepthMeters: Double = 0
-
-    var onAutoStart: (() -> Void)?
-
-    private var sensorProvider: DepthSensorProvider?
-    private let activationDepthMeters: Double
-    private var isMonitoring = false
-    private var didTrigger = false
-
-    init(activationDepthMeters: Double = 3) {
-        self.activationDepthMeters = activationDepthMeters
-    }
-
-    func startMonitoringIfAvailable(sensorProvider nextSensorProvider: DepthSensorProvider) {
-        guard !isMonitoring else {
-            return
-        }
-
-        sensorProvider = nextSensorProvider
-        isMonitoring = true
-        didTrigger = false
-        nextSensorProvider.onSample = { [weak self] sample in
-            Task { @MainActor in
-                self?.handle(sample)
-            }
-        }
-        nextSensorProvider.start()
-    }
-
-    func stopMonitoring() {
-        guard isMonitoring else {
-            sensorProvider = nil
-            return
-        }
-
-        sensorProvider?.stop()
-        sensorProvider?.onSample = nil
-        sensorProvider = nil
-        isMonitoring = false
-    }
-
-    private func handle(_ sample: DepthSample) {
-        latestDepthMeters = sample.depthMeters
-
-        guard !didTrigger, sample.depthMeters >= activationDepthMeters else {
-            return
-        }
-
-        didTrigger = true
-        stopMonitoring()
-        onAutoStart?()
     }
 }
 

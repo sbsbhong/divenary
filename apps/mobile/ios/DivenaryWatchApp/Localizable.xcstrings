@@ -408,6 +408,22 @@
         }
       }
     },
+    "Cleanup required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cleanup required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정리 필요"
+          }
+        }
+      }
+    },
     "Completed" : {
       "localizations" : {
         "en" : {
@@ -897,6 +913,22 @@
         }
       }
     },
+    "End Divenary Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Divenary Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary 다이빙 종료"
+          }
+        }
+      }
+    },
     "End to save session." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1288,6 +1320,22 @@
         }
       }
     },
+    "No depth samples captured" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No depth samples captured"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 샘플이 기록되지 않았습니다"
+          }
+        }
+      }
+    },
     "No logs" : {
       "localizations" : {
         "en" : {
@@ -1416,18 +1464,18 @@
         }
       }
     },
-    "Outside supported depth" : {
+    "Outside sensor-authorized depth" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Outside supported depth"
+            "value" : "Outside sensor-authorized depth"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "지원 수심 범위 밖"
+            "value" : "센서 허가 수심 범위 밖"
           }
         }
       }
@@ -1693,6 +1741,38 @@
         }
       }
     },
+    "Recording setup could not be completed." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording setup could not be completed."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 설정을 완료하지 못했습니다."
+          }
+        }
+      }
+    },
+    "Recording unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording unavailable"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록을 시작할 수 없음"
+          }
+        }
+      }
+    },
     "Recreational capture and review. Not a certified dive computer." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1806,6 +1886,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "리뷰"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재시도"
           }
         }
       }
@@ -2166,6 +2262,22 @@
         }
       }
     },
+    "Start Divenary Dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Divenary Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary 다이빙 시작"
+          }
+        }
+      }
+    },
     "Start Planned Dive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2324,6 +2436,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간"
+          }
+        }
+      }
+    },
+    "Storage retry pending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage retry pending"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장 재시도 대기 중"
           }
         }
       }
@@ -2600,6 +2728,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "타이머 일시정지"
+          }
+        }
+      }
+    },
+    "To end the dive immediately, press and hold the Digital Crown while out of the water." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To end the dive immediately, press and hold the Digital Crown while out of the water."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "즉시 다이빙을 종료하려면 물 밖에서 Digital Crown을 길게 누르세요."
           }
         }
       }

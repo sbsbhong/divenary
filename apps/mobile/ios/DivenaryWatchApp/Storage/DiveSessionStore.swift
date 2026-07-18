@@ -56,26 +56,48 @@ final class DiveSessionStore: ObservableObject {
         syncTransport.activate()
     }
 
-    func save(_ session: DiveSessionRecord) {
+    @discardableResult
+    func save(_ session: DiveSessionRecord) -> Bool {
         let safeSession = session.sanitizedForPersistence()
+        let entry: DiveProfileManifestEntry
         do {
-            let entry = try profileStore.finalize(record: safeSession)
-            let syncStatus = syncTransport.enqueue(
-                artifact: entry.artifact,
-                fileURL: profileStore.artifactURL(for: entry.artifact)
-            )
-            let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
-            try profileStore.updateDisplayRecord(displayRecord)
-            sessions.removeAll { $0.id == displayRecord.id }
-            sessions.insert(displayRecord, at: 0)
-            try? profileStore.clearActiveRecording(sessionID: safeSession.id)
+            entry = try finalizedEntry(for: safeSession, explicitProfile: session.profile)
+            try profileStore.clearActiveRecording(sessionID: safeSession.id)
         } catch {
             assertionFailure("Failed to finalize dive profile: \(error)")
-            return
+            return false
         }
+
+        let syncStatus = syncTransport.enqueue(
+            artifact: entry.artifact,
+            fileURL: profileStore.artifactURL(for: entry.artifact)
+        )
+        let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
+        try? profileStore.updateDisplayRecord(displayRecord)
+        sessions.removeAll { $0.id == displayRecord.id }
+        sessions.insert(displayRecord, at: 0)
         if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
+        return true
+    }
+
+    private func finalizedEntry(
+        for session: DiveSessionRecord,
+        explicitProfile: DiveProfileMetadata?
+    ) throws -> DiveProfileManifestEntry {
+        if let existingEntry = try profileStore.loadEntries().first(where: { $0.id == session.id }) {
+            guard try profileStore.matchesCanonicalArtifact(
+                for: session,
+                existing: existingEntry.artifact,
+                explicitProfile: explicitProfile
+            ) else {
+                throw CocoaError(.fileWriteFileExists)
+            }
+            return existingEntry
+        }
+
+        return try profileStore.finalize(record: session)
     }
 
     func replacePlannedDives(_ nextPlannedDives: [WatchPlannedDive]) {
@@ -111,12 +133,15 @@ final class DiveSessionStore: ObservableObject {
             return
         }
 
-        guard !(syncStatus == .failed && sessions[index].syncStatus == .synced) else {
-            return
+        let effectiveStatus: DiveSyncStatus
+        if syncStatus == .failed, sessions[index].syncStatus == .synced {
+            effectiveStatus = .synced
+        } else {
+            effectiveStatus = syncStatus
         }
 
-        sessions[index] = sessions[index].withSyncStatus(syncStatus).sanitizedForPersistence()
-        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(syncStatus))
+        sessions[index] = sessions[index].withSyncStatus(effectiveStatus).sanitizedForPersistence()
+        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(effectiveStatus))
     }
 
     private func retryPendingSyncs() {

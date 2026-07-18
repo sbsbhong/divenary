@@ -2,12 +2,13 @@ import Combine
 import Foundation
 
 @MainActor
-final class DiveSessionRecorder: ObservableObject {
+final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var samples: [DepthSample] = []
     @Published private(set) var currentDepth: Double = 0
     @Published private(set) var maxDepth: Double = 0
     @Published private(set) var waterTemperatureCelsius: Double?
     @Published private(set) var elapsedTime: TimeInterval = 0
+    var hasCapturedDepthSample: Bool { lastRawSample != nil }
     @Published private(set) var latestAscentRateMetersPerMinute: Double = 0
     @Published private(set) var safetyStopRemainingSeconds: TimeInterval = 180
     @Published private(set) var safetyStopActive = false
@@ -28,7 +29,9 @@ final class DiveSessionRecorder: ObservableObject {
     private var freeEngine: FreeDiveSessionEngine?
     private var scubaEngine: ScubaDiveEngine?
     private var profileSampler: OneHertzProfileSampler?
+    private var unconfirmedProfileSamples: ArraySlice<DepthSample> = []
     private var lastRawSample: DepthSample?
+    private var displayAscentRateEstimator = DisplayAscentRateEstimator()
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
 
@@ -44,8 +47,9 @@ final class DiveSessionRecorder: ObservableObject {
         self.now = now
     }
 
-    func startSession(plan: PreDivePlan = PreDivePlan()) {
-        guard !isRecording else { return }
+    @discardableResult
+    func startSession(plan: PreDivePlan = PreDivePlan()) -> Bool {
+        guard !isRecording, activeRecordID == nil else { return false }
 
         samples = []
         currentDepth = 0
@@ -60,12 +64,10 @@ final class DiveSessionRecorder: ObservableObject {
         freeSnapshot = nil
         scubaSafetyStop = .legacyUnknown
         recordingPersistenceError = nil
-        activePlan = plan
+        displayAscentRateEstimator.reset()
+        unconfirmedProfileSamples = []
         let startedAt = now()
         let sessionID = UUID()
-        self.startedAt = startedAt
-        activeRecordID = sessionID
-        profileSampler = OneHertzProfileSampler(startedAt: startedAt)
         lastRawSample = nil
         do {
             try profileStore.beginRecording(ActiveDiveRecordingMetadata(
@@ -76,7 +78,13 @@ final class DiveSessionRecorder: ObservableObject {
             ))
         } catch {
             recordingPersistenceError = error.localizedDescription
+            return false
         }
+
+        self.startedAt = startedAt
+        activeRecordID = sessionID
+        activePlan = plan
+        profileSampler = OneHertzProfileSampler(startedAt: startedAt)
         switch plan.diveMode {
         case .freedive:
             freeEngine = FreeDiveSessionEngine(startedAt: startedAt)
@@ -88,9 +96,7 @@ final class DiveSessionRecorder: ObservableObject {
         isRecording = true
 
         sensorProvider.onSample = { [weak self] sample in
-            Task { @MainActor in
-                self?.append(sample)
-            }
+            self?.append(sample)
         }
         sensorProvider.start()
 
@@ -99,6 +105,7 @@ final class DiveSessionRecorder: ObservableObject {
                 self?.updateElapsedTime()
             }
         }
+        return true
     }
 
     func stopSession() -> DiveSessionRecord? {
@@ -168,22 +175,45 @@ final class DiveSessionRecorder: ObservableObject {
         )
     }
 
-    func cancelSession() {
+    @discardableResult
+    func cancelSession() -> Bool {
+        stopCaptureAndResetSessionState()
+        guard let sessionID = activeRecordID else {
+            return true
+        }
+
+        do {
+            try profileStore.clearActiveRecording(sessionID: sessionID)
+            activeRecordID = nil
+            return true
+        } catch {
+            recordingPersistenceError = error.localizedDescription
+            return false
+        }
+    }
+
+    func resetCompletedSession() {
+        stopCaptureAndResetSessionState()
+        activeRecordID = nil
+    }
+
+    private func stopCaptureAndResetSessionState() {
         sensorProvider.stop()
         sensorProvider.onSample = nil
         elapsedTimer?.invalidate()
         elapsedTimer = nil
+        displayAscentRateEstimator.reset()
+        latestAscentRateMetersPerMinute = 0
+        ascentWarningActive = false
         currentRecordPayload = nil
         freeSnapshot = nil
         scubaSafetyStop = .legacyUnknown
         freeEngine = nil
         scubaEngine = nil
         profileSampler = nil
+        unconfirmedProfileSamples = []
         lastRawSample = nil
-        if let activeRecordID {
-            try? profileStore.clearActiveRecording(sessionID: activeRecordID)
-        }
-        activeRecordID = nil
+        startedAt = nil
         isRecording = false
     }
 
@@ -192,18 +222,17 @@ final class DiveSessionRecorder: ObservableObject {
     }
 
     private func append(_ sample: DepthSample) {
-        guard sample.isValidRecordingSample else {
+        guard isRecording, sample.isValidRecordingSample else {
             return
         }
 
-        let previousSample = lastRawSample
         lastRawSample = sample
         currentDepth = sample.depthMeters
         maxDepth = max(maxDepth, sample.depthMeters)
         if let measuredTemperature = sample.waterTemperatureCelsius {
             waterTemperatureCelsius = measuredTemperature
         }
-        latestAscentRateMetersPerMinute = ascentRate(from: previousSample, to: sample)
+        latestAscentRateMetersPerMinute = displayAscentRateEstimator.append(sample)
         ascentWarningActive = latestAscentRateMetersPerMinute > recommendedAscentRateMetersPerMinute
 
         if let finalized = profileSampler?.append(sample) {
@@ -236,26 +265,35 @@ final class DiveSessionRecorder: ObservableObject {
         elapsedTime = max(0, now().timeIntervalSince(startedAt))
     }
 
-    private func ascentRate(from previous: DepthSample?, to current: DepthSample) -> Double {
-        guard let previous else { return 0 }
-        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
-        return (previous.depthMeters - current.depthMeters) / elapsed * 60
-    }
-
     private func flushFinalProfileSample() {
-        guard let finalized = profileSampler?.finish() else { return }
-        persistProfileSample(finalized)
+        if let finalized = profileSampler?.finish() {
+            persistProfileSample(finalized)
+        } else {
+            persistUnconfirmedProfileSamples()
+        }
     }
 
     private func persistProfileSample(_ sample: DepthSample) {
         samples.append(sample)
+        unconfirmedProfileSamples.append(sample)
+        persistUnconfirmedProfileSamples()
+    }
+
+    private func persistUnconfirmedProfileSamples() {
         guard let activeRecordID else { return }
-        do {
-            try profileStore.append(sample, to: activeRecordID)
-        } catch {
-            recordingPersistenceError = error.localizedDescription
+
+        while let sample = unconfirmedProfileSamples.first {
+            do {
+                try profileStore.append(sample, to: activeRecordID)
+                _ = unconfirmedProfileSamples.popFirst()
+            } catch {
+                recordingPersistenceError = error.localizedDescription
+                return
+            }
         }
+
+        unconfirmedProfileSamples = []
+        recordingPersistenceError = nil
     }
 
     private func normalizeFreediveSession(

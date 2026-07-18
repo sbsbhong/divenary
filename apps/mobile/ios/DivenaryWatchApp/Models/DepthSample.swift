@@ -1,6 +1,6 @@
 import Foundation
 
-struct DepthSample: Codable, Identifiable {
+struct DepthSample: Codable, Equatable, Identifiable {
     let id: UUID
     let timestamp: Date
     let depthMeters: Double

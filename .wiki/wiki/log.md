@@ -829,3 +829,24 @@
 - Updated: 구현 우선순위 기록
 - Updated: 모바일 로그북 로드맵
 - Updated: 열린 질문
+
+## [2026-07-18] ingest | Watch underwater runtime lifecycle implementation and device boundary
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+
+## [2026-07-18] ingest | Watch underwater runtime verification review correction
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+
+## [2026-07-18] ingest | Watch live ascent-rate smoothing boundary
+- Updated: Watch 앱 구조
+
+## [2026-07-18] ingest | Watch 기록 내구성과 경로 복구 경계
+- Updated: Watch 앱 구조
+
+## [2026-07-18] ingest | Watch callback, retry, re-entry, navigation hardening
+- Updated: Watch 앱 구조
+- Updated: Knowledge Base Index
