@@ -283,6 +283,56 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreRejectsExplicitConflictingProfileBeforeCleanupEnqueueOrPublication() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let fileManager = FailFirstActiveCleanupFileManager()
+        let revisions = RevisionSequence()
+        let profileStore = DiveProfileArtifactStore(
+            rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager,
+            makeRevision: { revisions.next() }
+        )
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: transport,
+            recordsStorageURL: storageURL,
+            fileManager: fileManager,
+            profileStore: profileStore
+        )
+        let record = Self.debugScubaRecord()
+        try profileStore.beginRecording(
+            ActiveDiveRecordingMetadata(
+                localSessionId: record.id,
+                startedAt: record.startedAt,
+                captureMode: record.captureMode,
+                plan: PreDivePlan(diveMode: record.diveMode)
+            )
+        )
+
+        XCTAssertFalse(store.save(record))
+        let existingEntry = try XCTUnwrap(profileStore.loadEntries().first)
+        let conflictingRecord = record.withProfile(
+            DiveProfileMetadata(
+                contentRevision: "conflicting-revision",
+                sampleCount: record.samples.count
+            )
+        )
+
+        XCTAssertFalse(store.save(conflictingRecord))
+
+        XCTAssertTrue(transport.enqueuedArtifacts.isEmpty)
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertEqual(try profileStore.loadEntries().map(\.artifact), [existingEntry.artifact])
+        XCTAssertEqual(revisions.values, ["review-revision-1"])
+        XCTAssertEqual(
+            try profileStore.loadActiveRecordings().map(\.metadata.localSessionId),
+            [record.id]
+        )
+    }
+
+    @MainActor
     func testStoreRepairsPendingManifestAfterSyncedStatusWriteFailsThenRetryReturnsFailed() async throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()

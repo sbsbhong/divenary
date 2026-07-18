@@ -61,7 +61,7 @@ final class DiveSessionStore: ObservableObject {
         let safeSession = session.sanitizedForPersistence()
         let entry: DiveProfileManifestEntry
         do {
-            entry = try finalizedEntry(for: safeSession)
+            entry = try finalizedEntry(for: safeSession, explicitProfile: session.profile)
             try profileStore.clearActiveRecording(sessionID: safeSession.id)
         } catch {
             assertionFailure("Failed to finalize dive profile: \(error)")
@@ -82,9 +82,16 @@ final class DiveSessionStore: ObservableObject {
         return true
     }
 
-    private func finalizedEntry(for session: DiveSessionRecord) throws -> DiveProfileManifestEntry {
+    private func finalizedEntry(
+        for session: DiveSessionRecord,
+        explicitProfile: DiveProfileMetadata?
+    ) throws -> DiveProfileManifestEntry {
         if let existingEntry = try profileStore.loadEntries().first(where: { $0.id == session.id }) {
-            guard try profileStore.matchesCanonicalArtifact(for: session, existing: existingEntry.artifact) else {
+            guard try profileStore.matchesCanonicalArtifact(
+                for: session,
+                existing: existingEntry.artifact,
+                explicitProfile: explicitProfile
+            ) else {
                 throw CocoaError(.fileWriteFileExists)
             }
             return existingEntry

@@ -133,14 +133,20 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
 
     func matchesCanonicalArtifact(
         for record: DiveSessionRecord,
-        existing identity: DiveProfileArtifactIdentity
+        existing identity: DiveProfileArtifactIdentity,
+        explicitProfile: DiveProfileMetadata? = nil
     ) throws -> Bool {
         guard record.id == identity.localSessionId else {
             return false
         }
 
         let artifactData = try verifiedArtifactData(for: identity)
-        let expectedArtifact = try canonicalArtifact(for: record, matching: identity, artifactData: artifactData)
+        let expectedArtifact = try canonicalArtifact(
+            for: record,
+            matching: identity,
+            artifactData: artifactData,
+            explicitProfile: explicitProfile
+        )
         return expectedArtifact.identity == identity && expectedArtifact.data == artifactData
     }
 
@@ -159,16 +165,16 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     private func canonicalArtifact(
         for record: DiveSessionRecord,
         matching identity: DiveProfileArtifactIdentity,
-        artifactData: Data
+        artifactData: Data,
+        explicitProfile: DiveProfileMetadata? = nil
     ) throws -> CanonicalDiveProfileArtifact {
         let existingProfile = try profileMetadata(from: artifactData)
-        let canonicalProfile = DiveProfileMetadata(
-            formatVersion: existingProfile.formatVersion,
-            contentRevision: identity.contentRevision,
-            sampleIntervalSeconds: existingProfile.sampleIntervalSeconds,
-            sampleCount: existingProfile.sampleCount,
-            interrupted: existingProfile.interrupted
-        )
+        let suppliedProfile = explicitProfile ?? record.profile
+        if let suppliedProfile, suppliedProfile != existingProfile {
+            throw CocoaError(.fileWriteFileExists)
+        }
+
+        let canonicalProfile = suppliedProfile ?? existingProfile
         let canonicalRecord = record.sanitizedForPersistence().withProfile(canonicalProfile)
         let canonicalData = try canonicalSyncArtifactData(for: canonicalRecord)
         let expectedIdentity = DiveProfileArtifactIdentity(
