@@ -32,17 +32,17 @@
 - Consumes: `SupabaseClient<Database>.auth.signInWithPassword({email, password})`.
 - Produces: `PasswordSignInInput = {email: string; password: string}` and `AuthRepository.signInWithPassword(input): Promise<Session>`.
 
-- [ ] **Step 1: Write failing repository tests**
+- [x] **Step 1: Write failing repository tests**
 
   Extend the client mock with `calls.signInWithPassword` and cover success, missing session, Auth error, and transport error. Assert the public error remains `AuthRepositoryError` with `server`, `invalid-session`, or `network` and never includes credentials.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `yarn workspace @repo/supabase test`
 
   Expected: FAIL because `AuthRepository.signInWithPassword` is absent.
 
-- [ ] **Step 3: Implement the minimal repository method**
+- [x] **Step 3: Implement the minimal repository method**
 
   Add the interface method and use the same `mapRepositoryError(error, 'sign-in', status)` path as social sign-in:
 
@@ -55,13 +55,13 @@
   }
   ```
 
-- [ ] **Step 4: Verify GREEN**
+- [x] **Step 4: Verify GREEN**
 
   Run: `yarn workspace @repo/supabase test && yarn workspace @repo/supabase typecheck`
 
   Expected: all repository tests and typecheck PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
   Commit message: `feat(auth): support local password sessions`
 
@@ -88,39 +88,39 @@
 - Consumes: `AuthRepository.signInWithPassword`, ignored `apps/mobile/.env.local`, and `MOBILE_ENVIRONMENT=local`.
 - Produces: `LocalDevelopmentAuthEnvironment`, `MobileAuth.developmentSignIn?: () => Promise<Session>`, `AuthContextValue.isDevelopmentSignInAvailable`, and `AuthContextValue.signInForDevelopment()`.
 
-- [ ] **Step 1: Write failing env and composition tests**
+- [x] **Step 1: Write failing env and composition tests**
 
   Cover `.env.local` selection only for `MOBILE_ENVIRONMENT=local`, production file isolation, `SUPABASE_ANDROID_URL`, loopback-only local credentials, and social adapter omission when development sign-in is active.
 
-- [ ] **Step 2: Write failing state and screen tests**
+- [x] **Step 2: Write failing state and screen tests**
 
   Cover pending/completed/error development login, double-tap serialization, no recent-provider write, local button visibility/busy/error behavior, and absence without local credentials.
 
-- [ ] **Step 3: Verify RED**
+- [x] **Step 3: Verify RED**
 
   Run: `yarn workspace @repo/mobile test babel-env.test.ts supabase-env.test.ts auth-state.test.tsx auth-screens.test.tsx --runInBand`
 
   Expected: FAIL because local env and development sign-in APIs are absent.
 
-- [ ] **Step 4: Implement local env parsing and release isolation**
+- [x] **Step 4: Implement local env parsing and release isolation**
 
   Add inlined `SUPABASE_ANDROID_URL`, `LOCAL_AUTH_EMAIL`, and `LOCAL_AUTH_PASSWORD`. `parseLocalDevelopmentAuthEnvironment` returns credentials only when development is true and the effective URL host is `localhost`, `127.0.0.1`, or `10.0.2.2`; production always returns `undefined`.
 
-- [ ] **Step 5: Implement the shared Auth state path**
+- [x] **Step 5: Implement the shared Auth state path**
 
   Generalize the serialized sign-in operation to `SocialProvider | 'development'`. Development calls the encapsulated password action and skips recent-provider persistence; all post-exchange validation and onboarding logic remains shared.
 
-- [ ] **Step 6: Implement the local-only login control**
+- [x] **Step 6: Implement the local-only login control**
 
   Render one full-width `Button` labeled `로컬 테스트 계정` / `Local test account` only when `isDevelopmentSignInAvailable`. Use the same 44pt minimum, busy lock, generic error, and close prevention as social actions.
 
-- [ ] **Step 7: Verify GREEN**
+- [x] **Step 7: Verify GREEN**
 
   Run: `yarn workspace @repo/mobile test babel-env.test.ts supabase-env.test.ts auth-state.test.tsx auth-screens.test.tsx --runInBand && yarn mobile:typecheck`
 
   Expected: selected suites and typecheck PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
   Commit message: `feat(mobile): add local development login`
 
@@ -138,21 +138,21 @@
 - Consumes: local CLI status JSON, local Auth admin REST API, `get_onboarding_status()`.
 - Produces: `prepareLocalMobileAuth(options): Promise<{email: string; envPath: string}>` and ignored `apps/mobile/.env.local`.
 
-- [ ] **Step 1: Write failing fixture unit tests**
+- [x] **Step 1: Write failing fixture unit tests**
 
   Inject CLI status, fetch, randomness, and file writer. Assert delete/recreate, confirmed user creation, password grant, pending RPC with exactly terms/privacy, Android URL generation, atomic env write, and no secret logging.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `node --test supabase/scripts/local-mobile-auth-fixture.test.mjs`
 
   Expected: FAIL because the fixture module is absent.
 
-- [ ] **Step 3: Implement fixture preparation**
+- [x] **Step 3: Implement fixture preparation**
 
   Use deterministic email `divenary-local@development.invalid`, a fresh 32-byte base64url password, local `SECRET_KEY` only in request headers, and a temporary file renamed to `apps/mobile/.env.local` after every remote assertion succeeds.
 
-- [ ] **Step 4: Add ergonomic commands**
+- [x] **Step 4: Add ergonomic commands**
 
   Add:
 
@@ -163,13 +163,13 @@
   "mobile:android:local": "MOBILE_ENVIRONMENT=local yarn workspace @repo/mobile android"
   ```
 
-- [ ] **Step 5: Verify against real local Supabase**
+- [x] **Step 5: Verify against real local Supabase**
 
   Run: `yarn supabase:reset`, `yarn mobile:auth:local:prepare`, then a non-secret probe that signs in using the generated file and asserts `get_onboarding_status().isComplete === false` with two documents.
 
   Expected: all commands PASS and no credential appears in stdout.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
   Commit message: `feat(dev): prepare local authenticated fixture`
 
@@ -190,37 +190,37 @@
 - Consumes: Supabase CLI login, fixed project ref `mclvhwzsuvsxjerdouka`, public GitHub raw URLs, checked-in migration.
 - Produces: guarded `supabase:staging:*` commands and exact hosted legal rows at version `2026-07-18-staging.1`, pinned to the promotion commit.
 
-- [ ] **Step 1: Write failing staging guard tests**
+- [x] **Step 1: Write failing staging guard tests**
 
   Cover removal of unrelated project-id variables, preservation of `SUPABASE_ACCESS_TOKEN`, mismatch refusal, legal URL/version validation, and sanitized verification output.
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
   Run: `node --test supabase/scripts/staging-project.test.mjs`
 
   Expected: FAIL because staging modules are absent.
 
-- [ ] **Step 3: Add staging legal documents and SQL builder**
+- [x] **Step 3: Add staging legal documents and SQL builder**
 
   Add versioned staging-only text. Implement `buildStagingLegalSql(commitSha)` after validating `/^[0-9a-f]{40}$/`; insert terms/privacy rows and current pointers with `ON CONFLICT` updates and HTTPS raw URLs pinned to that commit.
 
-- [ ] **Step 4: Implement guarded staging commands**
+- [x] **Step 4: Implement guarded staging commands**
 
   Add link, migration-list, dry-run, push, legal-seed, and verify scripts. Every linked command reads `supabase/.temp/project-ref` and rejects any ref other than `mclvhwzsuvsxjerdouka`.
 
-- [ ] **Step 5: Verify locally without remote writes**
+- [x] **Step 5: Verify locally without remote writes**
 
   Run: `node --test supabase/scripts/staging-project.test.mjs` and `yarn supabase:staging:migrations`.
 
   Expected: tests PASS and migration list shows local `20260713135707` with no remote match.
 
-- [ ] **Step 6: Commit and publish legal document commit**
+- [x] **Step 6: Commit and publish legal document commit**
 
   Commit message: `feat(supabase): add guarded staging auth promotion`
 
   Push the feature branch so the commit-pinned HTTPS legal URLs are reachable before database seeding.
 
-- [ ] **Step 7: Apply staging migration and legal rows**
+- [x] **Step 7: Apply staging migration and legal rows**
 
   Run in order:
 
@@ -254,7 +254,7 @@
 
   Record local fixture commands, staging guard commands, exact applied migration/version, and that actual Google/Apple token exchange still requires signed-device user interaction.
 
-- [ ] **Step 2: Run complete gates**
+- [x] **Step 2: Run complete gates**
 
   Run:
 
@@ -276,6 +276,6 @@
 
   Review security boundaries, release isolation, project-ref guards, secret handling, RLS/RPC correctness, and mobile Auth concurrency. Resolve all Critical and Important findings.
 
-- [ ] **Step 4: Commit final documentation**
+- [x] **Step 4: Commit final documentation**
 
   Commit message: `docs: record staging and local auth workflow`
