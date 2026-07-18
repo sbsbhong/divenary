@@ -1,5 +1,6 @@
 import Foundation
 
+@MainActor
 final class MockDepthSensorProvider: DepthSensorProvider {
     var onSample: ((DepthSample) -> Void)?
 
@@ -19,8 +20,10 @@ final class MockDepthSensorProvider: DepthSensorProvider {
         emitSample()
 
         timer = Timer.scheduledTimer(withTimeInterval: sampleIntervalSeconds, repeats: true) { [weak self] _ in
-            self?.elapsedSeconds += self?.sampleIntervalSeconds ?? 1
-            self?.emitSample()
+            MainActor.assumeIsolated {
+                self?.elapsedSeconds += self?.sampleIntervalSeconds ?? 1
+                self?.emitSample()
+            }
         }
     }
 

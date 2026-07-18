@@ -10,8 +10,8 @@ final class RealDepthSensorProvider: DepthSensorProvider {
         self.coordinator = coordinator
     }
 
-    nonisolated init() {
-        coordinator = MainActor.assumeIsolated { WaterSubmersionCoordinator.shared }
+    convenience init() {
+        self.init(coordinator: .shared)
     }
 
     func start() {

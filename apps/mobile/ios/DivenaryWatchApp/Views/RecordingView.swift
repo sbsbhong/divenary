@@ -15,6 +15,7 @@ enum WatchRecordingMode: Equatable {
         }
     }
 
+    @MainActor
     func sensorProvider() -> DepthSensorProvider {
         switch self {
         case .real:
