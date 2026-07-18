@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import {readFile} from 'node:fs/promises';
+import path from 'node:path';
 import test from 'node:test';
+import {fileURLToPath} from 'node:url';
 
-import {prepareLocalMobileAuth} from './local-mobile-auth-fixture.mjs';
+import * as localMobileAuthFixture from './local-mobile-auth-fixture.mjs';
+
+const {prepareLocalMobileAuth} = localMobileAuthFixture;
+const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 
 const email = 'divenary-local@development.invalid';
 const apiUrl = 'http://127.0.0.1:54321';
@@ -30,7 +37,6 @@ function createFixture({
 } = {}) {
   const requests = [];
   const fileOperations = [];
-  const logs = [];
   const responses = [
     ...existingUserPages.map(users =>
       jsonResponse(200, {aud: 'authenticated', users}),
@@ -47,8 +53,13 @@ function createFixture({
   return {
     requests,
     fileOperations,
-    logs,
     options: {
+      acquireLocalMetroPortLock: async () => {
+        fileOperations.push(['acquireMetroPort']);
+        return async () => {
+          fileOperations.push(['releaseMetroPort']);
+        };
+      },
       readLocalStatus: async () => ({
         API_URL: apiUrl,
         PUBLISHABLE_KEY: publishableKey,
@@ -64,11 +75,21 @@ function createFixture({
         assert.equal(size, 32);
         return Buffer.alloc(32, 7);
       },
-      writeFile: async (...args) => fileOperations.push(['writeFile', ...args]),
+      openFile: async (...args) => {
+        fileOperations.push(['openFile', ...args]);
+        return {
+          async writeFile(...writeArgs) {
+            fileOperations.push(['writeFile', ...writeArgs]);
+          },
+          async close() {
+            fileOperations.push(['closeFile']);
+          },
+        };
+      },
       rename: async (...args) => fileOperations.push(['rename', ...args]),
+      unlink: async (...args) => fileOperations.push(['unlink', ...args]),
       envPath,
       temporaryEnvPath,
-      log: value => logs.push(value),
       ...options,
     },
   };
@@ -113,9 +134,10 @@ test('recreates a confirmed local user, verifies pending onboarding, and atomica
   assert.deepEqual(JSON.parse(fixture.requests[4].body), {});
 
   assert.deepEqual(fixture.fileOperations, [
+    ['acquireMetroPort'],
+    ['openFile', temporaryEnvPath, 'wx', 0o600],
     [
       'writeFile',
-      temporaryEnvPath,
       [
         `SUPABASE_URL=${apiUrl}`,
         'SUPABASE_ANDROID_URL=http://10.0.2.2:54321',
@@ -124,11 +146,12 @@ test('recreates a confirmed local user, verifies pending onboarding, and atomica
         `LOCAL_AUTH_PASSWORD=${password}`,
         '',
       ].join('\n'),
-      {encoding: 'utf8', flag: 'wx', mode: 0o600},
+      {encoding: 'utf8'},
     ],
+    ['closeFile'],
     ['rename', temporaryEnvPath, envPath],
+    ['releaseMetroPort'],
   ]);
-  assert.deepEqual(fixture.logs, []);
 });
 
 test('finds and deletes the fixture user on a later admin list page', async () => {
@@ -198,9 +221,7 @@ test('accepts exactly terms and privacy regardless of RPC order', async () => {
 
   assert.deepEqual(result, {email, envPath});
   assert.deepEqual(fixture.fileOperations.at(-1), [
-    'rename',
-    temporaryEnvPath,
-    envPath,
+    'releaseMetroPort',
   ]);
 });
 
@@ -233,7 +254,10 @@ for (const [label, requiredDocuments] of [
       /exactly terms and privacy/,
     );
 
-    assert.deepEqual(fixture.fileOperations, []);
+    assert.deepEqual(fixture.fileOperations, [
+      ['acquireMetroPort'],
+      ['releaseMetroPort'],
+    ]);
   });
 }
 
@@ -252,23 +276,30 @@ test('rejects a non-loopback API URL before network or file access', async () =>
   );
 
   assert.deepEqual(fixture.requests, []);
-  assert.deepEqual(fixture.fileOperations, []);
+  assert.deepEqual(fixture.fileOperations, [
+    ['acquireMetroPort'],
+    ['releaseMetroPort'],
+  ]);
 });
 
-test('does not rename when exclusive temporary file creation fails', async () => {
+test('preserves a pre-existing temp and final file when exclusive creation fails', async () => {
   const existingFileError = Object.assign(
     new Error('Temporary environment file already exists.'),
     {code: 'EEXIST'},
   );
-  let writeOptions;
-  let renameCalls = 0;
+  const files = new Map([
+    [temporaryEnvPath, 'pre-existing-temp'],
+    [envPath, 'previous-final-environment'],
+  ]);
   const fixture = createFixture({
-    writeFile: async (_path, _contents, options) => {
-      writeOptions = options;
+    openFile: async () => {
       throw existingFileError;
     },
-    rename: async () => {
-      renameCalls += 1;
+    rename: async (_source, destination) => {
+      files.set(destination, 'overwritten');
+    },
+    unlink: async filePath => {
+      files.delete(filePath);
     },
   });
 
@@ -277,8 +308,70 @@ test('does not rename when exclusive temporary file creation fails', async () =>
     error => error === existingFileError,
   );
 
-  assert.deepEqual(writeOptions, {encoding: 'utf8', flag: 'wx', mode: 0o600});
-  assert.equal(renameCalls, 0);
+  assert.equal(files.get(temporaryEnvPath), 'pre-existing-temp');
+  assert.equal(files.get(envPath), 'previous-final-environment');
+});
+
+test('unlinks an owned exclusive temp after a write failure without overwriting the final file', async () => {
+  const writeError = new Error('write failed');
+  const files = new Map([
+    [envPath, 'previous-final-environment'],
+  ]);
+  const fixture = createFixture({
+    openFile: async filePath => {
+      files.set(filePath, 'partial-new-environment');
+      return {
+        async writeFile() {
+          throw writeError;
+        },
+        async close() {},
+      };
+    },
+    rename: async (_source, destination) => {
+      files.set(destination, 'overwritten');
+    },
+    unlink: async filePath => {
+      files.delete(filePath);
+    },
+  });
+
+  await assert.rejects(
+    prepareLocalMobileAuth(fixture.options),
+    error => error === writeError,
+  );
+
+  assert.equal(files.has(temporaryEnvPath), false);
+  assert.equal(files.get(envPath), 'previous-final-environment');
+});
+
+test('unlinks an owned exclusive temp after rename failure without overwriting the final file', async () => {
+  const renameError = new Error('rename failed');
+  const files = new Map([
+    [envPath, 'previous-final-environment'],
+  ]);
+  const fixture = createFixture({
+    openFile: async filePath => {
+      files.set(filePath, 'complete-new-environment');
+      return {
+        async writeFile() {},
+        async close() {},
+      };
+    },
+    rename: async () => {
+      throw renameError;
+    },
+    unlink: async filePath => {
+      files.delete(filePath);
+    },
+  });
+
+  await assert.rejects(
+    prepareLocalMobileAuth(fixture.options),
+    error => error === renameError,
+  );
+
+  assert.equal(files.has(temporaryEnvPath), false);
+  assert.equal(files.get(envPath), 'previous-final-environment');
 });
 
 test('does not write an environment file when onboarding verification fails', async () => {
@@ -302,8 +395,10 @@ test('does not write an environment file when onboarding verification fails', as
     /get_onboarding_status.*500/,
   );
 
-  assert.deepEqual(fixture.fileOperations, []);
-  assert.deepEqual(fixture.logs, []);
+  assert.deepEqual(fixture.fileOperations, [
+    ['acquireMetroPort'],
+    ['releaseMetroPort'],
+  ]);
 });
 
 test('rejects a recreated user that is not confirmed', async () => {
@@ -323,6 +418,79 @@ test('rejects a recreated user that is not confirmed', async () => {
   );
 
   assert.equal(fixture.requests.length, 2);
+  assert.deepEqual(fixture.fileOperations, [
+    ['acquireMetroPort'],
+    ['releaseMetroPort'],
+  ]);
+});
+
+test('stops before status, network, or file access when the local Metro port is owned', async () => {
+  let statusReads = 0;
+  const fixture = createFixture({
+    acquireLocalMetroPortLock: async () => {
+      throw new Error('Local Metro port is in use.');
+    },
+    readLocalStatus: async () => {
+      statusReads += 1;
+      return {};
+    },
+  });
+
+  await assert.rejects(
+    prepareLocalMobileAuth(fixture.options),
+    /Local Metro port is in use/,
+  );
+
+  assert.equal(statusReads, 0);
+  assert.deepEqual(fixture.requests, []);
   assert.deepEqual(fixture.fileOperations, []);
-  assert.deepEqual(fixture.logs, []);
+});
+
+test('the real port lock rejects an occupied port and never closes its owner', async () => {
+  let closeCalls = 0;
+  const occupiedServer = new EventEmitter();
+  occupiedServer.listen = () => {
+    queueMicrotask(() => {
+      occupiedServer.emit(
+        'error',
+        Object.assign(new Error('address in use'), {code: 'EADDRINUSE'}),
+      );
+    });
+  };
+  occupiedServer.close = callback => {
+    closeCalls += 1;
+    callback();
+  };
+
+  await assert.rejects(
+    localMobileAuthFixture.acquireLocalMetroPortLock({
+      port: 18082,
+      createServerImpl: () => occupiedServer,
+    }),
+    /Local Metro port 18082 is in use/,
+  );
+  assert.equal(closeCalls, 0);
+});
+
+test('ignores all exclusive local credential temp files', async () => {
+  const gitignore = await readFile(path.join(repositoryRoot, '.gitignore'), 'utf8');
+
+  assert.match(gitignore, /^apps\/mobile\/\.env\.local\.\*\.tmp$/m);
+});
+
+test('all local React Native launch commands use the reserved Metro port', async () => {
+  const packageJson = JSON.parse(
+    await readFile(path.join(repositoryRoot, 'package.json'), 'utf8'),
+  );
+
+  for (const scriptName of [
+    'mobile:start:local',
+    'mobile:ios:local',
+    'mobile:android:local',
+  ]) {
+    assert.match(
+      packageJson.scripts[scriptName],
+      new RegExp(`(?:^| )--port ${localMobileAuthFixture.LOCAL_METRO_PORT}$`),
+    );
+  }
 });

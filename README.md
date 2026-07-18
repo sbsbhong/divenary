@@ -139,7 +139,7 @@ yarn supabase:staging:seed:auth
 yarn supabase:staging:verify:auth
 ```
 
-Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. 이후 commit에서도 verifier는 deployed legal URL에서 promotion SHA를 추론하고, seed는 현재 `HEAD`로 새 immutable URL을 만듭니다.
+Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. verifier는 deployed legal URL에서 promotion SHA를 추론합니다. 같은 promotion commit의 seed 재실행은 idempotent하며, 이후 commit을 새로 promotion하려면 seed 전에 새 legal version과 그 version의 immutable URL을 정의해야 합니다.
 
 Google/Apple native token exchange, cancellation/repeat, signed callback, session restore는 signed physical device와 수동 상호작용이 필요한 별도 gate이며 아직 통과로 기록하지 않습니다. Auth 여부와 관계없이 guest Logbook/Planbook은 local-only이고 cloud sync나 account claim은 없습니다.
 

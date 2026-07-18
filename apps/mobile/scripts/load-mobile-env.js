@@ -1,3 +1,4 @@
+const {createHash} = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -6,6 +7,21 @@ const defaultDevelopmentEnvPath = path.resolve(
   '../.env.development',
 );
 const defaultLocalEnvPath = path.resolve(__dirname, '../.env.local');
+const developmentBabelEnvironments = new Set(['development', 'test']);
+const inlineMobileEnvironmentKeys = [
+  'MOBILE_ENVIRONMENT_MODE',
+  'OPEN_METEO_API_KEY',
+  'SUPABASE_URL',
+  'SUPABASE_ANDROID_URL',
+  'SUPABASE_PUBLISHABLE_KEY',
+  'LOCAL_AUTH_EMAIL',
+  'LOCAL_AUTH_PASSWORD',
+  'GOOGLE_WEB_CLIENT_ID',
+  'GOOGLE_IOS_CLIENT_ID',
+];
+const developmentConfigurationKeys = inlineMobileEnvironmentKeys.filter(
+  key => key !== 'MOBILE_ENVIRONMENT_MODE',
+);
 
 const parseEnvironmentFile = source =>
   source.split(/\r?\n/).reduce((environment, line) => {
@@ -55,26 +71,53 @@ const loadMobileEnvironment = (options = {}) => {
   const developmentEnvPath =
     options.developmentEnvPath ?? defaultDevelopmentEnvPath;
   const localEnvPath = options.localEnvPath ?? defaultLocalEnvPath;
-  const isProduction =
-    babelEnvironment === 'production' || nodeEnvironment === 'production';
+  const effectiveBabelEnvironment =
+    babelEnvironment ?? nodeEnvironment ?? 'development';
+  const isDevelopmentBuild =
+    developmentBabelEnvironments.has(effectiveBabelEnvironment) &&
+    (nodeEnvironment === undefined ||
+      developmentBabelEnvironments.has(nodeEnvironment));
+  const mobileEnvironmentMode = isDevelopmentBuild
+    ? environment.MOBILE_ENVIRONMENT === 'local'
+      ? 'local'
+      : 'staging'
+    : 'release';
   const selectedDevelopmentEnvPath =
-    environment.MOBILE_ENVIRONMENT === 'local'
+    mobileEnvironmentMode === 'local'
       ? localEnvPath
       : developmentEnvPath;
-  const developmentEnvironment = isProduction
-    ? {}
-    : loadDevelopmentEnvironment(selectedDevelopmentEnvPath);
+  const developmentEnvironment = isDevelopmentBuild
+    ? loadDevelopmentEnvironment(selectedDevelopmentEnvPath)
+    : {};
   const processEnvironment = toStringEnvironment(environment);
 
-  if (isProduction) {
-    delete processEnvironment.LOCAL_AUTH_EMAIL;
-    delete processEnvironment.LOCAL_AUTH_PASSWORD;
+  if (!isDevelopmentBuild) {
+    for (const key of developmentConfigurationKeys) {
+      delete processEnvironment[key];
+    }
   }
 
   return {
     ...developmentEnvironment,
     ...processEnvironment,
+    MOBILE_ENVIRONMENT_MODE: mobileEnvironmentMode,
   };
 };
 
-module.exports = {loadMobileEnvironment};
+const createMobileEnvironmentCacheVersion = environment => {
+  const selectedInlineEnvironment = inlineMobileEnvironmentKeys.map(key => [
+    key,
+    typeof environment[key] === 'string' ? environment[key] : '',
+  ]);
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify(selectedInlineEnvironment))
+    .digest('hex');
+
+  return `mobile-environment-v1-${fingerprint}`;
+};
+
+module.exports = {
+  createMobileEnvironmentCacheVersion,
+  inlineMobileEnvironmentKeys,
+  loadMobileEnvironment,
+};

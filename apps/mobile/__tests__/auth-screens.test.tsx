@@ -209,6 +209,8 @@ describe('LoginScreen', () => {
       renderer.root.findByProps({testID: 'auth-login-development'}).props
         .accessibilityLabel,
     ).toBe('로컬 테스트 계정');
+    expect(findProviderButton(renderer.root, 'google')).toBeUndefined();
+    expect(findProviderButton(renderer.root, 'apple')).toBeUndefined();
 
     createAuthFixture({availableProviders: []});
     await ReactTestRenderer.act(async () => {
@@ -221,6 +223,21 @@ describe('LoginScreen', () => {
     expect(
       renderer.root.findByProps({testID: 'auth-login-screen'}),
     ).toBeTruthy();
+  });
+
+  test('renders no social fallback when local composition has no valid credentials', async () => {
+    createAuthFixture({
+      availableProviders: [],
+      isDevelopmentSignInAvailable: false,
+    });
+    const renderer = await render(<LoginScreen />);
+
+    expect(findProviderButton(renderer.root, 'google')).toBeUndefined();
+    expect(findProviderButton(renderer.root, 'apple')).toBeUndefined();
+    expect(
+      renderer.root.findAllByProps({testID: 'auth-login-development'}),
+    ).toHaveLength(0);
+    expect(renderer.root.findByProps({testID: 'auth-login-screen'})).toBeTruthy();
   });
 
   test('gives the local development action an accessible 44-point target', async () => {

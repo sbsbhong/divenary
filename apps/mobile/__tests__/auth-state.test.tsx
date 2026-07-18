@@ -253,6 +253,7 @@ describe('AuthProvider', () => {
     const fixture = createAuthFixture();
     const repository = fixture.repository;
     const auth = createMobileAuth({
+      getMobileEnvironmentMode: () => 'local',
       getSupabaseEnvironment: () => ({
         url: 'http://127.0.0.1:54321',
         publishableKey: 'local-key',
@@ -273,6 +274,69 @@ describe('AuthProvider', () => {
     expect(auth?.developmentSignIn).toEqual(expect.any(Function));
     expect(createGoogleNativeAuth).not.toHaveBeenCalled();
     expect(isAppleNativeAuthAvailable).not.toHaveBeenCalled();
+  });
+
+  test('keeps explicit local mode social-free when credentials are missing or the endpoint is remote', () => {
+    const createGoogleNativeAuth = jest.fn();
+    const isAppleNativeAuthAvailable = jest.fn(() => true);
+    const getLocalDevelopmentAuthEnvironment = jest.fn(() => undefined);
+    const fixture = createAuthFixture();
+    const auth = createMobileAuth({
+      getMobileEnvironmentMode: () => 'local',
+      getSupabaseEnvironment: () => ({
+        url: 'https://process-override.supabase.co',
+        publishableKey: 'staging-key',
+      }),
+      getLocalDevelopmentAuthEnvironment,
+      getGoogleEnvironment: () => ({
+        webClientId: 'google-web-client-id',
+        iosClientId: 'google-ios-client-id',
+      }),
+      createSupabaseClient: jest.fn() as never,
+      createAuthRepository: jest.fn(() => fixture.repository),
+      createMembershipCache: jest.fn(() => ({})) as never,
+      createRecentSocialProviderStore: jest.fn(() => ({})) as never,
+      createGoogleNativeAuth,
+      isAppleNativeAuthAvailable,
+    });
+
+    expect(auth?.providers).toEqual({});
+    expect(auth?.developmentSignIn).toBeUndefined();
+    expect(getLocalDevelopmentAuthEnvironment).toHaveBeenCalledTimes(1);
+    expect(createGoogleNativeAuth).not.toHaveBeenCalled();
+    expect(isAppleNativeAuthAvailable).not.toHaveBeenCalled();
+  });
+
+  test('keeps staging composition on social providers and ignores local credentials', () => {
+    const googleAdapter = jest.fn();
+    const createGoogleNativeAuth = jest.fn(() => googleAdapter);
+    const getLocalDevelopmentAuthEnvironment = jest.fn(() => ({
+      email: 'must-not-be-used@example.invalid',
+      password: 'must-not-be-used',
+    }));
+    const fixture = createAuthFixture();
+    const auth = createMobileAuth({
+      getMobileEnvironmentMode: () => 'staging',
+      getSupabaseEnvironment: () => ({
+        url: 'https://staging.supabase.co',
+        publishableKey: 'staging-key',
+      }),
+      getLocalDevelopmentAuthEnvironment,
+      getGoogleEnvironment: () => ({
+        webClientId: 'google-web-client-id',
+        iosClientId: 'google-ios-client-id',
+      }),
+      createSupabaseClient: jest.fn() as never,
+      createAuthRepository: jest.fn(() => fixture.repository),
+      createMembershipCache: jest.fn(() => ({})) as never,
+      createRecentSocialProviderStore: jest.fn(() => ({})) as never,
+      createGoogleNativeAuth,
+      isAppleNativeAuthAvailable: () => false,
+    });
+
+    expect(auth?.providers).toEqual({google: googleAdapter});
+    expect(auth?.developmentSignIn).toBeUndefined();
+    expect(getLocalDevelopmentAuthEnvironment).not.toHaveBeenCalled();
   });
 
   test('boots guest with no stored session and owns one listener of each kind', async () => {

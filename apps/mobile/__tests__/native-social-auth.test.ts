@@ -104,14 +104,17 @@ describe('native social authentication adapters', () => {
       message: 'Social authentication failed',
     });
 
-    mockGoogleSignIn.mockRejectedValueOnce(new Error('provider payload'));
+    const googlePayload =
+      'google-id-token google-user@example.invalid provider payload';
+    mockGoogleSignIn.mockRejectedValueOnce(new Error(googlePayload));
     const error = await signInWithGoogle().catch(value => value);
     expect(error).toBeInstanceOf(NativeSocialAuthError);
     expect(error).toMatchObject({
       code: 'provider',
       message: 'Social authentication failed',
     });
-    expect(String(error)).not.toContain('provider payload');
+    expect(Reflect.has(error, 'cause')).toBe(false);
+    expect(JSON.stringify(error)).not.toContain(googlePayload);
   });
 
   test('lets the Apple SDK own nonce generation and returns its raw nonce', async () => {
@@ -149,12 +152,23 @@ describe('native social authentication adapters', () => {
     });
     await expect(signInWithApple()).resolves.toEqual({type: 'cancelled'});
 
-    mockApplePerformRequest.mockRejectedValueOnce({code: '1004'});
-    await expect(signInWithApple()).rejects.toMatchObject({
+    const applePayload = {
+      code: '1004',
+      idToken: 'apple-id-token',
+      nonce: 'apple-raw-nonce',
+      email: 'apple-user@example.invalid',
+    };
+    mockApplePerformRequest.mockRejectedValueOnce(applePayload);
+    const error = await signInWithApple().catch(value => value);
+    expect(error).toMatchObject({
       name: 'NativeSocialAuthError',
       code: 'provider',
       message: 'Social authentication failed',
     });
+    expect(Reflect.has(error, 'cause')).toBe(false);
+    expect(JSON.stringify(error)).not.toContain(applePayload.idToken);
+    expect(JSON.stringify(error)).not.toContain(applePayload.nonce);
+    expect(JSON.stringify(error)).not.toContain(applePayload.email);
   });
 
   test.each([

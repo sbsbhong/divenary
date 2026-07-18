@@ -1,6 +1,7 @@
 import {Platform} from 'react-native';
 
 declare const __OPEN_METEO_API_KEY__: string | undefined;
+declare const __MOBILE_ENVIRONMENT_MODE__: string | undefined;
 declare const __SUPABASE_URL__: string | undefined;
 declare const __SUPABASE_ANDROID_URL__: string | undefined;
 declare const __SUPABASE_PUBLISHABLE_KEY__: string | undefined;
@@ -31,6 +32,8 @@ export type SupabaseEnvironment = {
   publishableKey: string;
 };
 
+export type MobileEnvironmentMode = 'local' | 'staging' | 'release';
+
 export type GoogleEnvironment = {
   webClientId: string;
   iosClientId: string;
@@ -43,6 +46,13 @@ export type LocalDevelopmentAuthEnvironment = {
 
 const invalidSupabaseUrl = () =>
   new Error('Invalid SUPABASE_URL configuration');
+
+export const parseMobileEnvironmentMode = (
+  value: string | undefined,
+): MobileEnvironmentMode =>
+  value === 'local' || value === 'staging' || value === 'release'
+    ? value
+    : 'release';
 
 export const parseSupabaseEnvironment = (
   input: SupabaseEnvironmentInput,
@@ -93,12 +103,13 @@ export const parseSupabaseEnvironment = (
 export const parseLocalDevelopmentAuthEnvironment = (
   input: LocalDevelopmentAuthEnvironmentInput,
   isDevelopment: boolean,
+  mode: MobileEnvironmentMode,
 ): LocalDevelopmentAuthEnvironment | undefined => {
   const url = input.url?.trim() ?? '';
   const email = input.email?.trim() ?? '';
   const password = input.password?.trim() ?? '';
 
-  if (!isDevelopment || !url || !email || !password) {
+  if (mode !== 'local' || !isDevelopment || !url || !email || !password) {
     return undefined;
   }
 
@@ -150,6 +161,13 @@ export const getSupabaseEnvironment = () =>
     __DEV__,
   );
 
+export const getMobileEnvironmentMode = () =>
+  parseMobileEnvironmentMode(
+    typeof __MOBILE_ENVIRONMENT_MODE__ === 'string'
+      ? __MOBILE_ENVIRONMENT_MODE__
+      : undefined,
+  );
+
 export const getLocalDevelopmentAuthEnvironment = () => {
   const supabase = getSupabaseEnvironment();
 
@@ -166,6 +184,7 @@ export const getLocalDevelopmentAuthEnvironment = () => {
           : undefined,
     },
     __DEV__,
+    getMobileEnvironmentMode(),
   );
 };
 

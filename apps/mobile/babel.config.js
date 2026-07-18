@@ -1,6 +1,7 @@
 const {loadMobileEnvironment} = require('./scripts/load-mobile-env');
 
 const environmentIdentifiers = {
+  __MOBILE_ENVIRONMENT_MODE__: 'MOBILE_ENVIRONMENT_MODE',
   __OPEN_METEO_API_KEY__: 'OPEN_METEO_API_KEY',
   __SUPABASE_URL__: 'SUPABASE_URL',
   __SUPABASE_ANDROID_URL__: 'SUPABASE_ANDROID_URL',

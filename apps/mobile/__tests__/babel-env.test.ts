@@ -17,6 +17,7 @@ const {loadMobileEnvironment} = require('../scripts/load-mobile-env') as {
 
 const authIdentifiers = `
   export const authEnvironment = [
+    __MOBILE_ENVIRONMENT_MODE__,
     __SUPABASE_URL__,
     __SUPABASE_PUBLISHABLE_KEY__,
     __GOOGLE_WEB_CLIENT_ID__,
@@ -72,7 +73,7 @@ describe('mobile Babel environment injection', () => {
     });
   });
 
-  test('reads development file only when neither Babel nor Node is production', () => {
+  test('loads ignored environment files only for development and test Babel environments', () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'dive-mobile-env-'));
     const developmentEnvPath = path.join(directory, '.env.development');
     fs.writeFileSync(
@@ -84,7 +85,7 @@ describe('mobile Babel environment injection', () => {
     expect(
       loadMobileEnvironment({
         environment: {},
-        babelEnvironment: 'development',
+        babelEnvironment: 'test',
         nodeEnvironment: 'test',
         developmentEnvPath,
       }).SUPABASE_URL,
@@ -100,8 +101,8 @@ describe('mobile Babel environment injection', () => {
     expect(
       loadMobileEnvironment({
         environment: {},
-        babelEnvironment: 'development',
-        nodeEnvironment: 'production',
+        babelEnvironment: 'release-candidate',
+        nodeEnvironment: 'development',
         developmentEnvPath,
       }).SUPABASE_URL,
     ).toBeUndefined();
@@ -114,24 +115,25 @@ describe('mobile Babel environment injection', () => {
     fs.writeFileSync(developmentEnvPath, 'SUPABASE_URL=https://staging.supabase.co\n', 'utf8');
     fs.writeFileSync(localEnvPath, 'SUPABASE_URL=http://127.0.0.1:54321\n', 'utf8');
 
-    expect(
-      loadMobileEnvironment({
+    const staging = loadMobileEnvironment({
         environment: {},
         babelEnvironment: 'development',
         nodeEnvironment: 'development',
         developmentEnvPath,
         localEnvPath,
-      }).SUPABASE_URL,
-    ).toBe('https://staging.supabase.co');
-    expect(
-      loadMobileEnvironment({
+      });
+    expect(staging.SUPABASE_URL).toBe('https://staging.supabase.co');
+    expect(staging.MOBILE_ENVIRONMENT_MODE).toBe('staging');
+
+    const local = loadMobileEnvironment({
         environment: {MOBILE_ENVIRONMENT: 'local'},
         babelEnvironment: 'development',
         nodeEnvironment: 'development',
         developmentEnvPath,
         localEnvPath,
-      }).SUPABASE_URL,
-    ).toBe('http://127.0.0.1:54321');
+      });
+    expect(local.SUPABASE_URL).toBe('http://127.0.0.1:54321');
+    expect(local.MOBILE_ENVIRONMENT_MODE).toBe('local');
   });
 
   test('keeps both development files out of production transforms', () => {
@@ -141,15 +143,46 @@ describe('mobile Babel environment injection', () => {
     fs.writeFileSync(developmentEnvPath, 'SUPABASE_URL=https://staging.supabase.co\n', 'utf8');
     fs.writeFileSync(localEnvPath, 'SUPABASE_URL=http://127.0.0.1:54321\n', 'utf8');
 
-    expect(
-      loadMobileEnvironment({
+    const release = loadMobileEnvironment({
         environment: {MOBILE_ENVIRONMENT: 'local'},
         babelEnvironment: 'production',
         nodeEnvironment: 'production',
         developmentEnvPath,
         localEnvPath,
-      }).SUPABASE_URL,
-    ).toBeUndefined();
+      });
+
+    expect(release.SUPABASE_URL).toBeUndefined();
+    expect(release.MOBILE_ENVIRONMENT_MODE).toBe('release');
+  });
+
+  test('strips all Auth configuration from unknown and release process environments', () => {
+    const syntheticEnvironment = {
+      MOBILE_ENVIRONMENT: 'local',
+      SUPABASE_URL: 'https://release-sentinel.supabase.co',
+      SUPABASE_ANDROID_URL: 'http://10.0.2.2:54321',
+      SUPABASE_PUBLISHABLE_KEY: 'release-publishable-sentinel',
+      LOCAL_AUTH_EMAIL: 'release-email-sentinel@example.invalid',
+      LOCAL_AUTH_PASSWORD: 'release-password-sentinel',
+      GOOGLE_WEB_CLIENT_ID: 'release-google-web-sentinel',
+      GOOGLE_IOS_CLIENT_ID: 'release-google-ios-sentinel',
+    };
+
+    for (const babelEnvironment of ['production', 'release-candidate']) {
+      const loaded = loadMobileEnvironment({
+        environment: syntheticEnvironment,
+        babelEnvironment,
+        nodeEnvironment: 'development',
+      });
+
+      expect(loaded.MOBILE_ENVIRONMENT_MODE).toBe('release');
+      expect(loaded).not.toHaveProperty('SUPABASE_URL');
+      expect(loaded).not.toHaveProperty('SUPABASE_ANDROID_URL');
+      expect(loaded).not.toHaveProperty('SUPABASE_PUBLISHABLE_KEY');
+      expect(loaded).not.toHaveProperty('LOCAL_AUTH_EMAIL');
+      expect(loaded).not.toHaveProperty('LOCAL_AUTH_PASSWORD');
+      expect(loaded).not.toHaveProperty('GOOGLE_WEB_CLIENT_ID');
+      expect(loaded).not.toHaveProperty('GOOGLE_IOS_CLIENT_ID');
+    }
   });
 
   test('inlines process values while leaving unknown identifiers untouched', () => {
@@ -160,12 +193,14 @@ describe('mobile Babel environment injection', () => {
     process.env.SUPABASE_ANDROID_URL = 'http://10.0.2.2:54321';
     process.env.LOCAL_AUTH_EMAIL = 'divenary-local@development.invalid';
     process.env.LOCAL_AUTH_PASSWORD = 'test-password';
+    process.env.MOBILE_ENVIRONMENT = 'local';
 
     const code = transform(
       `${authIdentifiers}\nexport const untouched = __UNKNOWN_IDENTIFIER__;`,
-      'process-env-test',
+      'test',
     );
 
+    expect(code).toContain('local');
     expect(code).toContain('https://process.supabase.co');
     expect(code).toContain('process-key');
     expect(code).toContain('web-id');
@@ -179,7 +214,7 @@ describe('mobile Babel environment injection', () => {
   test('never treats Object prototype names as environment identifiers', () => {
     const code = transform(
       'export const preserved = toString;',
-      'prototype-identifier-test',
+      'test',
     );
 
     expect(code).toContain('toString');
@@ -198,6 +233,7 @@ describe('mobile Babel environment injection', () => {
     delete process.env.BABEL_ENV;
 
     const code = transform(authIdentifiers, 'production');
+    expect(code).toContain('release');
     expect(code.match(/""/g)?.length).toBe(7);
   });
 
@@ -206,10 +242,19 @@ describe('mobile Babel environment injection', () => {
     process.env.LOCAL_AUTH_PASSWORD = 'generated-password';
     process.env.NODE_ENV = 'production';
 
-    const code = transform(authIdentifiers, 'production-local-credential-test');
+    process.env.SUPABASE_URL = 'https://release-sentinel.supabase.co';
+    process.env.SUPABASE_PUBLISHABLE_KEY = 'release-publishable-sentinel';
+    process.env.GOOGLE_WEB_CLIENT_ID = 'release-google-web-sentinel';
+    process.env.GOOGLE_IOS_CLIENT_ID = 'release-google-ios-sentinel';
+
+    const code = transform(authIdentifiers, 'production');
 
     expect(code).not.toContain('divenary-local@development.invalid');
     expect(code).not.toContain('generated-password');
+    expect(code).not.toContain('release-sentinel.supabase.co');
+    expect(code).not.toContain('release-publishable-sentinel');
+    expect(code).not.toContain('release-google-web-sentinel');
+    expect(code).not.toContain('release-google-ios-sentinel');
   });
 
   test('does not replace local bindings or non-computed object keys', () => {
@@ -220,7 +265,7 @@ describe('mobile Babel environment injection', () => {
         export const local = __SUPABASE_URL__;
         export const object = { __SUPABASE_URL__: 1 };
       `,
-      'binding-test',
+      'test',
     );
 
     expect(code).toMatch(/__SUPABASE_URL__=['"]local-binding['"]/);

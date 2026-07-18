@@ -1,10 +1,12 @@
 import {randomBytes} from 'node:crypto';
-import {rename, writeFile} from 'node:fs/promises';
+import {open, rename, unlink} from 'node:fs/promises';
+import {createServer} from 'node:net';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 const fixtureEmail = 'divenary-local@development.invalid';
 const adminUserPageSize = 1000;
+export const LOCAL_METRO_PORT = 8082;
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const defaultEnvPath = path.join(repositoryRoot, 'apps/mobile/.env.local');
 
@@ -132,97 +134,180 @@ async function listFixtureUserIds(fetchImpl, apiUrl, adminHeaders) {
   }
 }
 
+export async function acquireLocalMetroPortLock({
+  port = LOCAL_METRO_PORT,
+  createServerImpl = createServer,
+} = {}) {
+  const server = createServerImpl();
+
+  await new Promise((resolve, reject) => {
+    const handleError = error => {
+      if (error?.code === 'EADDRINUSE') {
+        reject(
+          new Error(
+            `Local Metro port ${port} is in use. Stop local Metro and retry; no fixture changes were made.`,
+          ),
+        );
+        return;
+      }
+
+      reject(new Error(`Unable to reserve local Metro port ${port}.`));
+    };
+
+    server.once('error', handleError);
+    server.listen(
+      {host: '127.0.0.1', port, exclusive: true},
+      () => {
+        server.removeListener('error', handleError);
+        resolve();
+      },
+    );
+  });
+
+  let released = false;
+  return async () => {
+    if (released) {
+      return;
+    }
+    released = true;
+
+    await new Promise((resolve, reject) => {
+      server.close(error => (error ? reject(error) : resolve()));
+    });
+  };
+}
+
+async function writeEnvironmentFile({
+  source,
+  envPath,
+  temporaryEnvPath,
+  openFile,
+  renameFile,
+  unlinkFile,
+}) {
+  const handle = await openFile(temporaryEnvPath, 'wx', 0o600);
+  let closed = false;
+
+  try {
+    await handle.writeFile(source, {encoding: 'utf8'});
+    await handle.close();
+    closed = true;
+    await renameFile(temporaryEnvPath, envPath);
+  } catch (error) {
+    if (!closed) {
+      await handle.close().catch(() => undefined);
+    }
+
+    await unlinkFile(temporaryEnvPath).catch(cleanupError => {
+      if (cleanupError?.code !== 'ENOENT') {
+        throw cleanupError;
+      }
+    });
+    throw error;
+  }
+}
+
 export async function prepareLocalMobileAuth(options) {
   const {
     readLocalStatus,
     fetchImpl = fetch,
     randomBytesImpl = randomBytes,
-    writeFile: writeFileImpl = writeFile,
+    acquireLocalMetroPortLock: acquireMetroPort = acquireLocalMetroPortLock,
+    openFile = open,
     rename: renameImpl = rename,
+    unlink: unlinkImpl = unlink,
     envPath = defaultEnvPath,
     temporaryEnvPath = `${envPath}.${process.pid}.tmp`,
   } = options;
-  const localStatus = await readLocalStatus();
-  const apiUrl = assertString(localStatus.API_URL, 'API_URL');
-  const publishableKey = assertString(
-    localStatus.PUBLISHABLE_KEY,
-    'PUBLISHABLE_KEY',
-  );
-  const secretKey = assertString(localStatus.SECRET_KEY, 'SECRET_KEY');
-  const androidUrl = createAndroidUrl(apiUrl);
-  const password = randomBytesImpl(32).toString('base64url');
-  const adminHeaders = createHeaders(secretKey);
-  const userIds = await listFixtureUserIds(fetchImpl, apiUrl, adminHeaders);
+  const releaseMetroPort = await acquireMetroPort();
 
-  for (const userId of userIds) {
-    const deleteResponse = await fetchImpl(
-      `${apiUrl}/auth/v1/admin/users/${userId}`,
-      {method: 'DELETE', headers: adminHeaders},
+  try {
+    const localStatus = await readLocalStatus();
+    const apiUrl = assertString(localStatus.API_URL, 'API_URL');
+    const publishableKey = assertString(
+      localStatus.PUBLISHABLE_KEY,
+      'PUBLISHABLE_KEY',
     );
-    await readResponse(deleteResponse, 'delete local fixture user', [200, 204]);
-  }
+    const secretKey = assertString(localStatus.SECRET_KEY, 'SECRET_KEY');
+    const androidUrl = createAndroidUrl(apiUrl);
+    const password = randomBytesImpl(32).toString('base64url');
+    const adminHeaders = createHeaders(secretKey);
+    const userIds = await listFixtureUserIds(fetchImpl, apiUrl, adminHeaders);
 
-  const createResponse = await fetchImpl(`${apiUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: adminHeaders,
-    body: JSON.stringify({
-      email: fixtureEmail,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const createdUser = await readResponse(
-    createResponse,
-    'create confirmed local fixture user',
-    [200, 201],
-  );
+    for (const userId of userIds) {
+      const deleteResponse = await fetchImpl(
+        `${apiUrl}/auth/v1/admin/users/${userId}`,
+        {method: 'DELETE', headers: adminHeaders},
+      );
+      await readResponse(deleteResponse, 'delete local fixture user', [200, 204]);
+    }
 
-  if (
-    typeof createdUser?.id !== 'string' ||
-    typeof createdUser?.email_confirmed_at !== 'string'
-  ) {
-    throw new Error('Created local fixture user is not confirmed.');
-  }
-
-  const passwordGrantResponse = await fetchImpl(
-    `${apiUrl}/auth/v1/token?grant_type=password`,
-    {
+    const createResponse = await fetchImpl(`${apiUrl}/auth/v1/admin/users`, {
       method: 'POST',
-      headers: createHeaders(publishableKey),
-      body: JSON.stringify({email: fixtureEmail, password}),
-    },
-  );
-  const passwordGrant = await readResponse(
-    passwordGrantResponse,
-    'local fixture password grant',
-    [200],
-  );
+      headers: adminHeaders,
+      body: JSON.stringify({
+        email: fixtureEmail,
+        password,
+        email_confirm: true,
+      }),
+    });
+    const createdUser = await readResponse(
+      createResponse,
+      'create confirmed local fixture user',
+      [200, 201],
+    );
 
-  if (typeof passwordGrant?.access_token !== 'string') {
-    throw new Error('Local fixture password grant is invalid.');
+    if (
+      typeof createdUser?.id !== 'string' ||
+      typeof createdUser?.email_confirmed_at !== 'string'
+    ) {
+      throw new Error('Created local fixture user is not confirmed.');
+    }
+
+    const passwordGrantResponse = await fetchImpl(
+      `${apiUrl}/auth/v1/token?grant_type=password`,
+      {
+        method: 'POST',
+        headers: createHeaders(publishableKey),
+        body: JSON.stringify({email: fixtureEmail, password}),
+      },
+    );
+    const passwordGrant = await readResponse(
+      passwordGrantResponse,
+      'local fixture password grant',
+      [200],
+    );
+
+    if (typeof passwordGrant?.access_token !== 'string') {
+      throw new Error('Local fixture password grant is invalid.');
+    }
+
+    const onboardingResponse = await fetchImpl(
+      `${apiUrl}/rest/v1/rpc/get_onboarding_status`,
+      {
+        method: 'POST',
+        headers: createHeaders(publishableKey, passwordGrant.access_token),
+        body: '{}',
+      },
+    );
+    const onboardingStatus = await readResponse(
+      onboardingResponse,
+      'get_onboarding_status',
+      [200],
+    );
+    assertPendingOnboarding(onboardingStatus);
+
+    await writeEnvironmentFile({
+      source: createEnvironment({apiUrl, androidUrl, publishableKey, password}),
+      envPath,
+      temporaryEnvPath,
+      openFile,
+      renameFile: renameImpl,
+      unlinkFile: unlinkImpl,
+    });
+
+    return {email: fixtureEmail, envPath};
+  } finally {
+    await releaseMetroPort();
   }
-
-  const onboardingResponse = await fetchImpl(
-    `${apiUrl}/rest/v1/rpc/get_onboarding_status`,
-    {
-      method: 'POST',
-      headers: createHeaders(publishableKey, passwordGrant.access_token),
-      body: '{}',
-    },
-  );
-  const onboardingStatus = await readResponse(
-    onboardingResponse,
-    'get_onboarding_status',
-    [200],
-  );
-  assertPendingOnboarding(onboardingStatus);
-
-  await writeFileImpl(
-    temporaryEnvPath,
-    createEnvironment({apiUrl, androidUrl, publishableKey, password}),
-    {encoding: 'utf8', flag: 'wx', mode: 0o600},
-  );
-  await renameImpl(temporaryEnvPath, envPath);
-
-  return {email: fixtureEmail, envPath};
 }

@@ -1,10 +1,20 @@
 import {
   parseLocalDevelopmentAuthEnvironment,
   parseGoogleEnvironment,
+  parseMobileEnvironmentMode,
   parseSupabaseEnvironment,
 } from '../src/config/env';
 
 describe('mobile public Auth environment', () => {
+  test('normalizes only known inlined mobile environment modes', () => {
+    expect(parseMobileEnvironmentMode('local')).toBe('local');
+    expect(parseMobileEnvironmentMode('staging')).toBe('staging');
+    expect(parseMobileEnvironmentMode('release')).toBe('release');
+    expect(parseMobileEnvironmentMode('LOCAL')).toBe('release');
+    expect(parseMobileEnvironmentMode('unknown')).toBe('release');
+    expect(parseMobileEnvironmentMode(undefined)).toBe('release');
+  });
+
   test('returns undefined unless both Supabase public values are present', () => {
     expect(
       parseSupabaseEnvironment({url: '', publishableKey: ''}, true),
@@ -154,6 +164,7 @@ describe('mobile public Auth environment', () => {
             password: 'generated-password',
           },
           true,
+          'local',
         ),
       ).toEqual({
         email: 'divenary-local@development.invalid',
@@ -169,6 +180,7 @@ describe('mobile public Auth environment', () => {
           password: 'generated-password',
         },
         true,
+        'local',
       ),
     ).toBeUndefined();
     expect(
@@ -179,6 +191,7 @@ describe('mobile public Auth environment', () => {
           password: 'generated-password',
         },
         false,
+        'local',
       ),
     ).toBeUndefined();
     expect(
@@ -189,7 +202,22 @@ describe('mobile public Auth environment', () => {
           password: 'generated-password',
         },
         true,
+        'local',
       ),
     ).toBeUndefined();
+
+    for (const mode of ['staging', 'release'] as const) {
+      expect(
+        parseLocalDevelopmentAuthEnvironment(
+          {
+            url: 'http://127.0.0.1:54321',
+            email: 'divenary-local@development.invalid',
+            password: 'generated-password',
+          },
+          true,
+          mode,
+        ),
+      ).toBeUndefined();
+    }
   });
 });

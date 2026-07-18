@@ -8,6 +8,7 @@ import {
 import {
   getGoogleEnvironment,
   getLocalDevelopmentAuthEnvironment,
+  getMobileEnvironmentMode,
   getSupabaseEnvironment,
 } from '../config/env';
 import {
@@ -40,6 +41,7 @@ export type MobileAuth = {
 
 export type CreateMobileAuthOptions = {
   getSupabaseEnvironment?: typeof getSupabaseEnvironment;
+  getMobileEnvironmentMode?: typeof getMobileEnvironmentMode;
   getLocalDevelopmentAuthEnvironment?: typeof getLocalDevelopmentAuthEnvironment;
   getGoogleEnvironment?: typeof getGoogleEnvironment;
   createSupabaseClient?: typeof createSupabaseClient;
@@ -57,6 +59,8 @@ export function createMobileAuth(
 ): MobileAuth | undefined {
   const readSupabaseEnvironment =
     options.getSupabaseEnvironment ?? getSupabaseEnvironment;
+  const readMobileEnvironmentMode =
+    options.getMobileEnvironmentMode ?? getMobileEnvironmentMode;
   const readGoogleEnvironment =
     options.getGoogleEnvironment ?? getGoogleEnvironment;
   const readLocalDevelopmentAuthEnvironment =
@@ -75,6 +79,7 @@ export function createMobileAuth(
   const appleSignIn = options.signInWithApple ?? signInWithApple;
 
   try {
+    const mobileEnvironmentMode = readMobileEnvironmentMode();
     const environment = readSupabaseEnvironment();
 
     if (environment === undefined) {
@@ -87,10 +92,12 @@ export function createMobileAuth(
     });
     const repository = makeRepository(client);
     const localDevelopmentAuthEnvironment =
-      readLocalDevelopmentAuthEnvironment();
+      mobileEnvironmentMode === 'local'
+        ? readLocalDevelopmentAuthEnvironment()
+        : undefined;
     const providers: MobileAuth['providers'] = {};
 
-    if (localDevelopmentAuthEnvironment === undefined) {
+    if (mobileEnvironmentMode === 'staging') {
       const googleEnvironment = readGoogleEnvironment();
 
       if (googleEnvironment !== undefined) {

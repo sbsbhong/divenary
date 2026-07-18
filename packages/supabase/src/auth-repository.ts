@@ -30,18 +30,30 @@ export type AuthRepositoryErrorKind =
   | 'invalid-session'
   | 'server';
 
+export type AuthRepositoryOperation = 'sign-in' | 'session' | 'rpc';
+
+type AuthRepositoryErrorMetadata = {
+  operation?: AuthRepositoryOperation | undefined;
+  code?: string | undefined;
+  status?: number | undefined;
+};
+
 export class AuthRepositoryError extends Error {
   readonly kind: AuthRepositoryErrorKind;
-  readonly cause?: unknown;
+  readonly operation: AuthRepositoryOperation | undefined;
+  readonly code: string | undefined;
+  readonly status: number | undefined;
 
   constructor(
     kind: AuthRepositoryErrorKind,
-    options?: {cause?: unknown},
+    metadata: AuthRepositoryErrorMetadata = {},
   ) {
     super('Authentication operation failed');
     this.name = 'AuthRepositoryError';
     this.kind = kind;
-    this.cause = options?.cause;
+    this.operation = metadata.operation;
+    this.code = metadata.code;
+    this.status = metadata.status;
   }
 }
 
@@ -63,8 +75,6 @@ export interface AuthRepository {
   subscribe(listener: (session: Session | null) => void): () => void;
 }
 
-type Operation = 'sign-in' | 'session' | 'rpc';
-
 const invalidSessionCodes = new Set([
   'bad_jwt',
   'invalid_jwt',
@@ -83,9 +93,30 @@ function readStringProperty(value: unknown, property: string): string | undefine
   return typeof candidate === 'string' ? candidate : undefined;
 }
 
+function readNumberProperty(value: unknown, property: string): number | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+
+  const candidate = Reflect.get(value, property);
+  return typeof candidate === 'number' && Number.isInteger(candidate)
+    ? candidate
+    : undefined;
+}
+
+function readSafeErrorCode(error: unknown): string | undefined {
+  const code = isAuthError(error)
+    ? error.code
+    : readStringProperty(error, 'code');
+
+  return code !== undefined && /^[a-z0-9_-]{1,64}$/i.test(code)
+    ? code
+    : undefined;
+}
+
 function isTransportError(
   error: unknown,
-  operation: Operation,
+  operation: AuthRepositoryOperation,
   status?: number,
 ): boolean {
   if (status === 0) {
@@ -119,34 +150,35 @@ function isInvalidSessionError(error: unknown, status?: number): boolean {
 
 function repositoryError(
   error: unknown,
-  operation: Operation,
+  operation: AuthRepositoryOperation,
   status?: number,
 ): AuthRepositoryError {
   if (error instanceof AuthRepositoryError) {
     return error;
   }
 
-  if (isTransportError(error, operation, status)) {
-    return new AuthRepositoryError('network', {cause: error});
+  const metadata = {
+    operation,
+    code: readSafeErrorCode(error),
+    status: status ?? readNumberProperty(error, 'status'),
+  };
+
+  if (isTransportError(error, operation, metadata.status)) {
+    return new AuthRepositoryError('network', metadata);
   }
 
-  if (operation !== 'sign-in' && isInvalidSessionError(error, status)) {
-    return new AuthRepositoryError('invalid-session', {cause: error});
+  if (
+    operation !== 'sign-in'
+    && isInvalidSessionError(error, metadata.status)
+  ) {
+    return new AuthRepositoryError('invalid-session', metadata);
   }
 
-  return new AuthRepositoryError('server', {cause: error});
+  return new AuthRepositoryError('server', metadata);
 }
 
-function invalidSession(cause?: unknown): AuthRepositoryError {
-  return new AuthRepositoryError('invalid-session', {cause});
-}
-
-function publicPasswordSignInError(
-  error: unknown,
-  status?: number,
-): AuthRepositoryError {
-  const mapped = repositoryError(error, 'sign-in', status);
-  return new AuthRepositoryError(mapped.kind);
+function invalidSession(): AuthRepositoryError {
+  return new AuthRepositoryError('invalid-session', {operation: 'session'});
 }
 
 export function createAuthRepository(
@@ -185,7 +217,7 @@ export function createAuthRepository(
 
         return result.data.session;
       } catch (error) {
-        throw publicPasswordSignInError(error);
+        throw repositoryError(error, 'sign-in');
       }
     },
 
