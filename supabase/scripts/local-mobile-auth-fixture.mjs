@@ -5,7 +5,6 @@ import {fileURLToPath} from 'node:url';
 
 const fixtureEmail = 'divenary-local@development.invalid';
 const adminUserPageSize = 1000;
-const maximumAdminUserPages = 1000;
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const defaultEnvPath = path.join(repositoryRoot, 'apps/mobile/.env.local');
 
@@ -91,7 +90,7 @@ function createEnvironment({apiUrl, androidUrl, publishableKey, password}) {
 async function listFixtureUserIds(fetchImpl, apiUrl, adminHeaders) {
   const userIds = new Set();
 
-  for (let page = 1; page <= maximumAdminUserPages; page += 1) {
+  for (let page = 1; ; page += 1) {
     const response = await fetchImpl(
       `${apiUrl}/auth/v1/admin/users?page=${page}&per_page=${adminUserPageSize}`,
       {method: 'GET', headers: adminHeaders},
@@ -131,8 +130,6 @@ async function listFixtureUserIds(fetchImpl, apiUrl, adminHeaders) {
       return [...userIds];
     }
   }
-
-  throw new Error('Local fixture user list exceeded the safe page limit.');
 }
 
 export async function prepareLocalMobileAuth(options) {
@@ -223,7 +220,7 @@ export async function prepareLocalMobileAuth(options) {
   await writeFileImpl(
     temporaryEnvPath,
     createEnvironment({apiUrl, androidUrl, publishableKey, password}),
-    {encoding: 'utf8', mode: 0o600},
+    {encoding: 'utf8', flag: 'wx', mode: 0o600},
   );
   await renameImpl(temporaryEnvPath, envPath);
 

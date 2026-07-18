@@ -124,7 +124,7 @@ test('recreates a confirmed local user, verifies pending onboarding, and atomica
         `LOCAL_AUTH_PASSWORD=${password}`,
         '',
       ].join('\n'),
-      {encoding: 'utf8', mode: 0o600},
+      {encoding: 'utf8', flag: 'wx', mode: 0o600},
     ],
     ['rename', temporaryEnvPath, envPath],
   ]);
@@ -152,6 +152,36 @@ test('finds and deletes the fixture user on a later admin list page', async () =
       {url: `${apiUrl}/auth/v1/admin/users?page=1&per_page=1000`, method: 'GET'},
       {url: `${apiUrl}/auth/v1/admin/users?page=2&per_page=1000`, method: 'GET'},
       {url: `${apiUrl}/auth/v1/admin/users/later-page-user`, method: 'DELETE'},
+    ],
+  );
+});
+
+test('continues listing until a short page without a fixed page cap', async () => {
+  const fullPageUsers = Array.from({length: 1000}, (_, index) => ({
+    id: `repeated-user-${index}`,
+    email: `repeated-user-${index}@development.invalid`,
+  }));
+  const fixture = createFixture({
+    existingUserPages: [
+      ...Array.from({length: 1000}, () => fullPageUsers),
+      [{id: 'user-after-page-1000', email}],
+    ],
+  });
+
+  const result = await prepareLocalMobileAuth(fixture.options);
+
+  assert.deepEqual(result, {email, envPath});
+  assert.deepEqual(
+    fixture.requests.slice(1000, 1002).map(({url, method}) => ({url, method})),
+    [
+      {
+        url: `${apiUrl}/auth/v1/admin/users?page=1001&per_page=1000`,
+        method: 'GET',
+      },
+      {
+        url: `${apiUrl}/auth/v1/admin/users/user-after-page-1000`,
+        method: 'DELETE',
+      },
     ],
   );
 });
@@ -223,6 +253,32 @@ test('rejects a non-loopback API URL before network or file access', async () =>
 
   assert.deepEqual(fixture.requests, []);
   assert.deepEqual(fixture.fileOperations, []);
+});
+
+test('does not rename when exclusive temporary file creation fails', async () => {
+  const existingFileError = Object.assign(
+    new Error('Temporary environment file already exists.'),
+    {code: 'EEXIST'},
+  );
+  let writeOptions;
+  let renameCalls = 0;
+  const fixture = createFixture({
+    writeFile: async (_path, _contents, options) => {
+      writeOptions = options;
+      throw existingFileError;
+    },
+    rename: async () => {
+      renameCalls += 1;
+    },
+  });
+
+  await assert.rejects(
+    prepareLocalMobileAuth(fixture.options),
+    error => error === existingFileError,
+  );
+
+  assert.deepEqual(writeOptions, {encoding: 'utf8', flag: 'wx', mode: 0o600});
+  assert.equal(renameCalls, 0);
 });
 
 test('does not write an environment file when onboarding verification fails', async () => {
