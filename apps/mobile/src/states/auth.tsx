@@ -33,10 +33,10 @@ export type AuthContextValue = {
   state: AuthState;
   isConfigured: boolean;
   availableProviders: SocialProvider[];
-  isDevelopmentSignInAvailable?: boolean;
+  isDevelopmentSignInAvailable: boolean;
   recentProvider: SocialProvider | undefined;
   signIn(provider: SocialProvider): Promise<void>;
-  signInForDevelopment?(): Promise<void>;
+  signInForDevelopment(): Promise<void>;
   completeOnboarding(
     documents: Array<{kind: 'terms' | 'privacy'; version: string}>,
   ): Promise<void>;

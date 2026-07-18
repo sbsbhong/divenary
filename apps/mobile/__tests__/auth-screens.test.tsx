@@ -223,6 +223,19 @@ describe('LoginScreen', () => {
     ).toBeTruthy();
   });
 
+  test('gives the local development action an accessible 44-point target', async () => {
+    createAuthFixture({
+      availableProviders: [],
+      isDevelopmentSignInAvailable: true,
+    });
+    const renderer = await render(<LoginScreen />);
+
+    expectAccessibleControl(
+      renderer.root.findByProps({testID: 'auth-login-development'}),
+      'button',
+    );
+  });
+
   test('locks the local development action, prevents close, and displays generic retry copy on failure', async () => {
     const deferred = createDeferred<void>();
     const fixture = createAuthFixture({

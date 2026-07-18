@@ -46,10 +46,6 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
 
       try {
         if (provider === 'development') {
-          if (auth.signInForDevelopment === undefined) {
-            throw new Error('Development sign-in unavailable');
-          }
-
           await auth.signInForDevelopment();
         } else {
           await auth.signIn(provider);
