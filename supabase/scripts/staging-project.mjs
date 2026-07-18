@@ -6,6 +6,26 @@ import {fileURLToPath} from 'node:url';
 
 export const STAGING_PROJECT_REF = 'mclvhwzsuvsxjerdouka';
 export const STAGING_LEGAL_VERSION = '2026-07-18-staging.1';
+export const ONBOARDING_RPC_METADATA_SQL = [
+  'select',
+  '  procedure.proname as name,',
+  '  pg_get_function_identity_arguments(procedure.oid) as argument_types,',
+  '  pg_get_function_result(procedure.oid) as return_type',
+  'from pg_catalog.pg_proc as procedure',
+  'join pg_catalog.pg_namespace as namespace',
+  '  on namespace.oid = procedure.pronamespace',
+  "where namespace.nspname = 'public'",
+  "  and procedure.proname = 'get_onboarding_status'",
+  'order by procedure.oid;',
+].join('\n');
+export const ONBOARDING_RPC_METADATA_COMMAND = Object.freeze([
+  'db',
+  'query',
+  '--linked',
+  '--output-format',
+  'json',
+  ONBOARDING_RPC_METADATA_SQL,
+]);
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const projectRefPath = path.join(repositoryRoot, 'supabase/.temp/project-ref');
@@ -72,7 +92,9 @@ export function buildStagingLegalSql(commitSha) {
     'values',
     `  (${sqlLiteral('terms')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(stagingEffectiveAt)}, ${sqlLiteral(urls.terms)}),`,
     `  (${sqlLiteral('privacy')}, ${sqlLiteral(STAGING_LEGAL_VERSION)}, ${sqlLiteral(stagingEffectiveAt)}, ${sqlLiteral(urls.privacy)})`,
-    'on conflict (kind, version) do nothing;',
+    'on conflict (kind, version) do update',
+    'set effective_at = excluded.effective_at,',
+    '    document_url = excluded.document_url;',
     '',
     'insert into public.current_legal_documents (kind, document_version)',
     'values',
@@ -110,7 +132,8 @@ export async function assertStagingLegalDocumentsReachable({
     }
 
     const document = await response.text();
-    if (!document.includes(STAGING_LEGAL_VERSION)) {
+    const versionLine = `Version: ${STAGING_LEGAL_VERSION}`;
+    if (!document.split(/\r?\n/).includes(versionLine)) {
       throw new Error('Staging legal document is missing the exact version marker.');
     }
   }

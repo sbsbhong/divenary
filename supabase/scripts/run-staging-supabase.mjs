@@ -5,6 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {
+  ONBOARDING_RPC_METADATA_COMMAND,
   STAGING_PROJECT_REF,
   assertStagingProjectRef,
   buildStagingLegalSql,
@@ -27,6 +28,7 @@ async function assertAllowedStagingCommand(arguments_) {
     ['migration', 'list', '--linked'],
     ['db', 'push', '--linked', '--dry-run'],
     ['db', 'push', '--linked'],
+    ONBOARDING_RPC_METADATA_COMMAND,
   ];
 
   const isLegalSeedQuery =
@@ -65,6 +67,8 @@ async function assertLinkIsSafe(arguments_) {
 export async function runStagingSupabase(arguments_, {
   spawnSyncImpl = spawnSync,
   environment = process.env,
+  stdio = 'inherit',
+  encoding,
 } = {}) {
   await assertAllowedStagingCommand(arguments_);
   await assertLinkIsSafe(arguments_);
@@ -72,7 +76,8 @@ export async function runStagingSupabase(arguments_, {
   const result = spawnSyncImpl(supabaseCli, arguments_, {
     cwd: repositoryRoot,
     env: buildStagingEnvironment(environment),
-    stdio: 'inherit',
+    stdio,
+    encoding,
   });
 
   if (result.error) {
@@ -81,12 +86,14 @@ export async function runStagingSupabase(arguments_, {
 
   if (result.status !== 0) {
     process.exitCode = result.status ?? 1;
-    return;
+    return result;
   }
 
   if (arguments_[0] === 'link') {
     await assertStagingProjectRef();
   }
+
+  return result;
 }
 
 async function main() {

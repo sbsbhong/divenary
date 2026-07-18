@@ -3,6 +3,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 import {
+  ONBOARDING_RPC_METADATA_COMMAND,
   STAGING_LEGAL_VERSION,
   STAGING_PROJECT_REF,
   assertStagingProjectRef,
@@ -11,6 +12,9 @@ import {
   readStagingPromotionCommit,
   sanitizeStagingAuthVerification,
 } from './staging-project.mjs';
+import {runStagingSupabase} from './run-staging-supabase.mjs';
+
+export {ONBOARDING_RPC_METADATA_COMMAND};
 
 const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
 const supabaseCli = path.join(repositoryRoot, 'node_modules/.bin/supabase');
@@ -170,7 +174,7 @@ async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) 
   return assertExactLegalDocuments(rows, commitSha);
 }
 
-async function verifyOnboardingRpc({fetchImpl, publicApiKey}) {
+export async function verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey}) {
   const body = await fetchJson(
     fetchImpl,
     `${stagingApiUrl}/rest/v1/rpc/get_onboarding_status`,
@@ -187,15 +191,45 @@ async function verifyOnboardingRpc({fetchImpl, publicApiKey}) {
     [401],
   );
 
-  if (body?.code !== 'PT401' || body?.message !== 'authentication_required') {
-    throw new Error('Staging onboarding RPC auth contract is invalid.');
+  if (body?.code !== '42501') {
+    throw new Error('Staging onboarding RPC permission contract is invalid.');
+  }
+}
+
+export function parseOnboardingRpcMetadata(output) {
+  const body = parseJson(output, 'Staging onboarding RPC metadata');
+  const rows = body?.rows;
+
+  if (
+    !Array.isArray(rows) ||
+    rows.length !== 1 ||
+    rows[0]?.name !== 'get_onboarding_status' ||
+    rows[0]?.argument_types !== '' ||
+    rows[0]?.return_type !== 'jsonb'
+  ) {
+    throw new Error(
+      'Staging onboarding RPC signature must be public.get_onboarding_status() -> jsonb.',
+    );
   }
 
   return {
-    name: 'get_onboarding_status',
+    name: rows[0].name,
     argumentTypes: [],
-    returnType: 'jsonb',
+    returnType: rows[0].return_type,
   };
+}
+
+async function readOnboardingRpcMetadata() {
+  const result = await runStagingSupabase(ONBOARDING_RPC_METADATA_COMMAND, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
+  });
+
+  if (result.error || result.status !== 0) {
+    throw new Error('Unable to read staging onboarding RPC metadata.');
+  }
+
+  return parseOnboardingRpcMetadata(result.stdout);
 }
 
 async function verifyProviderFlags({fetchImpl, publicApiKey}) {
@@ -221,13 +255,15 @@ export async function verifyStagingAuth({
   commitSha = readStagingPromotionCommit(),
   fetchImpl = fetch,
   readPublicApiKey = readStagingPublicApiKey,
+  readRpcMetadata = readOnboardingRpcMetadata,
 } = {}) {
   await assertStagingProjectRef();
   const publicApiKey = readPublicApiKey();
   const [legalDocuments, onboardingRpc, providers] = await Promise.all([
     verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}),
-    verifyOnboardingRpc({fetchImpl, publicApiKey}),
+    readRpcMetadata(),
     verifyProviderFlags({fetchImpl, publicApiKey}),
+    verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey}),
   ]);
 
   return sanitizeStagingAuthVerification({
