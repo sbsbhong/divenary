@@ -1,67 +1,54 @@
 # Watch 앱 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; pre-device depth safety sync readiness implementation, 2026-07-09; Watch session UI and sync startup fixes, 2026-07-10; Watch home launch sensor deferral, 2026-07-10; Debug test capture provenance, 2026-07-12; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Watch home launch sensor deferral](../../raw/architecture/2026-07-10-watch-home-launch-sensor-deferral.md); [Debug test capture provenance](../../raw/architecture/2026-07-12-debug-test-capture-provenance.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18
+Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md)
+Updated: 2026-07-18
 
 ## 요약
 
-`apps/mobile/ios/DiveWatchApp`는 현재 동작하는 SwiftUI watchOS companion 앱 source를 담는다. Xcode project는 `apps/mobile/ios/DiveMobile.xcodeproj`이고, watch target과 기본 scheme은 `DiveWatchApp`이다. `DiveWatchAppDebug`는 같은 target과 bundle identity를 쓰는 shared debug scheme이며, DEBUG 환경에서만 watch Home의 테스트 시작 control을 연다. Watch 기록은 공통 session shell과 `freedive`/`scuba` mode-specific payload로 나뉘며, freedive 세션은 여러 dive segment를 담을 수 있고 scuba는 rule-based safety stop reminder 상태를 기록한다. Watch recording은 현재 수심이 Apple Watch 기반 지원 범위인 40m를 넘으면 restrained unsupported-depth warning을 보여주고, 저장/sync payload에는 optional unsupported-depth metadata를 포함한다. Session list는 작은 row 안에서 sync 상태를 짧은 전용 badge로 표시하고, end-dive action은 live instrument stack을 줄이지 않는 compact overlay로 나타난다. 실기기 기록 경로는 `CMWaterSubmersionManager` 기반 real sensor provider를 사용하지만, watch Home 첫 화면은 센서 가능 여부와 real provider 생성을 첫 frame 이후로 미룬다. Fake sample은 명시적인 demo/debug mode에서만 쓴다.
+`apps/mobile/ios/DivenaryWatchApp`는 `apps/mobile/ios/Divenary.xcodeproj`의 `DivenaryWatchApp` target이 소유하는 SwiftUI watchOS companion이다. real recording은 watchOS underwater extended runtime lifecycle을 따르고, demo/debug recording은 별도의 view-scoped simulation 흐름을 유지한다. 이 앱은 다이빙 기록과 사후 리뷰 companion이며 인증된 다이브 컴퓨터나 안전 판단 시스템이 아니다.
 
-## 현재 상태
+## 앱 범위와 소유권
 
-현재 watch 앱 source는 `apps/mobile/ios/DiveWatchApp`이다. App entry는 `DiveSessionStore`를 만들고 `HomeView`를 render한다. 저장 model은 `DiveSessionRecord`이며 legacy `DiveSession`은 decode 후 record로 adapter된다.
+`DiveAppServices`는 watch process의 composition root다. 하나의 `DiveSessionStore`, `WaterSubmersionCoordinator`, `DiveRuntimeSessionController`, real `DiveSessionRecorder`, `RealDiveSessionCoordinator`, Action Button bridge를 유지한다. SwiftUI navigation, system auto-launch, App Intent가 각각 sensor, runtime, recorder를 새로 만들지 않는다.
 
-Watch 앱은 더 이상 별도 Yarn workspace나 standalone Xcode project를 사용하지 않는다. iPhone app 설치와 함께 배포될 companion embed 구조를 유지하기 위해 watch target membership은 `apps/mobile/ios/DiveMobile.xcodeproj`에서 관리한다.
+`WaterSubmersionCoordinator`는 production에서 유일하게 `CMWaterSubmersionManager`를 만든다. 이 coordinator는 valid depth/pressure sample, optional temperature, submersion event, error, authorized `maximumDepth`를 앱 범위에서 전달한다. `RealDepthSensorProvider`는 manager owner가 아니라 real recorder의 sample subscription adapter다.
 
-`DiveWatchAppDebug` scheme은 debug controls를 노출하기 위한 실행 환경만 다르게 둔다. 별도 watch target을 만들지 않고, bundle identifier, signing, provisioning, entitlement도 바꾸지 않는다.
+`DivenaryWatchApplicationDelegate.handle(_:)`는 watchOS가 준 `WKExtendedRuntimeSession`을 runtime controller로 즉시 넘긴다. controller는 `handle(_:)`가 끝나기 전에 concrete delegate를 붙이고, adopted session에는 `start()`를 다시 호출하지 않는다.
 
-## 상세
+## 시작 규칙
 
-현재 source 영역은 다음과 같다.
+- manual start는 사용자가 고른 명시적 `PreDivePlan`으로 recorder를 시작하고 Divenary가 runtime session을 시작한다.
+- system auto-launch는 `Settings > General > Auto-Launch > When Submerged`에서 선택된 Divenary에 watchOS가 runtime session을 제공할 때 시작한다. coordinator는 `DiveSessionStore.preferredDiveMode`로 plan을 만든다.
+- Action Button start도 같은 preferred mode로 app-scoped coordinator를 시작한다. `StartDiveIntent`는 다음 Action Button action으로 end intent를 donate한다.
+- automatic과 Action Button start는 selected planned dive를 저장하거나 추론하지 않는다. manual start만 explicit plan을 유지한다.
+- 이전의 app-local `3m` sensor auto-start monitor는 제거됐다. `When Submerged`는 local depth threshold가 아니라 watchOS runtime handoff가 기준이다.
 
-- `Models`: `DepthSample`, legacy `DiveSession`, `DiveSessionRecord`, `DiveSessionPayload`, `FreeDiveSession`, `FreeDiveSegment`, `ScubaDiveSession`, `SafetyStopRecord`, `DiveSessionSummary`, sync payload helper, dive mode, water condition, sync status, pre-dive plan, location type.
-- `Sensors`: `DepthSensorProvider`, `MockDepthSensorProvider`, `RealDepthSensorProvider`, `DemoDepthSensorProvider`, `DepthSensorAvailability`.
-- `Recording`: `DiveSessionRecorder`, `FreeDiveSessionEngine`, `SafetyStopController`, `ScubaDiveEngine`.
-- `Storage`: `DiveSessionStore`.
-- `Sync`: `WatchSyncEnvelope`, `WatchSyncTransport`.
-- `Views`: home, recording, summary, saved session, detail view, formatter, `DepthGaugeRail`, 재사용 watch UI.
+## 종료와 결과 규칙
 
-현재 watch flow는 다음과 같다.
+real recording에는 touch end control이 없다. 다음 신호는 runtime invalidation을 거쳐 하나의 idempotent finalizer로 수렴한다.
 
-1. Home은 로그 브라우저보다 launchpad 역할을 우선한다. `scuba`와 `freedive`만 active mode로 둔다. DEBUG build에서 `DIVE_WATCH_DEBUG_CONTROLS=1`이면 `Test Freedive`, `Test Scuba`, `Test Large Sync`가 추가된다. Large action은 deterministic 8,000-sample demo record를 `DiveSessionStore.save`에 전달해 일반 file persistence와 WatchConnectivity file transfer 경로를 사용한다. Home은 sensor availability와 real provider 생성을 첫 frame 이후로 미룬다.
-2. Home은 deferred availability check가 `canStartRealDive`를 반환한 뒤에만 `RealDepthSensorProvider`를 만들어 자동 시작을 감시한다. 수심 sample이 3m 이상이면 현재 pre-dive plan으로 `RecordingView`를 열어 기록을 시작한다. 이 동작은 기록 편의를 위한 trigger이며 safety 판단이 아니다.
-3. `RecordingView`가 나타나면 기록이 자동으로 시작된다. 일반 real recording은 `RealDepthSensorProvider`를 사용하고, 명시적인 demo/debug action만 `DemoDepthSensorProvider`를 사용한다. Demo/debug recording은 Digital Crown으로 controlled depth를 조절하고, provider가 수심 기반 압력과 생성된 수온 sample을 만든다. 저장 record와 sync payload에는 기존 `captureMode: demo`가 남는다. `Test Freedive`와 `Test Scuba`는 추가로 `debug-test-capture` tag를 저장해 watch와 mobile에서 일반 `Demo` 대신 `Test`로 표시하지만, 저장·전송·import·acknowledgement는 일반 watch session과 같은 경로를 사용한다. Debug/test 전용 enum은 sync contract에 추가하지 않는다.
-4. Recorder는 sample, current depth, max depth, optional water temperature, elapsed time을 공통으로 추적한다. Depth/pressure update 전에 수온이 없으면 sample의 수온은 `nil`이며 `0°C`로 대체하지 않는다. 평균은 실제 수신된 수온만 사용하고, live 값은 마지막 측정값을 유지하며 summary/detail은 수온이 없으면 해당 행을 숨긴다.
-5. Freedive recording 화면은 surface ready, active segment, surface interval, summary 상태를 구분한다. Active segment에서는 현재 수심과 현재 dive time이 가장 크고, surface interval에서는 수면 휴식 시간이 가장 크다. 같은 freedive session 안에서 두 번째 하강은 새 `FreeDiveSegment`를 만들며 새 session을 만들지 않는다.
-6. Recording 화면은 full-height left depth gauge와 오른쪽 live value 영역을 기본 구조로 삼고, live metric을 card처럼 반복하지 않는다. Scuba recording 화면은 수심 최우선 계기판형으로 현재 수심, 경과 시간, 최대 수심, 상승 속도 참고값, 수온을 보여준다. 현재 수심이 `DiveDepthSupport.supportedWatchDepthLimitMeters`인 40m를 넘으면 `Outside supported depth` warning을 표시한다. 이 상태는 지원 범위 밖 marker이며 상승 지시, 비상 판단, 인증된 dive-computer warning이 아니다. Safety stop이 active, paused-too-shallow, completed 상태면 safety stop instrument가 live screen을 차지하고, 3-6m stop zone과 현재 수심을 `DepthGaugeRail`에도 표시한다. Too-deep 상태는 전용 safety-stop UI에서 빠져 일반 scuba live instrument를 보여준다. Stop zone 이탈은 설명 문구 대신 경고성 visual band로 표시한다.
-7. 기록을 끝내면 post-dive rating, exertion, visibility를 별점 컨트롤로 남기고, water condition과 note field가 있는 summary를 보여준다. Summary와 detail은 freedive segment list와 scuba safety stop 상태를 mode별로 보여준다. Scuba safety stop summary/detail은 `Required`가 아니라 recommendation wording을 사용한다.
-8. 저장된 세션은 file-backed `DiveSessionStore`에 저장되고 list/detail view에서 확인한다.
-9. `DiveSessionStore`는 저장 시 `WatchSyncTransport`를 통해 `DiveSessionRecord.syncMessageData()` 결과를 WatchConnectivity `transferUserInfo` envelope로 enqueue한다. `WCSession.isReachable`이면 같은 payload를 `sendMessage`로도 보낸다. activation 완료와 reachability 변경 시 아직 `synced`가 아닌 저장 세션을 다시 enqueue한다. WatchConnectivity transfer 오류가 나면 저장된 세션의 `syncStatus`를 `failed`로 갱신하고, 모바일 앱이 repository import 뒤 보낸 `watchSyncAcknowledgement`를 받으면 `synced`로 갱신한다.
-10. 모바일 계획에서 시작한 세션은 `plan-<localId>` tag로 source plan을 보존하고, 저장 후 해당 planned dive를 watch Home에서 숨긴다.
+1. surface 뒤 Digital Crown을 길게 눌러 Water Lock을 해제하면 watchOS가 runtime을 invalidate한다.
+2. Action Button end는 latest state가 `notSubmerged`이고 elapsed time이 `>=3m`일 때만 runtime invalidation을 요청한다. 수중 또는 너무 이른 요청은 recording을 유지한다.
+3. watchOS는 계속 out-of-water 상태가 `>10m`이면 runtime을 invalidate한다.
 
-`End Dive` 버튼은 active depth에서 숨긴다. 수심이 `<= 1.0m`로 3초 이상 안정되면 버튼이 보이고, 다시 `>= 1.2m`로 내려가면 버튼을 숨겨 수중에서 실수로 종료하지 않도록 한다. 버튼은 recording VStack 안에 들어가 instrument 높이를 줄이는 대신 bottom-trailing compact overlay로 표시된다. 이 gate는 기록 UX 제어일 뿐 안전 판단이 아니다.
+단일 `notSubmerged` event는 종료하지 않고, Divenary에는 app-side 10-minute timer가 없다. 10분 전에 resubmerge하면 기존 recorder와 local session ID가 계속 사용된다.
 
-Scuba safety-stop reminder의 현재 rule constant는 max depth 10m에서 arm, target 5m, displayed zone 3-6m, counting zone 2.7-6.3m, duration 180초, counting zone 밖 연속 30초 뒤 reset이다. 이는 non-certified reminder/timer이며 감압, 조직 loading, gas safety, 상승 허가 계산이 아니다.
+valid depth sample이 있으면 invalidation 뒤 summary를 하나만 만든다. manual/Action Button start가 sample 없이 끝나면 저장하지 않고 compact no-sample result를 한 번 보인다. system auto-launch no-sample attempt는 저장하거나 UI를 남기지 않고 조용히 취소한다.
 
-Watch session record는 samples와 mode-specific payload에서 40m 초과 여부를 계산해 optional `UnsupportedDepthRecord`를 저장한다. Sync payload도 `unsupportedDepth` object를 포함할 수 있으며, 이는 모바일 review에서 unsupported-depth marker를 그리기 위한 metadata다. Raw sample은 보존하고, 40m 초과 값을 40m로 clamp하지 않는다.
+demo/debug는 `DemoDepthSensorProvider`, Digital Crown depth simulation, `SurfaceEndDiveGate`, surface-gated touch end를 유지한다. 이 경로는 `WKExtendedRuntimeSession`, Water Lock, real Action Button ending, 10분 규칙을 사용하지 않는다.
 
-모바일에서 전달된 planned dive는 `watchPlannedDives` envelope의 JSON으로 수신된다. `WatchSyncTransport`는 `didReceiveApplicationContext`와 `didReceiveMessage` 양쪽에서 이를 처리하고, `WCSession` activation 완료 시 `receivedApplicationContext`도 다시 읽는다. `DiveSessionStore`는 `savedWatchPlannedDives`와 `executedWatchPlanIds`를 `UserDefaults`에 저장한다. 실행 전 planned dive는 watch Home에서 선택하며, 실행된 plan id는 이후 planned dive 목록에서 제외한다.
+## Signing과 실기기 경계
 
-`RealDepthSensorProvider`는 `CMWaterSubmersionManager` delegate를 사용해 underwater depth/pressure sample을 받고 독립적인 temperature update의 최근 측정값을 optional로 붙인다. Watch target metadata와 runtime gate는 구현됐지만 실제 depth/pressure/temperature, auto-launch, haptic, wet control, readability는 지원 Watch의 얕은 물 통제 환경부터 수동 검증해야 한다.
+watch `Info.plist`는 `WKBackgroundModes`의 `underwater-depth`를 유지하고, target entitlement는 공개 shallow capability인 `com.apple.developer.submerged-shallow-depth-and-pressure`를 선언한다. repository metadata, simulator compile, Xcode Easy Submersion은 signed bundle/profile 또는 물리 behavior의 증거가 아니다.
 
-watch 앱은 local Swift model과 동기화 가능한 JSON을 만들기 위한 `DiveSessionRecord.syncMessageData` encoder를 갖는다. WatchConnectivity 전송 PoC는 이 encoder 결과를 base64 payload로 감싸며, generated Swift contract를 직접 compile하지 않는다. `packages/contracts/generated/swift` 아래 generated Swift contract는 현재 Xcode project에서 참조되지 않는다. `SafetyStopRecord`는 compatibility를 위해 `required`를 encode/decode하지만, v1 payload 의미는 `recommendationType: "recommended"`로 표현한다.
+signed device build에서 code-signing entitlement와 embedded profile 모두를 검사해야 한다. 공개 shallow capability는 manager가 승인한 얕은 범위 접근만 뜻한다. 더 깊은 sensor access는 Apple managed entitlement와 provisioning의 외부 승인 gate이며, 현재 build를 40m sensor-authorized로 설명할 수 없다.
 
-WatchConnectivity 전송 PoC는 build 가능한 code boundary이며, companion embed 구조도 Xcode project에 포함되어 있다. Watch local session status는 `didFinishUserInfoTransfer`의 오류 callback과 모바일 import acknowledgement 수신을 통해 갱신된다. 저장된 session list는 긴 sync label 대신 짧은 bounded badge를 사용해 pending/synced/failed 상태가 좁은 row에서도 사라지지 않게 한다. 활성 simulator에서 watch-to-mobile import와 mobile-to-watch acknowledgement는 확인됐지만, entitlement, background delivery, 장시간 retry behavior, 실기기 paired iPhone 전달은 아직 지원 hardware에서 검증되지 않았다.
-
-Watch `DiveMode`는 현재 `scuba`와 `freedive` 두 모드로 축소됐다. Scuba recording 화면은 현재 수심, 경과 시간, 최대 수심, 상승 속도 참고값, 세이프티 스톱 리마인더 상태, 비인증 참고 문구를 보여준다. Freedive recording 화면은 현재 수심, active dive time, 수면 휴식, 최대 수심, segment count를 중심으로 구성하고 scuba-only gas/safety-stop 정보는 숨긴다.
-
-Watch UI safety copy는 `check-watch-ui-language.mjs`로 guard한다. Active watch Swift source와 `Localizable.xcstrings`에 `safe to ascend`, `상승 가능`, `이제 안전합니다`, `안전 확보`, `감압 완료`, `deco clear`, `ceiling clear` 같은 safety guarantee 표현이 들어가면 `watch:ui:check`가 실패한다.
+15cm bag/tank test는 manually started real session의 shallow sample(예: 약 `0.1m`)과 Water Lock만 검증한다. `When Submerged` automatic launch는 Xcode Easy Submersion 또는 안전하게 통제한 `>1m`에서 `handle(_:)` adoption을 별도로 검증해야 한다. Digital Crown, timeout, Action Button도 지원 hardware에서 독립적으로 확인해야 한다.
 
 ## 관련 문서
 
-- [동기화 흐름 구조](sync-flow.md)
-- [다이브 로그 도메인](../domains/dive-log.md)
-- [안전 규칙](../domains/safety-rules.md)
-- [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)
+- [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md)
 - [열린 질문](../questions/open-questions.md)
+- [실기기 검증 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md)
+- [안전 규칙](../domains/safety-rules.md)

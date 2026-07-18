@@ -1,5 +1,18 @@
 # Wiki Log
 
+## [2026-07-18] ingest | Watch underwater runtime lifecycle implementation and device boundary
+- Added: Watch underwater runtime lifecycle implementation and device boundary raw source
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - `DiveAppServices`의 app-scoped runtime, recorder, `WaterSubmersionCoordinator`와 `WKApplicationDelegate.handle(_:)` adoption 구현
+  - 공개 shallow entitlement와 `underwater-depth` repository metadata, real/demo end-path 분리
+  - signed bundle/profile 및 15cm manual sampling, `When Submerged`, Water Lock/Crown, Action Button, watchOS timeout의 물리 검증 경계
+- 요약:
+  - 자동 검증과 simulator evidence는 물리 lifecycle 성공이 아니다. 15cm test는 manually started shallow sampling만 검증하며, deeper managed entitlement/provisioning과 full physical matrix는 release 전 외부 gate로 남는다.
+
 ## [2026-07-16] ingest | Google iOS client and callback correction
 - Added: Google iOS client and callback correction raw source
 - Updated: Supabase 구조

@@ -1,8 +1,8 @@
 # Diving App / QA and Test Plan
 
-Sources: pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18
+Raw: [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md)
+Updated: 2026-07-18
 
 ## 범위와 안전 경계
 
@@ -33,11 +33,15 @@ Gate B는 Watch 앱이 설치되지 않은 동안 완료로 표시하지 않는�
 
 ## Gate C: 얕은 물 센서
 
-- 얕은 물통 또는 수영장에서 지원 하드웨어의 실제 depth와 pressure sample 변화를 확인한다.
-- 수온이 늦거나 없을 때 `0°C`를 저장·표시하지 않고, 수신 뒤 실제 측정값만 표시하는지 확인한다.
-- 젖은 화면, Digital Crown, haptic, 가독성, background handoff와 auto-launch authorization/prompt를 기록한다.
-- 3m auto-start는 해당 수심을 안전하게 통제할 수 있는 환경에서만 별도로 확인한다.
-- 실제 프리다이빙·스쿠버 profile, 깊은 수심, 실제 safety-stop profile은 이 gate에서 제외한다.
+- signed watch bundle의 `underwater-depth`, code-signing entitlement, embedded provisioning profile의 shallow entitlement를 각각 확인한다. simulator와 unsigned build는 이 gate의 evidence가 아니다.
+- capability 변경 뒤 reinstall하고 Settings > General > Auto-Launch > When Submerged에서 Divenary가 보이고 선택되는지, installed build/model/watchOS와 `requestAutoLaunchAuthorizationStatus`를 기록한다.
+- 15cm bag/tank에서는 manually started real session의 약 `0.1m` depth sample과 Water Lock만 확인한다. 이 결과는 `When Submerged` automatic launch pass가 아니다.
+- automatic launch는 Xcode Easy Submersion 또는 안전하게 통제한 `>1m`에서 `handle(_:)` adoption, persisted preferred mode, real recording UI로 별도 확인한다. Easy Submersion도 physical sensor behavior의 증거는 아니다.
+- surface 뒤 Digital Crown Water Lock removal, surfaced `>=3m` Action Button end, watchOS continuous out-of-water `>10m` invalidation이 각각 정확히 하나의 summary로 수렴하는지 확인한다. app-side timer나 single `notSubmerged` event를 종료 근거로 쓰지 않는다.
+- 10분 전에 resubmerge했을 때 같은 local session ID가 계속되는지, manual/Action Button no-sample은 compact result만 남기고 system auto-launch no-sample은 silent cancellation하는지 확인한다.
+- demo/debug는 Water Lock 없이 Crown depth simulation과 surface-gated touch end를 유지하고 `WKExtendedRuntimeSession`을 사용하지 않는지 확인한다.
+- 42mm, 46mm, 49mm에서 recording helper/control row, depth rail, metric, disclaimer의 clipping/overlap을 screenshot으로 확인한다.
+- 수온이 늦거나 없을 때 `0°C`를 저장·표시하지 않고, 수신 뒤 실제 측정값만 표시하는지 확인한다. 실제 프리다이빙·스쿠버 profile, 깊은 수심, 실제 safety-stop profile은 이 gate에서 제외한다.
 
 ## Gate D: Cloud와 제품 흐름
 
@@ -64,9 +68,11 @@ Gate B는 Watch 앱이 설치되지 않은 동안 완료로 표시하지 않는�
 - sensor field가 optional로 바뀌면 missing/late/partial sample을 JSON, persistence, summary, mobile UI에서 검증한다.
 - Debug 도구가 추가되면 Debug와 Release build를 모두 검증한다.
 - 물리 gate는 기기, OS, build id, 연결 상태, payload evidence와 crash log를 함께 기록한다.
+- underwater runtime 물리 gate는 시작 원인, `requestAutoLaunchAuthorizationStatus`, local session ID, sample 수, summary 수, Water Lock/Action Button evidence를 함께 기록한다.
 
 ## 관련 문서
 
 - [구현 우선순위 기록](../architecture/implementation-priorities.md)
 - [WatchConnectivity 실기기 체크리스트](../../../docs/2026-06-26-pre-device-priorities/watchconnectivity-real-device-checklist.md)
+- [Watch underwater runtime 실기기 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md)
 - [Diving App / Non-Negotiable Safety Rules](../domains/diving-app-non-negotiable-safety-rules.md)
