@@ -10,7 +10,6 @@ import {
   assertStagingProjectRef,
   buildStagingLegalUrls,
   buildStagingEnvironment,
-  readStagingPromotionCommit,
   sanitizeStagingAuthVerification,
 } from './staging-project.mjs';
 import {runStagingSupabase} from './run-staging-supabase.mjs';
@@ -146,6 +145,32 @@ function assertExactLegalDocuments(rows, commitSha) {
   return actual;
 }
 
+function inferLegalPromotionCommit(rows) {
+  const expectedKinds = ['terms', 'privacy'];
+  let promotionCommit;
+
+  for (const [index, expectedKind] of expectedKinds.entries()) {
+    const document = rows[index];
+    const match =
+      typeof document?.documentUrl === 'string'
+        ? document.documentUrl.match(
+          /^https:\/\/raw\.githubusercontent\.com\/sbsbhong\/divenary\/([0-9a-f]{40})\/docs\/legal\/staging\/2026-07-18\/(terms|privacy)\.md$/,
+        )
+        : null;
+
+    if (document?.kind !== expectedKind || !match || match[2] !== expectedKind) {
+      throw new Error('Staging legal document URL shape is invalid.');
+    }
+
+    if (promotionCommit !== undefined && promotionCommit !== match[1]) {
+      throw new Error('Staging legal document URLs must use the same promotion commit.');
+    }
+    promotionCommit = match[1];
+  }
+
+  return promotionCommit;
+}
+
 function normalizeLegalEffectiveAt(value) {
   if (typeof value !== 'string') {
     throw new Error('Staging legal document effective timestamp is invalid.');
@@ -247,7 +272,8 @@ export async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commi
     });
   }
 
-  return assertExactLegalDocuments(rows, commitSha);
+  const deployedCommit = commitSha ?? inferLegalPromotionCommit(rows);
+  return assertExactLegalDocuments(rows, deployedCommit);
 }
 
 export async function verifyAnonymousOnboardingRpc({fetchImpl, publicApiKey}) {
@@ -327,7 +353,7 @@ export async function verifyProviderFlags({fetchImpl, publicApiKey}) {
 }
 
 export async function verifyStagingAuth({
-  commitSha = readStagingPromotionCommit(),
+  commitSha,
   fetchImpl = fetch,
   readPublicApiKey = readStagingPublicApiKey,
   readRpcMetadata = readOnboardingRpcMetadata,

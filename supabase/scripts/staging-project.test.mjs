@@ -27,6 +27,41 @@ function jsonResponse(status, body) {
   };
 }
 
+function legalDocumentUrl(promotionCommit, kind) {
+  return (
+    `https://raw.githubusercontent.com/sbsbhong/divenary/${promotionCommit}` +
+    `/docs/legal/staging/2026-07-18/${kind}.md`
+  );
+}
+
+function legalVerificationResponses({
+  termsUrl = legalDocumentUrl(commitSha, 'terms'),
+  privacyUrl = legalDocumentUrl(commitSha, 'privacy'),
+} = {}) {
+  return [
+    jsonResponse(200, [
+      {kind: 'terms', document_version: STAGING_LEGAL_VERSION},
+      {kind: 'privacy', document_version: STAGING_LEGAL_VERSION},
+    ]),
+    jsonResponse(200, [
+      {
+        kind: 'terms',
+        version: STAGING_LEGAL_VERSION,
+        effective_at: expectedEffectiveAt,
+        document_url: termsUrl,
+      },
+    ]),
+    jsonResponse(200, [
+      {
+        kind: 'privacy',
+        version: STAGING_LEGAL_VERSION,
+        effective_at: expectedEffectiveAt,
+        document_url: privacyUrl,
+      },
+    ]),
+  ];
+}
+
 function createInjectedLinkState({exists = true, ref = STAGING_PROJECT_REF} = {}) {
   let currentExists = exists;
   let currentRef = ref;
@@ -280,6 +315,82 @@ test('verifies exact legal rows and uses only apikey for both public key formats
     assert.match(requests[2].url, /effective_at/);
   }
 });
+
+test('infers the deployed promotion commit from exact legal URLs', async () => {
+  const responses = legalVerificationResponses();
+
+  const legalDocuments = await stagingVerification.verifyPublicLegalDocuments({
+    publicApiKey: 'sb_publishable_opaque-key',
+    fetchImpl: async () => responses.shift(),
+  });
+
+  assert.deepEqual(
+    legalDocuments.map(({kind, version, effectiveAt}) => ({
+      kind,
+      version,
+      effectiveAt,
+    })),
+    [
+      {
+        kind: 'terms',
+        version: STAGING_LEGAL_VERSION,
+        effectiveAt: expectedEffectiveAt,
+      },
+      {
+        kind: 'privacy',
+        version: STAGING_LEGAL_VERSION,
+        effectiveAt: expectedEffectiveAt,
+      },
+    ],
+  );
+});
+
+test('rejects inferred legal URLs from divergent promotion commits', async () => {
+  const anotherCommit = '89abcdef0123456789abcdef0123456789abcdef';
+  const responses = legalVerificationResponses({
+    privacyUrl: legalDocumentUrl(anotherCommit, 'privacy'),
+  });
+
+  await assert.rejects(
+    stagingVerification.verifyPublicLegalDocuments({
+      publicApiKey: 'sb_publishable_opaque-key',
+      fetchImpl: async () => responses.shift(),
+    }),
+    /same promotion commit/i,
+  );
+});
+
+for (const [label, termsUrl] of [
+  [
+    'host',
+    `https://raw.github.com/sbsbhong/divenary/${commitSha}/docs/legal/staging/2026-07-18/terms.md`,
+  ],
+  [
+    'path',
+    `https://raw.githubusercontent.com/sbsbhong/divenary/${commitSha}/docs/legal/staging/2026-07-19/terms.md`,
+  ],
+  [
+    'SHA',
+    `https://raw.githubusercontent.com/sbsbhong/divenary/${commitSha.toUpperCase()}/docs/legal/staging/2026-07-18/terms.md`,
+  ],
+  ['kind filename', legalDocumentUrl(commitSha, 'privacy')],
+]) {
+  test(`rejects an inferred legal URL with a malformed ${label}`, async () => {
+    const responses = legalVerificationResponses({termsUrl});
+
+    await assert.rejects(
+      stagingVerification.verifyPublicLegalDocuments({
+        publicApiKey: 'sb_publishable_opaque-key',
+        fetchImpl: async () => responses.shift(),
+      }),
+      error => {
+        assert.match(error.message, /legal document URL/i);
+        assert.doesNotMatch(error.message, /raw\.githubusercontent|0123456789abcdef/i);
+        return true;
+      },
+    );
+  });
+}
 
 test('reads public Auth settings with only apikey for both public key formats', async () => {
   for (const publicApiKey of [
