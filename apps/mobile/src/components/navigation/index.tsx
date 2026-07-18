@@ -494,7 +494,7 @@ export default function RootNavigation(): React.JSX.Element {
                 sheetGrabberVisible: true,
                 sheetCornerRadius: 28,
               }}>
-              {props => <LoginScreen onClose={() => props.navigation.goBack()} />}
+              {props => <AuthLoginRoute {...props} />}
             </Stack.Screen>
             <Stack.Screen name="authOnboarding" options={{ gestureEnabled: false, presentation: 'modal' }}>
               {() => <AuthOnboardingRoute />}
@@ -551,14 +551,9 @@ export default function RootNavigation(): React.JSX.Element {
                 },
               ]}>
               <VStack space="sm">
-                <Text className="text-sm font-semibold text-card-foreground">
+                <Text testID="watch-auto-import-message" className="text-sm font-semibold text-card-foreground">
                   {t('watchSync.autoImportedTitle', {
                     defaultValue: 'Watch log saved',
-                  })}
-                </Text>
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {t('watchSync.autoImportedBody', {
-                    defaultValue: 'A watch dive log was saved on this device.',
                   })}
                 </Text>
                 <HStack space="sm" className="pt-1">
@@ -585,6 +580,14 @@ export default function RootNavigation(): React.JSX.Element {
       </VStack>
     </WatchConnectivitySyncProvider>
   );
+}
+
+function AuthLoginRoute({ navigation }: NativeStackScreenProps<RootStackParamList, 'authLogin'>): React.JSX.Element {
+  const { state } = useAuth();
+
+  usePreventRemove(state.status === 'authenticating', () => undefined);
+
+  return <LoginScreen onClose={() => navigation.goBack()} />;
 }
 
 function AuthOnboardingRoute(): React.JSX.Element {

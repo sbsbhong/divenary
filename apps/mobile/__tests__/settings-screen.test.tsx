@@ -279,7 +279,7 @@ describe('SettingsScreen', () => {
     expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(false);
   });
 
-  test('uses English resource copy when notification permission is denied', async () => {
+  test('uses platform-neutral English copy when notification permission is denied', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     const renderer = await renderSettings({
       requestWatchSyncNotificationPermission: jest.fn().mockResolvedValue(false),
@@ -296,7 +296,7 @@ describe('SettingsScreen', () => {
 
     expect(alert).toHaveBeenCalledWith(
       'Notification permission needed',
-      'Allow notifications for this app in iPhone Settings, then return to turn this on automatically.',
+      'Allow notifications for this app in device Settings, then return to turn this on automatically.',
       [
         { text: 'Cancel', style: 'cancel' },
         expect.objectContaining({ text: 'Open Settings' }),

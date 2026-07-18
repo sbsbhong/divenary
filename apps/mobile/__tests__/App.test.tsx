@@ -363,6 +363,8 @@ describe('App navigation', () => {
     expect(navigationSource).not.toContain('sheetAllowedDetents: [0.62, 0.9]');
     expect(navigationSource).toContain('sheetGrabberVisible: true');
     expect(navigationSource).toContain('sheetCornerRadius: 28');
+    expect(navigationSource).toContain('function AuthLoginRoute');
+    expect(navigationSource).toContain("usePreventRemove(state.status === 'authenticating'");
     expect(navigationSource).toMatch(/<Stack\.Screen\s+name="authOnboarding"/);
     expect(navigationSource).toContain('gestureEnabled: false');
     expect(navigationSource).toContain('usePreventRemove');
@@ -645,6 +647,8 @@ describe('App navigation', () => {
     expect(importedToastEntry?.cloudSyncStatus).toBe('notConfigured');
 
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'watch-auto-import-message' }).props.children).toBe('워치 기록 저장됨');
+    expect(root.findAll(node => node.props.children === '워치 다이브 기록이 이 기기에 저장되었습니다.')).toHaveLength(0);
     expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('로그 작성');
     expect(root.findByProps({ testID: 'watch-auto-import-dismiss' }).props.label).toBe('닫기');
 

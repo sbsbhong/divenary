@@ -42,6 +42,7 @@ describe('mobile visible-copy policy', () => {
     expect(memory).not.toContain("t('memory.staticPreview')");
     expect(memory).not.toContain("t('memory.safeAnalytics')");
     expect(resources).not.toContain('photoImportPlaceholder');
+    expect(resources).not.toMatch(/iPhone (?:Settings|설정)/i);
     expect(resources).not.toMatch(/:\s*'[^']*(?:this build|이 빌드|placeholder|플레이스홀더)/i);
   });
 });

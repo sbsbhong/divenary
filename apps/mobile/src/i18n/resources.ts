@@ -47,7 +47,7 @@ const resources = {
           on: '켜짐',
           off: '꺼짐',
           permissionRequired: '알림 권한이 필요합니다',
-          openSettingsDescription: 'iPhone 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
+          openSettingsDescription: '기기 설정에서 이 앱의 알림을 허용한 뒤 돌아오면 자동으로 켜집니다.',
           openSettings: '설정 열기',
         },
         devices: {
@@ -445,7 +445,7 @@ const resources = {
           on: 'On',
           off: 'Off',
           permissionRequired: 'Notification permission needed',
-          openSettingsDescription: 'Allow notifications for this app in iPhone Settings, then return to turn this on automatically.',
+          openSettingsDescription: 'Allow notifications for this app in device Settings, then return to turn this on automatically.',
           openSettings: 'Open Settings',
         },
         devices: {

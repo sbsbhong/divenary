@@ -589,6 +589,14 @@ describe('Planning screen planbook flow', () => {
     expect(root.findAllByProps({ testID: 'planning-empty-create-action' })).toHaveLength(0);
   });
 
+  it('states the empty active-plan condition once', async () => {
+    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
+    const root = renderer.root;
+
+    expect(root.findAll(node => node.props.children === 'No active plan').length).toBeGreaterThan(0);
+    expect(root.findAll(node => node.props.children === 'Active plan')).toHaveLength(0);
+  });
+
   it('shows skeleton rows while plans are loading', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 

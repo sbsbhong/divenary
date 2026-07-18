@@ -357,7 +357,7 @@ function ActivePlanPanel(props: {
   if (!props.plan) {
     return (
       <DiveSummaryCard accent="secondary">
-        <DiveSummaryCard.Header eyebrow={t('planning.activePlan', { defaultValue: 'Active plan' })} title={t('planning.noActivePlan', { defaultValue: 'No active plan' })} />
+        <DiveSummaryCard.Header title={t('planning.noActivePlan', { defaultValue: 'No active plan' })} />
       </DiveSummaryCard>
     );
   }
