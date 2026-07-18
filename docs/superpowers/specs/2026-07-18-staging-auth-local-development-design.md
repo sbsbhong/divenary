@@ -63,7 +63,7 @@ The local `.invalid` seed is never sent to hosted staging.
 
 ## Staging Legal Documents
 
-Versioned Korean staging-only terms and privacy documents live under `docs/legal/staging/2026-07-18/`. Their URLs use the public repository's raw `main` path and are inserted as version `2026-07-18-staging.1`. They are explicitly internal test documents, not production policy. The staging seeder verifies both URLs return the expected version marker before changing the database.
+Versioned Korean staging-only terms and privacy documents live under `docs/legal/staging/2026-07-18/`. Their URLs use the public repository's raw endpoint pinned to the exact 40-character promotion commit and are inserted as version `2026-07-18-staging.1`. They are explicitly internal test documents, not production policy. The staging seeder derives and validates the current commit, then verifies both pushed URLs return the expected version marker before changing the database.
 
 Production legal documents remain a separate release prerequisite.
 
