@@ -212,19 +212,15 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
     }
 
-    func testRealModeExcludesSimulatedProviderCrownAndTouchEndPolicies() {
+    func testRealModeCannotBuildDemoProviderAndDoesNotUseCrown() {
         XCTAssertNil(WatchRecordingMode.real.makeSimulatedSensorProvider())
         XCTAssertFalse(WatchRecordingMode.real.controlPolicy.usesCrownDepthControl)
-        XCTAssertFalse(WatchRecordingMode.real.controlPolicy.exposesTouchEndControl)
-        XCTAssertFalse(WatchRecordingMode.real.controlPolicy.usesSurfaceEndDiveGate)
     }
 
-    func testDemoAndDebugUseDemoProviderCrownAndSurfaceGatedTouchEndPolicies() {
+    func testDemoAndDebugBuildDemoProviderAndUseCrown() {
         for mode in [WatchRecordingMode.demo, .debugTest] {
             XCTAssertTrue(mode.makeSimulatedSensorProvider() is DemoDepthSensorProvider)
             XCTAssertTrue(mode.controlPolicy.usesCrownDepthControl)
-            XCTAssertTrue(mode.controlPolicy.exposesTouchEndControl)
-            XCTAssertTrue(mode.controlPolicy.usesSurfaceEndDiveGate)
         }
     }
 
@@ -257,5 +253,212 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: nil), 40)
         XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: 6), 6)
         XCTAssertEqual(RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: 80), 40)
+    }
+}
+
+@MainActor
+final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
+    func testRepeatedFlowAppearanceStartsRecorderOnce() {
+        let (controller, recorder, _) = makeSystem()
+
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertEqual(recorder.startCount, 1)
+        assertRecording(controller.phase)
+    }
+
+    func testFinishingToSummaryDoesNotCancelOrStartAgain() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(session: session)
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        controller.finishRecording()
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertEqual(recorder.stopCount, 1)
+        XCTAssertEqual(recorder.cancelCount, 0)
+        XCTAssertEqual(recorder.startCount, 1)
+        assertSummary(controller.phase, sessionID: session.id)
+    }
+
+    func testUnfinishedExternalDisappearanceCancelsExactlyOnce() {
+        let (controller, recorder, _) = makeSystem()
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        controller.handleFlowDisappearance()
+        controller.handleFlowDisappearance()
+
+        XCTAssertEqual(recorder.cancelCount, 1)
+        assertCompleted(controller.phase)
+    }
+
+    func testSuccessfulSaveCompletesBeforeDismissalAndCannotRestart() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, store) = makeSystem(session: session)
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        XCTAssertTrue(controller.saveSummary(session))
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertEqual(store.saveCount, 1)
+        XCTAssertEqual(recorder.resetCount, 1)
+        XCTAssertEqual(recorder.startCount, 1)
+        assertCompleted(controller.phase)
+    }
+
+    func testSuccessfulDiscardCompletesAndCannotRestart() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(session: session)
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        XCTAssertTrue(controller.discardSummary())
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertEqual(recorder.cancelCount, 1)
+        XCTAssertEqual(recorder.startCount, 1)
+        assertCompleted(controller.phase)
+    }
+
+    func testFailedSaveKeepsSummaryAndArtifactForRetry() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, store) = makeSystem(
+            session: session,
+            saveResults: [false, true]
+        )
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        XCTAssertFalse(controller.saveSummary(session))
+        assertSummary(controller.phase, sessionID: session.id)
+        XCTAssertEqual(recorder.resetCount, 0)
+        XCTAssertEqual(recorder.cancelCount, 0)
+
+        XCTAssertTrue(controller.saveSummary(session))
+        XCTAssertEqual(store.saveCount, 2)
+        XCTAssertEqual(recorder.resetCount, 1)
+        assertCompleted(controller.phase)
+    }
+
+    func testFailedCleanupKeepsSummaryRetryable() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(
+            session: session,
+            cancelResults: [false, true]
+        )
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        XCTAssertFalse(controller.discardSummary())
+        XCTAssertEqual(recorder.cancelCount, 1)
+        assertSummary(controller.phase, sessionID: session.id)
+
+        XCTAssertTrue(controller.discardSummary())
+        XCTAssertEqual(recorder.cancelCount, 2)
+        assertCompleted(controller.phase)
+    }
+
+    private func assertRecording(
+        _ phase: SimulatedRecordingLifecyclePhase,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .recording = phase else {
+            return XCTFail("Expected recording phase", file: file, line: line)
+        }
+    }
+
+    private func assertSummary(
+        _ phase: SimulatedRecordingLifecyclePhase,
+        sessionID: UUID,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .summary(let session) = phase else {
+            return XCTFail("Expected summary phase", file: file, line: line)
+        }
+        XCTAssertEqual(session.id, sessionID, file: file, line: line)
+    }
+
+    private func assertCompleted(
+        _ phase: SimulatedRecordingLifecyclePhase,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .completed = phase else {
+            return XCTFail("Expected completed phase", file: file, line: line)
+        }
+    }
+
+    private func makeSystem(
+        session: DiveSessionRecord = .largeDebugFixture(sampleCount: 1),
+        cancelResults: [Bool] = [true],
+        saveResults: [Bool] = [true]
+    ) -> (
+        SimulatedRecordingLifecycleController,
+        RecordingSimulatedLifecycleRecorder,
+        RecordingSimulatedSessionStore
+    ) {
+        let recorder = RecordingSimulatedLifecycleRecorder(
+            session: session,
+            cancelResults: cancelResults
+        )
+        let store = RecordingSimulatedSessionStore(saveResults: saveResults)
+        return (
+            SimulatedRecordingLifecycleController(recorder: recorder, store: store),
+            recorder,
+            store
+        )
+    }
+}
+
+@MainActor
+private final class RecordingSimulatedLifecycleRecorder: SimulatedRecordingLifecycleRecording {
+    private let session: DiveSessionRecord
+    private var cancelResults: [Bool]
+
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
+    private(set) var cancelCount = 0
+    private(set) var resetCount = 0
+
+    init(session: DiveSessionRecord, cancelResults: [Bool]) {
+        self.session = session
+        self.cancelResults = cancelResults
+    }
+
+    func startSession(plan: PreDivePlan) {
+        startCount += 1
+    }
+
+    func stopSession() -> DiveSessionRecord? {
+        stopCount += 1
+        return session
+    }
+
+    func cancelSession() -> Bool {
+        cancelCount += 1
+        return cancelResults.isEmpty ? true : cancelResults.removeFirst()
+    }
+
+    func resetCompletedSession() {
+        resetCount += 1
+    }
+}
+
+@MainActor
+private final class RecordingSimulatedSessionStore: SimulatedRecordingSessionStoring {
+    private var saveResults: [Bool]
+    private(set) var saveCount = 0
+
+    init(saveResults: [Bool]) {
+        self.saveResults = saveResults
+    }
+
+    func save(_ session: DiveSessionRecord) -> Bool {
+        saveCount += 1
+        return saveResults.isEmpty ? true : saveResults.removeFirst()
     }
 }

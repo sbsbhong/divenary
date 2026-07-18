@@ -60,14 +60,6 @@ enum RecordingControlPolicy: Equatable {
     var usesCrownDepthControl: Bool {
         self == .simulated
     }
-
-    var exposesTouchEndControl: Bool {
-        self == .simulated
-    }
-
-    var usesSurfaceEndDiveGate: Bool {
-        self == .simulated
-    }
 }
 
 enum RecordingControlRowLayout {

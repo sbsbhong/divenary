@@ -30,6 +30,18 @@ final class DiveRuntimeSessionControllerTests: XCTestCase {
         XCTAssertEqual(eventNames, ["adoptedSystemSession"])
     }
 
+    func testConcreteAdoptionImmediatelyAttachesAdapterAsSystemSessionDelegate() {
+        let session = WKExtendedRuntimeSession()
+        let controller = DiveRuntimeSessionController()
+
+        controller.adoptSystemSession(session)
+
+        guard let adapter = session.delegate as? WatchExtendedRuntimeSessionAdapter else {
+            return XCTFail("Expected the production runtime adapter as the system session delegate")
+        }
+        XCTAssertTrue(session.delegate === adapter)
+    }
+
     func testActiveAdapterForwardsOrderedLifecycleAndOnlyOneInvalidation() {
         let adapter = FakeRuntimeSessionAdapter()
         let controller = DiveRuntimeSessionController(
