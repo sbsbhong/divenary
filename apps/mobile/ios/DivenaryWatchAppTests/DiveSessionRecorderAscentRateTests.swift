@@ -106,6 +106,8 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
         await Task.yield()
         XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 12, accuracy: 0.001)
         XCTAssertTrue(recorder.cancelSession())
+        XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 0)
+        XCTAssertFalse(recorder.ascentWarningActive)
 
         recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
         sensor.emit(sample(at: 4, depth: 10.0))
@@ -118,16 +120,46 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
     }
 
     @MainActor
-    func testInvalidAndOutOfOrderCallbacksDoNotPoisonLaterLiveRate() async {
+    func testResetCompletedSessionClearsLiveAscentState() async {
         let sensor = ManualDepthSensorProvider()
         let recorder = makeRecorder(sensor: sensor)
 
         recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
         sensor.emit(sample(at: 0, depth: 12.0))
         sensor.emit(sample(at: 3, depth: 11.4))
-        sensor.emit(sample(at: 4, depth: .nan))
-        sensor.emit(sample(at: 2, depth: 0.0))
-        sensor.emit(sample(at: 6, depth: 10.8))
+        await Task.yield()
+        XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 12, accuracy: 0.001)
+        XCTAssertTrue(recorder.ascentWarningActive)
+
+        _ = recorder.stopSession()
+        recorder.resetCompletedSession()
+
+        XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 0)
+        XCTAssertFalse(recorder.ascentWarningActive)
+    }
+
+    @MainActor
+    func testRejectedCallbacksKeepZeroDisplayBeforeWindowAndDoNotPoisonRecovery() async {
+        let sensor = ManualDepthSensorProvider()
+        let recorder = makeRecorder(sensor: sensor)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensor.emit(sample(at: 1, depth: 12.0))
+        sensor.emit(sample(at: 1, depth: 0.0))
+        await Task.yield()
+
+        XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 0)
+        XCTAssertFalse(recorder.ascentWarningActive)
+
+        sensor.emit(sample(at: 2, depth: .nan))
+        sensor.emit(sample(at: 2.5, depth: .infinity))
+        sensor.emit(sample(at: 0, depth: 0.0))
+        await Task.yield()
+
+        XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 0)
+        XCTAssertFalse(recorder.ascentWarningActive)
+
+        sensor.emit(sample(at: 4, depth: 11.4))
         await Task.yield()
 
         XCTAssertEqual(recorder.latestAscentRateMetersPerMinute, 12, accuracy: 0.001)

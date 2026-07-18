@@ -171,7 +171,6 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
 
     @discardableResult
     func cancelSession() -> Bool {
-        displayAscentRateEstimator.reset()
         stopCaptureAndResetSessionState()
         guard let sessionID = activeRecordID else {
             return true
@@ -197,6 +196,9 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         sensorProvider.onSample = nil
         elapsedTimer?.invalidate()
         elapsedTimer = nil
+        displayAscentRateEstimator.reset()
+        latestAscentRateMetersPerMinute = 0
+        ascentWarningActive = false
         currentRecordPayload = nil
         freeSnapshot = nil
         scubaSafetyStop = .legacyUnknown
