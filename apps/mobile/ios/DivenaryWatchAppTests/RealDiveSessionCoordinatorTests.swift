@@ -175,6 +175,50 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertSummary(coordinator)
     }
 
+    func testRealRecorderProcessesSampleBeforeInvalidationAndIgnoresLateCallbackAfterCancel() async {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let sensorProvider = RetainingManualDepthSensorProvider()
+        let profileStore = CountingProfileRecordingStore()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+        )
+        let acceptedSample = EngineTestFixtures.sample(1, depth: 4)
+
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(acceptedSample)
+
+        XCTAssertTrue(recorder.hasCapturedDepthSample)
+        XCTAssertEqual(recorder.currentDepth, acceptedSample.depthMeters, accuracy: 0.001)
+
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertSummary(coordinator)
+        let recordedSampleCount = recorder.samples.count
+        let persistedSampleCount = profileStore.appendedSamples.count
+        coordinator.discardSummary()
+
+        XCTAssertEqual(profileStore.clearCallCount, 1)
+        sensorProvider.emitRetained(EngineTestFixtures.sample(2, depth: 18))
+        await Task.yield()
+
+        XCTAssertFalse(recorder.isRecording)
+        XCTAssertFalse(recorder.hasCapturedDepthSample)
+        XCTAssertEqual(recorder.currentDepth, acceptedSample.depthMeters, accuracy: 0.001)
+        XCTAssertEqual(recorder.maxDepth, acceptedSample.depthMeters, accuracy: 0.001)
+        XCTAssertEqual(recorder.samples.count, recordedSampleCount)
+        XCTAssertEqual(profileStore.appendedSamples.count, persistedSampleCount)
+    }
+
     func testManualAndActionButtonNoSampleInvalidationCancelsAndShowsNoSamples() {
         let manualCalls = LifecycleCallLog()
         let manualRuntime = FakeDiveRuntime(calls: manualCalls)
@@ -236,6 +280,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         coordinator.discardSummary()
 
         XCTAssertEqual(recorder.cancelCallCount, 1)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 0)
         assertIdle(coordinator)
     }
 
@@ -264,7 +309,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         coordinator.markSummarySaved()
         coordinator.markSummarySaved()
 
-        XCTAssertEqual(recorder.cancelCallCount, 1)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
         assertIdle(coordinator)
     }
 
@@ -430,6 +476,7 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     private(set) var startedPlans: [PreDivePlan] = []
     private(set) var stopCallCount = 0
     private(set) var cancelCallCount = 0
+    private(set) var resetCompletedSessionCallCount = 0
 
     init(
         calls: LifecycleCallLog,
@@ -457,6 +504,51 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     func cancelSession() {
         cancelCallCount += 1
         calls.append("recorder.cancel")
+    }
+
+    func resetCompletedSession() {
+        resetCompletedSessionCallCount += 1
+        calls.append("recorder.resetCompleted")
+    }
+}
+
+@MainActor
+private final class RetainingManualDepthSensorProvider: DepthSensorProvider {
+    var onSample: ((DepthSample) -> Void)? {
+        didSet {
+            if let onSample {
+                retainedCallback = onSample
+            }
+        }
+    }
+
+    private var retainedCallback: ((DepthSample) -> Void)?
+
+    func start() {}
+
+    func stop() {}
+
+    func emit(_ sample: DepthSample) {
+        onSample?(sample)
+    }
+
+    func emitRetained(_ sample: DepthSample) {
+        retainedCallback?(sample)
+    }
+}
+
+private final class CountingProfileRecordingStore: DiveProfileRecordingStoring {
+    private(set) var appendedSamples: [DepthSample] = []
+    private(set) var clearCallCount = 0
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {}
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {
+        appendedSamples.append(sample)
+    }
+
+    func clearActiveRecording(sessionID: UUID) throws {
+        clearCallCount += 1
     }
 }
 

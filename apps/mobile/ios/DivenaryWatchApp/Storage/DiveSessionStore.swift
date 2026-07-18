@@ -59,25 +59,36 @@ final class DiveSessionStore: ObservableObject {
     @discardableResult
     func save(_ session: DiveSessionRecord) -> Bool {
         let safeSession = session.sanitizedForPersistence()
+        let entry: DiveProfileManifestEntry
         do {
-            let entry = try profileStore.finalize(record: safeSession)
-            let syncStatus = syncTransport.enqueue(
-                artifact: entry.artifact,
-                fileURL: profileStore.artifactURL(for: entry.artifact)
-            )
-            let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
-            try profileStore.updateDisplayRecord(displayRecord)
-            sessions.removeAll { $0.id == displayRecord.id }
-            sessions.insert(displayRecord, at: 0)
+            entry = try finalizedEntry(for: safeSession)
             try profileStore.clearActiveRecording(sessionID: safeSession.id)
         } catch {
             assertionFailure("Failed to finalize dive profile: \(error)")
             return false
         }
+
+        let syncStatus = syncTransport.enqueue(
+            artifact: entry.artifact,
+            fileURL: profileStore.artifactURL(for: entry.artifact)
+        )
+        let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
+        try? profileStore.updateDisplayRecord(displayRecord)
+        sessions.removeAll { $0.id == displayRecord.id }
+        sessions.insert(displayRecord, at: 0)
         if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
         return true
+    }
+
+    private func finalizedEntry(for session: DiveSessionRecord) throws -> DiveProfileManifestEntry {
+        if let existingEntry = try profileStore.loadEntries().first(where: { $0.id == session.id }) {
+            try profileStore.verifyArtifact(existingEntry.artifact)
+            return existingEntry
+        }
+
+        return try profileStore.finalize(record: session)
     }
 
     func replacePlannedDives(_ nextPlannedDives: [WatchPlannedDive]) {

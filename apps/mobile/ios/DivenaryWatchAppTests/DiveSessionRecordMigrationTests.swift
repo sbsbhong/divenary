@@ -184,6 +184,54 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreDefersEnqueueAndPublicationUntilActiveCleanupSucceedsAndReusesFinalizedEntryOnRetry() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let fileManager = FailFirstActiveCleanupFileManager()
+        let revisions = RevisionSequence()
+        let profileStore = DiveProfileArtifactStore(
+            rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager,
+            makeRevision: { revisions.next() }
+        )
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: transport,
+            recordsStorageURL: storageURL,
+            fileManager: fileManager,
+            profileStore: profileStore
+        )
+        let record = Self.debugScubaRecord()
+        try profileStore.beginRecording(
+            ActiveDiveRecordingMetadata(
+                localSessionId: record.id,
+                startedAt: record.startedAt,
+                captureMode: record.captureMode,
+                plan: PreDivePlan(diveMode: record.diveMode)
+            )
+        )
+
+        XCTAssertFalse(store.save(record))
+
+        XCTAssertTrue(transport.enqueuedArtifacts.isEmpty)
+        XCTAssertTrue(store.sessions.isEmpty)
+        let firstEntry = try XCTUnwrap(profileStore.loadEntries().first)
+        XCTAssertEqual(revisions.values, ["review-revision-1"])
+        XCTAssertEqual(fileManager.activeCleanupFailureCount, 1)
+        XCTAssertEqual(try profileStore.loadActiveRecordings().map(\.metadata.localSessionId), [record.id])
+
+        XCTAssertTrue(store.save(record))
+
+        let entries = try profileStore.loadEntries()
+        XCTAssertEqual(entries.map(\.artifact), [firstEntry.artifact])
+        XCTAssertEqual(revisions.values, ["review-revision-1"])
+        XCTAssertEqual(transport.enqueuedArtifacts, [firstEntry.artifact])
+        XCTAssertEqual(store.sessions.map(\.id), [record.id])
+        XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
+    }
+
+    @MainActor
     func testStoreSanitizesNonFiniteDebugScubaValuesBeforePersistenceAndSync() throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()
@@ -1000,4 +1048,28 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     }
 
     func refreshPlannedDives() {}
+}
+
+private final class RevisionSequence {
+    private(set) var values: [String] = []
+
+    func next() -> String {
+        let revision = "review-revision-\(values.count + 1)"
+        values.append(revision)
+        return revision
+    }
+}
+
+private final class FailFirstActiveCleanupFileManager: FileManager {
+    private(set) var activeCleanupFailureCount = 0
+
+    override func removeItem(at URL: URL) throws {
+        if activeCleanupFailureCount == 0,
+           ["active-recording.json", "recording.ndjson"].contains(URL.lastPathComponent) {
+            activeCleanupFailureCount += 1
+            throw CocoaError(.fileWriteNoPermission)
+        }
+
+        try super.removeItem(at: URL)
+    }
 }

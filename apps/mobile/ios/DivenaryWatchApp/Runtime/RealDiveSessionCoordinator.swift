@@ -22,6 +22,7 @@ protocol DiveSessionRecording: AnyObject {
     func startSession(plan: PreDivePlan)
     func stopSession() -> DiveSessionRecord?
     func cancelSession()
+    func resetCompletedSession()
 }
 
 @MainActor
@@ -94,7 +95,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
 
-        recorder.cancelSession()
+        recorder.resetCompletedSession()
         phase = .idle
     }
 

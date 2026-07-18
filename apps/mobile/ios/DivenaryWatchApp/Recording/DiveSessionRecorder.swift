@@ -89,9 +89,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         isRecording = true
 
         sensorProvider.onSample = { [weak self] sample in
-            Task { @MainActor in
-                self?.append(sample)
-            }
+            self?.append(sample)
         }
         sensorProvider.start()
 
@@ -170,6 +168,14 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     func cancelSession() {
+        let sessionID = activeRecordID
+        resetCompletedSession()
+        if let sessionID {
+            try? profileStore.clearActiveRecording(sessionID: sessionID)
+        }
+    }
+
+    func resetCompletedSession() {
         sensorProvider.stop()
         sensorProvider.onSample = nil
         elapsedTimer?.invalidate()
@@ -181,9 +187,6 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         scubaEngine = nil
         profileSampler = nil
         lastRawSample = nil
-        if let activeRecordID {
-            try? profileStore.clearActiveRecording(sessionID: activeRecordID)
-        }
         activeRecordID = nil
         isRecording = false
     }
@@ -193,7 +196,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     private func append(_ sample: DepthSample) {
-        guard sample.isValidRecordingSample else {
+        guard isRecording, sample.isValidRecordingSample else {
             return
         }
 
