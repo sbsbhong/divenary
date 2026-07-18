@@ -947,6 +947,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 }
 
+@MainActor
 private final class ManualDepthSensorProvider: DepthSensorProvider {
     var onSample: ((DepthSample) -> Void)?
 

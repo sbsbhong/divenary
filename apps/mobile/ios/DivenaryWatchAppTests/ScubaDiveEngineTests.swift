@@ -206,6 +206,7 @@ final class SurfaceEndDiveGateTests: XCTestCase {
     }
 }
 
+@MainActor
 final class WatchRecordingModeTests: XCTestCase {
     func testDebugTestUsesDemoCaptureModeForExistingSyncContract() {
         XCTAssertEqual(WatchRecordingMode.debugTest.captureMode, .demo)
