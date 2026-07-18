@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 function readMobileFile(relativePath: string): string {
@@ -12,9 +12,14 @@ function readMobileFile(relativePath: string): string {
 describe('native splash screen', () => {
   test('centers one 96 by 96 mark in the iOS launch storyboard', () => {
     const storyboard = readMobileFile('ios/Divenary/LaunchScreen.storyboard');
-    const iosMark = readMobileFile('ios/Divenary/Images.xcassets/SplashMark.imageset/splash-mark.svg');
     const iosMarkContents = readMobileFile('ios/Divenary/Images.xcassets/SplashMark.imageset/Contents.json');
     const iosBackground = readMobileFile('ios/Divenary/Images.xcassets/SplashBackground.colorset/Contents.json');
+    const iosMarkDirectory = resolve(process.cwd(), 'ios/Divenary/Images.xcassets/SplashMark.imageset');
+    const iosMarkImages = [
+      { filename: 'splash-mark.png', scale: '1x' },
+      { filename: 'splash-mark@2x.png', scale: '2x' },
+      { filename: 'splash-mark@3x.png', scale: '3x' },
+    ];
 
     expect(storyboard).toContain('image="SplashMark"');
     expect(storyboard).toContain('firstAttribute="centerX" secondItem="Ze5-6b-2t3" secondAttribute="centerX"');
@@ -24,9 +29,14 @@ describe('native splash screen', () => {
     expect(storyboard).toContain('<image name="SplashMark" width="96" height="96"/>');
     expect(storyboard).toContain('name="SplashBackground"');
     expect(storyboard).not.toContain('systemGroupedBackgroundColor');
-    expect(iosMarkContents).toContain('splash-mark.svg');
-    expect(iosMark).toContain('<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"');
-    expect(iosMark).toContain('#0066CC');
+    expect(JSON.parse(iosMarkContents).images).toEqual(
+      iosMarkImages.map(({ filename, scale }) => ({ filename, idiom: 'universal', scale })),
+    );
+    for (const { filename } of iosMarkImages) {
+      expect(existsSync(resolve(iosMarkDirectory, filename))).toBe(true);
+    }
+    expect(iosMarkContents).not.toContain('.svg');
+    expect(iosMarkContents).not.toContain('preserves-vector-representation');
     expect(iosBackground).toContain('0.960784');
     expect(iosBackground).toContain('"value" : "dark"');
   });
