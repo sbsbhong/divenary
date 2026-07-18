@@ -163,6 +163,47 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreRecoversValidInterruptedSessionWhenPeerMetadataIsCorrupt() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let rootURL = storageURL.deletingLastPathComponent()
+        let profileStore = DiveProfileArtifactStore(rootURL: rootURL)
+        let validSessionID = UUID(uuidString: "00000000-0000-0000-0000-000000000121")!
+        let corruptSessionID = UUID(uuidString: "00000000-0000-0000-0000-000000000122")!
+        let validMetadata = ActiveDiveRecordingMetadata(
+            localSessionId: validSessionID,
+            startedAt: EngineTestFixtures.start,
+            captureMode: .real,
+            plan: PreDivePlan(diveMode: .scuba)
+        )
+        let corruptMetadata = ActiveDiveRecordingMetadata(
+            localSessionId: corruptSessionID,
+            startedAt: EngineTestFixtures.start,
+            captureMode: .real,
+            plan: PreDivePlan(diveMode: .scuba)
+        )
+        try profileStore.beginRecording(validMetadata)
+        try profileStore.append(EngineTestFixtures.sample(0.8, depth: 4), to: validSessionID)
+        try profileStore.beginRecording(corruptMetadata)
+        let corruptMetadataURL = rootURL
+            .appendingPathComponent("Sessions", isDirectory: true)
+            .appendingPathComponent(corruptSessionID.uuidString, isDirectory: true)
+            .appendingPathComponent("active-recording.json")
+        try Data("not-json".utf8).write(to: corruptMetadataURL, options: .atomic)
+
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL,
+            profileStore: profileStore
+        )
+
+        XCTAssertEqual(store.sessions.map(\.id), [validSessionID])
+        XCTAssertEqual(store.sessions.first?.samples.first?.depthMeters, 4)
+        XCTAssertEqual(store.sessions.first?.profile?.interrupted, true)
+    }
+
+    @MainActor
     func testStoreSavesDebugScubaWhenCompanionTransportFails() throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()

@@ -128,7 +128,7 @@ struct RecordingInstrumentView: View {
 
                 recordingControlRow
 
-                recordingDisclaimer
+                recordingFooter
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
@@ -172,8 +172,19 @@ struct RecordingInstrumentView: View {
         )
     }
 
-    private var recordingDisclaimer: some View {
-        DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
+    private var recordingFooter: some View {
+        VStack(spacing: 2) {
+            if recorder.recordingPersistenceError != nil {
+                Label("Storage retry pending", systemImage: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.danger)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+            }
+
+            DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
+        }
+        .frame(maxWidth: .infinity)
     }
 
     private var sensorDisplayLimitMeters: Double {

@@ -51,6 +51,11 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         var entries: [DiveProfileManifestEntry]
     }
 
+    private struct PendingJournalAppend: Codable {
+        let journalOffset: UInt64
+        let line: Data
+    }
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let makeRevision: () -> String
@@ -254,27 +259,46 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
 
     func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
         let directory = sessionDirectory(for: metadata.localSessionId)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoder.encode(metadata).write(to: activeMetadataURL(for: metadata.localSessionId), options: .atomic)
+        let metadataURL = activeMetadataURL(for: metadata.localSessionId)
         let journalURL = recordingJournalURL(for: metadata.localSessionId)
-        if !fileManager.fileExists(atPath: journalURL.path) {
-            _ = fileManager.createFile(atPath: journalURL.path, contents: nil)
+
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try encoder.encode(metadata).write(to: metadataURL, options: .atomic)
+            guard fileManager.fileExists(atPath: metadataURL.path),
+                  fileManager.createFile(atPath: journalURL.path, contents: nil),
+                  fileManager.fileExists(atPath: journalURL.path)
+            else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        } catch {
+            let setupError = error
+            try? clearActiveRecording(sessionID: metadata.localSessionId)
+            throw setupError
         }
     }
 
     func append(_ sample: DepthSample, to sessionID: UUID) throws {
         guard sample.isValidRecordingSample,
-              fileManager.fileExists(atPath: activeMetadataURL(for: sessionID).path) else {
+              fileManager.fileExists(atPath: activeMetadataURL(for: sessionID).path),
+              fileManager.fileExists(atPath: recordingJournalURL(for: sessionID).path)
+        else {
             throw CocoaError(.fileNoSuchFile)
         }
 
-        let handle = try FileHandle(forWritingTo: recordingJournalURL(for: sessionID))
-        defer { try? handle.close() }
-        try handle.seekToEnd()
-        var line = try encoder.encode(sample)
-        line.append(0x0A)
-        try handle.write(contentsOf: line)
-        try handle.synchronize()
+        let line = try journalLine(for: sample)
+        if let resolvedLine = try resolvePendingAppend(sessionID: sessionID), resolvedLine == line {
+            return
+        }
+
+        let journalURL = recordingJournalURL(for: sessionID)
+        let pending = PendingJournalAppend(
+            journalOffset: try journalLength(at: journalURL),
+            line: line
+        )
+        try encoder.encode(pending).write(to: pendingAppendURL(for: sessionID), options: .atomic)
+        try appendPendingLine(pending, to: journalURL)
+        try fileManager.removeItem(at: pendingAppendURL(for: sessionID))
     }
 
     func loadActiveRecordings() throws -> [ActiveDiveRecording] {
@@ -283,30 +307,45 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             return []
         }
 
-        return try fileManager.contentsOfDirectory(
+        let directories = try fileManager.contentsOfDirectory(
             at: sessionsURL,
             includingPropertiesForKeys: nil,
             options: [.skipsHiddenFiles]
-        ).compactMap { directory in
+        )
+        var recordings: [ActiveDiveRecording] = []
+        for directory in directories {
             let metadataURL = directory.appendingPathComponent("active-recording.json")
             guard fileManager.fileExists(atPath: metadataURL.path) else {
-                return nil
+                continue
             }
-            let metadata = try decoder.decode(
-                ActiveDiveRecordingMetadata.self,
-                from: Data(contentsOf: metadataURL)
-            )
-            let journalURL = directory.appendingPathComponent("recording.ndjson")
-            let journalData = try Data(contentsOf: journalURL)
-            let samples = try journalData
-                .split(separator: 0x0A)
-                .map { try decoder.decode(DepthSample.self, from: Data($0)) }
-            return ActiveDiveRecording(metadata: metadata, samples: samples)
+
+            do {
+                let metadata = try decoder.decode(
+                    ActiveDiveRecordingMetadata.self,
+                    from: Data(contentsOf: metadataURL)
+                )
+                guard directory.lastPathComponent == metadata.localSessionId.uuidString else {
+                    throw CocoaError(.fileReadCorruptFile)
+                }
+                _ = try resolvePendingAppend(sessionID: metadata.localSessionId)
+                let journalURL = directory.appendingPathComponent("recording.ndjson")
+                let samples = try loadJournalSamples(at: journalURL)
+                recordings.append(ActiveDiveRecording(metadata: metadata, samples: samples))
+            } catch {
+                if shouldQuarantineActiveRecording(for: error) {
+                    try? quarantineActiveRecording(in: directory)
+                }
+            }
         }
+        return recordings
     }
 
     func clearActiveRecording(sessionID: UUID) throws {
-        for url in [activeMetadataURL(for: sessionID), recordingJournalURL(for: sessionID)]
+        for url in [
+            pendingAppendURL(for: sessionID),
+            recordingJournalURL(for: sessionID),
+            activeMetadataURL(for: sessionID),
+        ]
         where fileManager.fileExists(atPath: url.path) {
             try fileManager.removeItem(at: url)
         }
@@ -348,6 +387,159 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
 
     private func recordingJournalURL(for sessionID: UUID) -> URL {
         sessionDirectory(for: sessionID).appendingPathComponent("recording.ndjson")
+    }
+
+    private func pendingAppendURL(for sessionID: UUID) -> URL {
+        sessionDirectory(for: sessionID).appendingPathComponent("recording-pending.json")
+    }
+
+    private func journalLine(for sample: DepthSample) throws -> Data {
+        var line = try encoder.encode(sample)
+        line.append(0x0A)
+        return line
+    }
+
+    private func journalLength(at journalURL: URL) throws -> UInt64 {
+        let handle = try FileHandle(forWritingTo: journalURL)
+        defer { try? handle.close() }
+        return try handle.seekToEnd()
+    }
+
+    private func resolvePendingAppend(sessionID: UUID) throws -> Data? {
+        let pendingURL = pendingAppendURL(for: sessionID)
+        guard fileManager.fileExists(atPath: pendingURL.path) else {
+            return nil
+        }
+
+        let pending = try decoder.decode(
+            PendingJournalAppend.self,
+            from: Data(contentsOf: pendingURL)
+        )
+        guard pending.line.last == 0x0A,
+              let sample = try? decoder.decode(DepthSample.self, from: pending.line.dropLast()),
+              sample.isValidRecordingSample
+        else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        let journalURL = recordingJournalURL(for: sessionID)
+        let journalLength = try journalLength(at: journalURL)
+        if journalLength == pending.journalOffset {
+            try appendPendingLine(pending, to: journalURL)
+        } else if journalLength == pending.journalOffset + UInt64(pending.line.count) {
+            let handle = try FileHandle(forReadingFrom: journalURL)
+            defer { try? handle.close() }
+            try handle.seek(toOffset: pending.journalOffset)
+            guard try handle.readToEnd() == pending.line else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+        } else if journalLength > pending.journalOffset,
+                  journalLength < pending.journalOffset + UInt64(pending.line.count) {
+            let readHandle = try FileHandle(forReadingFrom: journalURL)
+            try readHandle.seek(toOffset: pending.journalOffset)
+            let partialLine = try readHandle.readToEnd() ?? Data()
+            try readHandle.close()
+            guard pending.line.starts(with: partialLine) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+
+            let writeHandle = try FileHandle(forWritingTo: journalURL)
+            try writeHandle.truncate(atOffset: pending.journalOffset)
+            try writeHandle.synchronize()
+            try writeHandle.close()
+            try appendPendingLine(pending, to: journalURL)
+        } else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        try fileManager.removeItem(at: pendingURL)
+        return pending.line
+    }
+
+    private func appendPendingLine(_ pending: PendingJournalAppend, to journalURL: URL) throws {
+        let handle = try FileHandle(forWritingTo: journalURL)
+        defer { try? handle.close() }
+        guard try handle.seekToEnd() == pending.journalOffset else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        try handle.write(contentsOf: pending.line)
+        try handle.synchronize()
+    }
+
+    private func loadJournalSamples(at journalURL: URL) throws -> [DepthSample] {
+        let journalData = try Data(contentsOf: journalURL)
+        guard !journalData.isEmpty else {
+            return []
+        }
+
+        var records = journalData.split(separator: 0x0A, omittingEmptySubsequences: false)
+        let hasTerminatingNewline = journalData.last == 0x0A
+        if hasTerminatingNewline {
+            records.removeLast()
+        }
+
+        let completeRecords = hasTerminatingNewline ? records[...] : records.dropLast()
+        var samples = try completeRecords.map { record -> DepthSample in
+            let sample = try decoder.decode(DepthSample.self, from: Data(record))
+            guard sample.isValidRecordingSample else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            return sample
+        }
+
+        guard !hasTerminatingNewline, let trailingRecord = records.last else {
+            return samples
+        }
+
+        if let sample = try? decoder.decode(DepthSample.self, from: Data(trailingRecord)),
+           sample.isValidRecordingSample {
+            let handle = try FileHandle(forWritingTo: journalURL)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: Data([0x0A]))
+            try handle.synchronize()
+            samples.append(sample)
+            return samples
+        }
+
+        let durablePrefixLength = UInt64(journalData.count - trailingRecord.count)
+        let handle = try FileHandle(forWritingTo: journalURL)
+        defer { try? handle.close() }
+        try handle.truncate(atOffset: durablePrefixLength)
+        try handle.synchronize()
+        return samples
+    }
+
+    private func shouldQuarantineActiveRecording(for error: Error) -> Bool {
+        if error is DecodingError {
+            return true
+        }
+        guard let cocoaError = error as? CocoaError else {
+            return false
+        }
+        return cocoaError.code == .fileReadCorruptFile || cocoaError.code == .fileNoSuchFile
+    }
+
+    private func quarantineActiveRecording(in sessionURL: URL) throws {
+        let activeURLs = [
+            sessionURL.appendingPathComponent("active-recording.json"),
+            sessionURL.appendingPathComponent("recording.ndjson"),
+            sessionURL.appendingPathComponent("recording-pending.json"),
+        ].filter { fileManager.fileExists(atPath: $0.path) }
+        guard !activeURLs.isEmpty else {
+            return
+        }
+
+        let quarantineURL = sessionURL
+            .appendingPathComponent("Quarantine", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try fileManager.createDirectory(at: quarantineURL, withIntermediateDirectories: true)
+        for activeURL in activeURLs {
+            try fileManager.moveItem(
+                at: activeURL,
+                to: quarantineURL.appendingPathComponent(activeURL.lastPathComponent)
+            )
+        }
     }
 
     private func artifactRelativePath(sessionID: UUID, revision: String) -> String {

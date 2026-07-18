@@ -3,6 +3,56 @@ import XCTest
 
 final class DiveSessionRecorderAscentRateTests: XCTestCase {
     @MainActor
+    func testBeginRecordingFailureKeepsCaptureStoppedAndCancellationCoherent() {
+        let sensor = ManualDepthSensorProvider()
+        let profileStore = FailingBeginProfileRecordingStore()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensor,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertFalse(recorder.isRecording)
+        XCTAssertFalse(recorder.hasCapturedDepthSample)
+        XCTAssertEqual(sensor.startCount, 0)
+        XCTAssertEqual(sensor.stopCount, 0)
+        XCTAssertNotNil(recorder.recordingPersistenceError)
+        XCTAssertTrue(recorder.cancelSession())
+        XCTAssertEqual(profileStore.clearCallCount, 0)
+    }
+
+    @MainActor
+    func testLaterSuccessfulAppendClearsObservablePersistenceErrorAfterPendingRecovery() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileManager = FailFirstRecorderPendingRemovalFileManager()
+        let profileStore = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let sensor = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensor,
+            captureMode: .demo,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+
+        XCTAssertTrue(recorder.startSession(plan: PreDivePlan(diveMode: .scuba)))
+        sensor.emit(sample(at: 0.1, depth: 2))
+        sensor.emit(sample(at: 1.2, depth: 4))
+        await Task.yield()
+        XCTAssertNotNil(recorder.recordingPersistenceError)
+
+        sensor.emit(sample(at: 2.2, depth: 6))
+        await Task.yield()
+
+        XCTAssertNil(recorder.recordingPersistenceError)
+        XCTAssertEqual(try profileStore.loadActiveRecordings().first?.samples.count, 2)
+        XCTAssertTrue(recorder.cancelSession())
+    }
+
+    @MainActor
     func testRapidCallbackJitterDoesNotCreateLiveAscentRateOrWarning() async {
         let sensor = ManualDepthSensorProvider()
         let recorder = makeRecorder(sensor: sensor)
@@ -238,13 +288,45 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
 @MainActor
 private final class ManualDepthSensorProvider: DepthSensorProvider {
     var onSample: ((DepthSample) -> Void)?
+    private(set) var startCount = 0
+    private(set) var stopCount = 0
 
-    func start() {}
+    func start() {
+        startCount += 1
+    }
 
-    func stop() {}
+    func stop() {
+        stopCount += 1
+    }
 
     func emit(_ sample: DepthSample) {
         onSample?(sample)
+    }
+}
+
+private final class FailingBeginProfileRecordingStore: DiveProfileRecordingStoring {
+    private(set) var clearCallCount = 0
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
+        throw CocoaError(.fileWriteNoPermission)
+    }
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {}
+
+    func clearActiveRecording(sessionID: UUID) throws {
+        clearCallCount += 1
+    }
+}
+
+private final class FailFirstRecorderPendingRemovalFileManager: FileManager {
+    private var didFailPendingRemoval = false
+
+    override func removeItem(at URL: URL) throws {
+        if !didFailPendingRemoval, URL.lastPathComponent == "recording-pending.json" {
+            didFailPendingRemoval = true
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.removeItem(at: URL)
     }
 }
 

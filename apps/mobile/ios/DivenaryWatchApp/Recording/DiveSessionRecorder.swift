@@ -46,8 +46,9 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         self.now = now
     }
 
-    func startSession(plan: PreDivePlan = PreDivePlan()) {
-        guard !isRecording, activeRecordID == nil else { return }
+    @discardableResult
+    func startSession(plan: PreDivePlan = PreDivePlan()) -> Bool {
+        guard !isRecording, activeRecordID == nil else { return false }
 
         samples = []
         currentDepth = 0
@@ -63,12 +64,8 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         scubaSafetyStop = .legacyUnknown
         recordingPersistenceError = nil
         displayAscentRateEstimator.reset()
-        activePlan = plan
         let startedAt = now()
         let sessionID = UUID()
-        self.startedAt = startedAt
-        activeRecordID = sessionID
-        profileSampler = OneHertzProfileSampler(startedAt: startedAt)
         lastRawSample = nil
         do {
             try profileStore.beginRecording(ActiveDiveRecordingMetadata(
@@ -79,7 +76,13 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             ))
         } catch {
             recordingPersistenceError = error.localizedDescription
+            return false
         }
+
+        self.startedAt = startedAt
+        activeRecordID = sessionID
+        activePlan = plan
+        profileSampler = OneHertzProfileSampler(startedAt: startedAt)
         switch plan.diveMode {
         case .freedive:
             freeEngine = FreeDiveSessionEngine(startedAt: startedAt)
@@ -100,6 +103,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
                 self?.updateElapsedTime()
             }
         }
+        return true
     }
 
     func stopSession() -> DiveSessionRecord? {
@@ -206,6 +210,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         scubaEngine = nil
         profileSampler = nil
         lastRawSample = nil
+        startedAt = nil
         isRecording = false
     }
 
@@ -267,6 +272,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         guard let activeRecordID else { return }
         do {
             try profileStore.append(sample, to: activeRecordID)
+            recordingPersistenceError = nil
         } catch {
             recordingPersistenceError = error.localizedDescription
         }

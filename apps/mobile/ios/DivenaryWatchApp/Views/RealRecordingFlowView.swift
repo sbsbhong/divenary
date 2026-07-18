@@ -34,6 +34,8 @@ struct RealRecordingFlowView: View {
                 )
             case .noSamples:
                 noSamplesView
+            case .persistenceError:
+                persistenceErrorView
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -50,6 +52,35 @@ struct RealRecordingFlowView: View {
 
             Button("Done") {
                 coordinator.dismissNoSamples()
+            }
+            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+        }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var persistenceErrorView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+
+            Text("Recording unavailable")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Text("Local recording storage could not be prepared.")
+                .font(.system(size: 11))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.75)
+
+            Button("Done") {
+                coordinator.dismissPersistenceError()
             }
             .buttonStyle(DiveActionButtonStyle(kind: .primary))
         }

@@ -836,4 +836,8 @@
 - Updated: 모바일 로그북 로드맵
 - Updated: 열린 질문
 
-## [2026-07-18] ingest | Watch 앱 구조
+## [2026-07-18] ingest | Watch live ascent-rate smoothing boundary
+- Updated: Watch 앱 구조
+
+## [2026-07-18] ingest | Watch 기록 내구성과 경로 복구 경계
+- Updated: Watch 앱 구조

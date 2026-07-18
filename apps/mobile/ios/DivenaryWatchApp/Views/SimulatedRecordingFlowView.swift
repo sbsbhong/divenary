@@ -5,12 +5,15 @@ enum SimulatedRecordingLifecyclePhase {
     case ready
     case recording
     case summary(DiveSessionRecord)
+    case persistenceError
+    case cleanupError
     case completed
 }
 
 @MainActor
 protocol SimulatedRecordingLifecycleRecording: AnyObject {
-    func startSession(plan: PreDivePlan)
+    @discardableResult
+    func startSession(plan: PreDivePlan) -> Bool
     func stopSession() -> DiveSessionRecord?
     @discardableResult
     func cancelSession() -> Bool
@@ -43,12 +46,32 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         self.store = store
     }
 
-    func handleFlowAppearance(plan: PreDivePlan) {
-        guard !didStart, !didComplete, case .ready = phase else { return }
+    @discardableResult
+    func handleFlowAppearance(plan: PreDivePlan) -> Bool {
+        if didComplete, case .completed = phase {
+            return true
+        }
+        guard !didStart, case .ready = phase else { return false }
 
-        didStart = true
-        recorder.startSession(plan: plan)
-        phase = .recording
+        _ = startRecording(plan: plan)
+        return false
+    }
+
+    @discardableResult
+    func retryStart(plan: PreDivePlan) -> Bool {
+        guard !didStart, !didComplete, case .persistenceError = phase else {
+            return false
+        }
+        return startRecording(plan: plan)
+    }
+
+    @discardableResult
+    func dismissPersistenceError() -> Bool {
+        guard !didStart, !didComplete, case .persistenceError = phase else {
+            return false
+        }
+        markCompleted()
+        return true
     }
 
     func finishRecording() {
@@ -92,12 +115,39 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         guard didStart, !didComplete else { return }
 
         switch phase {
-        case .recording, .summary:
+        case .recording:
+            guard recorder.cancelSession() else {
+                phase = .cleanupError
+                return
+            }
+            markCompleted()
+        case .summary:
             guard recorder.cancelSession() else { return }
             markCompleted()
-        case .ready, .completed:
+        case .ready, .persistenceError, .cleanupError, .completed:
             break
         }
+    }
+
+    @discardableResult
+    func retryExternalCleanup() -> Bool {
+        guard didStart, !didComplete, case .cleanupError = phase,
+              recorder.cancelSession()
+        else {
+            return false
+        }
+        markCompleted()
+        return true
+    }
+
+    private func startRecording(plan: PreDivePlan) -> Bool {
+        guard recorder.startSession(plan: plan) else {
+            phase = .persistenceError
+            return false
+        }
+        didStart = true
+        phase = .recording
+        return true
     }
 
     private func markCompleted() {
@@ -146,9 +196,12 @@ struct SimulatedRecordingFlowView: View {
         ZStack {
             flowContent
         }
-        .navigationBarBackButtonHidden(recorder.isRecording)
+        .navigationBarBackButtonHidden(hidesBackButton)
         .onAppear {
-            lifecycle.handleFlowAppearance(plan: preparedPlan)
+            if lifecycle.handleFlowAppearance(plan: preparedPlan) {
+                dismiss()
+                return
+            }
             recorder.setDemoDepthMeters(controlledDepthMeters)
             crownDepthControlFocused = true
         }
@@ -175,6 +228,10 @@ struct SimulatedRecordingFlowView: View {
                 onSave: save,
                 onDiscard: discard
             )
+        case .persistenceError:
+            persistenceErrorView
+        case .cleanupError:
+            cleanupErrorView
         case .completed:
             Color.clear
         }
@@ -207,6 +264,69 @@ struct SimulatedRecordingFlowView: View {
 
     private var preparedPlan: PreDivePlan {
         recordingMode.prepare(plan: plan)
+    }
+
+    private var persistenceErrorView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+
+            Text("Recording unavailable")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            HStack(spacing: 8) {
+                Button("Retry") {
+                    if lifecycle.retryStart(plan: preparedPlan) {
+                        recorder.setDemoDepthMeters(controlledDepthMeters)
+                        crownDepthControlFocused = true
+                    }
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+
+                Button("Done") {
+                    guard lifecycle.dismissPersistenceError() else { return }
+                    dismiss()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+            }
+        }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var cleanupErrorView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+
+            Text("Cleanup required")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+
+            Button("Retry") {
+                guard lifecycle.retryExternalCleanup() else { return }
+                dismiss()
+            }
+            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+        }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var hidesBackButton: Bool {
+        if case .cleanupError = lifecycle.phase {
+            return true
+        }
+        return recorder.isRecording
     }
 
     private func endDive() {

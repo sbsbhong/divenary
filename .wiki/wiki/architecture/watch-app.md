@@ -1,7 +1,7 @@
 # Watch 앱 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18
-Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18; Watch 기록 내구성과 경로 복구 경계, 2026-07-18
+Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md)
 Updated: 2026-07-18
 
 ## 요약
@@ -42,6 +42,16 @@ smoothed rate와 transient warning은 기록 화면의 비인증 보조 referenc
 - automatic과 Action Button start는 selected planned dive를 저장하거나 추론하지 않는다. manual start만 explicit plan을 유지한다.
 - 이전의 app-local `3 m` sensor auto-start monitor는 제거됐다. `When Submerged`는 local depth threshold가 아니라 watchOS runtime handoff가 기준이다.
 
+active metadata와 NDJSON journal 준비는 모든 recording start의 선행 조건이다. `DiveSessionRecorder.startSession`이 실패하면 sensor, timer, engine을 시작하지 않고 active session도 만들지 않는다. manual과 Action Button 경로는 runtime start와 end action 제공을 중단한다. 이미 watchOS가 넘긴 system session은 adopted 상태를 유지한 채 runtime invalidation을 한 번만 요청하고 compact persistence-error 화면에서 Home으로 돌아갈 수 있다.
+
+## 기록 저널 내구성과 복구
+
+1Hz append 전에 `recording-pending.json`에 expected journal offset과 완전한 NDJSON line을 atomic하게 기록한다. append 뒤 cleanup이 실패해도 retry는 journal suffix를 확인해 이미 완전히 기록된 sample을 중복하지 않는다. partial suffix가 sidecar line의 prefix와 일치하면 expected offset까지 잘라내고 line 전체를 다시 기록한 뒤 pending state를 제거한다. 해결되지 않은 pending append는 다음 sample보다 먼저 처리한다.
+
+Recovery는 session별로 격리한다. newline으로 끝난 record는 모두 strict decode하고, newline 없는 마지막 record가 decode되지 않을 때만 앞선 durable prefix를 보존한다. decode 가능한 마지막 record에는 newline을 보완한다. metadata mismatch나 interior corruption처럼 복구할 수 없는 active state는 `Sessions/<localSessionId>/Quarantine/<UUID>/`로 active metadata, journal, pending sidecar만 옮긴다. 같은 directory의 canonical `session-<revision>.json`과 manifest identity는 유지하므로 canonical save retry와 다른 interrupted session recovery가 영향을 받지 않는다.
+
+recording 중 append가 불확실하면 화면 하단에 compact storage retry 상태를 표시하고, pending append가 실제로 해결된 뒤에만 해당 상태를 지운다. raw callback, 1Hz sampling boundary, generated sync contract, canonical artifact와 historical ascent field는 바꾸지 않는다.
+
 ## 종료와 결과 규칙
 
 real recording에는 touch end control이 없다. 다음 신호는 runtime invalidation을 거쳐 하나의 idempotent finalizer로 수렴한다.
@@ -56,11 +66,13 @@ valid depth sample이 있으면 invalidation 뒤 summary를 하나만 만든다.
 
 demo/debug는 `DemoDepthSensorProvider`, Digital Crown depth simulation, `SurfaceEndDiveGate`, surface-gated touch end를 유지한다. 이 경로는 `WKExtendedRuntimeSession`, Water Lock, real Action Button ending, 10분 규칙을 사용하지 않는다.
 
+external real flow가 demo/debug route를 가릴 때 unfinished simulated state cleanup이 성공하면, route가 다시 보이는 즉시 Home dismissal을 요청한다. cleanup이 실패하면 completed로 표시하지 않는다. summary는 save/discard retry를 유지하고, active recording cleanup은 별도 retry state를 유지한다. simulated recorder start 실패도 recording 화면으로 가장하지 않고 retry 또는 Home dismissal을 제공한다.
+
 ## Signing과 실기기 경계
 
 watch `Info.plist`는 `WKBackgroundModes`의 `underwater-depth`를 유지하고, target entitlement는 공개 shallow capability인 `com.apple.developer.submerged-shallow-depth-and-pressure`를 선언한다. Xcode Easy Submersion은 simulator system-session delivery/adoption과 UI navigation만 확인한다. signed bundle/profile, physical sensor delivery, actual hardware `When Submerged` selection/auto-launch, Water Lock, device release readiness의 증거는 아니다.
 
-signed device build에서 code-signing entitlement와 embedded profile 모두를 검사해야 한다. 공개 shallow capability는 manager가 승인한 얕은 범위 접근만 뜻한다. 더 깊은 sensor access는 Apple managed entitlement와 provisioning의 외부 승인 gate이며, 현재 build를 40m sensor-authorized로 설명할 수 없다.
+signed device build에서 code-signing entitlement와 embedded profile 모두를 검사해야 한다. 공개 shallow capability는 manager가 승인한 얕은 범위 접근만 뜻한다. 더 깊은 sensor access는 Apple managed entitlement와 provisioning의 외부 승인 gate이며, 현재 build를 40m sensor-authorized로 설명할 수 없다. physical sensor delivery, signing/profile, `When Submerged`, Water Lock/Crown, Action Button hardware behavior와 watchOS timeout은 모두 계속 미검증 상태다.
 
 15cm bag/tank test는 manually started real session의 shallow sample(예: 약 `0.1 m`)과 Water Lock만 검증한다. Xcode Easy Submersion은 simulator adoption 확인으로만 기록한다. physical `When Submerged` automatic launch는 지원 hardware의 안전하게 통제한 `>1 m`에서 `handle(_:)` adoption과 실제 selection을 별도로 검증해야 한다. Digital Crown, timeout, surfaced eligible Action Button end도 지원 hardware에서 독립적으로 확인해야 한다.
 

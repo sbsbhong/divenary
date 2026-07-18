@@ -237,6 +237,7 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertTrue(RealDivePhase.recording(source: .systemAutoLaunch).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.summary(DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.noSamples.presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.persistenceError(source: .manual).presentsRecordingFlow)
     }
 
     func testControlRowReservesRailColumnAndStaysWithinBoundedHeight() {
@@ -258,6 +259,28 @@ final class WatchRecordingModeTests: XCTestCase {
 
 @MainActor
 final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
+    func testRecorderStartFailureDoesNotEnterFalseRecordingPhase() {
+        let (controller, recorder, _) = makeSystem(startResults: [false, true])
+
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertEqual(recorder.startCount, 1)
+        assertPersistenceError(controller.phase)
+        XCTAssertTrue(controller.retryStart(plan: PreDivePlan(diveMode: .scuba)))
+        XCTAssertEqual(recorder.startCount, 2)
+        assertRecording(controller.phase)
+    }
+
+    func testRecorderStartFailureCanBeDismissedWithoutCleanupSuccessClaim() {
+        let (controller, recorder, _) = makeSystem(startResults: [false])
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        XCTAssertTrue(controller.dismissPersistenceError())
+
+        XCTAssertEqual(recorder.cancelCount, 0)
+        assertCompleted(controller.phase)
+    }
+
     func testRepeatedFlowAppearanceStartsRecorderOnce() {
         let (controller, recorder, _) = makeSystem()
 
@@ -291,6 +314,60 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
 
         XCTAssertEqual(recorder.cancelCount, 1)
         assertCompleted(controller.phase)
+        XCTAssertTrue(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+    }
+
+    func testSummaryExternalCleanupRequestsDismissalWhenRouteReappears() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(session: session)
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        controller.handleFlowDisappearance()
+
+        XCTAssertEqual(recorder.cancelCount, 1)
+        assertCompleted(controller.phase)
+        XCTAssertTrue(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+    }
+
+    func testSummaryExternalCleanupFailureDoesNotDismissAndLaterRetrySucceeds() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, _) = makeSystem(
+            session: session,
+            cancelResults: [false, true]
+        )
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        controller.finishRecording()
+
+        controller.handleFlowDisappearance()
+
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+        assertSummary(controller.phase, sessionID: session.id)
+        XCTAssertTrue(controller.discardSummary())
+        XCTAssertEqual(recorder.cancelCount, 2)
+        assertCompleted(controller.phase)
+    }
+
+    func testRecordingExternalCleanupFailureExposesRetryAndDismissesOnlyAfterSuccess() {
+        let (controller, recorder, _) = makeSystem(cancelResults: [false, true])
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+
+        controller.handleFlowDisappearance()
+
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba)))
+        XCTAssertTrue(controller.retryExternalCleanup())
+        XCTAssertEqual(recorder.cancelCount, 2)
+        assertCompleted(controller.phase)
+    }
+
+    func testDemoAndDebugPlansUseSameExternalCleanupDismissalPolicy() {
+        for mode in [WatchRecordingMode.demo, .debugTest] {
+            let (controller, _, _) = makeSystem()
+            let plan = mode.prepare(plan: PreDivePlan(diveMode: .scuba))
+            XCTAssertFalse(controller.handleFlowAppearance(plan: plan))
+            controller.handleFlowDisappearance()
+            XCTAssertTrue(controller.handleFlowAppearance(plan: plan))
+        }
     }
 
     func testSuccessfulSaveCompletesBeforeDismissalAndCannotRestart() {
@@ -392,8 +469,19 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         }
     }
 
+    private func assertPersistenceError(
+        _ phase: SimulatedRecordingLifecyclePhase,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .persistenceError = phase else {
+            return XCTFail("Expected persistence-error phase", file: file, line: line)
+        }
+    }
+
     private func makeSystem(
         session: DiveSessionRecord = .largeDebugFixture(sampleCount: 1),
+        startResults: [Bool] = [true],
         cancelResults: [Bool] = [true],
         saveResults: [Bool] = [true]
     ) -> (
@@ -403,6 +491,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
     ) {
         let recorder = RecordingSimulatedLifecycleRecorder(
             session: session,
+            startResults: startResults,
             cancelResults: cancelResults
         )
         let store = RecordingSimulatedSessionStore(saveResults: saveResults)
@@ -417,6 +506,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
 @MainActor
 private final class RecordingSimulatedLifecycleRecorder: SimulatedRecordingLifecycleRecording {
     private let session: DiveSessionRecord
+    private var startResults: [Bool]
     private var cancelResults: [Bool]
 
     private(set) var startCount = 0
@@ -424,13 +514,15 @@ private final class RecordingSimulatedLifecycleRecorder: SimulatedRecordingLifec
     private(set) var cancelCount = 0
     private(set) var resetCount = 0
 
-    init(session: DiveSessionRecord, cancelResults: [Bool]) {
+    init(session: DiveSessionRecord, startResults: [Bool], cancelResults: [Bool]) {
         self.session = session
+        self.startResults = startResults
         self.cancelResults = cancelResults
     }
 
-    func startSession(plan: PreDivePlan) {
+    func startSession(plan: PreDivePlan) -> Bool {
         startCount += 1
+        return startResults.isEmpty ? true : startResults.removeFirst()
     }
 
     func stopSession() -> DiveSessionRecord? {

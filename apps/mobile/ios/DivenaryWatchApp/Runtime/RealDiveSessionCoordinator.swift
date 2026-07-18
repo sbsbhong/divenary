@@ -12,12 +12,13 @@ enum RealDivePhase {
     case recording(source: RealDiveStartSource)
     case summary(DiveSessionRecord)
     case noSamples
+    case persistenceError(source: RealDiveStartSource)
 
     var presentsRecordingFlow: Bool {
         switch self {
         case .idle:
             return false
-        case .recording, .summary, .noSamples:
+        case .recording, .summary, .noSamples, .persistenceError:
             return true
         }
     }
@@ -28,7 +29,8 @@ protocol DiveSessionRecording: AnyObject {
     var elapsedTime: TimeInterval { get }
     var hasCapturedDepthSample: Bool { get }
 
-    func startSession(plan: PreDivePlan)
+    @discardableResult
+    func startSession(plan: PreDivePlan) -> Bool
     func stopSession() -> DiveSessionRecord?
     @discardableResult
     func cancelSession() -> Bool
@@ -67,25 +69,35 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
     }
 
-    func startManual(plan: PreDivePlan) {
+    @discardableResult
+    func startManual(plan: PreDivePlan) -> Bool {
         guard case .idle = phase else {
-            return
+            return false
         }
 
-        recorder.startSession(plan: plan)
+        guard recorder.startSession(plan: plan) else {
+            phase = .persistenceError(source: .manual)
+            return false
+        }
         phase = .recording(source: .manual)
         runtime.startManualSession()
         actionButtonDonor.donateEndAction()
+        return true
     }
 
-    func startFromActionButton() {
+    @discardableResult
+    func startFromActionButton() -> Bool {
         guard case .idle = phase else {
-            return
+            return false
         }
 
-        recorder.startSession(plan: preferredPlan())
+        guard recorder.startSession(plan: preferredPlan()) else {
+            phase = .persistenceError(source: .actionButton)
+            return false
+        }
         phase = .recording(source: .actionButton)
         runtime.startManualSession()
+        return true
     }
 
     func requestActionButtonEnd() -> Bool {
@@ -131,6 +143,13 @@ final class RealDiveSessionCoordinator: ObservableObject {
         phase = .idle
     }
 
+    func dismissPersistenceError() {
+        guard case .persistenceError = phase else {
+            return
+        }
+        phase = .idle
+    }
+
     private func handleRuntimeEvent(_ event: DiveRuntimeEvent) {
         switch event {
         case .adoptedSystemSession:
@@ -147,7 +166,11 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
 
-        recorder.startSession(plan: preferredPlan())
+        guard recorder.startSession(plan: preferredPlan()) else {
+            phase = .persistenceError(source: .systemAutoLaunch)
+            runtime.invalidate()
+            return
+        }
         phase = .recording(source: .systemAutoLaunch)
         actionButtonDonor.donateEndAction()
     }

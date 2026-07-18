@@ -3,7 +3,8 @@ import OSLog
 
 @MainActor
 protocol RealDiveActionControlling: AnyObject, Sendable {
-    func startFromActionButton()
+    @discardableResult
+    func startFromActionButton() -> Bool
     func requestActionButtonEnd() -> Bool
 }
 
@@ -17,7 +18,8 @@ final class DiveActionButtonBridge: Sendable {
         self.controller = controller
     }
 
-    func startDive() {
+    @discardableResult
+    func startDive() -> Bool {
         controller.startFromActionButton()
     }
 
@@ -76,7 +78,9 @@ struct DivenaryStartDiveIntent: StartDiveIntent {
     }
 
     func perform() async throws -> some IntentResult {
-        await bridge.startDive()
+        guard await bridge.startDive() else {
+            return .result()
+        }
         return .result(actionButtonIntent: DivenaryEndDiveIntent())
     }
 }

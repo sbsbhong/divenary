@@ -7,9 +7,19 @@ final class DiveActionButtonIntentTests: XCTestCase {
         let coordinator = FakeRealDiveActionController()
         let bridge = DiveActionButtonBridge(controller: coordinator)
 
-        bridge.startDive()
+        XCTAssertTrue(bridge.startDive())
 
         XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
+    }
+
+    func testBridgeReturnsRejectedStartWithoutMarkingRecordingActive() {
+        let coordinator = FakeRealDiveActionController(acceptsStartRequest: false)
+        let bridge = DiveActionButtonBridge(controller: coordinator)
+
+        XCTAssertFalse(bridge.startDive())
+
+        XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
+        XCTAssertFalse(coordinator.isRecording)
     }
 
     func testBridgeForwardsAcceptedEndToCoordinatorOnce() {
@@ -111,14 +121,17 @@ private final class FakeRealDiveActionController: RealDiveActionControlling {
     private(set) var isRecording = true
 
     private let acceptsEndRequest: Bool
+    private let acceptsStartRequest: Bool
 
-    init(acceptsEndRequest: Bool = true) {
+    init(acceptsEndRequest: Bool = true, acceptsStartRequest: Bool = true) {
         self.acceptsEndRequest = acceptsEndRequest
+        self.acceptsStartRequest = acceptsStartRequest
     }
 
-    func startFromActionButton() {
+    func startFromActionButton() -> Bool {
         actionButtonStartCallCount += 1
-        isRecording = true
+        isRecording = acceptsStartRequest
+        return acceptsStartRequest
     }
 
     func requestActionButtonEnd() -> Bool {

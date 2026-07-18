@@ -408,6 +408,22 @@
         }
       }
     },
+    "Cleanup required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cleanup required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "정리 필요"
+          }
+        }
+      }
+    },
     "Completed" : {
       "localizations" : {
         "en" : {
@@ -1191,6 +1207,22 @@
         }
       }
     },
+    "Local recording storage could not be prepared." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Local recording storage could not be prepared."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "로컬 기록 저장소를 준비하지 못했습니다."
+          }
+        }
+      }
+    },
     "logs" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1725,6 +1757,22 @@
         }
       }
     },
+    "Recording unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording unavailable"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록을 시작할 수 없음"
+          }
+        }
+      }
+    },
     "Recreational capture and review. Not a certified dive computer." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1838,6 +1886,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "리뷰"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재시도"
           }
         }
       }
@@ -2372,6 +2436,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간"
+          }
+        }
+      }
+    },
+    "Storage retry pending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Storage retry pending"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장 재시도 대기 중"
           }
         }
       }
