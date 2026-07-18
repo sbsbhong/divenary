@@ -41,6 +41,30 @@ describe('native splash screen', () => {
     expect(iosBackground).toContain('"value" : "dark"');
   });
 
+  test('keeps the iOS splash visible while the React Native root is loading', () => {
+    const appDelegate = readMobileFile('ios/Divenary/AppDelegate.swift');
+
+    expect(appDelegate).toContain('override func customize(_ rootView: RCTRootView)');
+    expect(appDelegate).toContain('UIColor { traitCollection in');
+    expect(appDelegate).toContain('traitCollection.userInterfaceStyle == .dark');
+    expect(appDelegate).toContain('return .black');
+    expect(appDelegate).toContain('red: 245.0 / 255.0');
+    expect(appDelegate).toContain('green: 245.0 / 255.0');
+    expect(appDelegate).toContain('blue: 247.0 / 255.0');
+    expect(appDelegate).toContain('UIImage(named: "SplashMark")');
+    expect(appDelegate).toContain('loadingView.autoresizingMask = [.flexibleWidth, .flexibleHeight]');
+    expect(appDelegate).toContain('loadingView.isUserInteractionEnabled = false');
+    expect(appDelegate).toContain('markView.centerXAnchor.constraint(equalTo: loadingView.centerXAnchor)');
+    expect(appDelegate).toContain('markView.centerYAnchor.constraint(equalTo: loadingView.centerYAnchor)');
+    expect(appDelegate).toContain('markView.widthAnchor.constraint(equalToConstant: 96)');
+    expect(appDelegate).toContain('markView.heightAnchor.constraint(equalToConstant: 96)');
+    expect(appDelegate).toContain('rootView.backgroundColor = splashBackgroundColor');
+    expect(appDelegate).toContain('rootView.loadingView = loadingView');
+    expect(appDelegate).toContain('rootView.loadingViewFadeDelay = 0');
+    expect(appDelegate).toContain('rootView.loadingViewFadeDuration = 0.2');
+    expect(appDelegate).not.toMatch(/asyncAfter|Timer\.scheduledTimer|sleep\(/);
+  });
+
   test('uses a centered mark and the correct light and night backgrounds on Android 24 through 30', () => {
     const androidLaunchScreen = readMobileFile('android/app/src/main/res/drawable/launch_screen.xml');
     const androidMark = readMobileFile('android/app/src/main/res/drawable/splash_mark.xml');
