@@ -1,0 +1,251 @@
+import {spawnSync} from 'node:child_process';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+
+import {
+  STAGING_LEGAL_VERSION,
+  STAGING_PROJECT_REF,
+  assertStagingProjectRef,
+  buildStagingLegalUrls,
+  buildStagingEnvironment,
+  readStagingPromotionCommit,
+  sanitizeStagingAuthVerification,
+} from './staging-project.mjs';
+
+const repositoryRoot = fileURLToPath(new URL('../../', import.meta.url));
+const supabaseCli = path.join(repositoryRoot, 'node_modules/.bin/supabase');
+const stagingApiUrl = `https://${STAGING_PROJECT_REF}.supabase.co`;
+
+function parseJson(text, label) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${label} returned invalid JSON.`);
+  }
+}
+
+function findPublicApiKey(value) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const apiKey = findPublicApiKey(item);
+      if (apiKey) {
+        return apiKey;
+      }
+    }
+    return undefined;
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const label = `${value.name ?? ''} ${value.type ?? ''}`.toLowerCase();
+  const apiKey = value.api_key ?? value.apiKey ?? value.key;
+  if (
+    typeof apiKey === 'string' &&
+    (label.includes('publishable') || label.includes('anon'))
+  ) {
+    return apiKey;
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const nestedApiKey = findPublicApiKey(nestedValue);
+    if (nestedApiKey) {
+      return nestedApiKey;
+    }
+  }
+
+  return undefined;
+}
+
+function readStagingPublicApiKey({spawnSyncImpl = spawnSync} = {}) {
+  const result = spawnSyncImpl(
+    supabaseCli,
+    [
+      'projects',
+      'api-keys',
+      '--project-ref',
+      STAGING_PROJECT_REF,
+      '--output',
+      'json',
+    ],
+    {
+      cwd: repositoryRoot,
+      env: buildStagingEnvironment(process.env),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+
+  if (result.error || result.status !== 0) {
+    throw new Error('Unable to read the staging public API key.');
+  }
+
+  const apiKey = findPublicApiKey(parseJson(result.stdout, 'Staging API keys'));
+  if (!apiKey) {
+    throw new Error('Staging project has no public API key.');
+  }
+
+  return apiKey;
+}
+
+async function fetchJson(fetchImpl, url, options, label, statuses = [200]) {
+  let response;
+  try {
+    response = await fetchImpl(url, options);
+  } catch {
+    throw new Error(`${label} is not reachable.`);
+  }
+
+  const text = await response.text();
+  if (!statuses.includes(response.status)) {
+    throw new Error(`${label} failed with HTTP ${response.status}.`);
+  }
+
+  return text.length === 0 ? null : parseJson(text, label);
+}
+
+function assertExactLegalDocuments(rows, commitSha) {
+  const expectedUrls = buildStagingLegalUrls(commitSha);
+  const expected = [
+    {kind: 'terms', version: STAGING_LEGAL_VERSION, documentUrl: expectedUrls.terms},
+    {kind: 'privacy', version: STAGING_LEGAL_VERSION, documentUrl: expectedUrls.privacy},
+  ];
+
+  if (!Array.isArray(rows) || rows.length !== expected.length) {
+    throw new Error('Staging public legal document rows are invalid.');
+  }
+
+  const actual = rows;
+  for (const [index, document] of expected.entries()) {
+    if (
+      actual[index]?.kind !== document.kind ||
+      actual[index]?.version !== document.version ||
+      actual[index]?.documentUrl !== document.documentUrl
+    ) {
+      throw new Error('Staging public legal document rows do not match the promotion commit.');
+    }
+  }
+
+  return actual;
+}
+
+async function verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}) {
+  const headers = {apikey: publicApiKey, Authorization: `Bearer ${publicApiKey}`};
+  const pointers = await fetchJson(
+    fetchImpl,
+    `${stagingApiUrl}/rest/v1/current_legal_documents?select=kind,document_version&order=kind.asc`,
+    {headers},
+    'Staging legal document pointers',
+  );
+
+  if (!Array.isArray(pointers) || pointers.length !== 2) {
+    throw new Error('Staging public legal document pointers are invalid.');
+  }
+
+  const rows = [];
+  for (const kind of ['terms', 'privacy']) {
+    const pointer = pointers.find(document => document?.kind === kind);
+    if (pointer?.document_version !== STAGING_LEGAL_VERSION) {
+      throw new Error('Staging public legal document pointer version is invalid.');
+    }
+
+    const documents = await fetchJson(
+      fetchImpl,
+      `${stagingApiUrl}/rest/v1/legal_documents?kind=eq.${kind}&version=eq.${encodeURIComponent(pointer.document_version)}&select=kind,version,document_url`,
+      {headers},
+      `Staging ${kind} legal document`,
+    );
+    if (!Array.isArray(documents) || documents.length !== 1) {
+      throw new Error(`Staging ${kind} legal document row is invalid.`);
+    }
+
+    rows.push({
+      kind: documents[0].kind,
+      version: documents[0].version,
+      documentUrl: documents[0].document_url,
+    });
+  }
+
+  return assertExactLegalDocuments(rows, commitSha);
+}
+
+async function verifyOnboardingRpc({fetchImpl, publicApiKey}) {
+  const body = await fetchJson(
+    fetchImpl,
+    `${stagingApiUrl}/rest/v1/rpc/get_onboarding_status`,
+    {
+      method: 'POST',
+      headers: {
+        apikey: publicApiKey,
+        Authorization: `Bearer ${publicApiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: '{}',
+    },
+    'Staging onboarding RPC',
+    [401],
+  );
+
+  if (body?.code !== 'PT401' || body?.message !== 'authentication_required') {
+    throw new Error('Staging onboarding RPC auth contract is invalid.');
+  }
+
+  return {
+    name: 'get_onboarding_status',
+    argumentTypes: [],
+    returnType: 'jsonb',
+  };
+}
+
+async function verifyProviderFlags({fetchImpl, publicApiKey}) {
+  const settings = await fetchJson(
+    fetchImpl,
+    `${stagingApiUrl}/auth/v1/settings`,
+    {headers: {apikey: publicApiKey}},
+    'Staging Auth settings',
+  );
+
+  const providers = {
+    google: settings?.external?.google,
+    apple: settings?.external?.apple,
+  };
+  if (providers.google !== true || providers.apple !== true) {
+    throw new Error('Staging Google and Apple providers must both be enabled.');
+  }
+
+  return providers;
+}
+
+export async function verifyStagingAuth({
+  commitSha = readStagingPromotionCommit(),
+  fetchImpl = fetch,
+  readPublicApiKey = readStagingPublicApiKey,
+} = {}) {
+  await assertStagingProjectRef();
+  const publicApiKey = readPublicApiKey();
+  const [legalDocuments, onboardingRpc, providers] = await Promise.all([
+    verifyPublicLegalDocuments({fetchImpl, publicApiKey, commitSha}),
+    verifyOnboardingRpc({fetchImpl, publicApiKey}),
+    verifyProviderFlags({fetchImpl, publicApiKey}),
+  ]);
+
+  return sanitizeStagingAuthVerification({
+    projectRef: STAGING_PROJECT_REF,
+    legalDocuments,
+    onboardingRpc,
+    providers,
+  });
+}
+
+async function main() {
+  const summary = await verifyStagingAuth();
+  process.stdout.write(`${JSON.stringify(summary)}\n`);
+}
+
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch(error => {
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 1;
+  });
+}
