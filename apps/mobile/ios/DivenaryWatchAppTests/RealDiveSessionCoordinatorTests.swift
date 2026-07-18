@@ -284,6 +284,84 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertIdle(coordinator)
     }
 
+    func testRealRecorderDiscardRetainsSummaryAndActiveArtifactUntilCleanupRetry() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileManager = FailFirstRecorderCleanupFileManager()
+        let profileStore = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let sensorProvider = RetainingManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(EngineTestFixtures.sample(1, depth: 4))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        let record = try summaryRecord(from: coordinator)
+
+        coordinator.discardSummary()
+
+        assertSummary(coordinator)
+        XCTAssertEqual(
+            try profileStore.loadActiveRecordings().map(\.metadata.localSessionId),
+            [record.id]
+        )
+
+        coordinator.discardSummary()
+
+        assertIdle(coordinator)
+        XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
+    }
+
+    func testRealRecorderNoSamplesRetainsArtifactUntilDismissRetry() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let fileManager = FailFirstRecorderCleanupFileManager()
+        let profileStore = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = DiveSessionRecorder(
+            sensorProvider: RetainingManualDepthSensorProvider(),
+            profileStore: profileStore,
+            now: { EngineTestFixtures.start }
+        )
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+        )
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertNoSamples(coordinator)
+        XCTAssertEqual(try profileStore.loadActiveRecordings().count, 1)
+
+        coordinator.dismissNoSamples()
+
+        assertIdle(coordinator)
+        XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
+    }
+
     func testSuccessfulSavePermitsCompletionWhileUnreportedFailureLeavesSummaryActive() throws {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
@@ -417,6 +495,18 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         }
     }
 
+    private func summaryRecord(
+        from coordinator: RealDiveSessionCoordinator,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> DiveSessionRecord {
+        guard case let .summary(record) = coordinator.phase else {
+            XCTFail("Expected summary phase, received \(coordinator.phase)", file: file, line: line)
+            throw CocoaError(.fileNoSuchFile)
+        }
+        return record
+    }
+
     private func assertNoSamples(
         _ coordinator: RealDiveSessionCoordinator,
         file: StaticString = #filePath,
@@ -501,9 +591,10 @@ private final class FakeDiveRecorder: DiveSessionRecording {
         return stopResult
     }
 
-    func cancelSession() {
+    func cancelSession() -> Bool {
         cancelCallCount += 1
         calls.append("recorder.cancel")
+        return true
     }
 
     func resetCompletedSession() {
@@ -549,6 +640,20 @@ private final class CountingProfileRecordingStore: DiveProfileRecordingStoring {
 
     func clearActiveRecording(sessionID: UUID) throws {
         clearCallCount += 1
+    }
+}
+
+private final class FailFirstRecorderCleanupFileManager: FileManager {
+    private var hasFailedActiveCleanup = false
+
+    override func removeItem(at URL: URL) throws {
+        if !hasFailedActiveCleanup,
+           ["active-recording.json", "recording.ndjson"].contains(URL.lastPathComponent) {
+            hasFailedActiveCleanup = true
+            throw CocoaError(.fileWriteNoPermission)
+        }
+
+        try super.removeItem(at: URL)
     }
 }
 

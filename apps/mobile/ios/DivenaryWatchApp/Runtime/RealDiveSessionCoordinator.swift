@@ -21,7 +21,8 @@ protocol DiveSessionRecording: AnyObject {
 
     func startSession(plan: PreDivePlan)
     func stopSession() -> DiveSessionRecord?
-    func cancelSession()
+    @discardableResult
+    func cancelSession() -> Bool
     func resetCompletedSession()
 }
 
@@ -104,7 +105,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
 
-        recorder.cancelSession()
+        guard recorder.cancelSession() else {
+            return
+        }
         phase = .idle
     }
 
@@ -113,6 +116,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
 
+        guard recorder.cancelSession() else {
+            return
+        }
         phase = .idle
     }
 
@@ -160,7 +166,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func cancelWithoutSamples(source: RealDiveStartSource) {
-        recorder.cancelSession()
-        phase = source == .systemAutoLaunch ? .idle : .noSamples
+        let didClearActiveRecording = recorder.cancelSession()
+        phase = source == .systemAutoLaunch && didClearActiveRecording ? .idle : .noSamples
     }
 }

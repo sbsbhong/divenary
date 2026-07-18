@@ -22,6 +22,11 @@ struct DiveProfileManifestEntry: Codable, Identifiable {
     }
 }
 
+struct CanonicalDiveProfileArtifact {
+    let data: Data
+    let identity: DiveProfileArtifactIdentity
+}
+
 struct ActiveDiveRecordingMetadata: Codable, Equatable {
     let localSessionId: UUID
     let startedAt: Date
@@ -73,7 +78,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             interrupted: safeRecord.profile?.interrupted
         )
         let profiledRecord = safeRecord.withProfile(profile)
-        let artifactData = try profiledRecord.syncMessageData()
+        let artifactData = try canonicalSyncArtifactData(for: profiledRecord)
         let relativePath = artifactRelativePath(sessionID: profiledRecord.id, revision: revision)
         let finalURL = rootURL.appendingPathComponent(relativePath)
 
@@ -123,6 +128,65 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func verifyArtifact(_ identity: DiveProfileArtifactIdentity) throws {
+        _ = try verifiedArtifactData(for: identity)
+    }
+
+    func matchesCanonicalArtifact(
+        for record: DiveSessionRecord,
+        existing identity: DiveProfileArtifactIdentity
+    ) throws -> Bool {
+        guard record.id == identity.localSessionId else {
+            return false
+        }
+
+        let artifactData = try verifiedArtifactData(for: identity)
+        let expectedArtifact = try canonicalArtifact(for: record, matching: identity, artifactData: artifactData)
+        return expectedArtifact.identity == identity && expectedArtifact.data == artifactData
+    }
+
+    func canonicalArtifact(
+        for record: DiveSessionRecord,
+        matching identity: DiveProfileArtifactIdentity
+    ) throws -> CanonicalDiveProfileArtifact {
+        guard record.id == identity.localSessionId else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+
+        let artifactData = try verifiedArtifactData(for: identity)
+        return try canonicalArtifact(for: record, matching: identity, artifactData: artifactData)
+    }
+
+    private func canonicalArtifact(
+        for record: DiveSessionRecord,
+        matching identity: DiveProfileArtifactIdentity,
+        artifactData: Data
+    ) throws -> CanonicalDiveProfileArtifact {
+        let existingProfile = try profileMetadata(from: artifactData)
+        let canonicalProfile = DiveProfileMetadata(
+            formatVersion: existingProfile.formatVersion,
+            contentRevision: identity.contentRevision,
+            sampleIntervalSeconds: existingProfile.sampleIntervalSeconds,
+            sampleCount: existingProfile.sampleCount,
+            interrupted: existingProfile.interrupted
+        )
+        let canonicalRecord = record.sanitizedForPersistence().withProfile(canonicalProfile)
+        let canonicalData = try canonicalSyncArtifactData(for: canonicalRecord)
+        let expectedIdentity = DiveProfileArtifactIdentity(
+            localSessionId: canonicalRecord.id,
+            contentRevision: canonicalProfile.contentRevision,
+            sha256: Self.sha256Hex(canonicalData),
+            byteCount: canonicalData.count,
+            sampleCount: canonicalRecord.samples.count,
+            relativePath: artifactRelativePath(
+                sessionID: canonicalRecord.id,
+                revision: canonicalProfile.contentRevision
+            )
+        )
+
+        return CanonicalDiveProfileArtifact(data: canonicalData, identity: expectedIdentity)
+    }
+
+    private func verifiedArtifactData(for identity: DiveProfileArtifactIdentity) throws -> Data {
         let data = try Data(contentsOf: artifactURL(for: identity))
         guard data.count == identity.byteCount,
               Self.sha256Hex(data) == identity.sha256,
@@ -136,6 +200,26 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
               samples.count == identity.sampleCount else {
             throw CocoaError(.fileReadCorruptFile)
         }
+        return data
+    }
+
+    private func profileMetadata(from artifactData: Data) throws -> DiveProfileMetadata {
+        guard let object = try JSONSerialization.jsonObject(with: artifactData) as? [String: Any],
+              let session = object["session"] as? [String: Any],
+              let profile = session["profile"] else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+
+        return try decoder.decode(
+            DiveProfileMetadata.self,
+            from: JSONSerialization.data(withJSONObject: profile)
+        )
+    }
+
+    private func canonicalSyncArtifactData(for record: DiveSessionRecord) throws -> Data {
+        let syncData = try record.syncMessageData()
+        let object = try JSONSerialization.jsonObject(with: syncData)
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
     }
 
     func migrateLegacyRecords(at legacyURL: URL) throws -> [DiveProfileManifestEntry] {

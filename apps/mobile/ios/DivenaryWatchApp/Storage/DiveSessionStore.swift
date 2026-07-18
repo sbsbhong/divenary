@@ -84,7 +84,9 @@ final class DiveSessionStore: ObservableObject {
 
     private func finalizedEntry(for session: DiveSessionRecord) throws -> DiveProfileManifestEntry {
         if let existingEntry = try profileStore.loadEntries().first(where: { $0.id == session.id }) {
-            try profileStore.verifyArtifact(existingEntry.artifact)
+            guard try profileStore.matchesCanonicalArtifact(for: session, existing: existingEntry.artifact) else {
+                throw CocoaError(.fileWriteFileExists)
+            }
             return existingEntry
         }
 
@@ -124,12 +126,15 @@ final class DiveSessionStore: ObservableObject {
             return
         }
 
-        guard !(syncStatus == .failed && sessions[index].syncStatus == .synced) else {
-            return
+        let effectiveStatus: DiveSyncStatus
+        if syncStatus == .failed, sessions[index].syncStatus == .synced {
+            effectiveStatus = .synced
+        } else {
+            effectiveStatus = syncStatus
         }
 
-        sessions[index] = sessions[index].withSyncStatus(syncStatus).sanitizedForPersistence()
-        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(syncStatus))
+        sessions[index] = sessions[index].withSyncStatus(effectiveStatus).sanitizedForPersistence()
+        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(effectiveStatus))
     }
 
     private func retryPendingSyncs() {

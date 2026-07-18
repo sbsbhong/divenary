@@ -184,7 +184,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
-    func testStoreDefersEnqueueAndPublicationUntilActiveCleanupSucceedsAndReusesFinalizedEntryOnRetry() throws {
+    func testStoreAcceptsCanonicalIdenticalRetryAfterCleanupFailure() throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()
         let fileManager = FailFirstActiveCleanupFileManager()
@@ -220,6 +220,10 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(revisions.values, ["review-revision-1"])
         XCTAssertEqual(fileManager.activeCleanupFailureCount, 1)
         XCTAssertEqual(try profileStore.loadActiveRecordings().map(\.metadata.localSessionId), [record.id])
+        let expectedArtifact = try profileStore.canonicalArtifact(for: record, matching: firstEntry.artifact)
+        XCTAssertEqual(expectedArtifact.identity, firstEntry.artifact)
+        XCTAssertEqual(expectedArtifact.data, try Data(contentsOf: profileStore.artifactURL(for: firstEntry.artifact)))
+        XCTAssertTrue(try profileStore.matchesCanonicalArtifact(for: record, existing: firstEntry.artifact))
 
         XCTAssertTrue(store.save(record))
 
@@ -229,6 +233,98 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         XCTAssertEqual(transport.enqueuedArtifacts, [firstEntry.artifact])
         XCTAssertEqual(store.sessions.map(\.id), [record.id])
         XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
+    }
+
+    @MainActor
+    func testStoreRejectsConflictingSameIDRecordBeforeCleanupEnqueueOrPublication() throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let fileManager = FailFirstActiveCleanupFileManager()
+        let revisions = RevisionSequence()
+        let profileStore = DiveProfileArtifactStore(
+            rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager,
+            makeRevision: { revisions.next() }
+        )
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: transport,
+            recordsStorageURL: storageURL,
+            fileManager: fileManager,
+            profileStore: profileStore
+        )
+        let record = Self.debugScubaRecord()
+        try profileStore.beginRecording(
+            ActiveDiveRecordingMetadata(
+                localSessionId: record.id,
+                startedAt: record.startedAt,
+                captureMode: record.captureMode,
+                plan: PreDivePlan(diveMode: record.diveMode)
+            )
+        )
+
+        XCTAssertFalse(store.save(record))
+        let existingEntry = try XCTUnwrap(profileStore.loadEntries().first)
+        let conflictingRecord = record.withSamples(
+            record.samples + [EngineTestFixtures.sample(240, depth: 21)]
+        )
+
+        XCTAssertFalse(store.save(conflictingRecord))
+
+        XCTAssertTrue(transport.enqueuedArtifacts.isEmpty)
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertEqual(try profileStore.loadEntries().map(\.artifact), [existingEntry.artifact])
+        XCTAssertEqual(revisions.values, ["review-revision-1"])
+        XCTAssertEqual(
+            try profileStore.loadActiveRecordings().map(\.metadata.localSessionId),
+            [record.id]
+        )
+    }
+
+    @MainActor
+    func testStoreRepairsPendingManifestAfterSyncedStatusWriteFailsThenRetryReturnsFailed() async throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let rootURL = storageURL.deletingLastPathComponent()
+        let fileManager = FileManager.default
+        let transport = StubWatchSyncTransport(enqueueStatuses: [.synced, .failed])
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: transport,
+            recordsStorageURL: storageURL
+        )
+        let record = Self.debugScubaRecord()
+        transport.onEnqueue = {
+            guard transport.enqueuedArtifacts.count == 1 else {
+                return
+            }
+            try? fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o555)],
+                ofItemAtPath: rootURL.path
+            )
+        }
+        defer {
+            try? fileManager.setAttributes(
+                [.posixPermissions: NSNumber(value: 0o700)],
+                ofItemAtPath: rootURL.path
+            )
+            try? fileManager.removeItem(at: rootURL)
+        }
+
+        XCTAssertTrue(store.save(record))
+        XCTAssertEqual(store.sessions.first?.syncStatus, .synced)
+        XCTAssertEqual(try profileEntries(at: storageURL).first?.displayRecord.syncStatus, .pending)
+
+        try fileManager.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o700)],
+            ofItemAtPath: rootURL.path
+        )
+        await store.refreshFromCompanion()
+
+        XCTAssertEqual(transport.enqueuedArtifacts.count, 2)
+        XCTAssertEqual(store.sessions.first?.syncStatus, .synced)
+        XCTAssertEqual(try profileEntries(at: storageURL).first?.displayRecord.syncStatus, .synced)
     }
 
     @MainActor
@@ -1028,13 +1124,22 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     var onActivationCompleted: (() -> Void)?
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)?
 
-    private let enqueueStatus: DiveSyncStatus
+    var onEnqueue: (() -> Void)?
+    private var enqueueStatuses: [DiveSyncStatus]
+    private let fallbackEnqueueStatus: DiveSyncStatus
     private(set) var enqueuedArtifacts: [DiveProfileArtifactIdentity] = []
     private(set) var enqueuedFileURLs: [URL] = []
     private(set) var activateCallCount = 0
 
     init(enqueueStatus: DiveSyncStatus) {
-        self.enqueueStatus = enqueueStatus
+        enqueueStatuses = [enqueueStatus]
+        fallbackEnqueueStatus = enqueueStatus
+    }
+
+    init(enqueueStatuses: [DiveSyncStatus]) {
+        precondition(!enqueueStatuses.isEmpty)
+        self.enqueueStatuses = enqueueStatuses
+        fallbackEnqueueStatus = enqueueStatuses[enqueueStatuses.count - 1]
     }
 
     func activate() {
@@ -1044,7 +1149,11 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     func enqueue(artifact: DiveProfileArtifactIdentity, fileURL: URL) -> DiveSyncStatus {
         enqueuedArtifacts.append(artifact)
         enqueuedFileURLs.append(fileURL)
-        return enqueueStatus
+        onEnqueue?()
+        guard !enqueueStatuses.isEmpty else {
+            return fallbackEnqueueStatus
+        }
+        return enqueueStatuses.removeFirst()
     }
 
     func refreshPlannedDives() {}

@@ -46,7 +46,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     func startSession(plan: PreDivePlan = PreDivePlan()) {
-        guard !isRecording else { return }
+        guard !isRecording, activeRecordID == nil else { return }
 
         samples = []
         currentDepth = 0
@@ -167,15 +167,29 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         )
     }
 
-    func cancelSession() {
-        let sessionID = activeRecordID
-        resetCompletedSession()
-        if let sessionID {
-            try? profileStore.clearActiveRecording(sessionID: sessionID)
+    @discardableResult
+    func cancelSession() -> Bool {
+        stopCaptureAndResetSessionState()
+        guard let sessionID = activeRecordID else {
+            return true
+        }
+
+        do {
+            try profileStore.clearActiveRecording(sessionID: sessionID)
+            activeRecordID = nil
+            return true
+        } catch {
+            recordingPersistenceError = error.localizedDescription
+            return false
         }
     }
 
     func resetCompletedSession() {
+        stopCaptureAndResetSessionState()
+        activeRecordID = nil
+    }
+
+    private func stopCaptureAndResetSessionState() {
         sensorProvider.stop()
         sensorProvider.onSample = nil
         elapsedTimer?.invalidate()
@@ -187,7 +201,6 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         scubaEngine = nil
         profileSampler = nil
         lastRawSample = nil
-        activeRecordID = nil
         isRecording = false
     }
 
