@@ -1,7 +1,7 @@
 # Watch 앱 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18
-Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18
+Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md)
 Updated: 2026-07-18
 
 ## 요약
@@ -15,6 +15,24 @@ Updated: 2026-07-18
 `WaterSubmersionCoordinator`는 production에서 유일하게 `CMWaterSubmersionManager`를 만든다. 이 coordinator는 valid depth/pressure sample, optional temperature, submersion event, error, authorized `maximumDepth`를 앱 범위에서 전달한다. `RealDepthSensorProvider`는 manager owner가 아니라 real recorder의 sample subscription adapter다.
 
 `DivenaryWatchApplicationDelegate.handle(_:)`는 watchOS가 준 `WKExtendedRuntimeSession`을 runtime controller로 즉시 넘긴다. controller는 `handle(_:)`가 끝나기 전에 concrete delegate를 붙이고, adopted session에는 `start()`를 다시 호출하지 않는다.
+
+## 라이브 상승 속도 추정 범위
+
+이전 live 값은 인접한 두 raw callback의 수심 차를 경과 시간으로 나눴다. callback은 대략 초당 세 번 들어올 수 있어 작은 jitter가 callback마다 spike와 0을 번갈아 보이게 할 수 있었다.
+
+`DisplayAscentRateEstimator`는 newest accepted raw sample 기준으로 5초보다 오래된 sample을 버리고, 남은 oldest와 newest의 usable span이 3초 이상일 때만 값을 낸다. strict 상승 조건과 값은 다음과 같다.
+
+```text
+oldest.depthMeters > newest.depthMeters + 0.15
+netDepthDecrease = oldest.depthMeters - newest.depthMeters
+rateMetersPerMinute = netDepthDecrease / elapsedSeconds * 60
+```
+
+따라서 순수 수심 감소가 `<=0.15m`이거나 구간이 3초보다 짧으면 0이다. invalid/non-finite sample, duplicate timestamp, out-of-order timestamp는 0을 반환하고 기존 window를 손상시키지 않는다. recorder start와 cancel/completed-session reset은 estimator history, live value, transient warning을 함께 초기화하므로 session 사이에 sample이 남지 않는다.
+
+이 변경은 `DiveSessionRecorder.latestAscentRateMetersPerMinute`와 이를 strict `>9m/min`으로 읽는 `ascentWarningActive`만 대상으로 한다. raw callback 처리와 `lastRawSample`, 1Hz `OneHertzProfileSampler` artifact/local persistence, sync schema와 version, `ScubaDiveEngine`의 historical `latestAscentRateMetersPerMinute` 및 `maxAscentRateMetersPerMinute`은 그대로다. 화면의 `Ascent` metric은 recorder의 이 live field에 계속 binding한다.
+
+smoothed rate와 transient warning은 기록 화면의 비인증 보조 reference다. 감압 의무, 안전한 상승 판단, underwater instruction을 계산하지 않으며 인증된 다이브 컴퓨터나 훈련을 대체하지 않는다.
 
 ## 시작 규칙
 

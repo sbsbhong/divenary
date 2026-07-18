@@ -835,3 +835,5 @@
 - Updated: 구현 우선순위 기록
 - Updated: 모바일 로그북 로드맵
 - Updated: 열린 질문
+
+## [2026-07-18] ingest | Watch 앱 구조
