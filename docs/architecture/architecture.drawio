@@ -1,166 +1,166 @@
-<mxfile host="app.diagrams.net" modified="2026-07-10T00:00:00.000Z" agent="codex" version="24.7.17" type="device">
-  <diagram id="overview" name="Overview">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
-      <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="o-title" value="diving-app monorepo&lt;br&gt;Recreational log companion&lt;br&gt;current / PoC / future / reserved&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="30" width="1320" height="110"/>
-        </mxCell>
-        <mxCell id="o-workspace" value="Yarn 1 workspaces&lt;br&gt;Turborepo scripts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=16;fontStyle=1;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="70" y="180" width="260" height="100"/>
-        </mxCell>
-        <mxCell id="o-mobile" value="apps/mobile&lt;br&gt;React Native app&lt;br&gt;iOS native project&lt;br&gt;Android project&lt;br&gt;current" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="420" y="170" width="300" height="135"/>
-        </mxCell>
-        <mxCell id="o-watch" value="apps/mobile/ios/DiveWatchApp&lt;br&gt;SwiftUI watchOS companion&lt;br&gt;embedded in DiveMobile.xcodeproj&lt;br&gt;PoC&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="820" y="170" width="350" height="145"/>
-        </mxCell>
-        <mxCell id="o-contracts" value="packages/contracts&lt;br&gt;JSON Schema source&lt;br&gt;generated TypeScript&lt;br&gt;generated Swift&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="420" y="390" width="330" height="145"/>
-        </mxCell>
-        <mxCell id="o-shared" value="packages/shared-utils&lt;br&gt;reserved&lt;br&gt;currently empty&lt;br&gt;future" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="70" y="410" width="260" height="115"/>
-        </mxCell>
-        <mxCell id="o-wiki" value=".wiki&lt;br&gt;durable architecture knowledge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="820" y="430" width="290" height="90"/>
-        </mxCell>
-        <mxCell id="o-docs" value="docs&lt;br&gt;specs, plans, architecture diagrams" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="820" y="610" width="290" height="90"/>
-        </mxCell>
-        <mxCell id="o-safety" value="Safety boundary&lt;br&gt;not a certified dive computer&lt;br&gt;logs, review, reminders, watch-captured sync only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="70" y="620" width="360" height="100"/>
-        </mxCell>
-        <mxCell id="o-edge-workspace-mobile" value="workspace package ownership" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" edge="1" parent="1" source="o-workspace" target="o-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="o-edge-mobile-watch" value="companion target embed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="o-mobile" target="o-watch">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="o-edge-contracts-mobile" value="mobile validation/import" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" edge="1" parent="1" source="o-contracts" target="o-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="o-edge-contracts-watch" value="generated output, not currently compiled into watch target" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="o-contracts" target="o-watch">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="810" y="390"/>
-              <mxPoint x="1015" y="390"/>
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="o-edge-wiki-docs" value="diagram update check when architecture changes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" edge="1" parent="1" source="o-wiki" target="o-docs">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="o-edge-docs-contracts" value="architecture reference" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" edge="1" parent="1" source="o-docs" target="o-contracts">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
-  <diagram id="apps" name="Apps">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
-      <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="a-title" value="Application runtime boundaries&lt;br&gt;current mobile review surface and PoC watch companion&lt;br&gt;Recreational log companion&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="30" width="1320" height="105"/>
-        </mxCell>
-        <mxCell id="a-mobile" value="React Native mobile app&lt;br&gt;Navigation + screens&lt;br&gt;React Query state hooks&lt;br&gt;AsyncStorage repositories&lt;br&gt;runtime watch payload validation&lt;br&gt;Logbook / Planbook / Settings / Home&lt;br&gt;current" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="180" width="330" height="210"/>
-        </mxCell>
-        <mxCell id="a-native" value="iOS native bridge&lt;br&gt;WatchConnectivityInbox&lt;br&gt;WatchConnectivityModule&lt;br&gt;durable pending inbox&lt;br&gt;planned-dive context publisher&lt;br&gt;linked watch status&lt;br&gt;PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="500" y="170" width="340" height="220"/>
-        </mxCell>
-        <mxCell id="a-watch" value="watchOS companion&lt;br&gt;SwiftUI views&lt;br&gt;recording engines&lt;br&gt;file-backed session store&lt;br&gt;WatchConnectivity transport&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="960" y="180" width="330" height="200"/>
-        </mxCell>
-        <mxCell id="a-contract" value="local sync contract&lt;br&gt;WatchSyncMessage&lt;br&gt;WatchSession&lt;br&gt;DepthSample&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="485" y="520" width="370" height="150"/>
-        </mxCell>
-        <mxCell id="a-storage" value="Mobile persistence&lt;br&gt;AsyncStorage logs, plans, settings&lt;br&gt;durable pending inbox import review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="60" y="540" width="330" height="115"/>
-        </mxCell>
-        <mxCell id="a-watch-store" value="Watch local persistence&lt;br&gt;file-backed session store&lt;br&gt;sync-ready JSON export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="960" y="540" width="330" height="115"/>
-        </mxCell>
-        <mxCell id="a-future" value="future / reserved&lt;br&gt;cloud sync and account services are outside current app runtime" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=15;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="485" y="725" width="370" height="90"/>
-        </mxCell>
-        <mxCell id="a-edge-watch-native" value="WatchConnectivity payload" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="a-watch" target="a-native">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-native-watch" value="planned dive application context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="a-native" target="a-watch">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-native-mobile" value="import acknowledgement" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" edge="1" parent="1" source="a-native" target="a-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-mobile-contract" value="runtime validation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" edge="1" parent="1" source="a-mobile" target="a-contract">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-watch-contract" value="sync-ready JSON shape" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="a-watch" target="a-contract">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-storage-mobile" value="read and write local app state" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" edge="1" parent="1" source="a-mobile" target="a-storage">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-watch-store" value="recorded session persistence" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="a-watch" target="a-watch-store">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="a-edge-ack-contract" value="Local import acknowledgement, not cloud sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" edge="1" parent="1" source="a-contract" target="a-future">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
-  <diagram id="external-services" name="External Services">
-    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
-      <root>
-        <mxCell id="0"/>
-        <mxCell id="1" parent="0"/>
-        <mxCell id="e-title" value="External Services&lt;br&gt;Recreational log companion&lt;br&gt;current local app, PoC platform links, future reserved services&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="40" y="30" width="1320" height="110"/>
-        </mxCell>
-        <mxCell id="e-openmeteo" value="Open-Meteo boundary&lt;br&gt;current Home conditions provider&lt;br&gt;current / PoC client-side provider&lt;br&gt;weather / marine conditions&lt;br&gt;not safety-critical&lt;br&gt;current / PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="70" y="190" width="330" height="180"/>
-        </mxCell>
-        <mxCell id="e-supabase" value="Supabase/Auth/Cloud Sync boundary&lt;br&gt;future&lt;br&gt;no current client&lt;br&gt;no migrations&lt;br&gt;no RLS policies&lt;br&gt;no cloud backup&lt;br&gt;reserved" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="530" y="180" width="360" height="185"/>
-        </mxCell>
-        <mxCell id="e-apple" value="Apple platform services&lt;br&gt;WatchConnectivity&lt;br&gt;Core Motion underwater sensor boundary&lt;br&gt;Notifications&lt;br&gt;PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="1010" y="190" width="330" height="155"/>
-        </mxCell>
-        <mxCell id="e-validation" value="real-device validation&lt;br&gt;pairing&lt;br&gt;background delivery&lt;br&gt;underwater sensor behavior&lt;br&gt;auto-launch&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="1010" y="500" width="330" height="170"/>
-        </mxCell>
-        <mxCell id="e-mobile" value="mobile app boundary&lt;br&gt;current local repositories&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="70" y="520" width="330" height="120"/>
-        </mxCell>
-        <mxCell id="e-watch" value="watch app boundary&lt;br&gt;current local session capture&lt;br&gt;requires paired Apple Watch validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="530" y="520" width="360" height="120"/>
-        </mxCell>
-        <mxCell id="e-safety" value="Safety claim boundary&lt;br&gt;not safety-critical&lt;br&gt;no certified dive-computer behavior&lt;br&gt;no emergency guidance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=16;spacing=8;" vertex="1" parent="1">
-          <mxGeometry as="geometry" x="530" y="720" width="360" height="120"/>
-        </mxCell>
-        <mxCell id="e-edge-openmeteo-mobile" value="current Home conditions provider boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="e-openmeteo" target="e-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e-edge-supabase-mobile" value="future cloud sync boundary, no current client" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" edge="1" parent="1" source="e-supabase" target="e-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e-edge-apple-watch" value="WatchConnectivity and sensor platform APIs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="e-apple" target="e-watch">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e-edge-apple-validation" value="requires real-device validation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#ea580c;fontSize=12;" edge="1" parent="1" source="e-apple" target="e-validation">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e-edge-watch-mobile" value="WatchConnectivity payload and import acknowledgement" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" edge="1" parent="1" source="e-watch" target="e-mobile">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-        <mxCell id="e-edge-safety-mobile" value="not safety-critical" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#ea580c;fontSize=12;" edge="1" parent="1" source="e-mobile" target="e-safety">
-          <mxGeometry relative="1" as="geometry"/>
-        </mxCell>
-      </root>
-    </mxGraphModel>
-  </diagram>
+<mxfile host="65bd71144e">
+    <diagram id="overview" name="Overview">
+        <mxGraphModel dx="937" dy="503" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="o-title" value="diving-app monorepo&lt;br&gt;Recreational log companion&lt;br&gt;current / PoC / future / reserved&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="30" width="1320" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-workspace" value="Yarn 1 workspaces&lt;br&gt;Turborepo scripts" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=16;fontStyle=1;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="180" width="260" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-mobile" value="apps/mobile&lt;br&gt;React Native app&lt;br&gt;iOS native project&lt;br&gt;Android project&lt;br&gt;current" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="420" y="170" width="300" height="135" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-watch" value="apps/mobile/ios/DiveWatchApp&lt;br&gt;SwiftUI watchOS companion&lt;br&gt;embedded in DiveMobile.xcodeproj&lt;br&gt;PoC&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="170" width="350" height="145" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-contracts" value="packages/contracts&lt;br&gt;JSON Schema source&lt;br&gt;generated TypeScript&lt;br&gt;generated Swift&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="420" y="390" width="330" height="145" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-shared" value="packages/shared-utils&lt;br&gt;reserved&lt;br&gt;currently empty&lt;br&gt;future" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="410" width="260" height="115" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-wiki" value=".wiki&lt;br&gt;durable architecture knowledge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="430" width="290" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-docs" value="docs&lt;br&gt;specs, plans, architecture diagrams" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="820" y="610" width="290" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-safety" value="Safety boundary&lt;br&gt;not a certified dive computer&lt;br&gt;logs, review, reminders, watch-captured sync only" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="620" width="360" height="100" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-edge-workspace-mobile" value="workspace package ownership" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" parent="1" source="o-workspace" target="o-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-edge-mobile-watch" value="companion target embed" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="o-mobile" target="o-watch" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-edge-contracts-mobile" value="mobile validation/import" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" parent="1" source="o-contracts" target="o-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-edge-contracts-watch" value="generated output, not currently compiled into watch target" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="o-contracts" target="o-watch" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="810" y="390"/>
+                            <mxPoint x="1015" y="390"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="o-edge-wiki-docs" value="diagram update check when architecture changes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" parent="1" source="o-wiki" target="o-docs" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="o-edge-docs-contracts" value="architecture reference" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" parent="1" source="o-docs" target="o-contracts" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="apps" name="Apps">
+        <mxGraphModel dx="937" dy="503" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="a-title" value="Application runtime boundaries&lt;br&gt;current mobile review surface and PoC watch companion&lt;br&gt;Recreational log companion&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="30" width="1320" height="105" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-mobile" value="React Native mobile app&lt;br&gt;Navigation + screens&lt;br&gt;React Query state hooks&lt;br&gt;AsyncStorage repositories&lt;br&gt;runtime watch payload validation&lt;br&gt;Logbook / Planbook / Settings / Home&lt;br&gt;current" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="180" width="330" height="210" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-native" value="iOS native bridge&lt;br&gt;WatchConnectivityInbox&lt;br&gt;WatchConnectivityModule&lt;br&gt;durable pending inbox&lt;br&gt;planned-dive context publisher&lt;br&gt;linked watch status&lt;br&gt;PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="500" y="170" width="340" height="220" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-watch" value="watchOS companion&lt;br&gt;SwiftUI views&lt;br&gt;recording engines&lt;br&gt;file-backed session store&lt;br&gt;WatchConnectivity transport&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="180" width="330" height="200" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-contract" value="local sync contract&lt;br&gt;WatchSyncMessage&lt;br&gt;WatchSession&lt;br&gt;DepthSample&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="485" y="520" width="370" height="150" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-storage" value="Mobile persistence&lt;br&gt;AsyncStorage logs, plans, settings&lt;br&gt;durable pending inbox import review" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="60" y="540" width="330" height="115" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-watch-store" value="Watch local persistence&lt;br&gt;file-backed session store&lt;br&gt;sync-ready JSON export" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eff6ff;strokeColor=#60a5fa;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="960" y="540" width="330" height="115" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-future" value="future / reserved&lt;br&gt;cloud sync and account services are outside current app runtime" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=15;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="485" y="725" width="370" height="90" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-watch-native" value="WatchConnectivity payload" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="a-watch" target="a-native" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-native-watch" value="planned dive application context" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="a-native" target="a-watch" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-native-mobile" value="import acknowledgement" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" parent="1" source="a-native" target="a-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-mobile-contract" value="runtime validation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" parent="1" source="a-mobile" target="a-contract" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-watch-contract" value="sync-ready JSON shape" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="a-watch" target="a-contract" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-storage-mobile" value="read and write local app state" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#2563eb;fontSize=12;" parent="1" source="a-mobile" target="a-storage" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-watch-store" value="recorded session persistence" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="a-watch" target="a-watch-store" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="a-edge-ack-contract" value="Local import acknowledgement, not cloud sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" parent="1" source="a-contract" target="a-future" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+    <diagram id="external-services" name="External Services">
+        <mxGraphModel dx="937" dy="503" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="900" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="e-title" value="External Services&lt;br&gt;Recreational log companion&lt;br&gt;current local app, PoC platform links, future reserved services&lt;br&gt;Not certified dive-computer behavior" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=22;fontStyle=1;spacing=10;" parent="1" vertex="1">
+                    <mxGeometry x="40" y="30" width="1320" height="110" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-openmeteo" value="Open-Meteo boundary&lt;br&gt;current Home conditions provider&lt;br&gt;current / PoC client-side provider&lt;br&gt;weather / marine conditions&lt;br&gt;not safety-critical&lt;br&gt;current / PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="190" width="330" height="180" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-supabase" value="Supabase/Auth/Cloud Sync boundary&lt;br&gt;future&lt;br&gt;no current client&lt;br&gt;no migrations&lt;br&gt;no RLS policies&lt;br&gt;no cloud backup&lt;br&gt;reserved" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f3f4f6;strokeColor=#9ca3af;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="530" y="180" width="360" height="185" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-apple" value="Apple platform services&lt;br&gt;WatchConnectivity&lt;br&gt;Core Motion underwater sensor boundary&lt;br&gt;Notifications&lt;br&gt;PoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="190" width="330" height="155" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-validation" value="real-device validation&lt;br&gt;pairing&lt;br&gt;background delivery&lt;br&gt;underwater sensor behavior&lt;br&gt;auto-launch&lt;br&gt;requires real-device validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="1010" y="500" width="330" height="170" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-mobile" value="mobile app boundary&lt;br&gt;current local repositories&lt;br&gt;Local import acknowledgement, not cloud sync" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dbeafe;strokeColor=#2563eb;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="70" y="520" width="330" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-watch" value="watch app boundary&lt;br&gt;current local session capture&lt;br&gt;requires paired Apple Watch validation" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fef3c7;strokeColor=#d97706;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="530" y="520" width="360" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-safety" value="Safety claim boundary&lt;br&gt;not safety-critical&lt;br&gt;no certified dive-computer behavior&lt;br&gt;no emergency guidance" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#ea580c;fontSize=16;spacing=8;" parent="1" vertex="1">
+                    <mxGeometry x="530" y="720" width="360" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-openmeteo-mobile" value="current Home conditions provider boundary" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="e-openmeteo" target="e-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-supabase-mobile" value="future cloud sync boundary, no current client" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#6b7280;fontSize=12;" parent="1" source="e-supabase" target="e-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-apple-watch" value="WatchConnectivity and sensor platform APIs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="e-apple" target="e-watch" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-apple-validation" value="requires real-device validation" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#ea580c;fontSize=12;" parent="1" source="e-apple" target="e-validation" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-watch-mobile" value="WatchConnectivity payload and import acknowledgement" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#d97706;fontSize=12;" parent="1" source="e-watch" target="e-mobile" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e-edge-safety-mobile" value="not safety-critical" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;endFill=1;strokeColor=#ea580c;fontSize=12;" parent="1" source="e-mobile" target="e-safety" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
 </mxfile>
