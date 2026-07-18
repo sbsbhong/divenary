@@ -60,12 +60,18 @@ struct DisplayAscentRateEstimator {
 
     private func rate(from oldest: DepthSample, to newest: DepthSample) -> Double {
         let elapsed = newest.timestamp.timeIntervalSince(oldest.timestamp)
-        let netDepthDecrease = oldest.depthMeters - newest.depthMeters
 
         guard elapsed.isFinite,
               elapsed >= minimumWindowDuration,
-              netDepthDecrease.isFinite,
-              exceedsDeadbandIgnoringULPNoise(netDepthDecrease) else {
+              hasStrictAscentBeyondDeadband(
+                  oldestDepthMeters: oldest.depthMeters,
+                  newestDepthMeters: newest.depthMeters
+              ) else {
+            return 0
+        }
+
+        let netDepthDecrease = oldest.depthMeters - newest.depthMeters
+        guard netDepthDecrease.isFinite else {
             return 0
         }
 
@@ -73,8 +79,10 @@ struct DisplayAscentRateEstimator {
         return rate.isFinite && rate > 0 ? rate : 0
     }
 
-    private func exceedsDeadbandIgnoringULPNoise(_ netDepthDecrease: Double) -> Bool {
-        let comparisonTolerance = max(depthDeadbandMeters.ulp, netDepthDecrease.ulp) * 16
-        return netDepthDecrease > depthDeadbandMeters + comparisonTolerance
+    private func hasStrictAscentBeyondDeadband(
+        oldestDepthMeters: Double,
+        newestDepthMeters: Double
+    ) -> Bool {
+        oldestDepthMeters > newestDepthMeters + depthDeadbandMeters
     }
 }

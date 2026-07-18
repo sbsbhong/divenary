@@ -51,6 +51,21 @@ final class DisplayAscentRateEstimatorTests: XCTestCase {
         XCTAssertEqual(estimator.append(sample(at: 3, depth: 12.0)), 0)
     }
 
+    func testOneRepresentableStepAboveDeadbandAtZeroOffsetIsPositive() {
+        var estimator = DisplayAscentRateEstimator()
+
+        XCTAssertEqual(estimator.append(sample(at: 0, depth: 0.15.nextUp)), 0)
+        XCTAssertGreaterThan(estimator.append(sample(at: 3, depth: 0)), 0)
+    }
+
+    func testOneRepresentableStepAboveDeadbandAtNonZeroDepthIsPositive() {
+        var estimator = DisplayAscentRateEstimator()
+        let oldestDepth = (12.0 + 0.15).nextUp
+
+        XCTAssertEqual(estimator.append(sample(at: 0, depth: oldestDepth)), 0)
+        XCTAssertGreaterThan(estimator.append(sample(at: 3, depth: 12.0)), 0)
+    }
+
     func testFlatAndDeeperNewestSamplesReturnZero() {
         var estimator = DisplayAscentRateEstimator()
 
@@ -107,18 +122,42 @@ final class DisplayAscentRateEstimatorTests: XCTestCase {
     }
 
     func testRejectsFiniteTimestampsWithNonFiniteIntervalWithoutMutatingHistory() {
-        let lowerTimestamp = Date(timeIntervalSinceReferenceDate: -Double.greatestFiniteMagnitude)
-        let upperTimestamp = Date(timeIntervalSinceReferenceDate: Double.greatestFiniteMagnitude)
-        XCTAssertTrue(lowerTimestamp.timeIntervalSinceReferenceDate.isFinite)
-        XCTAssertTrue(upperTimestamp.timeIntervalSinceReferenceDate.isFinite)
-        XCTAssertFalse(upperTimestamp.timeIntervalSince(lowerTimestamp).isFinite)
+        let maximumWindowDuration = Double.greatestFiniteMagnitude
+        let retainedReferenceInterval = -maximumWindowDuration / 2
+        let candidateReferenceInterval = maximumWindowDuration
+        let recoveryReferenceInterval = maximumWindowDuration / 2
+        let retainedTimestamp = Date(timeIntervalSinceReferenceDate: retainedReferenceInterval)
+        let candidateTimestamp = Date(timeIntervalSinceReferenceDate: candidateReferenceInterval)
+        let recoveryTimestamp = Date(timeIntervalSinceReferenceDate: recoveryReferenceInterval)
+        let retainedToCandidate = candidateTimestamp.timeIntervalSince(retainedTimestamp)
+        let retainedToRecovery = recoveryTimestamp.timeIntervalSince(retainedTimestamp)
 
-        var estimator = DisplayAscentRateEstimator()
+        XCTAssertTrue(retainedTimestamp.timeIntervalSinceReferenceDate.isFinite)
+        XCTAssertTrue(candidateTimestamp.timeIntervalSinceReferenceDate.isFinite)
+        XCTAssertTrue(recoveryTimestamp.timeIntervalSinceReferenceDate.isFinite)
+        XCTAssertFalse(retainedToCandidate.isFinite)
+        XCTAssertTrue(retainedToRecovery.isFinite)
+        XCTAssertEqual(retainedToRecovery, maximumWindowDuration)
+        XCTAssertLessThanOrEqual(retainedToRecovery, maximumWindowDuration)
+        XCTAssertEqual(
+            recoveryTimestamp.addingTimeInterval(-maximumWindowDuration).timeIntervalSinceReferenceDate,
+            retainedReferenceInterval
+        )
 
-        XCTAssertEqual(estimator.append(sample(timestamp: lowerTimestamp, depth: 12)), 0)
-        XCTAssertEqual(estimator.append(sample(timestamp: upperTimestamp, depth: 0)), 0)
-        XCTAssertEqual(estimator.append(sample(at: 0, depth: 12)), 0)
-        XCTAssertEqual(estimator.append(sample(at: 3, depth: 10.5)), 30, accuracy: 0.000001)
+        var referenceEstimator = DisplayAscentRateEstimator(maximumWindowDuration: maximumWindowDuration)
+        XCTAssertEqual(referenceEstimator.append(sample(timestamp: retainedTimestamp, depth: 20)), 0)
+        let expectedRate = referenceEstimator.append(sample(timestamp: recoveryTimestamp, depth: 18))
+        XCTAssertTrue(expectedRate.isFinite)
+        XCTAssertGreaterThan(expectedRate, 0)
+
+        var estimator = DisplayAscentRateEstimator(maximumWindowDuration: maximumWindowDuration)
+        XCTAssertEqual(estimator.append(sample(timestamp: retainedTimestamp, depth: 20)), 0)
+        XCTAssertEqual(estimator.append(sample(timestamp: candidateTimestamp, depth: 0)), 0)
+        let recoveryRate = estimator.append(sample(timestamp: recoveryTimestamp, depth: 18))
+
+        XCTAssertEqual(recoveryRate, expectedRate)
+        XCTAssertTrue(recoveryRate.isFinite)
+        XCTAssertGreaterThan(recoveryRate, 0)
     }
 
     func testRejectsDuplicateTimestampWithoutMutatingValidWindow() {
