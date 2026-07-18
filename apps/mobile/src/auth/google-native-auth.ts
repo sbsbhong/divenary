@@ -29,7 +29,7 @@ export async function signInWithGoogle(): Promise<NativeSocialResult> {
   try {
     response = await GoogleSignin.signIn();
   } catch (error) {
-    throw new NativeSocialAuthError('provider', {cause: error});
+    throw new NativeSocialAuthError('provider');
   }
 
   if (isCancelledResponse(response)) {

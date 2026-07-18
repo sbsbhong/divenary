@@ -18,15 +18,10 @@ export type NativeSocialAuthErrorCode =
 
 export class NativeSocialAuthError extends Error {
   readonly code: NativeSocialAuthErrorCode;
-  readonly cause?: unknown;
 
-  constructor(
-    code: NativeSocialAuthErrorCode,
-    options?: {cause?: unknown},
-  ) {
+  constructor(code: NativeSocialAuthErrorCode) {
     super('Social authentication failed');
     this.name = 'NativeSocialAuthError';
     this.code = code;
-    this.cause = options?.cause;
   }
 }

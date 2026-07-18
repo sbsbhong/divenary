@@ -33,7 +33,7 @@
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 local-first guest data를 유지하면서 Keychain-compatible native social Auth와 versioned mandatory consent를 소유한다. | 2026-07-15 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch의 bounded 1Hz local profile과 file transport를 유지하며 remote profile table/Storage는 3B 후속으로 분리한다. | 2026-07-15 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 workspace 앱·공유 package와 root local Supabase/Auth migration/test 경계를 함께 관리한다. | 2026-07-15 |
-| [Supabase 구조](architecture/supabase.md)                                      | 구현된 3A local Auth/RLS/consent, signed Divenary와 Google iOS callback, pending hosted physical gate를 구분하고 3B-3D 경계를 정리한다. | 2026-07-16 |
+| [Supabase 구조](architecture/supabase.md)                                      | 3A local/staging/release 모드와 endpoint를 함께 검증하고, staging-only promotion, signed physical Google/Apple Auth gate 및 3B-3D 경계를 정리한다. | 2026-07-18 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch acknowledgement와 cloud 상태를 분리하며, mobile Auth가 있어도 Watch payload와 guest repository에는 principal을 붙이지 않는다. | 2026-07-15 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Watch 수온은 optional이며 0°C fallback을 쓰지 않는다. DEBUG `Test Large Sync`는 8,000-sample record를 일반 저장·file-transfer 경로로 보낸다. | 2026-07-12 |
 
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | 남은 Watch·센서 검증, Wave 3A hosted provider/legal/physical Auth 승격 gate, 3B-3D, Memory/share, 실제 잠수 gate를 기록한다. | 2026-07-16 |
+| [열린 질문](questions/open-questions.md) | 남은 Watch·센서 검증, staging 이후 signed physical Google/Apple Auth 승격 gate, production Auth 준비, 3B-3D, Memory/share, 실제 잠수 gate를 기록한다. | 2026-07-18 |

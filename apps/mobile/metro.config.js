@@ -1,6 +1,9 @@
 const path = require('path');
 const { getDefaultConfig, mergeConfig } = require('@react-native/metro-config');
 const { withNativeWind } = require('nativewind/metro');
+const {
+  createMetroEnvironmentConfig,
+} = require('./scripts/create-metro-environment-config');
 
 const projectRoot = __dirname;
 const workspaceRoot = path.resolve(projectRoot, '../..');
@@ -12,6 +15,7 @@ const workspaceRoot = path.resolve(projectRoot, '../..');
  * @type {import('@react-native/metro-config').MetroConfig}
  */
 const config = {
+  ...createMetroEnvironmentConfig(),
   projectRoot,
   watchFolders: [workspaceRoot],
   resolver: {

@@ -1,12 +1,25 @@
+import {Platform} from 'react-native';
+
 declare const __OPEN_METEO_API_KEY__: string | undefined;
+declare const __MOBILE_ENVIRONMENT_MODE__: string | undefined;
 declare const __SUPABASE_URL__: string | undefined;
+declare const __SUPABASE_ANDROID_URL__: string | undefined;
 declare const __SUPABASE_PUBLISHABLE_KEY__: string | undefined;
+declare const __LOCAL_AUTH_EMAIL__: string | undefined;
+declare const __LOCAL_AUTH_PASSWORD__: string | undefined;
 declare const __GOOGLE_WEB_CLIENT_ID__: string | undefined;
 declare const __GOOGLE_IOS_CLIENT_ID__: string | undefined;
 
 type SupabaseEnvironmentInput = {
   url: string | undefined;
+  androidUrl?: string | undefined;
   publishableKey: string | undefined;
+};
+
+type LocalDevelopmentAuthEnvironmentInput = {
+  url: string | undefined;
+  email: string | undefined;
+  password: string | undefined;
 };
 
 type GoogleEnvironmentInput = {
@@ -19,19 +32,46 @@ export type SupabaseEnvironment = {
   publishableKey: string;
 };
 
+export type MobileEnvironmentMode = 'local' | 'staging' | 'release';
+
 export type GoogleEnvironment = {
   webClientId: string;
   iosClientId: string;
 };
 
+export type LocalDevelopmentAuthEnvironment = {
+  email: string;
+  password: string;
+};
+
+export const stagingSupabaseOrigin =
+  'https://mclvhwzsuvsxjerdouka.supabase.co';
+
 const invalidSupabaseUrl = () =>
   new Error('Invalid SUPABASE_URL configuration');
+
+const localSupabaseHosts = new Set([
+  'localhost',
+  '127.0.0.1',
+  '10.0.2.2',
+]);
+
+export const parseMobileEnvironmentMode = (
+  value: string | undefined,
+): MobileEnvironmentMode =>
+  value === 'local' || value === 'staging' || value === 'release'
+    ? value
+    : 'release';
 
 export const parseSupabaseEnvironment = (
   input: SupabaseEnvironmentInput,
   isDevelopment: boolean,
+  platform: 'android' | 'ios' = Platform.OS === 'android' ? 'android' : 'ios',
 ): SupabaseEnvironment | undefined => {
-  const url = input.url?.trim() ?? '';
+  const androidUrl = input.androidUrl?.trim();
+  const url =
+    (platform === 'android' ? androidUrl || input.url : input.url)?.trim() ??
+    '';
   const publishableKey = input.publishableKey?.trim() ?? '';
 
   if (!url || !publishableKey) {
@@ -54,7 +94,9 @@ export const parseSupabaseEnvironment = (
   const isLocalDevelopmentHttp =
     isDevelopment &&
     parsedUrl.protocol === 'http:' &&
-    (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1');
+    (parsedUrl.hostname === 'localhost' ||
+      parsedUrl.hostname === '127.0.0.1' ||
+      parsedUrl.hostname === '10.0.2.2');
 
   if (
     parsedUrl.username ||
@@ -65,6 +107,67 @@ export const parseSupabaseEnvironment = (
   }
 
   return {url, publishableKey};
+};
+
+export const isSupabaseEnvironmentForMobileMode = (
+  environment: SupabaseEnvironment,
+  mode: MobileEnvironmentMode,
+): boolean => {
+  if (mode === 'release') {
+    return false;
+  }
+
+  let url: URL;
+
+  try {
+    url = new URL(environment.url);
+  } catch {
+    return false;
+  }
+
+  if (
+    url.username ||
+    url.password ||
+    url.pathname !== '/' ||
+    url.search ||
+    url.hash
+  ) {
+    return false;
+  }
+
+  if (mode === 'local') {
+    return url.protocol === 'http:' && localSupabaseHosts.has(url.hostname);
+  }
+
+  return url.origin === stagingSupabaseOrigin;
+};
+
+export const parseLocalDevelopmentAuthEnvironment = (
+  input: LocalDevelopmentAuthEnvironmentInput,
+  isDevelopment: boolean,
+  mode: MobileEnvironmentMode,
+): LocalDevelopmentAuthEnvironment | undefined => {
+  const url = input.url?.trim() ?? '';
+  const email = input.email?.trim() ?? '';
+  const password = input.password?.trim() ?? '';
+
+  if (mode !== 'local' || !isDevelopment || !url || !email || !password) {
+    return undefined;
+  }
+
+  let host: string;
+
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return undefined;
+  }
+
+  if (!localSupabaseHosts.has(host)) {
+    return undefined;
+  }
+
+  return {email, password};
 };
 
 export const parseGoogleEnvironment = (
@@ -88,6 +191,10 @@ export const getSupabaseEnvironment = () =>
     {
       url:
         typeof __SUPABASE_URL__ === 'string' ? __SUPABASE_URL__ : undefined,
+      androidUrl:
+        typeof __SUPABASE_ANDROID_URL__ === 'string'
+          ? __SUPABASE_ANDROID_URL__
+          : undefined,
       publishableKey:
         typeof __SUPABASE_PUBLISHABLE_KEY__ === 'string'
           ? __SUPABASE_PUBLISHABLE_KEY__
@@ -95,6 +202,33 @@ export const getSupabaseEnvironment = () =>
     },
     __DEV__,
   );
+
+export const getMobileEnvironmentMode = () =>
+  parseMobileEnvironmentMode(
+    typeof __MOBILE_ENVIRONMENT_MODE__ === 'string'
+      ? __MOBILE_ENVIRONMENT_MODE__
+      : undefined,
+  );
+
+export const getLocalDevelopmentAuthEnvironment = () => {
+  const supabase = getSupabaseEnvironment();
+
+  return parseLocalDevelopmentAuthEnvironment(
+    {
+      url: supabase?.url,
+      email:
+        typeof __LOCAL_AUTH_EMAIL__ === 'string'
+          ? __LOCAL_AUTH_EMAIL__
+          : undefined,
+      password:
+        typeof __LOCAL_AUTH_PASSWORD__ === 'string'
+          ? __LOCAL_AUTH_PASSWORD__
+          : undefined,
+    },
+    __DEV__,
+    getMobileEnvironmentMode(),
+  );
+};
 
 export const getGoogleEnvironment = () =>
   parseGoogleEnvironment({

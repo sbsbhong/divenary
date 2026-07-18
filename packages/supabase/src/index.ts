@@ -7,6 +7,7 @@ export {
   createAuthRepository,
   type AuthRepository,
   type AuthRepositoryErrorKind,
+  type PasswordSignInInput,
   type SocialIdTokenInput,
   type StoredSessionEvidence,
 } from './auth-repository.ts';

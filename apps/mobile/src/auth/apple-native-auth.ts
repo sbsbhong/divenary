@@ -26,7 +26,7 @@ export async function signInWithApple(): Promise<NativeSocialResult> {
       return {type: 'cancelled'};
     }
 
-    throw new NativeSocialAuthError('provider', {cause: error});
+    throw new NativeSocialAuthError('provider');
   }
 
   const idToken = response.identityToken;

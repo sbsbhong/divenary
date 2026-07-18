@@ -20,7 +20,7 @@ import {
 export type AuthState =
   | {status: 'bootstrapping'}
   | {status: 'guest'}
-  | {status: 'authenticating'; provider: SocialProvider}
+  | {status: 'authenticating'; provider: SocialProvider | 'development'}
   | {
       status: 'pendingOnboarding';
       userId: string;
@@ -33,8 +33,10 @@ export type AuthContextValue = {
   state: AuthState;
   isConfigured: boolean;
   availableProviders: SocialProvider[];
+  isDevelopmentSignInAvailable: boolean;
   recentProvider: SocialProvider | undefined;
   signIn(provider: SocialProvider): Promise<void>;
+  signInForDevelopment(): Promise<void>;
   completeOnboarding(
     documents: Array<{kind: 'terms' | 'privacy'; version: string}>,
   ): Promise<void>;
@@ -437,15 +439,9 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
   }, [closeLocalSession, mobileAuth, revalidate, updateState]);
 
   const performSignIn = React.useCallback(
-    async (provider: SocialProvider) => {
+    async (provider: SocialProvider | 'development') => {
       if (mobileAuth === undefined) {
         return;
-      }
-
-      const adapter = mobileAuth.providers[provider];
-
-      if (adapter === undefined) {
-        throw new NativeSocialAuthError('unavailable');
       }
 
       const intentEpoch = intentEpochRef.current + 1;
@@ -456,36 +452,54 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       updateState({status: 'authenticating', provider});
 
       try {
-        const result = await adapter();
+        if (provider === 'development') {
+          const developmentSignIn = mobileAuth.developmentSignIn;
 
-        if (!isCurrentIntent(intentEpoch)) {
-          return;
+          if (developmentSignIn === undefined) {
+            throw new NativeSocialAuthError('unavailable');
+          }
+
+          await developmentSignIn();
+        } else {
+          const adapter = mobileAuth.providers[provider];
+
+          if (adapter === undefined) {
+            throw new NativeSocialAuthError('unavailable');
+          }
+
+          const result = await adapter();
+
+          if (!isCurrentIntent(intentEpoch)) {
+            return;
+          }
+
+          if (result.type === 'cancelled') {
+            acceptsAuthenticatedSessionRef.current = false;
+            revalidationSuppressedRef.current = false;
+            updateState({status: 'guest'});
+            return;
+          }
+
+          await mobileAuth.repository.signInWithIdToken(
+            toSocialIdTokenInput(result.credential),
+          );
         }
-
-        if (result.type === 'cancelled') {
-          acceptsAuthenticatedSessionRef.current = false;
-          revalidationSuppressedRef.current = false;
-          updateState({status: 'guest'});
-          return;
-        }
-
-        await mobileAuth.repository.signInWithIdToken(
-          toSocialIdTokenInput(result.credential),
-        );
 
         if (!isCurrentIntent(intentEpoch)) {
           await closeLocalSession();
           return;
         }
 
-        try {
-          await mobileAuth.recentProviderStore.save(provider);
+        if (provider !== 'development') {
+          try {
+            await mobileAuth.recentProviderStore.save(provider);
 
-          if (isCurrentIntent(intentEpoch)) {
-            setRecentProvider(provider);
+            if (isCurrentIntent(intentEpoch)) {
+              setRecentProvider(provider);
+            }
+          } catch {
+            // This non-secret convenience preference must not block Auth.
           }
-        } catch {
-          // This non-secret convenience preference must not block Auth.
         }
 
         if (!isCurrentIntent(intentEpoch)) {
@@ -519,8 +533,8 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     ],
   );
 
-  const signIn = React.useCallback(
-    (provider: SocialProvider) => {
+  const signInOperation = React.useCallback(
+    (provider: SocialProvider | 'development') => {
       if (signInPromiseRef.current !== undefined) {
         return signInPromiseRef.current;
       }
@@ -536,6 +550,16 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       return promise;
     },
     [performSignIn],
+  );
+
+  const signIn = React.useCallback(
+    (provider: SocialProvider) => signInOperation(provider),
+    [signInOperation],
+  );
+
+  const signInForDevelopment = React.useCallback(
+    () => signInOperation('development'),
+    [signInOperation],
   );
 
   const endLocalSession = closeLocalSession;
@@ -573,13 +597,17 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       ),
     [mobileAuth],
   );
+  const isDevelopmentSignInAvailable =
+    mobileAuth?.developmentSignIn !== undefined;
   const contextValue = React.useMemo<AuthContextValue>(
     () => ({
       state,
       isConfigured: mobileAuth !== undefined,
       availableProviders,
+      isDevelopmentSignInAvailable,
       recentProvider,
       signIn,
+      signInForDevelopment,
       completeOnboarding,
       cancelOnboarding: endLocalSession,
       signOut: endLocalSession,
@@ -591,6 +619,7 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       mobileAuth,
       recentProvider,
       signIn,
+      signInForDevelopment,
       state,
     ],
   );

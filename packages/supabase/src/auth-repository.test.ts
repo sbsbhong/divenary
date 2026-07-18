@@ -68,6 +68,11 @@ type MockOptions = {
   sessionError?: unknown;
   signInSession?: Session | null;
   signInError?: unknown;
+  signInThrows?: unknown;
+  passwordSignInSession?: Session | null;
+  passwordSignInSessionUndefined?: boolean;
+  passwordSignInError?: unknown;
+  passwordSignInThrows?: unknown;
   claimsData?: {claims: Record<string, unknown>} | null;
   claimsError?: unknown;
   userId?: string | null;
@@ -84,6 +89,7 @@ type MockOptions = {
 function createClientMock(options: MockOptions = {}) {
   const calls = {
     signIn: [] as unknown[],
+    signInWithPassword: [] as unknown[],
     getSession: 0,
     getClaims: [] as string[],
     getUser: [] as string[],
@@ -99,6 +105,10 @@ function createClientMock(options: MockOptions = {}) {
     auth: {
       async signInWithIdToken(input: unknown) {
         calls.signIn.push(input);
+        if (options.signInThrows !== undefined) {
+          throw options.signInThrows;
+        }
+
         return {
           data: {
             session: options.signInSession === undefined
@@ -107,6 +117,24 @@ function createClientMock(options: MockOptions = {}) {
             user: null,
           },
           error: options.signInError ?? null,
+        };
+      },
+      async signInWithPassword(input: unknown) {
+        calls.signInWithPassword.push(input);
+        if (options.passwordSignInThrows !== undefined) {
+          throw options.passwordSignInThrows;
+        }
+
+        return {
+          data: {
+            session: options.passwordSignInSessionUndefined
+              ? undefined
+              : options.passwordSignInSession === undefined
+              ? createSession()
+              : options.passwordSignInSession,
+            user: null,
+          },
+          error: options.passwordSignInError ?? null,
         };
       },
       async getSession() {
@@ -227,6 +255,50 @@ async function expectRepositoryError(
   });
 }
 
+function assertSanitizedSignInError(
+  error: unknown,
+  expected: {
+    kind: 'network' | 'server';
+    code?: string;
+    status?: number;
+  },
+  forbiddenValues: string[],
+) {
+  assert.ok(error instanceof AuthRepositoryError);
+  assert.deepEqual(
+    {
+      name: error.name,
+      message: error.message,
+      kind: error.kind,
+      operation: error.operation,
+      code: error.code,
+      status: error.status,
+    },
+    {
+      name: 'AuthRepositoryError',
+      message: 'Authentication operation failed',
+      kind: expected.kind,
+      operation: 'sign-in',
+      code: expected.code,
+      status: expected.status,
+    },
+  );
+  assert.equal(Reflect.has(error, 'cause'), false);
+
+  const publicError = JSON.stringify({
+    name: error.name,
+    message: error.message,
+    kind: error.kind,
+    operation: error.operation,
+    code: error.code,
+    status: error.status,
+    stack: error.stack,
+  });
+  for (const value of forbiddenValues) {
+    assert.equal(publicError.includes(value), false);
+  }
+}
+
 describe('AuthRepository', () => {
   test('exchanges a Google ID token without a nonce', async () => {
     const {client, calls} = createClientMock();
@@ -262,38 +334,162 @@ describe('AuthRepository', () => {
     ]);
   });
 
-  test('maps provider transport failure to a generic network error', async () => {
+  test('maps provider transport failure without exposing the raw cause or Google credential', async () => {
+    const idToken = 'google-transport-id-token';
+    const providerEmail = 'google-transport@example.invalid';
     const {client} = createClientMock({
-      signInError: new AuthRetryableFetchError(
-        'token and diver@example.invalid must not leak',
+      signInThrows: new AuthRetryableFetchError(
+        `${idToken} and ${providerEmail} must not leak`,
         0,
+      ),
+    });
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () =>
+        repository.signInWithIdToken({
+        provider: 'google',
+          token: idToken,
+      }),
+      error => {
+        assertSanitizedSignInError(
+          error,
+          {kind: 'network', status: 0},
+          [idToken, providerEmail],
+        );
+        return true;
+      },
+    );
+  });
+
+  test('sanitizes an Apple token-exchange Auth error while preserving safe metadata', async () => {
+    const idToken = 'apple-rejected-id-token';
+    const nonce = 'apple-raw-nonce';
+    const providerEmail = 'apple-provider@example.invalid';
+    const {client} = createClientMock({
+      signInError: new AuthApiError(
+        `${idToken}, ${nonce}, and ${providerEmail} must not leak`,
+        401,
+        'bad_jwt',
       ),
       signInSession: null,
     });
     const repository = createAuthRepository(client);
 
-    await expectRepositoryError(
+    await assert.rejects(
       () => repository.signInWithIdToken({
-        provider: 'google',
-        token: 'secret-token',
+        provider: 'apple',
+        token: idToken,
+        nonce,
       }),
-      'network',
+      error => {
+        assertSanitizedSignInError(
+          error,
+          {kind: 'server', code: 'bad_jwt', status: 401},
+          [idToken, nonce, providerEmail],
+        );
+        return true;
+      },
     );
   });
 
-  test('treats provider token rejection as server failure, not restored-session invalidation', async () => {
+  test('exchanges an email and password and returns the session', async () => {
+    const {client, calls} = createClientMock();
+    const repository = createAuthRepository(client);
+
+    const session = await repository.signInWithPassword({
+      email: 'diver@example.invalid',
+      password: 'local-password',
+    });
+
+    assert.equal(session.user.id, USER_ID);
+    assert.deepEqual(calls.signInWithPassword, [{
+      email: 'diver@example.invalid',
+      password: 'local-password',
+    }]);
+  });
+
+  test('maps a missing password session to a generic server error', async () => {
+    const {client} = createClientMock({passwordSignInSession: null});
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assert.ok(error instanceof AuthRepositoryError);
+        assert.equal(error.kind, 'server');
+        assert.equal(error.message, 'Authentication operation failed');
+        assert.doesNotMatch(error.message, /diver@example\.invalid|local-password/);
+        return true;
+      },
+    );
+  });
+
+  test('maps a password Auth error to a generic server error without credentials', async () => {
     const {client} = createClientMock({
-      signInError: new AuthApiError('bad provider token', 401, 'bad_jwt'),
-      signInSession: null,
+      passwordSignInSession: null,
+      passwordSignInError: new AuthApiError(
+        'Invalid credentials for diver@example.invalid with local-password',
+        401,
+        'invalid_credentials',
+      ),
     });
     const repository = createAuthRepository(client);
 
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assertSanitizedSignInError(
+          error,
+          {kind: 'server', code: 'invalid_credentials', status: 401},
+          ['diver@example.invalid', 'local-password'],
+        );
+        return true;
+      },
+    );
+  });
+
+  test('maps an undefined password session to a generic server error', async () => {
+    const {client} = createClientMock({passwordSignInSessionUndefined: true});
+    const repository = createAuthRepository(client);
+
     await expectRepositoryError(
-      () => repository.signInWithIdToken({
-        provider: 'google',
-        token: 'rejected-provider-token',
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
       }),
       'server',
+    );
+  });
+
+  test('maps a password transport failure to a generic network error without credentials', async () => {
+    const {client} = createClientMock({
+      passwordSignInThrows: new AuthRetryableFetchError(
+        'request for diver@example.invalid with local-password failed',
+        0,
+      ),
+    });
+    const repository = createAuthRepository(client);
+
+    await assert.rejects(
+      () => repository.signInWithPassword({
+        email: 'diver@example.invalid',
+        password: 'local-password',
+      }),
+      error => {
+        assertSanitizedSignInError(
+          error,
+          {kind: 'network', status: 0},
+          ['diver@example.invalid', 'local-password'],
+        );
+        return true;
+      },
     );
   });
 

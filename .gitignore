@@ -54,6 +54,8 @@ web_modules/
 
 # Local mobile development environment
 .env.development
+apps/mobile/.env.local
+apps/mobile/.env.local.*.tmp
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache

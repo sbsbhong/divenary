@@ -3,7 +3,12 @@ import { useTranslation } from 'react-i18next';
 
 import type { SocialProvider } from '../../auth/native-social-auth';
 import { Box } from '../../components/ui/box';
-import { Button, ButtonIcon } from '../../components/ui/button';
+import {
+  Button,
+  ButtonIcon,
+  ButtonSpinner,
+  ButtonText,
+} from '../../components/ui/button';
 import { CloseIcon } from '../../components/ui/icon';
 import { SafeAreaView } from '../../components/ui/safe-area-view';
 import { Text } from '../../components/ui/text';
@@ -18,15 +23,19 @@ type LoginScreenProps = {
 export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.Element {
   const { t } = useTranslation();
   const auth = useAuth();
-  const [busyProvider, setBusyProvider] = React.useState<SocialProvider>();
+  const [busyProvider, setBusyProvider] = React.useState<
+    SocialProvider | 'development'
+  >();
   const [hasError, setHasError] = React.useState(false);
   const actionInFlight = React.useRef(false);
   const providers = auth.isConfigured ? auth.availableProviders : [];
   const orderedProviders = orderProviders(providers, auth.recentProvider);
   const isBusy = busyProvider !== undefined;
+  const hasLoginActions =
+    orderedProviders.length > 0 || auth.isDevelopmentSignInAvailable;
 
   const signIn = React.useCallback(
-    async (provider: SocialProvider) => {
+    async (provider: SocialProvider | 'development') => {
       if (actionInFlight.current) {
         return;
       }
@@ -36,7 +45,11 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
       setHasError(false);
 
       try {
-        await auth.signIn(provider);
+        if (provider === 'development') {
+          await auth.signInForDevelopment();
+        } else {
+          await auth.signIn(provider);
+        }
       } catch {
         setHasError(true);
       } finally {
@@ -85,7 +98,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           {t('auth.login.title')}
         </Text>
 
-        {orderedProviders.length > 0 ? (
+        {hasLoginActions ? (
           <VStack space="sm">
             {auth.recentProvider && orderedProviders.includes(auth.recentProvider) ? (
               <Text
@@ -117,6 +130,28 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                 />
               );
             })}
+            {auth.isDevelopmentSignInAvailable ? (
+              <Button
+                testID="auth-login-development"
+                accessibilityLabel={t('auth.login.development')}
+                accessibilityRole="button"
+                accessibilityState={{
+                  busy: busyProvider === 'development',
+                  disabled: isBusy,
+                }}
+                className="h-11 w-full"
+                disabled={isBusy}
+                onPress={() => signIn('development')}
+                variant="outline">
+                {busyProvider === 'development' ? (
+                  <ButtonSpinner
+                    testID="auth-login-spinner-development"
+                    aria-label={t('auth.login.signingIn')}
+                  />
+                ) : null}
+                <ButtonText>{t('auth.login.development')}</ButtonText>
+              </Button>
+            ) : null}
           </VStack>
         ) : (
           <Box className="rounded-lg bg-muted px-4 py-4">
