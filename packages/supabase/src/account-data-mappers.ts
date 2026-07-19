@@ -103,6 +103,7 @@ export function fromDiveLogRow(row: DiveLogRow): RemoteDiveLog {
     site_name: row.site_name,
     title: row.title,
     rating: row.rating,
+    dive_mode: row.dive_mode,
     manual_data: row.manual_data,
     mobile_data: row.mobile_data,
     watch_metadata: row.watch_metadata,

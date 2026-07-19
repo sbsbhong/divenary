@@ -83,6 +83,7 @@ function logRow(overrides: Record<string, unknown> = {}) {
     profile_byte_count: null,
     profile_sample_count: null,
     profile_preview: null,
+    dive_mode: null,
     source_plan_id: null,
     ...overrides,
   };
@@ -124,7 +125,7 @@ function createClient(responses: QueryResponse[]) {
 
 describe('AccountDataRepository', () => {
   test('lists logs by strict descending keyset without downloading profiles', async () => {
-    const {client, calls} = createClient([{data: [logRow(), logRow({id: '00000000-0000-4000-8000-000000000011'})], error: null}]);
+    const {client, calls} = createClient([{data: [logRow({dive_mode: 'scuba'}), logRow({id: '00000000-0000-4000-8000-000000000011'})], error: null}]);
     const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
     const page = await repository.listLogs({
@@ -133,6 +134,7 @@ describe('AccountDataRepository', () => {
     });
 
     assert.equal(page.items.length, 1);
+    assert.equal(page.items[0]?.payload.dive_mode, 'scuba');
     assert.deepEqual(page.nextCursor, {
       sortTime: STARTED_AT,
       id: LOG_ID,

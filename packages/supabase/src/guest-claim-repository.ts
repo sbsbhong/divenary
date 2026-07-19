@@ -32,6 +32,12 @@ export class GuestClaimRepositoryError extends Error {
 
 type BatchRow = Database['public']['Tables']['guest_claim_batches']['Row'];
 type ClaimRow = Database['public']['Tables']['guest_claim_records']['Row'];
+type FinalRecordRow = {
+  id: string;
+  user_id: string;
+  local_id: string;
+  payload_sha256: string;
+};
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sha256Pattern = /^[0-9a-f]{64}$/;
@@ -96,6 +102,10 @@ function assertBatchRow(row: BatchRow, input: GuestClaimBatchInput, userId: stri
   if (row.user_id !== userId || row.client_batch_id !== input.clientBatchId || row.manifest_sha256 !== input.manifestSha256 || row.expected_plan_count !== input.expectedPlanCount || row.expected_log_count !== input.expectedLogCount || (row.status !== 'uploading' && row.status !== 'committed')) fail('batch');
 }
 
+function assertCommittedBatchRow(row: BatchRow, batchId: string, userId: string) {
+  if (row.id !== batchId || row.user_id !== userId || row.status !== 'committed') fail('list');
+}
+
 function assertClaimRow(row: ClaimRow, input: GuestClaimStageInput, userId: string, payload: Json) {
   if (row.user_id !== userId || row.batch_id !== input.batchId || row.entity_kind !== input.entityKind || row.client_record_id !== input.clientRecordId || row.payload_sha256 !== input.payloadSha256 || row.source_plan_client_record_id !== (input.sourcePlanClientRecordId ?? null) || row.converted_log_client_record_id !== (input.convertedLogClientRecordId ?? null) || !sameJson(row.payload, payload)) fail('stage');
 }
@@ -106,6 +116,42 @@ function assertProfileInput(input: {stagingRecordId: string; path: string; conte
 
 function assertProfileRow(row: ClaimRow, input: {path: string; contentRevision: string; sha256: string; byteCount: number; sampleCount: number}) {
   if (row.profile_path !== input.path || row.profile_content_revision !== input.contentRevision || row.profile_sha256 !== input.sha256 || row.profile_byte_count !== input.byteCount || row.profile_sample_count !== input.sampleCount) fail('profile');
+}
+
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((byte, index) => byte === right[index]);
+}
+
+function committedRecordsByKind(records: ClaimRow[], batchId: string, userId: string): {plans: ClaimRow[]; logs: ClaimRow[]} {
+  const plans: ClaimRow[] = [];
+  const logs: ClaimRow[] = [];
+  const targetIds = {plan: new Set<string>(), log: new Set<string>()};
+  const localIds = {plan: new Set<string>(), log: new Set<string>()};
+  for (const record of records) {
+    if (record.user_id !== userId || record.batch_id !== batchId || (record.entity_kind !== 'plan' && record.entity_kind !== 'log') || !validUuid(record.target_record_id) || !record.client_record_id || !validSha(record.payload_sha256)) fail('list');
+    const kind = record.entity_kind;
+    if (targetIds[kind].has(record.target_record_id) || localIds[kind].has(record.client_record_id)) fail('list');
+    targetIds[kind].add(record.target_record_id);
+    localIds[kind].add(record.client_record_id);
+    if (kind === 'plan') plans.push(record);
+    else logs.push(record);
+  }
+  return {plans, logs};
+}
+
+function orderedCommittedRows<T extends FinalRecordRow>(stagingRows: ClaimRow[], finalRows: T[], userId: string): T[] {
+  if (stagingRows.length !== finalRows.length) fail('list');
+  const expected = new Map(stagingRows.map(row => [row.target_record_id, row]));
+  const finalById = new Map<string, T>();
+  for (const row of finalRows) {
+    const staged = expected.get(row.id);
+    if (staged === undefined || row.user_id !== userId || row.local_id !== staged.client_record_id || row.payload_sha256 !== staged.payload_sha256 || finalById.has(row.id)) fail('list');
+    finalById.set(row.id, row);
+  }
+  return stagingRows.map(staged => {
+    const row = finalById.get(staged.target_record_id);
+    return row === undefined ? fail('list') : row;
+  });
 }
 
 export function createGuestClaimRemoteRepository(
@@ -176,6 +222,10 @@ export function createGuestClaimRemoteRepository(
       if (!path || !(bytes instanceof Uint8Array)) return fail('profile');
       const result = await client.storage.from('dive-profiles').upload(path, bytes, {upsert: false, contentType: 'application/json'});
       if (result.error && !duplicateObject(result.error)) return fail('profile');
+      if (result.error) {
+        const stored = await downloadProfile(path);
+        if (!sameBytes(stored, bytes)) return fail('profile');
+      }
     } catch (error) {
       throw claimError(error, 'profile');
     }
@@ -211,16 +261,20 @@ export function createGuestClaimRemoteRepository(
     try {
       if (!validUuid(batchId)) return fail('list');
       const batch = await client.from('guest_claim_batches').select().eq('id', batchId).eq('user_id', userId).maybeSingle();
-      if (errorResult(batch) || single<BatchRow>(batch.data, 'list').status !== 'committed') return fail('list');
-      const recordsResult = await client.from('guest_claim_records').select().eq('batch_id', batchId);
+      if (errorResult(batch)) return fail('list');
+      assertCommittedBatchRow(single<BatchRow>(batch.data, 'list'), batchId, userId);
+      const recordsResult = await client.from('guest_claim_records').select().eq('batch_id', batchId).eq('user_id', userId);
       if (errorResult(recordsResult)) return fail('list');
       const records = array<ClaimRow>(recordsResult.data, 'list');
-      const planIds = records.filter(record => record.entity_kind === 'plan').map(record => record.client_record_id);
-      const logIds = records.filter(record => record.entity_kind === 'log').map(record => record.client_record_id);
-      const plansResult = planIds.length === 0 ? {data: [] as unknown[], error: null} : await client.from('dive_plans').select().in('local_id', planIds).is('deleted_at', null);
-      const logsResult = logIds.length === 0 ? {data: [] as unknown[], error: null} : await client.from('dive_logs').select().in('local_id', logIds).is('deleted_at', null);
+      const {plans: stagedPlans, logs: stagedLogs} = committedRecordsByKind(records, batchId, userId);
+      const planIds = stagedPlans.map(record => record.target_record_id);
+      const logIds = stagedLogs.map(record => record.target_record_id);
+      const plansResult = planIds.length === 0 ? {data: [] as unknown[], error: null} : await client.from('dive_plans').select().in('id', planIds).eq('user_id', userId).is('deleted_at', null);
+      const logsResult = logIds.length === 0 ? {data: [] as unknown[], error: null} : await client.from('dive_logs').select().in('id', logIds).eq('user_id', userId).is('deleted_at', null);
       if (errorResult(plansResult) || errorResult(logsResult)) return fail('list');
-      return {plans: array<DivePlanRow>(plansResult.data, 'list').map(fromDivePlanRow), logs: array<DiveLogRow>(logsResult.data, 'list').map(fromDiveLogRow)};
+      const plans = orderedCommittedRows(stagedPlans, array<DivePlanRow>(plansResult.data, 'list'), userId).map(fromDivePlanRow);
+      const logs = orderedCommittedRows(stagedLogs, array<DiveLogRow>(logsResult.data, 'list'), userId).map(fromDiveLogRow);
+      return {plans, logs};
     } catch (error) {
       throw claimError(error, 'list');
     }
