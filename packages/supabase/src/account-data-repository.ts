@@ -62,7 +62,7 @@ function pageLimit(value: number | undefined): number {
   return Math.min(value, maximumPageSize);
 }
 
-function cursorFilter(cursor: AccountDataCursor, column: 'started_at' | 'planned_at'): string {
+function cursorFilter(cursor: AccountDataCursor, column: 'started_at' | 'updated_at'): string {
   if (
     !timestampPattern.test(cursor.sortTime)
     || !Number.isFinite(Date.parse(cursor.sortTime))
@@ -79,6 +79,13 @@ function resultError(result: {error?: unknown}): boolean {
   return result.error !== null && result.error !== undefined;
 }
 
+function duplicateError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const code = Reflect.get(error, 'code');
+  const status = Reflect.get(error, 'status') ?? Reflect.get(error, 'statusCode');
+  return code === '23505' || status === 409 || status === '409';
+}
+
 function single<T>(data: unknown, operation: AccountDataRepositoryOperation): T {
   if (data === null || data === undefined || Array.isArray(data)) return fail(operation);
   return data as T;
@@ -89,6 +96,85 @@ function rows<T>(data: unknown, operation: AccountDataRepositoryOperation): T[] 
   return data as T[];
 }
 
+function ownedRow<T extends {user_id: string}>(
+  data: unknown,
+  userId: string,
+  operation: AccountDataRepositoryOperation,
+): T {
+  const row = single<T>(data, operation);
+  if (row.user_id !== userId) return fail(operation);
+  return row;
+}
+
+function optionalOwnedRow<T extends {user_id: string}>(
+  data: unknown,
+  userId: string,
+  operation: AccountDataRepositoryOperation,
+): T | undefined {
+  if (data === null) return undefined;
+  return ownedRow<T>(data, userId, operation);
+}
+
+function ownedRows<T extends {user_id: string}>(
+  data: unknown,
+  userId: string,
+  operation: AccountDataRepositoryOperation,
+): T[] {
+  const result = rows<T>(data, operation);
+  if (result.some(row => row.user_id !== userId)) return fail(operation);
+  return result;
+}
+
+function savedLogResult(
+  row: DiveLogRow,
+  value: RemoteDiveLog,
+  appliedRevision: number,
+): AccountMutationResult<RemoteDiveLog> {
+  const remote = fromDiveLogRow(row);
+  return row.id === value.id
+    && row.local_id === value.localId
+    && row.payload_sha256 === value.payloadSha256
+    && row.revision === appliedRevision
+    ? {status: 'saved', value: remote}
+    : {status: 'conflict', remote};
+}
+
+function savedPlanResult(
+  row: DivePlanRow,
+  value: RemoteDivePlan,
+  appliedRevision: number,
+): AccountMutationResult<RemoteDivePlan> {
+  const remote = fromDivePlanRow(row);
+  return row.id === value.id
+    && row.local_id === value.localId
+    && row.payload_sha256 === value.payloadSha256
+    && row.revision === appliedRevision
+    ? {status: 'saved', value: remote}
+    : {status: 'conflict', remote};
+}
+
+function deletedLogResult(
+  row: DiveLogRow,
+  id: string,
+  appliedRevision: number,
+): AccountMutationResult<RemoteDiveLog> {
+  const remote = fromDiveLogRow(row);
+  return row.id === id && row.revision === appliedRevision && row.deleted_at !== null
+    ? {status: 'saved', value: remote}
+    : {status: 'conflict', remote};
+}
+
+function deletedPlanResult(
+  row: DivePlanRow,
+  id: string,
+  appliedRevision: number,
+): AccountMutationResult<RemoteDivePlan> {
+  const remote = fromDivePlanRow(row);
+  return row.id === id && row.revision === appliedRevision && row.deleted_at !== null
+    ? {status: 'saved', value: remote}
+    : {status: 'conflict', remote};
+}
+
 function accountError(error: unknown, operation: AccountDataRepositoryOperation): AccountDataRepositoryError {
   return error instanceof AccountDataRepositoryError ? error : new AccountDataRepositoryError(operation);
 }
@@ -97,21 +183,22 @@ export function createAccountDataRepository(
   client: SupabaseClient<Database>,
   verifiedCurrentUser: VerifiedCurrentUser,
 ): AccountDataRepository {
-  assertIdentity(verifiedCurrentUser);
+  const userId = assertIdentity(verifiedCurrentUser);
 
   async function listLogs(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDiveLog>> {
     try {
       const limit = pageLimit(input.limit);
-      let query = client.from('dive_logs').select().is('deleted_at', null);
+      let query = client.from('dive_logs').select().eq('user_id', userId).is('deleted_at', null);
       if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'started_at'));
       const result = await query.order('started_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
       if (resultError(result)) return fail('list');
-      const mapped = rows<DiveLogRow>(result.data, 'list').map(fromDiveLogRow);
-      const hasMore = mapped.length > limit;
-      const items = mapped.slice(0, limit);
-      const last = items[items.length - 1];
+      const rawRows = ownedRows<DiveLogRow>(result.data, userId, 'list');
+      const hasMore = rawRows.length > limit;
+      const itemRows = rawRows.slice(0, limit);
+      const items = itemRows.map(fromDiveLogRow);
+      const last = itemRows[itemRows.length - 1];
       return hasMore && last !== undefined
-        ? {items, nextCursor: {sortTime: String(last.payload.started_at), id: last.id}}
+        ? {items, nextCursor: {sortTime: last.started_at, id: last.id}}
         : {items};
     } catch (error) {
       throw accountError(error, 'list');
@@ -121,33 +208,59 @@ export function createAccountDataRepository(
   async function listPlans(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDivePlan>> {
     try {
       const limit = pageLimit(input.limit);
-      // Plans without a timestamp cannot participate in the required timestamp cursor.
-      let query = client.from('dive_plans').select().is('deleted_at', null).not('planned_at', 'is', null);
-      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'planned_at'));
-      const result = await query.order('planned_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
+      let query = client.from('dive_plans').select().eq('user_id', userId).is('deleted_at', null);
+      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'updated_at'));
+      const result = await query.order('updated_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
       if (resultError(result)) return fail('list');
-      const mapped = rows<DivePlanRow>(result.data, 'list').map(fromDivePlanRow);
-      const hasMore = mapped.length > limit;
-      const items = mapped.slice(0, limit);
-      const last = items[items.length - 1];
+      const rawRows = ownedRows<DivePlanRow>(result.data, userId, 'list');
+      const hasMore = rawRows.length > limit;
+      const itemRows = rawRows.slice(0, limit);
+      const items = itemRows.map(fromDivePlanRow);
+      const last = itemRows[itemRows.length - 1];
       return hasMore && last !== undefined
-        ? {items, nextCursor: {sortTime: String(last.payload.planned_at), id: last.id}}
+        ? {items, nextCursor: {sortTime: last.updated_at, id: last.id}}
         : {items};
     } catch (error) {
       throw accountError(error, 'list');
     }
   }
 
-  async function remoteLog(id: string): Promise<RemoteDiveLog> {
-    const result = await client.from('dive_logs').select().eq('id', id).maybeSingle();
-    if (resultError(result)) return fail('save');
-    return fromDiveLogRow(single<DiveLogRow>(result.data, 'save'));
+  async function remoteLogRow(
+    id: string,
+    operation: AccountDataRepositoryOperation,
+  ): Promise<DiveLogRow> {
+    const result = await client.from('dive_logs').select().eq('user_id', userId).eq('id', id).maybeSingle();
+    if (resultError(result)) return fail(operation);
+    return ownedRow<DiveLogRow>(result.data, userId, operation);
   }
 
-  async function remotePlan(id: string): Promise<RemoteDivePlan> {
-    const result = await client.from('dive_plans').select().eq('id', id).maybeSingle();
-    if (resultError(result)) return fail('save');
-    return fromDivePlanRow(single<DivePlanRow>(result.data, 'save'));
+  async function remotePlanRow(
+    id: string,
+    operation: AccountDataRepositoryOperation,
+  ): Promise<DivePlanRow> {
+    const result = await client.from('dive_plans').select().eq('user_id', userId).eq('id', id).maybeSingle();
+    if (resultError(result)) return fail(operation);
+    return ownedRow<DivePlanRow>(result.data, userId, operation);
+  }
+
+  async function insertedLogRow(value: RemoteDiveLog): Promise<DiveLogRow> {
+    const byId = await client.from('dive_logs').select().eq('user_id', userId).eq('id', value.id).maybeSingle();
+    if (resultError(byId)) return fail('save');
+    const row = optionalOwnedRow<DiveLogRow>(byId.data, userId, 'save');
+    if (row !== undefined) return row;
+    const byLocalId = await client.from('dive_logs').select().eq('user_id', userId).eq('local_id', value.localId).maybeSingle();
+    if (resultError(byLocalId)) return fail('save');
+    return ownedRow<DiveLogRow>(byLocalId.data, userId, 'save');
+  }
+
+  async function insertedPlanRow(value: RemoteDivePlan): Promise<DivePlanRow> {
+    const byId = await client.from('dive_plans').select().eq('user_id', userId).eq('id', value.id).maybeSingle();
+    if (resultError(byId)) return fail('save');
+    const row = optionalOwnedRow<DivePlanRow>(byId.data, userId, 'save');
+    if (row !== undefined) return row;
+    const byLocalId = await client.from('dive_plans').select().eq('user_id', userId).eq('local_id', value.localId).maybeSingle();
+    if (resultError(byLocalId)) return fail('save');
+    return ownedRow<DivePlanRow>(byLocalId.data, userId, 'save');
   }
 
   async function saveLog(value: RemoteDiveLog, expectedRevision?: number): Promise<AccountMutationResult<RemoteDiveLog>> {
@@ -155,15 +268,20 @@ export function createAccountDataRepository(
       const id = assertIdentifier(value.id, 'save');
       const fields = toDiveLogFields(value);
       if (expectedRevision === undefined) {
-        const result = await client.from('dive_logs').insert({id, user_id: verifiedCurrentUser.userId, ...fields} as never).select().maybeSingle();
-        if (resultError(result)) return fail('save');
-        return {status: 'saved', value: fromDiveLogRow(single<DiveLogRow>(result.data, 'save'))};
+        const result = await client.from('dive_logs').insert({id, user_id: userId, ...fields} as never).select().maybeSingle();
+        if (resultError(result) && !duplicateError(result.error)) return fail('save');
+        const row = resultError(result) || result.data === null
+          ? await insertedLogRow(value)
+          : ownedRow<DiveLogRow>(result.data, userId, 'save');
+        return savedLogResult(row, value, 1);
       }
       const revision = assertRevision(expectedRevision, 'save');
-      const result = await client.from('dive_logs').update({...fields, revision: revision + 1} as never).eq('id', id).eq('revision', revision).select().maybeSingle();
+      const result = await client.from('dive_logs').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).select().maybeSingle();
       if (resultError(result)) return fail('save');
-      if (result.data === null) return {status: 'conflict', remote: await remoteLog(id)};
-      return {status: 'saved', value: fromDiveLogRow(single<DiveLogRow>(result.data, 'save'))};
+      const row = result.data === null
+        ? await remoteLogRow(id, 'save')
+        : ownedRow<DiveLogRow>(result.data, userId, 'save');
+      return savedLogResult(row, value, revision + 1);
     } catch (error) {
       throw accountError(error, 'save');
     }
@@ -174,15 +292,20 @@ export function createAccountDataRepository(
       const id = assertIdentifier(value.id, 'save');
       const fields = toDivePlanFields(value);
       if (expectedRevision === undefined) {
-        const result = await client.from('dive_plans').insert({id, user_id: verifiedCurrentUser.userId, ...fields} as never).select().maybeSingle();
-        if (resultError(result)) return fail('save');
-        return {status: 'saved', value: fromDivePlanRow(single<DivePlanRow>(result.data, 'save'))};
+        const result = await client.from('dive_plans').insert({id, user_id: userId, ...fields} as never).select().maybeSingle();
+        if (resultError(result) && !duplicateError(result.error)) return fail('save');
+        const row = resultError(result) || result.data === null
+          ? await insertedPlanRow(value)
+          : ownedRow<DivePlanRow>(result.data, userId, 'save');
+        return savedPlanResult(row, value, 1);
       }
       const revision = assertRevision(expectedRevision, 'save');
-      const result = await client.from('dive_plans').update({...fields, revision: revision + 1} as never).eq('id', id).eq('revision', revision).select().maybeSingle();
+      const result = await client.from('dive_plans').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).select().maybeSingle();
       if (resultError(result)) return fail('save');
-      if (result.data === null) return {status: 'conflict', remote: await remotePlan(id)};
-      return {status: 'saved', value: fromDivePlanRow(single<DivePlanRow>(result.data, 'save'))};
+      const row = result.data === null
+        ? await remotePlanRow(id, 'save')
+        : ownedRow<DivePlanRow>(result.data, userId, 'save');
+      return savedPlanResult(row, value, revision + 1);
     } catch (error) {
       throw accountError(error, 'save');
     }
@@ -192,10 +315,12 @@ export function createAccountDataRepository(
     try {
       const identifier = assertIdentifier(id, 'delete');
       const revision = assertRevision(expectedRevision, 'delete');
-      const result = await client.from('dive_logs').update({deleted_at: new Date().toISOString(), revision: revision + 1}).eq('id', identifier).eq('revision', revision).select().maybeSingle();
+      const result = await client.from('dive_logs').update({deleted_at: new Date().toISOString(), revision: revision + 1}).eq('user_id', userId).eq('id', identifier).eq('revision', revision).select().maybeSingle();
       if (resultError(result)) return fail('delete');
-      if (result.data === null) return {status: 'conflict', remote: await remoteLog(identifier)};
-      return {status: 'saved', value: fromDiveLogRow(single<DiveLogRow>(result.data, 'delete'))};
+      const row = result.data === null
+        ? await remoteLogRow(identifier, 'delete')
+        : ownedRow<DiveLogRow>(result.data, userId, 'delete');
+      return deletedLogResult(row, identifier, revision + 1);
     } catch (error) {
       throw accountError(error, 'delete');
     }
@@ -205,10 +330,12 @@ export function createAccountDataRepository(
     try {
       const identifier = assertIdentifier(id, 'delete');
       const revision = assertRevision(expectedRevision, 'delete');
-      const result = await client.from('dive_plans').update({deleted_at: new Date().toISOString(), revision: revision + 1}).eq('id', identifier).eq('revision', revision).select().maybeSingle();
+      const result = await client.from('dive_plans').update({deleted_at: new Date().toISOString(), revision: revision + 1}).eq('user_id', userId).eq('id', identifier).eq('revision', revision).select().maybeSingle();
       if (resultError(result)) return fail('delete');
-      if (result.data === null) return {status: 'conflict', remote: await remotePlan(identifier)};
-      return {status: 'saved', value: fromDivePlanRow(single<DivePlanRow>(result.data, 'delete'))};
+      const row = result.data === null
+        ? await remotePlanRow(identifier, 'delete')
+        : ownedRow<DivePlanRow>(result.data, userId, 'delete');
+      return deletedPlanResult(row, identifier, revision + 1);
     } catch (error) {
       throw accountError(error, 'delete');
     }

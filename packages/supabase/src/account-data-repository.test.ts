@@ -7,9 +7,11 @@ import {
 } from './account-data-repository.ts';
 
 const USER_ID = '00000000-0000-4000-8000-000000000001';
+const OTHER_USER_ID = '00000000-0000-4000-8000-000000000002';
 const LOG_ID = '00000000-0000-4000-8000-000000000010';
 const PLAN_ID = '00000000-0000-4000-8000-000000000020';
 const STARTED_AT = '2026-07-19T10:00:00.000Z';
+const UPDATED_AT = '2026-07-19T11:00:00.000Z';
 
 type QueryResponse = {data: unknown; error?: unknown; status?: number};
 
@@ -62,6 +64,7 @@ function query(response: QueryResponse, calls: unknown[]) {
 function logRow(overrides: Record<string, unknown> = {}) {
   return {
     id: LOG_ID,
+    user_id: USER_ID,
     local_id: 'local-log',
     revision: 4,
     payload_sha256: 'a'.repeat(64),
@@ -85,6 +88,9 @@ function logRow(overrides: Record<string, unknown> = {}) {
     profile_preview: null,
     dive_mode: null,
     source_plan_id: null,
+    created_at: STARTED_AT,
+    updated_at: UPDATED_AT,
+    deleted_at: null,
     ...overrides,
   };
 }
@@ -92,6 +98,7 @@ function logRow(overrides: Record<string, unknown> = {}) {
 function planRow(overrides: Record<string, unknown> = {}) {
   return {
     id: PLAN_ID,
+    user_id: USER_ID,
     local_id: 'local-plan',
     revision: 2,
     payload_sha256: 'b'.repeat(64),
@@ -101,8 +108,51 @@ function planRow(overrides: Record<string, unknown> = {}) {
     site_name: null,
     plan_data: {},
     converted_log_id: null,
+    created_at: STARTED_AT,
+    updated_at: UPDATED_AT,
+    deleted_at: null,
     ...overrides,
   };
+}
+
+function remoteLog(overrides: Record<string, unknown> = {}) {
+  return {
+    id: LOG_ID,
+    localId: 'local-log',
+    revision: 1,
+    payloadSha256: 'a'.repeat(64),
+    payload: {
+      source: 'manual',
+      started_at: STARTED_AT,
+      manual_data: {},
+      mobile_data: {},
+      provenance: {},
+    },
+    ...overrides,
+  };
+}
+
+function remotePlan(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PLAN_ID,
+    localId: 'local-plan',
+    revision: 1,
+    payloadSha256: 'b'.repeat(64),
+    payload: {status: 'planned', planned_at: STARTED_AT, plan_data: {}},
+    ...overrides,
+  };
+}
+
+async function rejectsWithOperation(
+  run: () => Promise<unknown>,
+  operation: 'list' | 'save' | 'delete',
+) {
+  await assert.rejects(run, error => {
+    assert.ok(error instanceof AccountDataRepositoryError);
+    assert.equal(error.message, 'Account data operation failed');
+    assert.equal(error.operation, operation);
+    return true;
+  });
 }
 
 function createClient(responses: QueryResponse[]) {
@@ -143,6 +193,7 @@ describe('AccountDataRepository', () => {
       table: 'dive_logs',
       calls: [
         {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'is', column: 'deleted_at', value: null},
         {method: 'or', value: `started_at.lt.${STARTED_AT},and(started_at.eq.${STARTED_AT},id.lt.${LOG_ID})`},
         {method: 'order', column: 'started_at', options: {ascending: false}},
@@ -150,6 +201,57 @@ describe('AccountDataRepository', () => {
         {method: 'limit', value: 2},
       ],
     });
+  });
+
+  test('includes undated draft plans in an updated-at keyset page', async () => {
+    const nextPlanId = '00000000-0000-4000-8000-000000000021';
+    const {client, calls} = createClient([{data: [
+      planRow({status: 'draft', planned_at: null}),
+      planRow({id: nextPlanId, updated_at: STARTED_AT}),
+    ], error: null}]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    const page = await repository.listPlans({
+      cursor: {sortTime: UPDATED_AT, id: PLAN_ID},
+      limit: 1,
+    });
+
+    assert.equal(page.items[0]?.payload.status, 'draft');
+    assert.equal(page.items[0]?.payload.planned_at, null);
+    assert.deepEqual(page.nextCursor, {sortTime: UPDATED_AT, id: PLAN_ID});
+    assert.deepEqual(calls[0], {
+      table: 'dive_plans',
+      calls: [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'is', column: 'deleted_at', value: null},
+        {method: 'or', value: `updated_at.lt.${UPDATED_AT},and(updated_at.eq.${UPDATED_AT},id.lt.${PLAN_ID})`},
+        {method: 'order', column: 'updated_at', options: {ascending: false}},
+        {method: 'order', column: 'id', options: {ascending: false}},
+        {method: 'limit', value: 2},
+      ],
+    });
+  });
+
+  test('keeps an existing repository bound to its verified owner after a client session switch', async () => {
+    const {client, calls} = createClient([
+      {data: [logRow()], error: null},
+      {data: [logRow({user_id: OTHER_USER_ID})], error: null},
+    ]);
+    const identity = {userId: USER_ID};
+    const repository = createAccountDataRepository(client as never, identity);
+
+    assert.equal((await repository.listLogs()).items.length, 1);
+    identity.userId = OTHER_USER_ID;
+    await rejectsWithOperation(() => repository.listLogs(), 'list');
+
+    for (const call of calls) {
+      assert.deepEqual(call.calls.slice(0, 3), [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'is', column: 'deleted_at', value: null},
+      ]);
+    }
   });
 
   test('uses the expected revision and soft deletion for log removal', async () => {
@@ -161,6 +263,7 @@ describe('AccountDataRepository', () => {
     assert.equal(result.status, 'saved');
     assert.equal(calls[0]?.table, 'dive_logs');
     assert.deepEqual(calls[0]?.calls.slice(1), [
+      {method: 'eq', column: 'user_id', value: USER_ID},
       {method: 'eq', column: 'id', value: LOG_ID},
       {method: 'eq', column: 'revision', value: 4},
       {method: 'select', columns: undefined},
@@ -171,6 +274,99 @@ describe('AccountDataRepository', () => {
       value: {deleted_at: (calls[0]?.calls[0] as {value: {deleted_at: string}}).value.deleted_at, revision: 5},
     });
     assert.match((calls[0]?.calls[0] as {value: {deleted_at: string}}).value.deleted_at, /^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test('accepts duplicate and empty insert responses only after owner-bound replay verification', async () => {
+    const {client, calls} = createClient([
+      {data: null, error: {code: '23505', message: 'duplicate details'}},
+      {data: logRow({revision: 1}), error: null},
+      {data: null, error: null},
+      {data: planRow({revision: 1}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.deepEqual(await repository.saveLog(remoteLog()), {
+      status: 'saved',
+      value: remoteLog({
+        payload: {
+          source: 'manual',
+          started_at: STARTED_AT,
+          ended_at: null,
+          duration_seconds: null,
+          max_depth_meters: null,
+          site_name: null,
+          title: null,
+          rating: null,
+          dive_mode: null,
+          manual_data: {},
+          mobile_data: {},
+          watch_metadata: null,
+          provenance: {},
+          profile_preview: null,
+          profile_content_revision: null,
+          profile_sha256: null,
+          profile_byte_count: null,
+          profile_sample_count: null,
+          source_plan_id: null,
+        },
+      }),
+    });
+    assert.equal((await repository.savePlan(remotePlan())).status, 'saved');
+
+    assert.deepEqual(calls[1], {
+      table: 'dive_logs',
+      calls: [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'eq', column: 'id', value: LOG_ID},
+        {method: 'maybeSingle'},
+      ],
+    });
+    assert.deepEqual(calls[3], {
+      table: 'dive_plans',
+      calls: [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'eq', column: 'id', value: PLAN_ID},
+        {method: 'maybeSingle'},
+      ],
+    });
+  });
+
+  test('accepts an already-applied update only at the exact next revision', async () => {
+    const {client} = createClient([
+      {data: null, error: null},
+      {data: planRow({revision: 5}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
+  });
+
+  test('returns a conflict when replay content or revision does not match', async () => {
+    const {client} = createClient([
+      {data: null, error: {code: '23505'}},
+      {data: logRow({revision: 1, payload_sha256: 'c'.repeat(64)}), error: null},
+      {data: null, error: null},
+      {data: planRow({revision: 6}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.equal((await repository.saveLog(remoteLog())).status, 'conflict');
+    assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'conflict');
+  });
+
+  test('accepts only the exact already-applied soft delete as a replay', async () => {
+    const {client} = createClient([
+      {data: null, error: null},
+      {data: logRow({revision: 5, deleted_at: UPDATED_AT}), error: null},
+      {data: null, error: null},
+      {data: planRow({revision: 5, deleted_at: null}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.equal((await repository.deleteLog(LOG_ID, 4)).status, 'saved');
+    assert.equal((await repository.deletePlan(PLAN_ID, 4)).status, 'conflict');
   });
 
   test('preserves dive mode when saving a log', async () => {
@@ -246,6 +442,7 @@ describe('AccountDataRepository', () => {
           planned_at: STARTED_AT,
           plan_data: {},
         }},
+        {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'eq', column: 'id', value: PLAN_ID},
         {method: 'eq', column: 'revision', value: 4},
         {method: 'select', columns: undefined},
@@ -256,10 +453,66 @@ describe('AccountDataRepository', () => {
       table: 'dive_plans',
       calls: [
         {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'eq', column: 'id', value: PLAN_ID},
         {method: 'maybeSingle'},
       ],
     });
+  });
+
+  test('fails closed when a write query returns a row for another owner', async () => {
+    const cases: Array<{
+      operation: 'save' | 'delete';
+      run: (repository: ReturnType<typeof createAccountDataRepository>) => Promise<unknown>;
+      response: QueryResponse;
+    }> = [
+      {
+        operation: 'save',
+        run: repository => repository.saveLog(remoteLog({revision: 4}), 4),
+        response: {data: logRow({user_id: OTHER_USER_ID, revision: 5}), error: null},
+      },
+      {
+        operation: 'delete',
+        run: repository => repository.deletePlan(PLAN_ID, 4),
+        response: {data: planRow({user_id: OTHER_USER_ID, revision: 5, deleted_at: UPDATED_AT}), error: null},
+      },
+    ];
+
+    for (const item of cases) {
+      const {client, calls} = createClient([item.response]);
+      const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+      await rejectsWithOperation(() => item.run(repository), item.operation);
+      assert.deepEqual(calls[0]?.calls.slice(1, 2), [
+        {method: 'eq', column: 'user_id', value: USER_ID},
+      ]);
+    }
+  });
+
+  test('rejects foreign insert and replay rows before mapping them', async () => {
+    const insert = createClient([
+      {data: logRow({user_id: OTHER_USER_ID, revision: 1}), error: null},
+    ]);
+    const insertRepository = createAccountDataRepository(insert.client as never, {userId: USER_ID});
+    await rejectsWithOperation(() => insertRepository.saveLog(remoteLog()), 'save');
+    assert.equal(
+      (insert.calls[0]?.calls[0] as {value: {user_id: string}}).value.user_id,
+      USER_ID,
+    );
+
+    const replay = createClient([
+      {data: null, error: null},
+      {data: planRow({user_id: OTHER_USER_ID, revision: 5}), error: null},
+    ]);
+    const replayRepository = createAccountDataRepository(replay.client as never, {userId: USER_ID});
+    await rejectsWithOperation(
+      () => replayRepository.savePlan(remotePlan({revision: 4}), 4),
+      'save',
+    );
+    assert.deepEqual(replay.calls[1]?.calls.slice(0, 3), [
+      {method: 'select', columns: undefined},
+      {method: 'eq', column: 'user_id', value: USER_ID},
+      {method: 'eq', column: 'id', value: PLAN_ID},
+    ]);
   });
 
   test('returns a stable sanitized error instead of backend details', async () => {
