@@ -32,6 +32,11 @@ import {
   type AccountOutboxItem,
   AccountOutbox,
 } from './account-outbox';
+import {
+  ACCOUNT_PAYLOAD_SCHEMA_VERSION,
+  parseAccountRemoteLog,
+  parseAccountRemotePlan,
+} from './account-payload';
 
 export type AccountSyncDrainResult = {
   processed: number;
@@ -71,6 +76,8 @@ type DrainOptions = {
   online: boolean;
 };
 
+type AssertCanCommit = () => void;
+
 type UserDrainState = {
   active?: Promise<AccountSyncDrainResult>;
   rerunRequested: boolean;
@@ -83,6 +90,19 @@ const MAXIMUM_OPERATIONS_PER_PASS = 10;
 const PAGE_SIZE = 100;
 const drainStateByUser = new Map<string, UserDrainState>();
 const entityMutationQueues = new Map<string, Promise<void>>();
+
+export class StaleAccountSyncCommitError extends Error {
+  constructor() {
+    super('Account sync commit is stale');
+    this.name = 'StaleAccountSyncCommitError';
+  }
+}
+
+export function isStaleAccountSyncCommitError(
+  error: unknown,
+): error is StaleAccountSyncCommitError {
+  return error instanceof StaleAccountSyncCommitError;
+}
 
 export class AccountSyncCoordinator {
   private readonly userId: string;
@@ -99,6 +119,8 @@ export class AccountSyncCoordinator {
     delayMs: number,
   ) => ScheduledAccountSync;
   private onDidProcess?: () => void | Promise<void>;
+  private commitGeneration = 0;
+  private externalCommitGuard?: AssertCanCommit;
 
   constructor(options: AccountSyncCoordinatorOptions) {
     this.userId = options.userId;
@@ -116,6 +138,11 @@ export class AccountSyncCoordinator {
 
   setOnDidProcess(listener: (() => void | Promise<void>) | undefined): void {
     this.onDidProcess = listener;
+  }
+
+  setCommitGuard(guard: AssertCanCommit | undefined): void {
+    this.commitGeneration += 1;
+    this.externalCommitGuard = guard;
   }
 
   drain(options: DrainOptions): Promise<AccountSyncDrainResult> {
@@ -137,6 +164,8 @@ export class AccountSyncCoordinator {
 
     state.scheduled?.cancel();
     state.scheduled = undefined;
+    const assertCanCommit = this.captureCommitGuard();
+    assertCanCommit();
     let active!: Promise<AccountSyncDrainResult>;
     active = (async () => {
       let processed = 0;
@@ -144,10 +173,11 @@ export class AccountSyncCoordinator {
       try {
         do {
           state.rerunRequested = false;
-          const result = await this.drainPass();
+          const result = await this.drainPass(assertCanCommit);
           processed += result.processed;
           remaining = result.remaining;
           if (result.processed > 0) {
+            assertCanCommit();
             await this.onDidProcess?.();
           }
         } while (state.online && state.rerunRequested);
@@ -170,6 +200,7 @@ export class AccountSyncCoordinator {
   }
 
   pause(): void {
+    this.commitGeneration += 1;
     const state = drainStateByUser.get(this.userId);
     if (!state || state.coordinator !== this) {
       return;
@@ -186,14 +217,21 @@ export class AccountSyncCoordinator {
       return 0;
     }
 
+    const assertCanCommit = this.captureCommitGuard();
+    assertCanCommit();
     const [logs, plans] = await Promise.all([
-      collectPages(cursor =>
-        this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+      collectPages(
+        cursor =>
+          this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+        assertCanCommit,
       ),
-      collectPages(cursor =>
-        this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+      collectPages(
+        cursor =>
+          this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+        assertCanCommit,
       ),
     ]);
+    assertCanCommit();
     let changed = 0;
 
     for (const remoteValue of plans) {
@@ -203,6 +241,7 @@ export class AccountSyncCoordinator {
         'plan',
         remote.localId,
         async () => {
+          assertCanCommit();
           if (
             (await this.outbox.listEntity(
               this.userId,
@@ -220,7 +259,7 @@ export class AccountSyncCoordinator {
           if (sameJsonValue(current, local)) {
             return 0;
           }
-          await this.planRepository.save(local);
+          await this.commitPlanSave(current, local, assertCanCommit);
           return 1;
         },
       );
@@ -232,6 +271,7 @@ export class AccountSyncCoordinator {
         'log',
         remote.localId,
         async () => {
+          assertCanCommit();
           if (
             (await this.outbox.listEntity(
               this.userId,
@@ -245,11 +285,23 @@ export class AccountSyncCoordinator {
           if (isLocallyAuthoritative(current)) {
             return 0;
           }
-          const local = await this.prepareHydratedLog(remote);
-          if (sameJsonValue(current, local)) {
+          const prepared = await this.prepareHydratedLog(
+            remote,
+            assertCanCommit,
+          );
+          if (sameJsonValue(current, prepared.local)) {
             return 0;
           }
-          await this.logbookRepository.save(local);
+          try {
+            await this.commitLogSave(
+              current,
+              prepared.local,
+              assertCanCommit,
+            );
+          } catch (error) {
+            await prepared.rollbackProfile?.();
+            throw error;
+          }
           return 1;
         },
       );
@@ -257,7 +309,10 @@ export class AccountSyncCoordinator {
     return changed;
   }
 
-  private async drainPass(): Promise<AccountSyncDrainResult> {
+  private async drainPass(
+    assertCanCommit: AssertCanCommit,
+  ): Promise<AccountSyncDrainResult> {
+    assertCanCommit();
     const dueHeads = entityHeads(await this.outbox.list(this.userId))
       .filter(item => item.nextAttemptAt <= this.now())
       .slice(0, MAXIMUM_OPERATIONS_PER_PASS);
@@ -277,9 +332,13 @@ export class AccountSyncCoordinator {
         continue;
       }
       try {
-        await this.deliver(head);
+        await this.deliver(head, assertCanCommit);
         processed += 1;
-      } catch {
+      } catch (error) {
+        if (isStaleAccountSyncCommitError(error)) {
+          throw error;
+        }
+        assertCanCommit();
         await this.outbox.reschedule(head.userId, head.operationId);
       }
     }
@@ -311,7 +370,10 @@ export class AccountSyncCoordinator {
     }, delayMs);
   }
 
-  private deliver(item: AccountOutboxItem): Promise<void> {
+  private deliver(
+    item: AccountOutboxItem,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<void> {
     if (item.userId !== this.userId) {
       throw new Error('Account outbox operation belongs to another user');
     }
@@ -319,14 +381,21 @@ export class AccountSyncCoordinator {
       item.userId,
       item.entityKind,
       item.entityLocalId,
-      () =>
+      () => {
+        assertCanCommit();
+        return (
         item.entityKind === 'log'
-          ? this.deliverLog(item)
-          : this.deliverPlan(item),
+          ? this.deliverLog(item, assertCanCommit)
+          : this.deliverPlan(item, assertCanCommit)
+        );
+      },
     );
   }
 
-  private async deliverLog(item: AccountOutboxItem): Promise<void> {
+  private async deliverLog(
+    item: AccountOutboxItem,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<void> {
     const local = requiredLocalLog(item.payload);
     const remote = requiredRemoteLog(item.payload);
     assertOperationEntity(item, local.localId, remote.localId);
@@ -336,10 +405,13 @@ export class AccountSyncCoordinator {
       if (item.expectedRevision === undefined) {
         throw new Error('Delete operation is missing its expected revision');
       }
-      result = await this.accountRepository.deleteLog(
+      assertCanCommit();
+      const rawResult = await this.accountRepository.deleteLog(
         remote.id,
         item.expectedRevision,
       );
+      assertCanCommit();
+      result = parseLogMutationResult(rawResult);
     } else {
       if (item.profileStorageKey !== undefined) {
         if (!remote.profilePath || !this.profileUploader) {
@@ -354,14 +426,21 @@ export class AccountSyncCoordinator {
           remote,
           local.watchCapture?.session.localSessionId,
         );
+        assertCanCommit();
         await this.profileUploader.uploadProfile(remote.profilePath, bytes);
+        assertCanCommit();
       }
-      result = await this.saveLogWithRecovery(remote, item.expectedRevision);
+      result = await this.saveLogWithRecovery(
+        remote,
+        item.expectedRevision,
+        assertCanCommit,
+      );
     }
 
     if (result.status === 'conflict') {
       const current = await this.logbookRepository.get(item.entityLocalId);
       if (item.mutation === 'delete' && current === undefined) {
+        assertCanCommit();
         await this.outbox.complete(item.userId, item.operationId);
         return;
       }
@@ -369,11 +448,18 @@ export class AccountSyncCoordinator {
         throw new Error('Current local log is missing during conflict');
       }
       const conflicted = {...current, cloudSyncStatus: 'conflict' as const};
-      await this.logbookRepository.save(conflicted);
-      await this.outbox.recordConflict(
-        item,
-        localAsRecord(conflicted),
-        remoteAsRecord(result.remote),
+      await this.commitLogSave(
+        current,
+        conflicted,
+        assertCanCommit,
+        async () => {
+          assertCanCommit();
+          await this.outbox.recordConflict(
+            item,
+            localAsRecord(conflicted),
+            remoteAsRecord(result.remote),
+          );
+        },
       );
       return;
     }
@@ -384,21 +470,35 @@ export class AccountSyncCoordinator {
         throw new Error('Current local log is missing after remote save');
       }
       const hasPendingEdit = await this.hasLaterUpsert(item);
-      await this.logbookRepository.save({
+      const saved = {
         ...current,
         remoteId: result.value.id,
         remoteRevision: result.value.revision,
         ownerUserId: this.userId,
         cloudSyncStatus: hasPendingEdit ? 'pending' : 'synced',
-      });
-      await this.outbox.completeSavedUpsert(item, result.value.revision);
+      } as DiveLogEntry;
+      await this.commitLogSave(
+        current,
+        saved,
+        assertCanCommit,
+        async () => {
+          assertCanCommit();
+          await this.outbox.completeSavedUpsert(item, result.value.revision);
+        },
+      );
       return;
     }
-    await this.logbookRepository.delete(item.entityLocalId);
-    await this.outbox.complete(item.userId, item.operationId);
+    const current = await this.logbookRepository.get(item.entityLocalId);
+    await this.commitLogDelete(current, item.entityLocalId, assertCanCommit, async () => {
+      assertCanCommit();
+      await this.outbox.complete(item.userId, item.operationId);
+    });
   }
 
-  private async deliverPlan(item: AccountOutboxItem): Promise<void> {
+  private async deliverPlan(
+    item: AccountOutboxItem,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<void> {
     const local = requiredLocalPlan(item.payload);
     const remote = requiredRemotePlan(item.payload);
     assertOperationEntity(item, local.localId, remote.localId);
@@ -408,17 +508,25 @@ export class AccountSyncCoordinator {
       if (item.expectedRevision === undefined) {
         throw new Error('Delete operation is missing its expected revision');
       }
-      result = await this.accountRepository.deletePlan(
+      assertCanCommit();
+      const rawResult = await this.accountRepository.deletePlan(
         remote.id,
         item.expectedRevision,
       );
+      assertCanCommit();
+      result = parsePlanMutationResult(rawResult);
     } else {
-      result = await this.savePlanWithRecovery(remote, item.expectedRevision);
+      result = await this.savePlanWithRecovery(
+        remote,
+        item.expectedRevision,
+        assertCanCommit,
+      );
     }
 
     if (result.status === 'conflict') {
       const current = await this.planRepository.get(item.entityLocalId);
       if (item.mutation === 'delete' && current === undefined) {
+        assertCanCommit();
         await this.outbox.complete(item.userId, item.operationId);
         return;
       }
@@ -426,11 +534,18 @@ export class AccountSyncCoordinator {
         throw new Error('Current local plan is missing during conflict');
       }
       const conflicted = {...current, cloudSyncStatus: 'conflict' as const};
-      await this.planRepository.save(conflicted);
-      await this.outbox.recordConflict(
-        item,
-        localAsRecord(conflicted),
-        remoteAsRecord(result.remote),
+      await this.commitPlanSave(
+        current,
+        conflicted,
+        assertCanCommit,
+        async () => {
+          assertCanCommit();
+          await this.outbox.recordConflict(
+            item,
+            localAsRecord(conflicted),
+            remoteAsRecord(result.remote),
+          );
+        },
       );
       return;
     }
@@ -441,18 +556,29 @@ export class AccountSyncCoordinator {
         throw new Error('Current local plan is missing after remote save');
       }
       const hasPendingEdit = await this.hasLaterUpsert(item);
-      await this.planRepository.save({
+      const saved = {
         ...current,
         remoteId: result.value.id,
         remoteRevision: result.value.revision,
         ownerUserId: this.userId,
         cloudSyncStatus: hasPendingEdit ? 'pending' : 'synced',
-      });
-      await this.outbox.completeSavedUpsert(item, result.value.revision);
+      } as DivePlan;
+      await this.commitPlanSave(
+        current,
+        saved,
+        assertCanCommit,
+        async () => {
+          assertCanCommit();
+          await this.outbox.completeSavedUpsert(item, result.value.revision);
+        },
+      );
       return;
     }
-    await this.planRepository.delete(item.entityLocalId);
-    await this.outbox.complete(item.userId, item.operationId);
+    const current = await this.planRepository.get(item.entityLocalId);
+    await this.commitPlanDelete(current, item.entityLocalId, assertCanCommit, async () => {
+      assertCanCommit();
+      await this.outbox.complete(item.userId, item.operationId);
+    });
   }
 
   private async hasLaterUpsert(item: AccountOutboxItem): Promise<boolean> {
@@ -475,11 +601,29 @@ export class AccountSyncCoordinator {
   private async saveLogWithRecovery(
     remote: RemoteDiveLog,
     expectedRevision: number | undefined,
+    assertCanCommit: AssertCanCommit,
   ): Promise<AccountMutationResult<RemoteDiveLog>> {
     try {
-      return await this.accountRepository.saveLog(remote, expectedRevision);
+      assertCanCommit();
+      const result = await this.accountRepository.saveLog(
+        remote,
+        expectedRevision,
+      );
+      assertCanCommit();
+      return parseLogMutationResult(result);
     } catch (error) {
-      const recovered = await this.findRemoteLog(remote).catch(() => undefined);
+      if (isStaleAccountSyncCommitError(error)) {
+        throw error;
+      }
+      assertCanCommit();
+      let recovered: RemoteDiveLog | undefined;
+      try {
+        recovered = await this.findRemoteLog(remote, assertCanCommit);
+      } catch (recoveryError) {
+        if (isStaleAccountSyncCommitError(recoveryError)) {
+          throw recoveryError;
+        }
+      }
       if (recovered) {
         return {status: 'saved', value: recovered};
       }
@@ -490,11 +634,29 @@ export class AccountSyncCoordinator {
   private async savePlanWithRecovery(
     remote: RemoteDivePlan,
     expectedRevision: number | undefined,
+    assertCanCommit: AssertCanCommit,
   ): Promise<AccountMutationResult<RemoteDivePlan>> {
     try {
-      return await this.accountRepository.savePlan(remote, expectedRevision);
+      assertCanCommit();
+      const result = await this.accountRepository.savePlan(
+        remote,
+        expectedRevision,
+      );
+      assertCanCommit();
+      return parsePlanMutationResult(result);
     } catch (error) {
-      const recovered = await this.findRemotePlan(remote).catch(() => undefined);
+      if (isStaleAccountSyncCommitError(error)) {
+        throw error;
+      }
+      assertCanCommit();
+      let recovered: RemoteDivePlan | undefined;
+      try {
+        recovered = await this.findRemotePlan(remote, assertCanCommit);
+      } catch (recoveryError) {
+        if (isStaleAccountSyncCommitError(recoveryError)) {
+          throw recoveryError;
+        }
+      }
       if (recovered) {
         return {status: 'saved', value: recovered};
       }
@@ -504,9 +666,11 @@ export class AccountSyncCoordinator {
 
   private async findRemoteLog(
     expected: RemoteDiveLog,
+    assertCanCommit: AssertCanCommit,
   ): Promise<RemoteDiveLog | undefined> {
-    const logs = await collectPages(cursor =>
-      this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+    const logs = await collectPages(
+      cursor => this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+      assertCanCommit,
     );
     return logs
       .map(parseRemoteLog)
@@ -515,18 +679,26 @@ export class AccountSyncCoordinator {
 
   private async findRemotePlan(
     expected: RemoteDivePlan,
+    assertCanCommit: AssertCanCommit,
   ): Promise<RemoteDivePlan | undefined> {
-    const plans = await collectPages(cursor =>
-      this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+    const plans = await collectPages(
+      cursor => this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+      assertCanCommit,
     );
     return plans
       .map(parseRemotePlan)
       .find(remote => sameRemotePlanMutation(remote, expected));
   }
 
-  private async prepareHydratedLog(remote: RemoteDiveLog): Promise<DiveLogEntry> {
+  private async prepareHydratedLog(
+    remote: RemoteDiveLog,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<{
+    local: DiveLogEntry;
+    rollbackProfile?: () => Promise<void>;
+  }> {
     if (remote.profilePath === undefined) {
-      return remoteLogToLocal(remote, this.userId);
+      return {local: remoteLogToLocal(remote, this.userId)};
     }
     if (!this.profileDownloader || !this.profileStorage) {
       throw new Error('Remote profile hydration is unavailable');
@@ -536,7 +708,9 @@ export class AccountSyncCoordinator {
     }
 
     const descriptor = remoteProfileDescriptor(remote);
+    assertCanCommit();
     const bytes = await this.profileDownloader.downloadProfile(remote.profilePath);
+    assertCanCommit();
     if (bytes.length !== descriptor.byteCount) {
       throw new Error('Malformed remote log profile byte count');
     }
@@ -569,8 +743,132 @@ export class AccountSyncCoordinator {
       sampleCount: descriptor.sampleCount,
       sha256: descriptor.sha256,
     });
-    await this.profileStorage.write(storageKey, samples);
-    return local;
+    const previousProfile = await this.profileStorage.read(storageKey);
+    assertCanCommit();
+    const rollbackProfile = async () => {
+      if (previousProfile === undefined) {
+        await this.profileStorage?.remove(storageKey);
+      } else {
+        await this.profileStorage?.write(storageKey, previousProfile);
+      }
+    };
+    try {
+      await this.profileStorage.write(storageKey, samples);
+      assertCanCommit();
+    } catch (error) {
+      await rollbackProfile();
+      throw error;
+    }
+    return {local, rollbackProfile};
+  }
+
+  private async commitLogSave(
+    previous: DiveLogEntry | undefined,
+    next: DiveLogEntry,
+    assertCanCommit: AssertCanCommit,
+    finalize?: () => Promise<void>,
+  ): Promise<void> {
+    assertCanCommit();
+    await this.logbookRepository.save(next);
+    try {
+      assertCanCommit();
+      await finalize?.();
+    } catch (error) {
+      if (isStaleAccountSyncCommitError(error)) {
+        await this.restoreLog(previous, next.localId);
+      }
+      throw error;
+    }
+  }
+
+  private async commitPlanSave(
+    previous: DivePlan | undefined,
+    next: DivePlan,
+    assertCanCommit: AssertCanCommit,
+    finalize?: () => Promise<void>,
+  ): Promise<void> {
+    assertCanCommit();
+    await this.planRepository.save(next);
+    try {
+      assertCanCommit();
+      await finalize?.();
+    } catch (error) {
+      if (isStaleAccountSyncCommitError(error)) {
+        await this.restorePlan(previous, next.localId);
+      }
+      throw error;
+    }
+  }
+
+  private async commitLogDelete(
+    previous: DiveLogEntry | undefined,
+    localId: string,
+    assertCanCommit: AssertCanCommit,
+    finalize: () => Promise<void>,
+  ): Promise<void> {
+    assertCanCommit();
+    await this.logbookRepository.delete(localId);
+    try {
+      assertCanCommit();
+      await finalize();
+    } catch (error) {
+      if (isStaleAccountSyncCommitError(error) && previous) {
+        await this.logbookRepository.save(previous);
+      }
+      throw error;
+    }
+  }
+
+  private async commitPlanDelete(
+    previous: DivePlan | undefined,
+    localId: string,
+    assertCanCommit: AssertCanCommit,
+    finalize: () => Promise<void>,
+  ): Promise<void> {
+    assertCanCommit();
+    await this.planRepository.delete(localId);
+    try {
+      assertCanCommit();
+      await finalize();
+    } catch (error) {
+      if (isStaleAccountSyncCommitError(error) && previous) {
+        await this.planRepository.save(previous);
+      }
+      throw error;
+    }
+  }
+
+  private async restoreLog(
+    previous: DiveLogEntry | undefined,
+    localId: string,
+  ): Promise<void> {
+    if (previous) {
+      await this.logbookRepository.save(previous);
+    } else {
+      await this.logbookRepository.delete(localId);
+    }
+  }
+
+  private async restorePlan(
+    previous: DivePlan | undefined,
+    localId: string,
+  ): Promise<void> {
+    if (previous) {
+      await this.planRepository.save(previous);
+    } else {
+      await this.planRepository.delete(localId);
+    }
+  }
+
+  private captureCommitGuard(): AssertCanCommit {
+    const generation = this.commitGeneration;
+    const external = this.externalCommitGuard;
+    return () => {
+      if (generation !== this.commitGeneration) {
+        throw new StaleAccountSyncCommitError();
+      }
+      external?.();
+    };
   }
 }
 
@@ -601,11 +899,14 @@ async function collectPages<T>(
     items: T[];
     nextCursor?: AccountDataCursor;
   }>,
+  assertCanCommit: AssertCanCommit,
 ): Promise<T[]> {
   const items: T[] = [];
   let cursor: AccountDataCursor | undefined;
   do {
+    assertCanCommit();
     const page = await list(cursor);
+    assertCanCommit();
     items.push(...page.items);
     cursor = page.nextCursor;
   } while (cursor !== undefined);
@@ -663,62 +964,27 @@ function requiredRemotePlan(payload: Record<string, unknown>): RemoteDivePlan {
 }
 
 function parseRemoteLog(value: unknown): RemoteDiveLog {
-  if (
-    !isRecord(value) ||
-    !hasOnlyKeys(value, [
-      'id',
-      'localId',
-      'revision',
-      'payloadSha256',
-      'payload',
-      'profilePath',
-    ]) ||
-    !isNonEmptyString(value.id) ||
-    !isNonEmptyString(value.localId) ||
-    !isPositiveInteger(value.revision) ||
-    !isSha256(value.payloadSha256) ||
-    !isRecord(value.payload) ||
-    (value.profilePath !== undefined && !isNonEmptyString(value.profilePath))
-  ) {
-    throw new Error('Malformed remote log payload');
-  }
-  return {
-    id: value.id,
-    localId: value.localId,
-    revision: value.revision,
-    payloadSha256: value.payloadSha256,
-    payload: cloneRecord(value.payload),
-    ...(value.profilePath === undefined
-      ? {}
-      : {profilePath: value.profilePath}),
-  };
+  return parseAccountRemoteLog(value);
 }
 
 function parseRemotePlan(value: unknown): RemoteDivePlan {
-  if (
-    !isRecord(value) ||
-    !hasExactKeys(value, [
-      'id',
-      'localId',
-      'revision',
-      'payloadSha256',
-      'payload',
-    ]) ||
-    !isNonEmptyString(value.id) ||
-    !isNonEmptyString(value.localId) ||
-    !isPositiveInteger(value.revision) ||
-    !isSha256(value.payloadSha256) ||
-    !isRecord(value.payload)
-  ) {
-    throw new Error('Malformed remote plan payload');
-  }
-  return {
-    id: value.id,
-    localId: value.localId,
-    revision: value.revision,
-    payloadSha256: value.payloadSha256,
-    payload: cloneRecord(value.payload),
-  };
+  return parseAccountRemotePlan(value);
+}
+
+function parseLogMutationResult(
+  result: AccountMutationResult<RemoteDiveLog>,
+): AccountMutationResult<RemoteDiveLog> {
+  return result.status === 'saved'
+    ? {status: 'saved', value: parseRemoteLog(result.value)}
+    : {status: 'conflict', remote: parseRemoteLog(result.remote)};
+}
+
+function parsePlanMutationResult(
+  result: AccountMutationResult<RemoteDivePlan>,
+): AccountMutationResult<RemoteDivePlan> {
+  return result.status === 'saved'
+    ? {status: 'saved', value: parseRemotePlan(result.value)}
+    : {status: 'conflict', remote: parseRemotePlan(result.remote)};
 }
 
 function remoteLogToLocal(
@@ -813,8 +1079,10 @@ function localWatchMetadata(
 function remotePlanToLocal(remote: RemoteDivePlan, userId: string): DivePlan {
   try {
     const planData = requiredRecord(remote.payload.plan_data, 'plan_data');
+    const localPlanData = cloneRecord(planData);
+    delete localPlanData._schemaVersion;
     const candidate = {
-      ...cloneRecord(planData),
+      ...localPlanData,
       localId: remote.localId,
       remoteId: remote.id,
       remoteRevision: remote.revision,
@@ -917,7 +1185,8 @@ function optionalLocalRecord(
   }
   if (
     !isRecord(value) ||
-    !hasExactKeys(value, ['createdAt', 'updatedAt']) ||
+    !hasExactKeys(value, ['schemaVersion', 'createdAt', 'updatedAt']) ||
+    value.schemaVersion !== ACCOUNT_PAYLOAD_SCHEMA_VERSION ||
     !isFiniteNumber(value.createdAt) ||
     !isFiniteNumber(value.updatedAt)
   ) {
@@ -1095,13 +1364,6 @@ function hasExactKeys(
   );
 }
 
-function hasOnlyKeys(
-  record: Record<string, unknown>,
-  allowedKeys: readonly string[],
-): boolean {
-  return Object.keys(record).every(key => allowedKeys.includes(key));
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -1112,10 +1374,6 @@ function isNonEmptyString(value: unknown): value is string {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isPositiveInteger(value: unknown): value is number {
-  return Number.isSafeInteger(value) && (value as number) >= 1;
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

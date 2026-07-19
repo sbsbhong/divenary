@@ -104,11 +104,12 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     return this.enqueueMutation(async () => {
       const metadataSnapshot = await this.metadataStorage.getString(this.storageKey);
       const profileSnapshots: ProfileWriteSnapshot[] = [];
+      const obsoleteProfileKeys = new Set<string>();
       let metadataWriteAttempted = false;
+      let committedEntries: DiveLogEntry[];
       const now = this.now();
       try {
         let entries = await this.readEntries();
-        const obsoleteProfileKeys = new Set<string>();
 
         for (const [messageIndex, message] of messages.entries()) {
           const fullSamples = message.session.samples;
@@ -158,10 +159,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         metadataWriteAttempted = true;
         await this.writeEntries(entries);
         options?.assertCanCommit?.();
-        await Promise.all(Array.from(obsoleteProfileKeys)
-          .filter(key => !referencesProfile(entries, key))
-          .map(key => this.profileStorage.remove(key)));
-        return entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries);
+        committedEntries = entries;
       } catch (error) {
         if (metadataWriteAttempted) {
           await this.restoreMetadataSnapshot(metadataSnapshot);
@@ -169,6 +167,13 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         await this.restoreProfileSnapshots(profileSnapshots);
         throw error;
       }
+
+      await Promise.allSettled(
+        Array.from(obsoleteProfileKeys)
+          .filter(key => !referencesProfile(committedEntries, key))
+          .map(key => this.profileStorage.remove(key)),
+      );
+      return committedEntries.map(cloneDiveLogEntry).sort(compareDiveLogEntries);
     });
   }
 

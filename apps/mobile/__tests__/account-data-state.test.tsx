@@ -4,6 +4,7 @@ import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
 import type {
   AccountDataRepository,
   RemoteDiveLog,
+  RemoteDivePlan,
 } from '@repo/supabase';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
@@ -23,6 +24,7 @@ import {AccountSyncCoordinator} from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
+import type {DivePlan} from '../src/types/dive-plan';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 
@@ -42,6 +44,20 @@ const entry: DiveLogEntry = {
   },
   mobile: {mediaPlaceholders: []},
   provenance: {},
+};
+
+const plan: DivePlan = {
+  localId: 'local-plan-1',
+  status: 'draft',
+  cloudSyncStatus: 'notConfigured',
+  createdAt: 100,
+  updatedAt: 100,
+  site: {name: 'Local Reef'},
+  buddyIds: [],
+  gearIds: [],
+  tags: [],
+  plannedValues: {},
+  checklistItems: [],
 };
 
 describe('account data state', () => {
@@ -123,6 +139,37 @@ describe('account data state', () => {
       entityLocalId: 'local-log-1',
       mutation: 'upsert',
     });
+    const [queued] = await outbox.list(userId);
+    const remote = queued.payload.remote as RemoteDiveLog;
+    expect(Object.keys(remote.payload)).toEqual([
+      'source',
+      'started_at',
+      'ended_at',
+      'duration_seconds',
+      'max_depth_meters',
+      'site_name',
+      'title',
+      'rating',
+      'dive_mode',
+      'manual_data',
+      'mobile_data',
+      'watch_metadata',
+      'provenance',
+      'profile_preview',
+      'profile_content_revision',
+      'profile_sha256',
+      'profile_byte_count',
+      'profile_sample_count',
+      'source_plan_id',
+    ]);
+    expect(remote.payload).toMatchObject({
+      ended_at: null,
+      duration_seconds: null,
+      manual_data: {_local_record: {schemaVersion: 1}},
+      watch_metadata: null,
+      source_plan_id: null,
+    });
+    expect(remote.payloadSha256).toBe(canonicalSha256(remote.payload));
     expect(accountRepository.saveLog).not.toHaveBeenCalled();
   });
 
@@ -328,6 +375,191 @@ describe('account data state', () => {
     });
 
     await expect(outbox.list(userId)).resolves.toHaveLength(1);
+  });
+
+  it('appends and delivers a newer pending log behind its older queued operation', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const localLogbook = new LocalDiveLogRepository();
+    const base = {
+      principal: {kind: 'user', userId} as const,
+      queryScope: `user:${userId}`,
+      logbook: localLogbook,
+      planbook: new LocalDivePlanRepository(),
+    };
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: base,
+      outbox,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+    await repositories.logbook.save(entry);
+    const pending = await localLogbook.get(entry.localId);
+    await localLogbook.save({
+      ...pending!,
+      updatedAt: 200,
+      manual: {...pending!.manual, notes: 'newer crash-recovered edit'},
+    });
+
+    await reconcilePendingAccountOperations({
+      userId,
+      repositories: base,
+      accountRepositories: repositories,
+    });
+
+    const before = await outbox.listEntity(userId, 'log', entry.localId);
+    expect(before).toHaveLength(2);
+    expect(before[0].operationId).not.toBe(before[1].operationId);
+    const newerOperationId = before[1].operationId;
+    const deliveredNotes: Array<string | undefined> = [];
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        saveLog: jest.fn(async (value, expectedRevision) => {
+          const manualData = value.payload.manual_data as {
+            notes?: string;
+          };
+          deliveredNotes.push(manualData.notes);
+          return {
+            status: 'saved' as const,
+            value: {...value, revision: (expectedRevision ?? 0) + 1},
+          };
+        }),
+      }),
+      logbookRepository: localLogbook,
+      planRepository: base.planbook,
+      now: () => 200,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+
+    await expect(coordinator.drain({online: true})).resolves.toMatchObject({
+      processed: 1,
+      remaining: 1,
+    });
+    await expect(outbox.listEntity(userId, 'log', entry.localId)).resolves.toMatchObject([
+      {operationId: newerOperationId, expectedRevision: 1},
+    ]);
+    await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'pending',
+      manual: {notes: 'newer crash-recovered edit'},
+    });
+
+    await coordinator.drain({online: true});
+    expect(deliveredNotes).toEqual([undefined, 'newer crash-recovered edit']);
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+    await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'synced',
+      remoteRevision: 2,
+    });
+    coordinator.pause();
+  });
+
+  it('appends and delivers a newer pending plan behind its older queued operation', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const localPlanbook = new LocalDivePlanRepository();
+    const base = {
+      principal: {kind: 'user', userId} as const,
+      queryScope: `user:${userId}`,
+      logbook: new LocalDiveLogRepository(),
+      planbook: localPlanbook,
+    };
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: base,
+      outbox,
+      createId: () => '20000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+    await repositories.planbook.save(plan);
+    const pending = await localPlanbook.get(plan.localId);
+    await localPlanbook.save({
+      ...pending!,
+      updatedAt: 200,
+      objective: 'newer crash-recovered objective',
+    });
+
+    await reconcilePendingAccountOperations({
+      userId,
+      repositories: base,
+      accountRepositories: repositories,
+    });
+
+    const before = await outbox.listEntity(userId, 'plan', plan.localId);
+    expect(before).toHaveLength(2);
+    const firstRemote = before[0].payload.remote as RemoteDivePlan;
+    expect(Object.keys(firstRemote.payload)).toEqual([
+      'status',
+      'planned_at',
+      'dive_mode',
+      'site_name',
+      'plan_data',
+      'converted_log_id',
+    ]);
+    expect(firstRemote.payload).toMatchObject({
+      planned_at: null,
+      dive_mode: null,
+      converted_log_id: null,
+      plan_data: {_schemaVersion: 1},
+    });
+    expect(firstRemote.payload.plan_data).not.toMatchObject({
+      remoteId: expect.anything(),
+      ownerUserId: expect.anything(),
+      cloudSyncStatus: expect.anything(),
+    });
+    expect(firstRemote.payloadSha256).toBe(
+      canonicalSha256(firstRemote.payload),
+    );
+    const newerOperationId = before[1].operationId;
+    const deliveredObjectives: Array<string | undefined> = [];
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        savePlan: jest.fn(async (value, expectedRevision) => {
+          const planData = value.payload.plan_data as {objective?: string};
+          deliveredObjectives.push(planData.objective);
+          return {
+            status: 'saved' as const,
+            value: {...value, revision: (expectedRevision ?? 0) + 1},
+          };
+        }),
+      }),
+      logbookRepository: base.logbook,
+      planRepository: localPlanbook,
+      now: () => 200,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+
+    await expect(coordinator.drain({online: true})).resolves.toMatchObject({
+      processed: 1,
+      remaining: 1,
+    });
+    await expect(outbox.listEntity(userId, 'plan', plan.localId)).resolves.toMatchObject([
+      {operationId: newerOperationId, expectedRevision: 1},
+    ]);
+    await expect(localPlanbook.get(plan.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'pending',
+      objective: 'newer crash-recovered objective',
+    });
+
+    await coordinator.drain({online: true});
+    expect(deliveredObjectives).toEqual([
+      undefined,
+      'newer crash-recovered objective',
+    ]);
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+    await expect(localPlanbook.get(plan.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'synced',
+      remoteRevision: 2,
+    });
+    coordinator.pause();
   });
 
   it('persists a remote-delete tombstone before hiding and retains the local row until success', async () => {
@@ -722,13 +954,19 @@ describe('account data state', () => {
     const firstLogs = deferred<{items: RemoteDiveLog[]}>();
     const firstRemote = accountRepository({listLogs: jest.fn(() => firstLogs.promise)});
     const secondRemote = accountRepository();
-    const createRepositories = jest.fn(principal => ({
-      principal,
-      queryScope:
-        principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
-      logbook: new LocalDiveLogRepository(),
-      planbook: new LocalDivePlanRepository(),
-    }));
+    const localByScope = new Map<string, LocalDiveLogRepository>();
+    const createRepositories = jest.fn(principal => {
+      const scope =
+        principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`;
+      const logbook = new LocalDiveLogRepository();
+      localByScope.set(scope, logbook);
+      return {
+        principal,
+        queryScope: scope,
+        logbook,
+        planbook: new LocalDivePlanRepository(),
+      };
+    });
     const publishedUsers: string[] = [];
     const Capture = () => {
       const accountData = useAccountData();
@@ -785,10 +1023,11 @@ describe('account data state', () => {
       );
       await flushPromises();
     });
-    firstLogs.resolve({items: []});
+    firstLogs.resolve({items: [remoteLog({localId: 'stale-user-a-log'})]});
     await ReactTestRenderer.act(flushPromises);
 
     expect(publishedUsers).toEqual(['user-b']);
+    await expect(localByScope.get('user:user-a')?.list()).resolves.toEqual([]);
 
     await ReactTestRenderer.act(async () => {
       renderer.update(
@@ -811,20 +1050,78 @@ describe('account data state', () => {
 });
 
 function remoteLog(overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog {
+  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const payload = {
+    source: 'manual',
+    started_at: '1970-01-01T00:01:40.000Z',
+    ended_at: null,
+    duration_seconds: null,
+    max_depth_meters: null,
+    site_name: entry.manual.site.name ?? null,
+    title: null,
+    rating: null,
+    dive_mode: null,
+    manual_data: {
+      ...entry.manual,
+      _local_record: {schemaVersion: 1, createdAt: 100, updatedAt: 100},
+    },
+    mobile_data: entry.mobile,
+    watch_metadata: null,
+    provenance: entry.provenance,
+    profile_preview: null,
+    profile_content_revision: null,
+    profile_sha256: null,
+    profile_byte_count: null,
+    profile_sample_count: null,
+    source_plan_id: null,
+    ...(payloadOverride ?? {}),
+  };
   return {
     id: '10000000-0000-4000-8000-000000000001',
     localId: entry.localId,
     revision: 2,
-    payloadSha256: 'a'.repeat(64),
-    payload: {
-      source: 'manual',
-      started_at: '1970-01-01T00:01:40.000Z',
-      manual_data: entry.manual,
-      mobile_data: entry.mobile,
-      provenance: entry.provenance,
-    },
-    ...overrides,
+    payloadSha256: payloadSha256 ?? canonicalSha256(payload),
+    payload,
+    ...outerOverrides,
   };
+}
+
+function remotePlan(overrides: Partial<RemoteDivePlan> = {}): RemoteDivePlan {
+  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const payload = {
+    status: 'draft',
+    planned_at: null,
+    dive_mode: null,
+    site_name: plan.site.name ?? null,
+    plan_data: {...plan, _schemaVersion: 1},
+    converted_log_id: null,
+    ...(payloadOverride ?? {}),
+  };
+  return {
+    id: '20000000-0000-4000-8000-000000000001',
+    localId: plan.localId,
+    revision: 2,
+    payloadSha256: payloadSha256 ?? canonicalSha256(payload),
+    payload,
+    ...outerOverrides,
+  };
+}
+
+function canonicalSha256(value: unknown): string {
+  return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
+}
+
+function canonicalStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalStringify).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalStringify(nested)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 function accountRepository(
@@ -836,7 +1133,7 @@ function accountRepository(
     saveLog: jest.fn(async value => ({status: 'saved', value})),
     savePlan: jest.fn(async value => ({status: 'saved', value})),
     deleteLog: jest.fn(async () => ({status: 'saved', value: remoteLog()})),
-    deletePlan: jest.fn(async value => ({status: 'saved', value} as never)),
+    deletePlan: jest.fn(async () => ({status: 'saved', value: remotePlan()})),
     ...overrides,
   } as jest.Mocked<AccountDataRepository>;
 }

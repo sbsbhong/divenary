@@ -2,6 +2,7 @@ import type {
   AccountDataRepository,
   AccountMutationResult,
   RemoteDiveLog,
+  RemoteDivePlan,
 } from '@repo/supabase';
 import {sha256} from '@noble/hashes/sha256';
 import {bytesToHex, bytesToUtf8, utf8ToBytes} from '@noble/hashes/utils';
@@ -11,6 +12,7 @@ import { AccountOutbox, type AccountOutboxItem } from '../src/sync/account-outbo
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
+import type {DivePlan} from '../src/types/dive-plan';
 import type {WatchDepthSample} from '../src/types/dive-session';
 
 const userId = '00000000-0000-4000-8000-000000000001';
@@ -38,20 +40,95 @@ const localLog = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   ...overrides,
 });
 
-const remoteLog = (overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog => ({
-  id: remoteId,
-  localId: 'local-log-1',
-  revision: 1,
-  payloadSha256: 'a'.repeat(64),
-  payload: {
-    source: 'manual',
-    started_at: '1970-01-01T00:01:40.000Z',
-    manual_data: localLog().manual,
-    mobile_data: localLog().mobile,
-    provenance: {},
-  },
+const localPlan = (overrides: Partial<DivePlan> = {}): DivePlan => ({
+  localId: 'local-plan-1',
+  remoteId,
+  remoteRevision: 1,
+  ownerUserId: userId,
+  cloudSyncStatus: 'synced',
+  status: 'draft',
+  createdAt: 100,
+  updatedAt: 100,
+  site: {name: 'Local Reef'},
+  buddyIds: [],
+  gearIds: [],
+  tags: [],
+  plannedValues: {},
+  checklistItems: [],
   ...overrides,
 });
+
+const remoteLog = (overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog => {
+  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const payload = {
+    source: 'manual',
+    started_at: '1970-01-01T00:01:40.000Z',
+    ended_at: null,
+    duration_seconds: null,
+    max_depth_meters: null,
+    site_name: localLog().manual.site.name ?? null,
+    title: null,
+    rating: null,
+    dive_mode: null,
+    manual_data: {
+      ...localLog().manual,
+      _local_record: {schemaVersion: 1, createdAt: 100, updatedAt: 100},
+    },
+    mobile_data: localLog().mobile,
+    watch_metadata: null,
+    provenance: {},
+    profile_preview: null,
+    profile_content_revision: null,
+    profile_sha256: null,
+    profile_byte_count: null,
+    profile_sample_count: null,
+    source_plan_id: null,
+    ...(payloadOverride ?? {}),
+  };
+  return {
+    id: remoteId,
+    localId: 'local-log-1',
+    revision: 1,
+    payloadSha256: payloadSha256 ?? canonicalSha256(payload),
+    payload,
+    ...outerOverrides,
+  };
+};
+
+const remotePlan = (
+  overrides: Partial<RemoteDivePlan> = {},
+): RemoteDivePlan => {
+  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const payload = {
+    status: 'draft',
+    planned_at: null,
+    dive_mode: null,
+    site_name: 'Local Reef',
+    plan_data: {
+      localId: 'local-plan-1',
+      status: 'draft',
+      createdAt: 100,
+      updatedAt: 100,
+      site: {name: 'Local Reef'},
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      plannedValues: {},
+      checklistItems: [],
+      _schemaVersion: 1,
+    },
+    converted_log_id: null,
+    ...(payloadOverride ?? {}),
+  };
+  return {
+    id: remoteId,
+    localId: 'local-plan-1',
+    revision: 1,
+    payloadSha256: payloadSha256 ?? canonicalSha256(payload),
+    payload,
+    ...outerOverrides,
+  };
+};
 
 function operation(index = 0, overrides: Partial<AccountOutboxItem> = {}): AccountOutboxItem {
   const local = localLog({localId: `local-log-${index + 1}`});
@@ -83,7 +160,7 @@ function accountRepository(overrides: Partial<AccountDataRepository> = {}): jest
     deleteLog: jest.fn(async () => ({status: 'saved', value: remoteLog()})),
     deletePlan: jest.fn(async () => ({
       status: 'saved',
-      value: {id: remoteId, localId: 'plan-1', revision: 2, payloadSha256: 'b'.repeat(64), payload: {}},
+      value: remotePlan({localId: 'plan-1', revision: 2}),
     })),
     ...overrides,
   } as jest.Mocked<AccountDataRepository>;
@@ -276,6 +353,7 @@ describe('AccountSyncCoordinator', () => {
     remoteValue.payload.profile_content_revision = 'revision-1';
     remoteValue.payload.profile_sample_count = 1;
     remoteValue.payload.profile_byte_count = utf8ToBytes(serializedSnapshot).length;
+    remoteValue.payloadSha256 = canonicalSha256(remoteValue.payload);
     const queuedLocal = localLog({
       source: 'watch',
       watchCapture: {
@@ -422,7 +500,7 @@ describe('AccountSyncCoordinator', () => {
   it('keeps the local value as conflict and stores the remote latest separately', async () => {
     const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox', now: () => 150});
     await outbox.enqueue(operation());
-    const latest = remoteLog({revision: 4, payloadSha256: 'f'.repeat(64)});
+    const latest = remoteLog({revision: 4});
     const conflict: AccountMutationResult<RemoteDiveLog> = {status: 'conflict', remote: latest};
     const remote = accountRepository({saveLog: jest.fn(async () => conflict)});
     const currentLocal = localLog({
@@ -465,7 +543,7 @@ describe('AccountSyncCoordinator', () => {
       nextAttemptAt: 101,
       payload: {
         local: localLog({updatedAt: 101, manual: {...localLog().manual, notes: 'Latest edit'}}),
-        remote: remoteLog({payloadSha256: 'b'.repeat(64)}),
+        remote: remoteLog(),
       },
     });
     await outbox.enqueue(first);
@@ -515,7 +593,7 @@ describe('AccountSyncCoordinator', () => {
         started_at: '2026-07-20T10:00:00.000Z',
         manual_data: {
           ...localLog().manual,
-          _local_record: {createdAt: 17, updatedAt: 29},
+          _local_record: {schemaVersion: 1, createdAt: 17, updatedAt: 29},
         },
       },
     });
@@ -542,6 +620,25 @@ describe('AccountSyncCoordinator', () => {
       createdAt: 17,
       updatedAt: 29,
     });
+  });
+
+  it('hydrates a canonical versioned plan payload', async () => {
+    const planbook = new LocalDivePlanRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listPlans: jest.fn(async () => ({items: [remotePlan()]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(planbook.get('local-plan-1')).resolves.toEqual(localPlan());
   });
 
   it('does not overwrite retained local metadata while a delete tombstone is pending', async () => {
@@ -641,6 +738,279 @@ describe('AccountSyncCoordinator', () => {
     );
   });
 
+  it('aborts stale hydration after a remote profile await without local persistence', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 4},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const profilePath = `${userId}/logs/${remoteId}/revision-1.json`;
+    const remoteValue = watchRemoteLog({
+      profilePath,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const download = deferred<Uint8Array>();
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const logbook = new LocalDiveLogRepository();
+    const save = jest.spyOn(logbook, 'save');
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile: jest.fn(() => download.promise)},
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    const hydration = coordinator.hydrate({online: true});
+    let hydrationError: unknown;
+    const observedHydration = hydration.catch(error => {
+      hydrationError = error;
+    });
+    await flushPromises();
+    coordinator.pause();
+    download.resolve(bytes);
+
+    await observedHydration;
+    expect((hydrationError as Error | undefined)?.message).toMatch(
+      /stale|cancel/i,
+    );
+    expect(profileStorage.write).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+  });
+
+  it('rolls back a profile write invalidated while local persistence is awaiting', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 4},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const profilePath = `${userId}/logs/${remoteId}/revision-1.json`;
+    const remoteValue = watchRemoteLog({
+      profilePath,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const writeStarted = deferred<void>();
+    const releaseWrite = deferred<void>();
+    const profileStorage = {
+      write: jest.fn(async () => {
+        writeStarted.resolve(undefined);
+        await releaseWrite.promise;
+      }),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const logbook = new LocalDiveLogRepository();
+    const save = jest.spyOn(logbook, 'save');
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile: jest.fn(async () => bytes)},
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    const hydration = coordinator.hydrate({online: true});
+    let hydrationError: unknown;
+    const observedHydration = hydration.catch(error => {
+      hydrationError = error;
+    });
+    await writeStarted.promise;
+    coordinator.pause();
+    releaseWrite.resolve(undefined);
+
+    await observedHydration;
+    expect((hydrationError as Error | undefined)?.message).toMatch(
+      /stale|cancel/i,
+    );
+    expect(profileStorage.remove).toHaveBeenCalledWith(
+      `dive-mobile:watch-profile:user%3A${userId}:remote:${remoteId}:revision-1`,
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('leaves local state and the outbox unchanged when a remote save completes after pause', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    await outbox.enqueue(operation());
+    const before = await outbox.list(userId);
+    const saveResult = deferred<AccountMutationResult<RemoteDiveLog>>();
+    const logbook = new LocalDiveLogRepository([localLog()]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        saveLog: jest.fn(() => saveResult.promise),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+
+    const drain = coordinator.drain({online: true});
+    let drainError: unknown;
+    const observedDrain = drain.catch(error => {
+      drainError = error;
+    });
+    await flushPromises();
+    coordinator.pause();
+    saveResult.resolve({
+      status: 'saved',
+      value: remoteLog({revision: 2}),
+    });
+
+    await observedDrain;
+    expect((drainError as Error | undefined)?.message).toMatch(
+      /stale|cancel/i,
+    );
+    await expect(logbook.get('local-log-1')).resolves.toEqual(localLog());
+    await expect(outbox.list(userId)).resolves.toEqual(before);
+  });
+
+  it.each([
+    {
+      name: 'missing log schema version',
+      mutate(remote: RemoteDiveLog) {
+        const manual = {...(remote.payload.manual_data as Record<string, unknown>)};
+        manual._local_record = {createdAt: 100, updatedAt: 100};
+        remote.payload = {...remote.payload, manual_data: manual};
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'future log schema version',
+      mutate(remote: RemoteDiveLog) {
+        const manual = {...(remote.payload.manual_data as Record<string, unknown>)};
+        manual._local_record = {
+          schemaVersion: 2,
+          createdAt: 100,
+          updatedAt: 100,
+        };
+        remote.payload = {...remote.payload, manual_data: manual};
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'extra top-level log payload key',
+      mutate(remote: RemoteDiveLog) {
+        remote.payload = {...remote.payload, unexpected: true};
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'payload digest mismatch',
+      mutate(remote: RemoteDiveLog) {
+        remote.payloadSha256 = 'f'.repeat(64);
+      },
+    },
+  ])('fails closed before persistence for $name', async ({mutate}) => {
+    const malformed = remoteLog();
+    mutate(malformed);
+    const logbook = new LocalDiveLogRepository();
+    const save = jest.spyOn(logbook, 'save');
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [malformed]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).rejects.toThrow(
+      'Malformed remote log',
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: 'missing plan schema version',
+      mutate(remote: RemoteDivePlan) {
+        const planData = {...(remote.payload.plan_data as Record<string, unknown>)};
+        delete planData._schemaVersion;
+        remote.payload = {...remote.payload, plan_data: planData};
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'future plan schema version',
+      mutate(remote: RemoteDivePlan) {
+        remote.payload = {
+          ...remote.payload,
+          plan_data: {
+            ...(remote.payload.plan_data as Record<string, unknown>),
+            _schemaVersion: 2,
+          },
+        };
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'extra top-level plan payload key',
+      mutate(remote: RemoteDivePlan) {
+        remote.payload = {...remote.payload, unexpected: true};
+        remote.payloadSha256 = canonicalSha256(remote.payload);
+      },
+    },
+    {
+      name: 'plan payload digest mismatch',
+      mutate(remote: RemoteDivePlan) {
+        remote.payloadSha256 = 'f'.repeat(64);
+      },
+    },
+  ])('fails closed before persistence for $name', async ({mutate}) => {
+    const malformed = remotePlan();
+    mutate(malformed);
+    const planbook = new LocalDivePlanRepository();
+    const save = jest.spyOn(planbook, 'save');
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listPlans: jest.fn(async () => ({items: [malformed]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    await expect(coordinator.hydrate({online: true})).rejects.toThrow(
+      'Malformed remote plan',
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('fails closed before persistence when a remote payload is malformed', async () => {
     const malformed = remoteLog({
       payload: {...remoteLog().payload, manual_data: {site: 'not-an-object'}},
@@ -679,7 +1049,14 @@ function watchRemoteLog(input: {
     payload: {
       source: 'watch',
       started_at: '1970-01-01T00:01:40.000Z',
-      manual_data: localLog().manual,
+      manual_data: {
+        ...localLog().manual,
+        _local_record: {
+          schemaVersion: 1,
+          createdAt: 100,
+          updatedAt: 100,
+        },
+      },
       mobile_data: localLog().mobile,
       provenance: {},
       watch_metadata: {
@@ -705,6 +1082,23 @@ function watchRemoteLog(input: {
       profile_sample_count: input.samples.length,
     },
   });
+}
+
+function canonicalSha256(value: unknown): string {
+  return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
+}
+
+function canonicalStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalStringify).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalStringify(nested)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
 }
 
 function deferred<T>(): {

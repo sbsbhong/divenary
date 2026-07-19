@@ -30,7 +30,14 @@ import {
   type AccountOutboxItem,
 } from '../sync/account-outbox';
 import {
+  canonicalAccountPayloadSha256,
+  createAccountRemoteLog,
+  createAccountRemotePlan,
+} from '../sync/account-payload';
+import {
   AccountSyncCoordinator,
+  StaleAccountSyncCommitError,
+  isStaleAccountSyncCommitError,
   type AccountSyncDrainResult,
   withAccountEntityMutationLock,
 } from '../sync/account-sync-coordinator';
@@ -222,6 +229,14 @@ export function AccountDataProviderCore({
             await invalidatePrincipalQueries(queryClient, desiredScope);
           }
         });
+        nextPublication.coordinator?.setCommitGuard(() => {
+          if (
+            !isCurrent() ||
+            !isOnline
+          ) {
+            throw new StaleAccountSyncCommitError();
+          }
+        });
 
         if (isOnline && nextPublication.coordinator) {
           const hydrated =
@@ -248,7 +263,9 @@ export function AccountDataProviderCore({
     };
 
     void publish().catch(error => {
-      console.warn('Failed to prepare principal data repositories', error);
+      if (!isStaleAccountSyncCommitError(error)) {
+        console.warn('Failed to prepare principal data repositories', error);
+      }
     });
 
     return () => {
@@ -418,7 +435,6 @@ function createAccountLogbookRepository(options: {
   };
   const enqueueSavedUnlocked = async (
     saved: DiveLogEntry,
-    onlyIfEntityQueueEmpty: boolean,
   ): Promise<void> => {
     const current = await options.local.get(saved.localId);
     if (!current) {
@@ -431,8 +447,7 @@ function createAccountLogbookRepository(options: {
       current.localId,
     );
     if (
-      operations.some(operation => operation.mutation === 'delete') ||
-      (onlyIfEntityQueueEmpty && operations.length > 0)
+      operations.some(operation => operation.mutation === 'delete')
     ) {
       return;
     }
@@ -469,11 +484,11 @@ function createAccountLogbookRepository(options: {
     );
   const enqueueSaved = (saved: DiveLogEntry): Promise<void> =>
     withAccountEntityMutationLock(options.userId, 'log', saved.localId, () =>
-      enqueueSavedUnlocked(saved, false),
+      enqueueSavedUnlocked(saved),
     );
   const reconcileSaved = (saved: DiveLogEntry): Promise<void> =>
     withAccountEntityMutationLock(options.userId, 'log', saved.localId, () =>
-      enqueueSavedUnlocked(saved, true),
+      enqueueSavedUnlocked(saved),
     );
 
   return {
@@ -515,7 +530,7 @@ function createAccountLogbookRepository(options: {
         entry.localId,
         async () => {
           const saved = await saveLocalOnlyUnlocked(entry);
-          await enqueueSavedUnlocked(saved, false);
+          await enqueueSavedUnlocked(saved);
           return (await options.local.get(saved.localId)) ?? saved;
         },
       );
@@ -600,7 +615,6 @@ function createAccountPlanRepository(options: {
   };
   const enqueueSavedUnlocked = async (
     saved: DivePlan,
-    onlyIfEntityQueueEmpty: boolean,
   ): Promise<void> => {
     const current = await options.local.get(saved.localId);
     if (!current) {
@@ -613,8 +627,7 @@ function createAccountPlanRepository(options: {
       current.localId,
     );
     if (
-      operations.some(operation => operation.mutation === 'delete') ||
-      (onlyIfEntityQueueEmpty && operations.length > 0)
+      operations.some(operation => operation.mutation === 'delete')
     ) {
       return;
     }
@@ -630,8 +643,9 @@ function createAccountPlanRepository(options: {
       payload: {local: current, remote},
       expectedRevision: current.remoteRevision,
     };
+    const operationId = deterministicOperationId(operationIdentity);
     await options.outbox.enqueue({
-      operationId: deterministicOperationId(operationIdentity),
+      operationId,
       ...operationIdentity,
       attemptCount: 0,
       nextAttemptAt: options.now(),
@@ -644,11 +658,11 @@ function createAccountPlanRepository(options: {
     );
   const enqueueSaved = (saved: DivePlan): Promise<void> =>
     withAccountEntityMutationLock(options.userId, 'plan', saved.localId, () =>
-      enqueueSavedUnlocked(saved, false),
+      enqueueSavedUnlocked(saved),
     );
   const reconcileSaved = (saved: DivePlan): Promise<void> =>
     withAccountEntityMutationLock(options.userId, 'plan', saved.localId, () =>
-      enqueueSavedUnlocked(saved, true),
+      enqueueSavedUnlocked(saved),
     );
 
   return {
@@ -684,7 +698,7 @@ function createAccountPlanRepository(options: {
         plan.localId,
         async () => {
           const saved = await saveLocalOnlyUnlocked(plan);
-          await enqueueSavedUnlocked(saved, false);
+          await enqueueSavedUnlocked(saved);
           return (await options.local.get(saved.localId)) ?? saved;
         },
       );
@@ -860,7 +874,16 @@ function deterministicOperationId(
     | 'createdAt'
   >,
 ): string {
-  return `account-operation:${canonicalSha256(operation)}`;
+  const remote = operation.payload.remote as RemoteDiveLog | RemoteDivePlan;
+  return `account-operation:${canonicalAccountPayloadSha256({
+    userId: operation.userId,
+    entityKind: operation.entityKind,
+    entityLocalId: operation.entityLocalId,
+    mutation: operation.mutation,
+    remoteId: remote.id,
+    payloadSha256: remote.payloadSha256,
+    profilePath: 'profilePath' in remote ? remote.profilePath ?? null : null,
+  })}`;
 }
 
 function deleteOperation(
@@ -893,111 +916,11 @@ function toRemoteLog(
   userId: string,
   profileByteCount?: number,
 ): RemoteDiveLog {
-  if (!entry.remoteId) {
-    throw new Error('Account log is missing a remote id');
-  }
-  const startedAt =
-    entry.watchCapture?.measuredValues.startedAt ??
-    entry.manual.measuredValues.startedAt ??
-    entry.createdAt;
-  const endedAt =
-    entry.watchCapture?.measuredValues.endedAt ??
-    entry.manual.measuredValues.endedAt;
-  const durationSeconds =
-    entry.watchCapture?.measuredValues.durationSeconds ??
-    entry.manual.measuredValues.durationSeconds;
-  const maxDepthMeters =
-    entry.watchCapture?.measuredValues.maxDepthMeters ??
-    entry.manual.measuredValues.maxDepthMeters;
-  const contentRevision = entry.watchCapture?.profile?.contentRevision;
-  const payload = compactRecord({
-    source: entry.source,
-    started_at: new Date(startedAt * 1_000).toISOString(),
-    ended_at: endedAt === undefined ? undefined : new Date(endedAt * 1_000).toISOString(),
-    duration_seconds: durationSeconds,
-    max_depth_meters: maxDepthMeters,
-    site_name: entry.manual.site.name,
-    title: entry.manual.title,
-    rating: entry.manual.rating,
-    dive_mode:
-      entry.manual.measuredValues.diveMode ??
-      entry.watchCapture?.session.diveMode,
-    manual_data: {
-      ...entry.manual,
-      _local_record: {
-        createdAt: entry.createdAt,
-        updatedAt: entry.updatedAt,
-      },
-    },
-    mobile_data: entry.mobile,
-    watch_metadata: remoteWatchMetadata(entry.watchCapture),
-    provenance: entry.provenance,
-    profile_preview: entry.watchCapture?.samples,
-    profile_content_revision: contentRevision,
-    profile_sha256: entry.watchCapture?.profile?.sha256,
-    profile_sample_count: entry.watchCapture?.profile?.sampleCount,
-    profile_byte_count: profileByteCount,
-  });
-  return {
-    id: entry.remoteId,
-    localId: entry.localId,
-    revision: entry.remoteRevision ?? 1,
-    payloadSha256: canonicalSha256(payload),
-    payload,
-    ...(contentRevision
-      ? {
-          profilePath: `${userId}/logs/${entry.remoteId}/${encodeURIComponent(
-            contentRevision,
-          )}.json`,
-        }
-      : {}),
-  };
-}
-
-function remoteWatchMetadata(
-  watchCapture: DiveLogEntry['watchCapture'],
-): Record<string, unknown> | undefined {
-  if (!watchCapture) {
-    return undefined;
-  }
-  const {profile, ...metadata} = watchCapture;
-  return compactRecord({
-    ...metadata,
-    ...(profile
-      ? {
-          profile: compactRecord({
-            contentRevision: profile.contentRevision,
-            sampleCount: profile.sampleCount,
-            sha256: profile.sha256,
-          }),
-        }
-      : {}),
-  });
+  return createAccountRemoteLog(entry, userId, profileByteCount);
 }
 
 function toRemotePlan(plan: DivePlan, convertedLogId?: string): RemoteDivePlan {
-  if (!plan.remoteId) {
-    throw new Error('Account plan is missing a remote id');
-  }
-  const planData = compactRecord({...plan});
-  const payload = compactRecord({
-    status: plan.status,
-    planned_at:
-      plan.plannedAt === undefined
-        ? undefined
-        : new Date(plan.plannedAt * 1_000).toISOString(),
-    dive_mode: plan.diveMode,
-    site_name: plan.site.name,
-    plan_data: planData,
-    converted_log_id: convertedLogId,
-  });
-  return {
-    id: plan.remoteId,
-    localId: plan.localId,
-    revision: plan.remoteRevision ?? 1,
-    payloadSha256: canonicalSha256(payload),
-    payload,
-  };
+  return createAccountRemotePlan(plan, convertedLogId);
 }
 
 function principalForAuthState(state: AuthState): DataPrincipal {
@@ -1021,34 +944,6 @@ function getDefaultDependencies(): AccountDataDependencies {
     jitter: Math.random,
   };
   return defaultDependencies;
-}
-
-function compactRecord(value: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, nested] of Object.entries(value)) {
-    if (nested !== undefined) {
-      result[key] = nested;
-    }
-  }
-  return result;
-}
-
-function canonicalSha256(value: Record<string, unknown>): string {
-  return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
-}
-
-function canonicalStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalStringify).join(',')}]`;
-  }
-  if (value !== null && typeof value === 'object') {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalStringify(nested)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
 }
 
 function createUuid(): string {

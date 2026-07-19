@@ -150,6 +150,20 @@ class PausedProfileStorage extends RecordingProfileStorage {
   }
 }
 
+class FailingObsoleteProfileStorage extends RecordingProfileStorage {
+  constructor(private readonly failingKey: string) {
+    super();
+  }
+
+  override async remove(key: string): Promise<void> {
+    if (key === this.failingKey) {
+      this.removals.push(key);
+      throw new Error('simulated obsolete profile cleanup failure');
+    }
+    await super.remove(key);
+  }
+}
+
 function watchEntryWithProfile(localId: string, importKey: string, profileKey: string): DiveLogEntry {
   return {
     ...manualEntry({ localId }),
@@ -541,6 +555,56 @@ describe('PersistentDiveLogRepository', () => {
 
     expect(profileStorage.values.has(oldProfileKey)).toBe(true);
     expect(profileStorage.removals).not.toContain(oldProfileKey);
+  });
+
+  it('keeps committed metadata and new profiles when obsolete cleanup partially fails', async () => {
+    const profileStorage = new FailingObsoleteProfileStorage('obsolete-a');
+    profileStorage.values.set('obsolete-a', []);
+    profileStorage.values.set('obsolete-b', []);
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      profileKeyPrefix: 'profile:',
+      now: () => 500,
+    });
+    await repository.save(
+      watchEntryWithProfile('a', 'session-a:260', 'obsolete-a'),
+    );
+    await repository.save(
+      watchEntryWithProfile('b', 'session-b:260', 'obsolete-b'),
+    );
+    const messages: WatchSyncMessage[] = ['a', 'b'].map(suffix => ({
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        localSessionId: `session-${suffix}`,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-2',
+          sampleIntervalSeconds: 1,
+          sampleCount: 1,
+        },
+        samples: [
+          {
+            localSessionId: `session-${suffix}`,
+            timestamp: 200,
+            depthMeters: suffix === 'a' ? 4 : 5,
+          },
+        ],
+      },
+    }));
+
+    await expect(repository.importWatchMessages(messages)).resolves.toHaveLength(2);
+
+    const entries = await repository.list();
+    expect(entries.map(value => value.watchCapture?.profile?.storageKey).sort()).toEqual([
+      'profile:session-a:revision-2',
+      'profile:session-b:revision-2',
+    ]);
+    expect(profileStorage.values.has('profile:session-a:revision-2')).toBe(true);
+    expect(profileStorage.values.has('profile:session-b:revision-2')).toBe(true);
+    expect(profileStorage.values.has('obsolete-a')).toBe(true);
+    expect(profileStorage.values.has('obsolete-b')).toBe(false);
   });
 
   it('rejects malformed nested log fields at the unknown migration entry point', () => {
