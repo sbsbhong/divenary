@@ -175,7 +175,7 @@ describe('AccountDataRepository', () => {
 
   test('preserves dive mode when saving a log', async () => {
     const {client, calls} = createClient([
-      {data: logRow({revision: 5, dive_mode: 'scuba'}), error: null},
+      {data: logRow({revision: 5, dive_mode: 'freedive'}), error: null},
     ]);
     const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
@@ -196,7 +196,7 @@ describe('AccountDataRepository', () => {
 
     assert.equal(result.status, 'saved');
     if (result.status === 'saved') {
-      assert.equal(result.value.payload.dive_mode, 'scuba');
+      assert.equal(result.value.payload.dive_mode, 'freedive');
     }
     const update = calls[0]?.calls[0] as {method: string; value: Record<string, unknown>};
     assert.equal(update.method, 'update');
