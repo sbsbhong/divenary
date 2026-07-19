@@ -283,6 +283,10 @@ function profileExpectation(pathname, bytes, sampleCount) {
   };
 }
 
+function claimProfilePath(context, batchId) {
+  return `${context.userId}/claims/${batchId}/${randomUUID()}/profile-v1.json`;
+}
+
 async function assertFinalCounts(context, planCount, logCount, label) {
   const [plans, logs] = await Promise.all([
     readRows(context, 'dive_plans', 'select=id,local_id,payload_sha256'),
@@ -363,12 +367,39 @@ try {
   assertFailure(crossOwner, 404, 'batch_not_found', 'cross-owner batch denial');
   logCheck('cross-owner batch denial');
 
+  const traversalBatch = await createBatch(owner, {
+    label: 'profile-path-traversal',
+    expectedPlanCount: 0,
+    expectedLogCount: 1,
+  });
+  await stageRecord(owner, traversalBatch.id, {
+    entityKind: 'log',
+    clientRecordId: 'profile-path-traversal-log',
+    payload: logPayload('profile-path-traversal'),
+    profile: {
+      path: `${owner.userId}/claims/${traversalBatch.id}/../profile-v1.json`,
+      contentRevision: 'profile-v1',
+      sha256: sha256(Buffer.from('not-read')),
+      byteCount: 8,
+      sampleCount: 1,
+    },
+  });
+  const traversal = await invokeFinalizer(owner, traversalBatch.id);
+  assertFailure(
+    traversal,
+    409,
+    'claim_validation_failed',
+    'profile path traversal denial',
+  );
+  await assertFinalCounts(owner, 0, 0, 'profile path traversal rollback');
+  logCheck('profile path traversal denial with no final rows');
+
   const missingBatch = await createBatch(owner, {
     label: 'missing-profile',
     expectedPlanCount: 0,
     expectedLogCount: 1,
   });
-  const missingPath = `${owner.userId}/claims/${missingBatch.id}/${randomUUID()}.json`;
+  const missingPath = claimProfilePath(owner, missingBatch.id);
   await stageRecord(owner, missingBatch.id, {
     entityKind: 'log',
     clientRecordId: 'missing-profile-log',
@@ -398,7 +429,7 @@ try {
     expectedPlanCount: 0,
     expectedLogCount: 1,
   });
-  const digestPath = `${owner.userId}/claims/${digestBatch.id}/${randomUUID()}.json`;
+  const digestPath = claimProfilePath(owner, digestBatch.id);
   objectPaths.push(digestPath);
   await uploadProfile(owner, digestPath, profileBytes);
   await stageRecord(owner, digestBatch.id, {
@@ -425,7 +456,7 @@ try {
     expectedPlanCount: 0,
     expectedLogCount: 1,
   });
-  const bytePath = `${owner.userId}/claims/${byteBatch.id}/${randomUUID()}.json`;
+  const bytePath = claimProfilePath(owner, byteBatch.id);
   objectPaths.push(bytePath);
   await uploadProfile(owner, bytePath, profileBytes);
   await stageRecord(owner, byteBatch.id, {
@@ -452,7 +483,7 @@ try {
     expectedPlanCount: 0,
     expectedLogCount: 1,
   });
-  const samplePath = `${owner.userId}/claims/${sampleBatch.id}/${randomUUID()}.json`;
+  const samplePath = claimProfilePath(owner, sampleBatch.id);
   objectPaths.push(samplePath);
   await uploadProfile(owner, samplePath, profileBytes);
   await stageRecord(owner, sampleBatch.id, {
@@ -531,7 +562,7 @@ try {
   });
   const successPlanPayload = planPayload('success');
   const successLogPayload = logPayload('success');
-  const successProfilePath = `${owner.userId}/claims/${successBatch.id}/${randomUUID()}.json`;
+  const successProfilePath = claimProfilePath(owner, successBatch.id);
   objectPaths.push(successProfilePath);
   await uploadProfile(owner, successProfilePath, profileBytes);
   const successPlan = await stageRecord(owner, successBatch.id, {
@@ -588,6 +619,9 @@ try {
     expectedPlanCount: 1,
     expectedLogCount: 1,
   });
+  const sameDigestProfilePath = claimProfilePath(owner, sameDigestBatch.id);
+  objectPaths.push(sameDigestProfilePath);
+  await uploadProfile(owner, sameDigestProfilePath, profileBytes);
   await stageRecord(owner, sameDigestBatch.id, {
     entityKind: 'plan',
     clientRecordId: 'success-plan',
@@ -601,7 +635,7 @@ try {
     sourcePlanClientRecordId: 'success-plan',
     payloadSha256: payloadDigest(successLogPayload),
     payload: successLogPayload,
-    profile: profileExpectation(successProfilePath, profileBytes, 2),
+    profile: profileExpectation(sameDigestProfilePath, profileBytes, 2),
   });
   const sameDigest = await invokeFinalizer(owner, sameDigestBatch.id);
   assertStatus(sameDigest, [200], 'same digest idempotency');
@@ -613,6 +647,16 @@ try {
   });
   await assertFinalCounts(owner, 1, 1, 'same digest idempotency');
   logCheck('existing owner and local id with same digest is idempotent');
+
+  await deleteProfiles(status.API_URL, status.SECRET_KEY, [
+    successProfilePath,
+  ]);
+  const replayWithoutProfile = await invokeFinalizer(owner, successBatch.id);
+  assertStatus(replayWithoutProfile, [200], 'committed replay without profile');
+  assert.deepEqual(replayWithoutProfile.body, success.body);
+  assertNoStore(replayWithoutProfile, 'committed replay without profile');
+  await assertFinalCounts(owner, 1, 1, 'committed replay without profile');
+  logCheck('committed replay does not depend on raw profile availability');
 
   const conflictBatch = await createBatch(owner, {
     label: 'different-digest',

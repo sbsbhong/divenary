@@ -46,6 +46,39 @@ const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const sha256Pattern = /^[0-9a-f]{64}$/;
 
+function isOwnedClaimProfilePath(
+  path: string,
+  userId: string,
+  batchId: string,
+): boolean {
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    return false;
+  }
+
+  if (decodedPath.includes('\\')) {
+    return false;
+  }
+
+  const segments = decodedPath.split('/');
+
+  return (
+    segments.length === 5 &&
+    segments[0] === userId &&
+    segments[1] === 'claims' &&
+    segments[2] === batchId &&
+    uuidPattern.test(segments[3]) &&
+    segments[4].length > '.json'.length &&
+    segments[4].endsWith('.json') &&
+    segments.every(segment =>
+      segment.length > 0 && segment !== '.' && segment !== '..'
+    )
+  );
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -207,7 +240,7 @@ Deno.serve(async request => {
     });
     const {data: batch, error: batchError} = await serviceClient
       .from('guest_claim_batches')
-      .select('id')
+      .select('id,status,expected_plan_count,expected_log_count')
       .eq('id', batchId)
       .eq('user_id', user.id)
       .maybeSingle();
@@ -218,6 +251,24 @@ Deno.serve(async request => {
 
     if (!batch) {
       throw new KnownFailure('batch_not_found');
+    }
+
+    if (batch.status === 'committed') {
+      return jsonResponse(
+        finalizedResponse(
+          {
+            batchId,
+            status: 'committed',
+            planCount: batch.expected_plan_count,
+            logCount: batch.expected_log_count,
+          },
+          batchId,
+        ),
+      );
+    }
+
+    if (batch.status !== 'uploading') {
+      throw new KnownFailure('claim_validation_failed');
     }
 
     const {data: records, error: recordsError} = await serviceClient
@@ -247,12 +298,7 @@ Deno.serve(async request => {
         continue;
       }
 
-      const ownerPrefix = `${user.id}/claims/`;
-
-      if (
-        !expected.path.startsWith(ownerPrefix) ||
-        expected.path.length === ownerPrefix.length
-      ) {
+      if (!isOwnedClaimProfilePath(expected.path, user.id, batchId)) {
         throw new KnownFailure('claim_validation_failed');
       }
 

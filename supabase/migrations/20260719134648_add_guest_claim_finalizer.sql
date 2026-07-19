@@ -113,7 +113,24 @@ begin
         or (
           record.profile_path is not null
           and (
-            record.profile_path not like p_user_id::text || '/claims/%'
+            pg_catalog.array_length(
+              pg_catalog.string_to_array(record.profile_path, '/'),
+              1
+            ) <> 5
+            or pg_catalog.split_part(record.profile_path, '/', 1) <>
+              p_user_id::text
+            or pg_catalog.split_part(record.profile_path, '/', 2) <>
+              'claims'
+            or pg_catalog.split_part(record.profile_path, '/', 3) <>
+              p_batch_id::text
+            or pg_catalog.split_part(record.profile_path, '/', 4) !~
+              '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            or pg_catalog.length(
+              pg_catalog.split_part(record.profile_path, '/', 5)
+            ) <= pg_catalog.length('.json')
+            or pg_catalog.split_part(record.profile_path, '/', 5) not like
+              '%.json'
+            or pg_catalog.strpos(record.profile_path, E'\\') > 0
             or record.profile_content_revision = ''
           )
         )
@@ -383,7 +400,6 @@ begin
       and (
         log.id is null
         or log.payload_sha256 <> record.payload_sha256
-        or log.profile_path is distinct from record.profile_path
         or log.profile_content_revision is distinct from
           record.profile_content_revision
         or log.profile_sha256 is distinct from record.profile_sha256
