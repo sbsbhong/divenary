@@ -1,11 +1,14 @@
 import {
   createDefaultPersistentDiveLogRepository,
+  migrateDiveLogbookEnvelope,
   PersistentDiveLogRepository,
 } from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
+import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
-import type { WatchSyncMessage } from '../src/types/dive-session';
+import type { WatchDepthSample, WatchSyncMessage } from '../src/types/dive-session';
 
 const manualEntry = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'manual-1',
@@ -49,6 +52,69 @@ const watchMessage: WatchSyncMessage = {
   },
 };
 
+class FailFirstWriteStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  private shouldFail = true;
+
+  getString(key: string): Promise<string | undefined> {
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (this.shouldFail) {
+      this.shouldFail = false;
+      throw new Error('simulated metadata write failure');
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+}
+
+class RecordingProfileStorage implements WatchProfileStorage {
+  readonly values = new Map<string, WatchDepthSample[]>();
+  readonly removals: string[] = [];
+
+  async write(key: string, samples: WatchDepthSample[]): Promise<void> {
+    this.values.set(key, samples.map(sample => ({ ...sample })));
+  }
+
+  async read(key: string): Promise<WatchDepthSample[] | undefined> {
+    return this.values.get(key)?.map(sample => ({ ...sample }));
+  }
+
+  async remove(key: string): Promise<void> {
+    this.removals.push(key);
+    this.values.delete(key);
+  }
+}
+
+function watchEntryWithProfile(localId: string, importKey: string, profileKey: string): DiveLogEntry {
+  return {
+    ...manualEntry({ localId }),
+    source: 'watch',
+    watchCapture: {
+      importKey,
+      importedAt: 300,
+      session: {
+        localSessionId: `session-${localId}`,
+        startedAt: 200,
+        endedAt: 260,
+        samples: [],
+      },
+      measuredValues: { startedAt: 200, endedAt: 260 },
+      samples: [],
+      profile: {
+        storageKey: profileKey,
+        contentRevision: 'revision-1',
+        sampleCount: 0,
+      },
+    },
+  };
+}
+
 describe('PersistentDiveLogRepository', () => {
   it('does not seed the built-in presentation fixture into persistent storage', async () => {
     const repository = createDefaultPersistentDiveLogRepository({
@@ -68,6 +134,15 @@ describe('PersistentDiveLogRepository', () => {
     ]);
 
     expect((await repository.list()).map(entry => entry.localId).sort()).toEqual(['concurrent-a', 'concurrent-b']);
+  });
+
+  it('continues the mutation queue after one operation rejects', async () => {
+    const repository = new PersistentDiveLogRepository({ storage: new FailFirstWriteStore(), now: () => 500 });
+
+    await expect(repository.save(manualEntry({ localId: 'rejected' }))).rejects.toThrow('simulated metadata write failure');
+    await expect(repository.save(manualEntry({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
+
+    expect((await repository.list()).map(entry => entry.localId)).toEqual(['accepted']);
   });
 
   it('honors explicit metadata and profile key options', async () => {
@@ -241,6 +316,71 @@ describe('PersistentDiveLogRepository', () => {
     expect(entry.watchCapture?.samples.some(sample => sample.depthMeters === 42)).toBe(true);
     expect(entry.watchCapture?.profile?.sampleCount).toBe(1_000);
     await expect(repository.getWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+  });
+
+  it('preserves a shared profile until the final metadata reference is deleted', async () => {
+    const profileStorage = new RecordingProfileStorage();
+    const profileKey = 'shared-profile';
+    profileStorage.values.set(profileKey, []);
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      now: () => 500,
+    });
+    await repository.save(watchEntryWithProfile('shared-a', 'shared-a:260', profileKey));
+    await repository.save(watchEntryWithProfile('shared-b', 'shared-b:260', profileKey));
+
+    await repository.delete('shared-a');
+
+    expect(profileStorage.values.has(profileKey)).toBe(true);
+    expect(profileStorage.removals).toEqual([]);
+
+    await repository.delete('shared-b');
+
+    expect(profileStorage.values.has(profileKey)).toBe(false);
+    expect(profileStorage.removals).toEqual([profileKey]);
+  });
+
+  it('preserves an obsolete profile while another metadata entry still references it', async () => {
+    const profileStorage = new RecordingProfileStorage();
+    const oldProfileKey = 'shared-old-profile';
+    profileStorage.values.set(oldProfileKey, []);
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      profileKeyPrefix: 'profile:',
+      now: () => 500,
+    });
+    await repository.save(watchEntryWithProfile('updated-entry', 'persistent-watch-1:260', oldProfileKey));
+    await repository.save(watchEntryWithProfile('remaining-entry', 'remaining:260', oldProfileKey));
+
+    await repository.importWatchMessages([{
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'revision-2',
+          sampleIntervalSeconds: 1,
+          sampleCount: 1,
+        },
+        samples: [{ localSessionId: 'persistent-watch-1', timestamp: 200, depthMeters: 4 }],
+      },
+    }]);
+
+    expect(profileStorage.values.has(oldProfileKey)).toBe(true);
+    expect(profileStorage.removals).not.toContain(oldProfileKey);
+  });
+
+  it('rejects malformed nested log fields at the unknown migration entry point', () => {
+    const malformedEntry = manualEntry();
+    malformedEntry.mobile.mediaPlaceholders = [42 as unknown as string];
+
+    expect(() => migrateDiveLogbookEnvelope({
+      schemaVersion: 3,
+      updatedAt: 500,
+      value: [malformedEntry],
+    } as unknown)).toThrow(/logbook/i);
   });
 
   it('does not load pre-reset v1 logbook entries', async () => {

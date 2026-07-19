@@ -1,6 +1,10 @@
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
-import { PersistentDivePlanRepository } from '../src/repositories/persistent-dive-plan-repository';
+import {
+  migrateDivePlanbookEnvelope,
+  PersistentDivePlanRepository,
+} from '../src/repositories/persistent-dive-plan-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { DivePlan } from '../src/types/dive-plan';
 
@@ -19,10 +23,32 @@ const plan = (overrides: Partial<DivePlan>): DivePlan => ({
   ...overrides,
 });
 
+class FailFirstWriteStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  private shouldFail = true;
+
+  getString(key: string): Promise<string | undefined> {
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (this.shouldFail) {
+      this.shouldFail = false;
+      throw new Error('simulated plan write failure');
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+}
+
 describe('PersistentDivePlanRepository', () => {
   it('migrates schema-2 plans to guest cloud metadata without fabricating ownership', async () => {
     const storage = new InMemoryKeyValueStore();
-    const { cloudSyncStatus: _cloudSyncStatus, ...legacyPlan } = plan({ localId: 'legacy-plan' });
+    const legacyPlan = plan({ localId: 'legacy-plan' });
+    delete legacyPlan.cloudSyncStatus;
     await storage.setString(
       mobileStorageKeys.planbook,
       JSON.stringify({ schemaVersion: 2, updatedAt: 300, value: [legacyPlan] }),
@@ -47,6 +73,29 @@ describe('PersistentDivePlanRepository', () => {
       'concurrent-a',
       'concurrent-b',
     ]);
+  });
+
+  it('continues the mutation queue after one operation rejects', async () => {
+    const repository = new PersistentDivePlanRepository({ storage: new FailFirstWriteStore(), now: () => 350 });
+
+    await expect(repository.save(plan({ localId: 'rejected' }))).rejects.toThrow('simulated plan write failure');
+    await expect(repository.save(plan({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
+
+    expect((await repository.list()).map(currentPlan => currentPlan.localId)).toEqual(['accepted']);
+  });
+
+  it('rejects malformed nested plan fields at the unknown migration entry point', () => {
+    const malformedPlan = plan({
+      plannedValues: {
+        plannedPressure: { unit: 'bar', start: 'full' as unknown as number },
+      },
+    });
+
+    expect(() => migrateDivePlanbookEnvelope({
+      schemaVersion: 3,
+      updatedAt: 350,
+      value: [malformedPlan],
+    } as unknown)).toThrow(/planbook/i);
   });
 
   it('honors an explicit metadata storage key', async () => {

@@ -1,5 +1,6 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
+import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import { createAsyncStorageKeyValueStore, type PersistentKeyValueStore } from '../storage/persistent-key-value-store';
 import {
@@ -79,9 +80,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     return this.enqueueMutation(async () => {
       const entries = await this.readEntries();
       const deletedEntry = entries.find(entry => entry.localId === localId);
-      await this.writeEntries(entries.filter(entry => entry.localId !== localId));
-      if (deletedEntry?.watchCapture?.profile?.storageKey) {
-        await this.profileStorage.remove(deletedEntry.watchCapture.profile.storageKey);
+      const nextEntries = entries.filter(entry => entry.localId !== localId);
+      await this.writeEntries(nextEntries);
+      const deletedProfileKey = deletedEntry?.watchCapture?.profile?.storageKey;
+      if (deletedProfileKey && !referencesProfile(nextEntries, deletedProfileKey)) {
+        await this.profileStorage.remove(deletedProfileKey);
       }
     });
   }
@@ -134,7 +137,9 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       }
 
       await this.writeEntries(entries);
-      await Promise.all(Array.from(obsoleteProfileKeys, key => this.profileStorage.remove(key)));
+      await Promise.all(Array.from(obsoleteProfileKeys)
+        .filter(key => !referencesProfile(entries, key))
+        .map(key => this.profileStorage.remove(key)));
       return entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries);
     });
   }
@@ -182,11 +187,11 @@ export function parseDiveLogbookEnvelope(
     throw new Error(`Malformed logbook envelope for ${storageKey}`);
   }
 
-  return migrateDiveLogbookEnvelope(parsed as StoredEnvelope<unknown>, storageKey);
+  return migrateDiveLogbookEnvelope(parsed, storageKey);
 }
 
 export function migrateDiveLogbookEnvelope(
-  envelope: StoredEnvelope<unknown>,
+  envelope: unknown,
   storageKey: string = mobileStorageKeys.logbook,
 ): DiveLogEntry[] {
   assertEnvelope(envelope, storageKey);
@@ -221,6 +226,10 @@ function findByImportKey(entries: DiveLogEntry[], importKey: string | undefined)
   return entries.find(entry => entry.watchCapture?.importKey === importKey);
 }
 
+function referencesProfile(entries: DiveLogEntry[], storageKey: string): boolean {
+  return entries.some(entry => entry.watchCapture?.profile?.storageKey === storageKey);
+}
+
 function getCurrentTimestampSeconds(): number {
   return Date.now() / 1000;
 }
@@ -231,6 +240,7 @@ function makeProfileStorageKey(prefix: string, localSessionId: string, contentRe
 
 function assertEnvelope(value: unknown, storageKey: string): asserts value is StoredEnvelope<unknown> {
   if (!isRecord(value)
+    || !hasOnlyKeys(value, ['schemaVersion', 'updatedAt', 'value'])
     || !Number.isInteger(value.schemaVersion)
     || typeof value.updatedAt !== 'number'
     || !Number.isFinite(value.updatedAt)
@@ -239,29 +249,42 @@ function assertEnvelope(value: unknown, storageKey: string): asserts value is St
   }
 }
 
-function assertDiveLogEntries(value: unknown, requireCloudStatus: boolean, storageKey: string): asserts value is DiveLogEntry[] {
+function assertDiveLogEntries(value: unknown, requireCloudStatus: boolean, storageKey: string): void {
   if (!Array.isArray(value)) {
     throw new Error(`Malformed logbook value for ${storageKey}`);
   }
 
   for (const entry of value) {
     if (!isRecord(entry)
+      || !hasOnlyKeys(entry, [
+        'localId',
+        'remoteId',
+        'ownerUserId',
+        'source',
+        'cloudSyncStatus',
+        'syncStatus',
+        'createdAt',
+        'updatedAt',
+        'manual',
+        'mobile',
+        'watchCapture',
+        'provenance',
+      ])
       || !isNonEmptyString(entry.localId)
       || (entry.source !== 'manual' && entry.source !== 'watch')
       || !isFiniteNumber(entry.createdAt)
       || !isFiniteNumber(entry.updatedAt)
-      || !isRecord(entry.manual)
-      || !isRecord(entry.manual.site)
-      || !areArrays(entry.manual, ['buddyIds', 'gearIds', 'tags', 'observedMarineLife'])
-      || !isRecord(entry.manual.measuredValues)
-      || !isRecord(entry.mobile)
-      || !Array.isArray(entry.mobile.mediaPlaceholders)
-      || !isRecord(entry.provenance)
-      || (requireCloudStatus && !isCloudSyncStatus(entry.cloudSyncStatus))
-      || (entry.ownerUserId !== undefined && typeof entry.ownerUserId !== 'string')
-      || (entry.remoteId !== undefined && typeof entry.remoteId !== 'string')) {
+      || !isOptionalNonEmptyString(entry.ownerUserId)
+      || !isOptionalNonEmptyString(entry.remoteId)
+      || (requireCloudStatus
+        ? !isCloudSyncStatus(entry.cloudSyncStatus) || entry.syncStatus !== undefined
+        : entry.cloudSyncStatus !== undefined || !isOptionalLegacySyncStatus(entry.syncStatus))) {
       throw new Error(`Malformed logbook entry for ${storageKey}`);
     }
+
+    assertManualFields(entry.manual, storageKey);
+    assertMobileFields(entry.mobile, storageKey);
+    assertProvenance(entry.provenance, storageKey);
 
     if (entry.watchCapture !== undefined) {
       assertWatchCapture(entry.watchCapture, storageKey);
@@ -271,32 +294,213 @@ function assertDiveLogEntries(value: unknown, requireCloudStatus: boolean, stora
 
 function assertWatchCapture(value: unknown, storageKey: string): void {
   if (!isRecord(value)
+    || !hasOnlyKeys(value, ['importKey', 'importedAt', 'session', 'measuredValues', 'samples', 'profile'])
     || !isNonEmptyString(value.importKey)
     || !isFiniteNumber(value.importedAt)
-    || !isRecord(value.session)
     || !isRecord(value.measuredValues)
+    || !hasOnlyKeys(value.measuredValues, [
+      'startedAt',
+      'endedAt',
+      'durationSeconds',
+      'maxDepthMeters',
+      'averageDepthMeters',
+      'waterTemperatureCelsius',
+    ])
+    || !isFiniteNumber(value.measuredValues.startedAt)
+    || !optionalFiniteNumber(value.measuredValues.endedAt)
+    || !optionalFiniteNumber(value.measuredValues.durationSeconds)
+    || !optionalFiniteNumber(value.measuredValues.maxDepthMeters)
+    || !optionalFiniteNumber(value.measuredValues.averageDepthMeters)
+    || !optionalFiniteNumber(value.measuredValues.waterTemperatureCelsius)
     || !Array.isArray(value.samples)) {
     throw new Error(`Malformed logbook watch capture for ${storageKey}`);
   }
 
+  const sessionResult = parseWatchSyncMessageValue({ type: 'sessionEnded', session: value.session });
+  if (!sessionResult.ok) {
+    throw new Error(`Malformed logbook watch session for ${storageKey}: ${sessionResult.error.message}`);
+  }
+  const samplesResult = parseWatchSyncMessageValue({
+    type: 'sessionEnded',
+    session: {
+      localSessionId: sessionResult.message.session.localSessionId,
+      startedAt: sessionResult.message.session.startedAt,
+      samples: value.samples,
+    },
+  });
+  if (!samplesResult.ok) {
+    throw new Error(`Malformed logbook watch samples for ${storageKey}`);
+  }
+
   if (value.profile !== undefined) {
     if (!isRecord(value.profile)
+      || !hasOnlyKeys(value.profile, ['storageKey', 'contentRevision', 'sampleCount', 'sha256'])
       || !isNonEmptyString(value.profile.storageKey)
       || !isNonEmptyString(value.profile.contentRevision)
       || !Number.isInteger(value.profile.sampleCount)
       || (value.profile.sampleCount as number) < 0
-      || (value.profile.sha256 !== undefined && typeof value.profile.sha256 !== 'string')) {
+      || !isOptionalNonEmptyString(value.profile.sha256)
+      || (sessionResult.message.session.profile !== undefined
+        && (sessionResult.message.session.profile.contentRevision !== value.profile.contentRevision
+          || sessionResult.message.session.profile.sampleCount !== value.profile.sampleCount))) {
       throw new Error(`Malformed logbook profile reference for ${storageKey}`);
     }
   }
 }
 
-function areArrays(record: Record<string, unknown>, keys: string[]): boolean {
-  return keys.every(key => Array.isArray(record[key]));
+function assertManualFields(value: unknown, storageKey: string): void {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, [
+      'title',
+      'site',
+      'entryStyle',
+      'buddyIds',
+      'gearIds',
+      'tags',
+      'observedMarineLife',
+      'notes',
+      'rating',
+      'measuredValues',
+    ])
+    || !isOptionalString(value.title)
+    || !isRecord(value.site)
+    || !hasOnlyKeys(value.site, ['siteId', 'name'])
+    || !isOptionalString(value.site.siteId)
+    || !isOptionalString(value.site.name)
+    || !isOptionalEnum(value.entryStyle, ['shore', 'boat', 'pool'])
+    || !isStringArray(value.buddyIds)
+    || !isStringArray(value.gearIds)
+    || !isStringArray(value.tags)
+    || !isStringArray(value.observedMarineLife)
+    || !isOptionalString(value.notes)
+    || !optionalFiniteNumber(value.rating)) {
+    throw new Error(`Malformed logbook manual fields for ${storageKey}`);
+  }
+  assertManualMeasuredValues(value.measuredValues, storageKey);
+}
+
+function assertManualMeasuredValues(value: unknown, storageKey: string): void {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, [
+      'startedAt',
+      'endedAt',
+      'durationSeconds',
+      'maxDepthMeters',
+      'averageDepthMeters',
+      'waterTemperatureCelsius',
+      'diveMode',
+      'gasLabel',
+      'perceivedExertion',
+      'visibilityRating',
+      'waterCondition',
+      'repetitionCount',
+      'trainingFocus',
+      'poolLengthMeters',
+      'lapCount',
+      'pressure',
+    ])
+    || !optionalFiniteNumber(value.startedAt)
+    || !optionalFiniteNumber(value.endedAt)
+    || !optionalFiniteNumber(value.durationSeconds)
+    || !optionalFiniteNumber(value.maxDepthMeters)
+    || !optionalFiniteNumber(value.averageDepthMeters)
+    || !optionalFiniteNumber(value.waterTemperatureCelsius)
+    || !isOptionalEnum(value.diveMode, ['scuba', 'freedive'])
+    || !isOptionalString(value.gasLabel)
+    || !optionalFiniteNumber(value.perceivedExertion)
+    || !optionalFiniteNumber(value.visibilityRating)
+    || !isOptionalEnum(value.waterCondition, ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'])
+    || !optionalFiniteNumber(value.repetitionCount)
+    || !isOptionalString(value.trainingFocus)
+    || !optionalFiniteNumber(value.poolLengthMeters)
+    || !optionalFiniteNumber(value.lapCount)) {
+    throw new Error(`Malformed logbook measured values for ${storageKey}`);
+  }
+
+  if (value.pressure !== undefined) {
+    if (!isRecord(value.pressure)
+      || !hasOnlyKeys(value.pressure, ['unit', 'start', 'end'])
+      || !isOptionalEnum(value.pressure.unit, ['bar', 'psi'])
+      || !optionalFiniteNumber(value.pressure.start)
+      || !optionalFiniteNumber(value.pressure.end)) {
+      throw new Error(`Malformed logbook pressure values for ${storageKey}`);
+    }
+  }
+}
+
+function assertMobileFields(value: unknown, storageKey: string): void {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ['mediaPlaceholders'])
+    || !isStringArray(value.mediaPlaceholders)) {
+    throw new Error(`Malformed logbook mobile fields for ${storageKey}`);
+  }
+}
+
+function assertProvenance(value: unknown, storageKey: string): void {
+  const keys = [
+    'site',
+    'buddyIds',
+    'gearIds',
+    'tags',
+    'observedMarineLife',
+    'notes',
+    'rating',
+    'measuredValues',
+    'mediaPlaceholders',
+    'startedAt',
+    'endedAt',
+    'durationSeconds',
+    'maxDepthMeters',
+    'averageDepthMeters',
+    'waterTemperatureCelsius',
+    'gasLabel',
+    'perceivedExertion',
+    'visibilityRating',
+    'waterCondition',
+    'repetitionCount',
+    'trainingFocus',
+    'poolLengthMeters',
+    'lapCount',
+    'pressure',
+    'depthSamples',
+  ];
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, keys)
+    || Object.values(value).some(source => source !== 'manual' && source !== 'mobile' && source !== 'watch')) {
+    throw new Error(`Malformed logbook provenance for ${storageKey}`);
+  }
 }
 
 function isCloudSyncStatus(value: unknown): boolean {
   return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed';
+}
+
+function isOptionalLegacySyncStatus(value: unknown): boolean {
+  return value === undefined || value === 'localOnly' || value === 'pending' || value === 'synced' || value === 'failed';
+}
+
+function isOptionalEnum(value: unknown, values: readonly string[]): boolean {
+  return value === undefined || (typeof value === 'string' && values.includes(value));
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isOptionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || isNonEmptyString(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function optionalFiniteNumber(value: unknown): boolean {
+  return value === undefined || isFiniteNumber(value);
+}
+
+function hasOnlyKeys(record: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
+  return Object.keys(record).every(key => allowedKeys.includes(key));
 }
 
 function isFiniteNumber(value: unknown): value is number {

@@ -58,10 +58,21 @@ export function composeAccountAndDeferredGuestRows<T extends PrincipalRow>(
   accountRows: readonly T[],
   guestRows: readonly T[],
 ): T[] {
-  const accountLocalIds = new Set(accountRows.map(row => row.localId));
-  const deferredGuestRows = guestRows
-    .filter(row => !accountLocalIds.has(row.localId))
-    .map(row => ({ ...row, ownerUserId: undefined }));
+  const seenLocalIds = new Set<string>();
+  const rows: T[] = [];
 
-  return [...accountRows, ...deferredGuestRows];
+  for (const row of accountRows) {
+    if (!seenLocalIds.has(row.localId)) {
+      seenLocalIds.add(row.localId);
+      rows.push(row);
+    }
+  }
+  for (const row of guestRows) {
+    if (!seenLocalIds.has(row.localId)) {
+      seenLocalIds.add(row.localId);
+      rows.push({ ...row, ownerUserId: undefined });
+    }
+  }
+
+  return rows;
 }

@@ -111,8 +111,16 @@ describe('principal repositories', () => {
   });
 
   it('composes account rows first and appends only non-duplicate guest rows without ownership', () => {
-    const accountRows = [logEntry('same', 'account-user'), logEntry('account-only', 'account-user')];
-    const guestRows = [logEntry('guest-only', 'must-be-cleared'), logEntry('same', 'must-be-cleared')];
+    const accountRows = [
+      logEntry('same', 'account-user'),
+      logEntry('account-only', 'account-user'),
+      logEntry('same', 'duplicate-account-user'),
+    ];
+    const guestRows = [
+      logEntry('guest-only', 'must-be-cleared'),
+      logEntry('same', 'must-be-cleared'),
+      logEntry('guest-only', 'duplicate-guest'),
+    ];
 
     const result = composeAccountAndDeferredGuestRows(accountRows, guestRows);
 

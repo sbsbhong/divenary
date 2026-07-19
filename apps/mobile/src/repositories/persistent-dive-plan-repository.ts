@@ -104,11 +104,11 @@ export function parseDivePlanbookEnvelope(
     throw new Error(`Malformed planbook envelope for ${storageKey}`);
   }
 
-  return migrateDivePlanbookEnvelope(parsed as StoredEnvelope<unknown>, storageKey);
+  return migrateDivePlanbookEnvelope(parsed, storageKey);
 }
 
 export function migrateDivePlanbookEnvelope(
-  envelope: StoredEnvelope<unknown>,
+  envelope: unknown,
   storageKey: string = mobileStorageKeys.planbook,
 ): DivePlan[] {
   assertEnvelope(envelope, storageKey);
@@ -121,12 +121,10 @@ export function migrateDivePlanbookEnvelope(
   if (envelope.schemaVersion === 2) {
     assertDivePlans(envelope.value, false, storageKey);
     return (envelope.value as DivePlan[]).map(plan => {
-      const {
-        remoteId: _legacyRemoteId,
-        ownerUserId: _legacyOwnerUserId,
-        cloudSyncStatus: _legacyCloudSyncStatus,
-        ...legacyPlan
-      } = plan;
+      const legacyPlan = { ...plan };
+      delete legacyPlan.remoteId;
+      delete legacyPlan.ownerUserId;
+      delete legacyPlan.cloudSyncStatus;
       return normalizeDivePlan(legacyPlan);
     });
   }
@@ -140,6 +138,7 @@ function normalizeDivePlan(plan: DivePlan): DivePlan {
 
 function assertEnvelope(value: unknown, storageKey: string): asserts value is StoredEnvelope<unknown> {
   if (!isRecord(value)
+    || !hasOnlyKeys(value, ['schemaVersion', 'updatedAt', 'value'])
     || !Number.isInteger(value.schemaVersion)
     || typeof value.updatedAt !== 'number'
     || !Number.isFinite(value.updatedAt)
@@ -148,33 +147,148 @@ function assertEnvelope(value: unknown, storageKey: string): asserts value is St
   }
 }
 
-function assertDivePlans(value: unknown, requireCloudStatus: boolean, storageKey: string): asserts value is DivePlan[] {
+function assertDivePlans(value: unknown, requireCloudStatus: boolean, storageKey: string): void {
   if (!Array.isArray(value)) {
     throw new Error(`Malformed planbook value for ${storageKey}`);
   }
 
   for (const plan of value) {
     if (!isRecord(plan)
+      || !hasOnlyKeys(plan, [
+        'localId',
+        'remoteId',
+        'ownerUserId',
+        'cloudSyncStatus',
+        'status',
+        'createdAt',
+        'updatedAt',
+        'plannedAt',
+        'completedAt',
+        'convertedLogLocalId',
+        'title',
+        'diveMode',
+        'entryStyle',
+        'site',
+        'buddyIds',
+        'gearIds',
+        'tags',
+        'objective',
+        'notes',
+        'plannedValues',
+        'checklistItems',
+      ])
       || !isNonEmptyString(plan.localId)
       || (plan.status !== 'draft' && plan.status !== 'planned' && plan.status !== 'completed')
       || !isFiniteNumber(plan.createdAt)
       || !isFiniteNumber(plan.updatedAt)
-      || !isRecord(plan.site)
-      || !Array.isArray(plan.buddyIds)
-      || !Array.isArray(plan.gearIds)
-      || !Array.isArray(plan.tags)
-      || !isRecord(plan.plannedValues)
-      || !Array.isArray(plan.checklistItems)
-      || (requireCloudStatus && !isCloudSyncStatus(plan.cloudSyncStatus))
-      || (plan.ownerUserId !== undefined && typeof plan.ownerUserId !== 'string')
-      || (plan.remoteId !== undefined && typeof plan.remoteId !== 'string')) {
+      || !optionalFiniteNumber(plan.plannedAt)
+      || !optionalFiniteNumber(plan.completedAt)
+      || !isOptionalNonEmptyString(plan.convertedLogLocalId)
+      || !isOptionalString(plan.title)
+      || !isOptionalEnum(plan.diveMode, ['scuba', 'freedive'])
+      || !isOptionalEnum(plan.entryStyle, ['shore', 'boat', 'pool'])
+      || !isOptionalString(plan.objective)
+      || !isOptionalString(plan.notes)
+      || !isOptionalNonEmptyString(plan.ownerUserId)
+      || !isOptionalNonEmptyString(plan.remoteId)
+      || (requireCloudStatus ? !isCloudSyncStatus(plan.cloudSyncStatus) : plan.cloudSyncStatus !== undefined)) {
       throw new Error(`Malformed planbook entry for ${storageKey}`);
     }
+
+    assertPlanSite(plan.site, storageKey);
+    if (!isStringArray(plan.buddyIds) || !isStringArray(plan.gearIds) || !isStringArray(plan.tags)) {
+      throw new Error(`Malformed planbook entry for ${storageKey}`);
+    }
+    assertPlannedValues(plan.plannedValues, storageKey);
+    assertChecklistItems(plan.checklistItems, storageKey);
+  }
+}
+
+function assertPlanSite(value: unknown, storageKey: string): void {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, ['siteId', 'name'])
+    || !isOptionalString(value.siteId)
+    || !isOptionalString(value.name)) {
+    throw new Error(`Malformed planbook site for ${storageKey}`);
+  }
+}
+
+function assertPlannedValues(value: unknown, storageKey: string): void {
+  if (!isRecord(value)
+    || !hasOnlyKeys(value, [
+      'plannedMaxDepthMeters',
+      'plannedDurationMinutes',
+      'gasLabel',
+      'waterCondition',
+      'visibilityExpectation',
+      'perceivedDifficulty',
+      'trainingFocus',
+      'repetitionTarget',
+      'poolLengthMeters',
+      'lapTarget',
+      'plannedPressure',
+    ])
+    || !optionalFiniteNumber(value.plannedMaxDepthMeters)
+    || !optionalFiniteNumber(value.plannedDurationMinutes)
+    || !isOptionalString(value.gasLabel)
+    || !isOptionalEnum(value.waterCondition, ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'])
+    || !optionalFiniteNumber(value.visibilityExpectation)
+    || !optionalFiniteNumber(value.perceivedDifficulty)
+    || !isOptionalString(value.trainingFocus)
+    || !optionalFiniteNumber(value.repetitionTarget)
+    || !optionalFiniteNumber(value.poolLengthMeters)
+    || !optionalFiniteNumber(value.lapTarget)) {
+    throw new Error(`Malformed planbook planned values for ${storageKey}`);
+  }
+
+  if (value.plannedPressure !== undefined) {
+    if (!isRecord(value.plannedPressure)
+      || !hasOnlyKeys(value.plannedPressure, ['unit', 'start', 'end'])
+      || !isOptionalEnum(value.plannedPressure.unit, ['bar', 'psi'])
+      || !optionalFiniteNumber(value.plannedPressure.start)
+      || !optionalFiniteNumber(value.plannedPressure.end)) {
+      throw new Error(`Malformed planbook pressure values for ${storageKey}`);
+    }
+  }
+}
+
+function assertChecklistItems(value: unknown, storageKey: string): void {
+  if (!Array.isArray(value)
+    || value.some(item => !isRecord(item)
+      || !hasOnlyKeys(item, ['id', 'label', 'completed'])
+      || !isNonEmptyString(item.id)
+      || typeof item.label !== 'string'
+      || typeof item.completed !== 'boolean')) {
+    throw new Error(`Malformed planbook checklist for ${storageKey}`);
   }
 }
 
 function isCloudSyncStatus(value: unknown): boolean {
   return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed';
+}
+
+function isOptionalEnum(value: unknown, values: readonly string[]): boolean {
+  return value === undefined || (typeof value === 'string' && values.includes(value));
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isOptionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || isNonEmptyString(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'string');
+}
+
+function optionalFiniteNumber(value: unknown): boolean {
+  return value === undefined || isFiniteNumber(value);
+}
+
+function hasOnlyKeys(record: Record<string, unknown>, allowedKeys: readonly string[]): boolean {
+  return Object.keys(record).every(key => allowedKeys.includes(key));
 }
 
 function isFiniteNumber(value: unknown): value is number {
