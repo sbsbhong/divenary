@@ -260,6 +260,8 @@ for insert
 to authenticated
 with check (
   (select auth.uid()) = user_id
+  and status = 'uploading'
+  and committed_at is null
   and exists (
     select 1
     from public.app_memberships as membership
@@ -291,6 +293,13 @@ with check (
     from public.app_memberships as membership
     where membership.user_id = (select auth.uid())
   )
+  and exists (
+    select 1
+    from public.guest_claim_batches as batch
+    where batch.id = batch_id
+      and batch.user_id = user_id
+      and batch.status = 'uploading'
+  )
 );
 
 create policy guest_claim_records_owner_update
@@ -304,6 +313,13 @@ using (
     from public.app_memberships as membership
     where membership.user_id = (select auth.uid())
   )
+  and exists (
+    select 1
+    from public.guest_claim_batches as batch
+    where batch.id = batch_id
+      and batch.user_id = user_id
+      and batch.status = 'uploading'
+  )
 )
 with check (
   (select auth.uid()) = user_id
@@ -311,6 +327,13 @@ with check (
     select 1
     from public.app_memberships as membership
     where membership.user_id = (select auth.uid())
+  )
+  and exists (
+    select 1
+    from public.guest_claim_batches as batch
+    where batch.id = batch_id
+      and batch.user_id = user_id
+      and batch.status = 'uploading'
   )
 );
 

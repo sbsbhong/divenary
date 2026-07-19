@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(26);
+select plan(37);
 
 select has_table('public', 'dive_logs', 'dive logs table exists');
 select has_table('public', 'dive_plans', 'dive plans table exists');
@@ -72,6 +72,284 @@ select policies_are(
 );
 select isnt_empty(
   $$select 1 from storage.buckets where id = 'dive-profiles' and public = false$$
+);
+
+select results_eq(
+  $$
+    select
+      column_name::text collate "C",
+      data_type::text collate "C",
+      (is_nullable = 'NO')::boolean,
+      coalesce(column_default, '')::text collate "C"
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'dive_plans'
+    order by ordinal_position
+  $$,
+  $$
+    values
+      ('id'::text collate "C", 'uuid'::text collate "C", true,
+        'gen_random_uuid()'::text collate "C"),
+      ('user_id', 'uuid', true, ''),
+      ('local_id', 'text', true, ''),
+      ('status', 'text', true, ''),
+      ('planned_at', 'timestamp with time zone', false, ''),
+      ('dive_mode', 'text', false, ''),
+      ('site_name', 'text', false, ''),
+      ('plan_data', 'jsonb', true, ''),
+      ('payload_sha256', 'text', true, ''),
+      ('converted_log_id', 'uuid', false, ''),
+      ('revision', 'bigint', true, '1'),
+      ('created_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('updated_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('deleted_at', 'timestamp with time zone', false, '')
+  $$,
+  'dive plans expose the exact column type, nullability, and default contract'
+);
+
+select results_eq(
+  $$
+    select
+      column_name::text collate "C",
+      data_type::text collate "C",
+      (is_nullable = 'NO')::boolean,
+      coalesce(column_default, '')::text collate "C"
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'dive_logs'
+    order by ordinal_position
+  $$,
+  $$
+    values
+      ('id'::text collate "C", 'uuid'::text collate "C", true,
+        'gen_random_uuid()'::text collate "C"),
+      ('user_id', 'uuid', true, ''),
+      ('local_id', 'text', true, ''),
+      ('source_plan_id', 'uuid', false, ''),
+      ('dive_mode', 'text', false, ''),
+      ('source', 'text', true, ''),
+      ('started_at', 'timestamp with time zone', true, ''),
+      ('ended_at', 'timestamp with time zone', false, ''),
+      ('duration_seconds', 'double precision', false, ''),
+      ('max_depth_meters', 'double precision', false, ''),
+      ('site_name', 'text', false, ''),
+      ('title', 'text', false, ''),
+      ('rating', 'integer', false, ''),
+      ('manual_data', 'jsonb', true, ''),
+      ('mobile_data', 'jsonb', true, ''),
+      ('watch_metadata', 'jsonb', false, ''),
+      ('provenance', 'jsonb', true, ''),
+      ('profile_preview', 'jsonb', false, ''),
+      ('profile_path', 'text', false, ''),
+      ('profile_content_revision', 'text', false, ''),
+      ('profile_sha256', 'text', false, ''),
+      ('profile_byte_count', 'bigint', false, ''),
+      ('profile_sample_count', 'integer', false, ''),
+      ('payload_sha256', 'text', true, ''),
+      ('revision', 'bigint', true, '1'),
+      ('created_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('updated_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('deleted_at', 'timestamp with time zone', false, '')
+  $$,
+  'dive logs expose the exact column type, nullability, and default contract'
+);
+
+select results_eq(
+  $$
+    select
+      column_name::text collate "C",
+      data_type::text collate "C",
+      (is_nullable = 'NO')::boolean,
+      coalesce(column_default, '')::text collate "C"
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'guest_claim_batches'
+    order by ordinal_position
+  $$,
+  $$
+    values
+      ('id'::text collate "C", 'uuid'::text collate "C", true,
+        'gen_random_uuid()'::text collate "C"),
+      ('user_id', 'uuid', true, ''),
+      ('client_batch_id', 'text', true, ''),
+      ('manifest_sha256', 'text', true, ''),
+      ('expected_plan_count', 'integer', true, ''),
+      ('expected_log_count', 'integer', true, ''),
+      ('status', 'text', true, '''uploading''::text'),
+      ('created_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('committed_at', 'timestamp with time zone', false, '')
+  $$,
+  'claim batches expose the exact column type, nullability, and default contract'
+);
+
+select results_eq(
+  $$
+    select
+      column_name::text collate "C",
+      data_type::text collate "C",
+      (is_nullable = 'NO')::boolean,
+      coalesce(column_default, '')::text collate "C"
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'guest_claim_records'
+    order by ordinal_position
+  $$,
+  $$
+    values
+      ('id'::text collate "C", 'uuid'::text collate "C", true,
+        'gen_random_uuid()'::text collate "C"),
+      ('batch_id', 'uuid', true, ''),
+      ('user_id', 'uuid', true, ''),
+      ('entity_kind', 'text', true, ''),
+      ('client_record_id', 'text', true, ''),
+      ('target_record_id', 'uuid', true, 'gen_random_uuid()'),
+      ('payload_sha256', 'text', true, ''),
+      ('payload', 'jsonb', true, ''),
+      ('source_plan_client_record_id', 'text', false, ''),
+      ('converted_log_client_record_id', 'text', false, ''),
+      ('profile_path', 'text', false, ''),
+      ('profile_content_revision', 'text', false, ''),
+      ('profile_sha256', 'text', false, ''),
+      ('profile_byte_count', 'bigint', false, ''),
+      ('profile_sample_count', 'integer', false, ''),
+      ('created_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
+      ('updated_at', 'timestamp with time zone', true, 'transaction_timestamp()')
+  $$,
+  'claim records expose the exact column type, nullability, and default contract'
+);
+
+select results_eq(
+  $$
+    select
+      relation.relname::text collate "C",
+      constraint_row.conname::text collate "C",
+      constraint_row.contype::text collate "C"
+    from pg_catalog.pg_constraint as constraint_row
+    join pg_catalog.pg_class as relation
+      on relation.oid = constraint_row.conrelid
+    join pg_catalog.pg_namespace as namespace
+      on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname in (
+        'dive_logs',
+        'dive_plans',
+        'guest_claim_batches',
+        'guest_claim_records'
+      )
+      and constraint_row.contype in ('c', 'u', 'f')
+    order by relation.relname, constraint_row.conname
+  $$,
+  $$
+    values
+      ('dive_logs'::text collate "C",
+        'dive_logs_dive_mode_check'::text collate "C", 'c'::text collate "C"),
+      ('dive_logs', 'dive_logs_local_id_check', 'c'),
+      ('dive_logs', 'dive_logs_payload_sha256_check', 'c'),
+      ('dive_logs', 'dive_logs_profile_byte_count_check', 'c'),
+      ('dive_logs', 'dive_logs_profile_sample_count_check', 'c'),
+      ('dive_logs', 'dive_logs_profile_sha256_check', 'c'),
+      ('dive_logs', 'dive_logs_rating_check', 'c'),
+      ('dive_logs', 'dive_logs_revision_check', 'c'),
+      ('dive_logs', 'dive_logs_source_check', 'c'),
+      ('dive_logs', 'dive_logs_user_id_fkey', 'f'),
+      ('dive_logs', 'dive_logs_user_id_id_key', 'u'),
+      ('dive_logs', 'dive_logs_user_id_local_id_key', 'u'),
+      ('dive_logs', 'dive_logs_user_id_source_plan_id_fkey', 'f'),
+      ('dive_plans', 'dive_plans_converted_log_owner_fk', 'f'),
+      ('dive_plans', 'dive_plans_dive_mode_check', 'c'),
+      ('dive_plans', 'dive_plans_local_id_check', 'c'),
+      ('dive_plans', 'dive_plans_payload_sha256_check', 'c'),
+      ('dive_plans', 'dive_plans_revision_check', 'c'),
+      ('dive_plans', 'dive_plans_status_check', 'c'),
+      ('dive_plans', 'dive_plans_user_id_fkey', 'f'),
+      ('dive_plans', 'dive_plans_user_id_id_key', 'u'),
+      ('dive_plans', 'dive_plans_user_id_local_id_key', 'u'),
+      ('guest_claim_batches', 'guest_claim_batches_client_batch_id_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_expected_log_count_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_expected_plan_count_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_id_user_id_key', 'u'),
+      ('guest_claim_batches', 'guest_claim_batches_manifest_sha256_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_status_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_user_id_client_batch_id_key', 'u'),
+      ('guest_claim_batches', 'guest_claim_batches_user_id_fkey', 'f'),
+      ('guest_claim_records', 'guest_claim_records_batch_id_entity_kind_client_record_id_key', 'u'),
+      ('guest_claim_records', 'guest_claim_records_batch_id_user_id_fkey', 'f'),
+      ('guest_claim_records', 'guest_claim_records_client_record_id_check', 'c'),
+      ('guest_claim_records', 'guest_claim_records_entity_kind_check', 'c'),
+      ('guest_claim_records', 'guest_claim_records_payload_sha256_check', 'c'),
+      ('guest_claim_records', 'guest_claim_records_profile_byte_count_check', 'c'),
+      ('guest_claim_records', 'guest_claim_records_profile_sample_count_check', 'c'),
+      ('guest_claim_records', 'guest_claim_records_profile_sha256_check', 'c')
+  $$,
+  'all Task 2 check, unique, and foreign-key constraints exist by exact name'
+);
+
+select results_eq(
+  $$
+    select
+      source_relation.relname::text collate "C",
+      constraint_row.conname::text collate "C",
+      (
+        select string_agg(attribute.attname, ',' order by key_column.ordinality)
+        from unnest(constraint_row.conkey)
+          with ordinality as key_column(attnum, ordinality)
+        join pg_catalog.pg_attribute as attribute
+          on attribute.attrelid = constraint_row.conrelid
+          and attribute.attnum = key_column.attnum
+      )::text collate "C" as source_columns,
+      target_namespace.nspname::text collate "C",
+      target_relation.relname::text collate "C",
+      (
+        select string_agg(attribute.attname, ',' order by key_column.ordinality)
+        from unnest(constraint_row.confkey)
+          with ordinality as key_column(attnum, ordinality)
+        join pg_catalog.pg_attribute as attribute
+          on attribute.attrelid = constraint_row.confrelid
+          and attribute.attnum = key_column.attnum
+      )::text collate "C" as target_columns,
+      constraint_row.confdeltype::text collate "C",
+      constraint_row.condeferrable,
+      constraint_row.condeferred
+    from pg_catalog.pg_constraint as constraint_row
+    join pg_catalog.pg_class as source_relation
+      on source_relation.oid = constraint_row.conrelid
+    join pg_catalog.pg_namespace as source_namespace
+      on source_namespace.oid = source_relation.relnamespace
+    join pg_catalog.pg_class as target_relation
+      on target_relation.oid = constraint_row.confrelid
+    join pg_catalog.pg_namespace as target_namespace
+      on target_namespace.oid = target_relation.relnamespace
+    where source_namespace.nspname = 'public'
+      and source_relation.relname in (
+        'dive_logs',
+        'dive_plans',
+        'guest_claim_batches',
+        'guest_claim_records'
+      )
+      and constraint_row.contype = 'f'
+    order by source_relation.relname, constraint_row.conname
+  $$,
+  $$
+    values
+      ('dive_logs'::text collate "C", 'dive_logs_user_id_fkey'::text collate "C",
+        'user_id'::text collate "C", 'auth'::text collate "C",
+        'users'::text collate "C", 'id'::text collate "C",
+        'c'::text collate "C", false, false),
+      ('dive_logs', 'dive_logs_user_id_source_plan_id_fkey',
+        'user_id,source_plan_id', 'public', 'dive_plans', 'user_id,id',
+        'a', false, false),
+      ('dive_plans', 'dive_plans_converted_log_owner_fk',
+        'user_id,converted_log_id', 'public', 'dive_logs', 'user_id,id',
+        'a', true, true),
+      ('dive_plans', 'dive_plans_user_id_fkey', 'user_id',
+        'auth', 'users', 'id', 'c', false, false),
+      ('guest_claim_batches', 'guest_claim_batches_user_id_fkey', 'user_id',
+        'auth', 'users', 'id', 'c', false, false),
+      ('guest_claim_records', 'guest_claim_records_batch_id_user_id_fkey',
+        'batch_id,user_id', 'public', 'guest_claim_batches', 'id,user_id',
+        'c', false, false)
+  $$,
+  'foreign keys preserve owners, cascade lifecycles, and deferred conversion links'
 );
 
 select ok(
@@ -279,6 +557,52 @@ select set_config(
   true
 );
 set local role authenticated;
+select throws_ok(
+  $$
+    insert into public.guest_claim_batches (
+      user_id,
+      client_batch_id,
+      manifest_sha256,
+      expected_plan_count,
+      expected_log_count,
+      status
+    ) values (
+      '00000000-0000-0000-0000-000000000011',
+      'client-created-committed-batch',
+      repeat('1', 64),
+      0,
+      0,
+      'committed'
+    )
+  $$,
+  '42501',
+  null,
+  'authenticated clients cannot create committed claim batches'
+);
+
+select throws_ok(
+  $$
+    insert into public.guest_claim_batches (
+      user_id,
+      client_batch_id,
+      manifest_sha256,
+      expected_plan_count,
+      expected_log_count,
+      committed_at
+    ) values (
+      '00000000-0000-0000-0000-000000000011',
+      'client-created-timestamped-batch',
+      repeat('2', 64),
+      0,
+      0,
+      transaction_timestamp()
+    )
+  $$,
+  '42501',
+  null,
+  'authenticated clients cannot create claim batches with committed_at set'
+);
+
 select lives_ok(
   $$
     with inserted_plan as (
@@ -319,21 +643,26 @@ select lives_ok(
         '{"source":"manual"}'::jsonb,
         repeat('c', 64)
       from inserted_plan
-    ), inserted_batch as (
-      insert into public.guest_claim_batches (
-        user_id,
-        client_batch_id,
-        manifest_sha256,
-        expected_plan_count,
-        expected_log_count
-      ) values (
-        '00000000-0000-0000-0000-000000000011',
-        'owner-batch',
-        repeat('d', 64),
-        1,
-        0
-      ) returning id
     )
+    insert into public.guest_claim_batches (
+      user_id,
+      client_batch_id,
+      manifest_sha256,
+      expected_plan_count,
+      expected_log_count
+    ) values (
+      '00000000-0000-0000-0000-000000000011',
+      'owner-batch',
+      repeat('d', 64),
+      1,
+      0
+    )
+  $$,
+  'an onboarded owner can create account rows and an uploading claim batch'
+);
+
+select lives_ok(
+  $$
     insert into public.guest_claim_records (
       batch_id,
       user_id,
@@ -342,15 +671,16 @@ select lives_ok(
       payload_sha256,
       payload
     ) select
-      inserted_batch.id,
-      '00000000-0000-0000-0000-000000000011',
+      id,
+      user_id,
       'plan',
       'staged-plan',
       repeat('e', 64),
       '{"version":1}'::jsonb
-    from inserted_batch
+    from public.guest_claim_batches
+    where client_batch_id = 'owner-batch'
   $$,
-  'an onboarded owner can create account and claim staging rows'
+  'an onboarded owner can add records to an uploading claim batch'
 );
 
 select is(
@@ -364,6 +694,60 @@ select is(
   ),
   '[1, 1, 1, 1]'::jsonb,
   'an owner can read every owned account and staging row'
+);
+reset role;
+
+update public.guest_claim_batches
+set
+  status = 'committed',
+  committed_at = transaction_timestamp()
+where client_batch_id = 'owner-batch';
+
+select set_config(
+  'request.jwt.claims',
+  jsonb_build_object(
+    'sub', '00000000-0000-0000-0000-000000000011',
+    'role', 'authenticated'
+  )::text,
+  true
+);
+set local role authenticated;
+select throws_ok(
+  $$
+    insert into public.guest_claim_records (
+      batch_id,
+      user_id,
+      entity_kind,
+      client_record_id,
+      payload_sha256,
+      payload
+    ) select
+      id,
+      user_id,
+      'plan',
+      'post-commit-insert',
+      repeat('3', 64),
+      '{"version":1}'::jsonb
+    from public.guest_claim_batches
+    where client_batch_id = 'owner-batch'
+  $$,
+  '42501',
+  null,
+  'authenticated clients cannot add records to committed claim batches'
+);
+
+update public.guest_claim_records
+set payload = '{"version":2}'::jsonb
+where client_record_id = 'staged-plan';
+
+select is(
+  (
+    select payload
+    from public.guest_claim_records
+    where client_record_id = 'staged-plan'
+  ),
+  '{"version":1}'::jsonb,
+  'authenticated clients cannot mutate records after a batch commits'
 );
 reset role;
 

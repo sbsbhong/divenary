@@ -147,6 +147,23 @@ async function readRows(apiUrl, publishableKey, accessToken, table, query) {
   });
 }
 
+async function updateRows(
+  apiUrl,
+  apiKey,
+  accessToken,
+  table,
+  query,
+  values,
+) {
+  return request(`${apiUrl}/rest/v1/${table}?${query}`, {
+    method: 'PATCH',
+    headers: headers(apiKey, accessToken, {
+      Prefer: 'return=representation',
+    }),
+    body: JSON.stringify(values),
+  });
+}
+
 async function uploadProfile(
   apiUrl,
   publishableKey,
@@ -259,6 +276,47 @@ try {
     ),
   );
 
+  const committedBatchInsert = await insertRow(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_batches',
+    {
+      user_id: userIds[0],
+      client_batch_id: 'client-created-committed-batch',
+      manifest_sha256: digest('1'),
+      expected_plan_count: 0,
+      expected_log_count: 0,
+      status: 'committed',
+    },
+  );
+  assertStatus(
+    committedBatchInsert,
+    [403],
+    'client committed-batch creation denial',
+  );
+
+  const timestampedBatchInsert = await insertRow(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_batches',
+    {
+      user_id: userIds[0],
+      client_batch_id: 'client-created-timestamped-batch',
+      manifest_sha256: digest('2'),
+      expected_plan_count: 0,
+      expected_log_count: 0,
+      committed_at: new Date().toISOString(),
+    },
+  );
+  assertStatus(
+    timestampedBatchInsert,
+    [403],
+    'client committed-at creation denial',
+  );
+  logCheck('client claim batch lifecycle enforcement');
+
   const ownerRecords = [];
   for (let index = 0; index < userIds.length; index += 1) {
     const plan = await insertRow(
@@ -329,10 +387,74 @@ try {
       },
     );
     assertStatus(staged, [201], 'insert owner claim record');
+    assert.equal(staged.body?.length, 1);
 
-    ownerRecords.push({plan: plan.body[0], log: log.body[0]});
+    ownerRecords.push({
+      plan: plan.body[0],
+      log: log.body[0],
+      batch: batch.body[0],
+      staged: staged.body[0],
+    });
   }
   logCheck('owner rows and claim staging writes');
+
+  const committedBatch = await updateRows(
+    status.API_URL,
+    status.SECRET_KEY,
+    status.SECRET_KEY,
+    'guest_claim_batches',
+    `id=eq.${ownerRecords[0].batch.id}`,
+    {
+      status: 'committed',
+      committed_at: new Date().toISOString(),
+    },
+  );
+  assertStatus(committedBatch, [200], 'service claim batch commit fixture');
+  assert.equal(committedBatch.body?.length, 1);
+
+  const postCommitInsert = await insertRow(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_records',
+    {
+      batch_id: ownerRecords[0].batch.id,
+      user_id: userIds[0],
+      entity_kind: 'plan',
+      client_record_id: 'post-commit-insert',
+      payload_sha256: digest('3'),
+      payload: {version: 1},
+    },
+  );
+  assertStatus(postCommitInsert, [403], 'post-commit claim record insert denial');
+
+  const postCommitUpdate = await updateRows(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_records',
+    `id=eq.${ownerRecords[0].staged.id}`,
+    {payload: {version: 2}},
+  );
+  assertStatus(
+    postCommitUpdate,
+    [200, 403],
+    'post-commit claim record update denial',
+  );
+  if (postCommitUpdate.status === 200) {
+    assert.deepEqual(postCommitUpdate.body, []);
+  }
+
+  const unchangedRecord = await readRows(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_records',
+    `select=payload&id=eq.${ownerRecords[0].staged.id}`,
+  );
+  assertStatus(unchangedRecord, [200], 'read committed claim record');
+  assert.deepEqual(unchangedRecord.body, [{payload: {version: 1}}]);
+  logCheck('post-commit claim record immutability');
 
   for (let index = 0; index < userIds.length; index += 1) {
     const otherIndex = index === 0 ? 1 : 0;
