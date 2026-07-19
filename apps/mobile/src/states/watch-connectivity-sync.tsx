@@ -322,16 +322,27 @@ async function importWatchConnectivityPayloadOnce({
   );
   if (duplicate) {
     const existingPlan = await findSourcePlan(planRepository, result.message);
+    const pendingDuplicate = await persistExistingAccountPendingValue(
+      repository,
+      duplicate,
+      guard,
+    );
+    const pendingPlan = await persistExistingAccountPendingValue(
+      planRepository,
+      existingPlan,
+      guard,
+    );
     guard.assertActive();
     await acknowledgePayload(payload, acknowledgeImportedPayloads);
-    await enqueueExistingPendingAccountValue(repository, duplicate);
-    await enqueueExistingPendingAccountValue(planRepository, existingPlan);
+    await enqueueExistingPendingAccountValue(repository, pendingDuplicate);
+    await enqueueExistingPendingAccountValue(planRepository, pendingPlan);
     requestAccountSyncSafely(onLocalWritesCommitted);
     return undefined;
   }
   guard.assertActive();
   const entries = await repository.importWatchMessages([result.message], {
     profileDigests: [payload.sha256],
+    assertCanCommit: guard.assertActive,
   });
   const { importedEntry, completedPlan, entries: importedEntries } = await markWatchConnectivityImported(
     repository,
@@ -549,4 +560,24 @@ async function enqueueExistingPendingAccountValue<
     return;
   }
   await enqueueSavedAccountValue(repository, value);
+}
+
+async function persistExistingAccountPendingValue<
+  T extends {cloudSyncStatus?: string},
+>(
+  repository: object,
+  value: T | undefined,
+  guard: WatchConnectivityImportGuard,
+): Promise<T | undefined> {
+  if (value?.cloudSyncStatus !== 'notConfigured') {
+    return value;
+  }
+
+  const accountRepository = repository as DeferredAccountQueueRepository<T>;
+  if (!accountRepository.saveLocalOnly || !accountRepository.enqueueSaved) {
+    return value;
+  }
+
+  guard.assertActive();
+  return accountRepository.saveLocalOnly(value);
 }
