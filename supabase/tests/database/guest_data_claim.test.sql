@@ -480,7 +480,7 @@ select ok(
       ) = 1
       and count(*) filter (
         where indexname = 'dive_plans_owner_cursor_idx'
-          and indexdef like '%(user_id, planned_at DESC NULLS LAST, id DESC)%'
+          and indexdef like '%(user_id, created_at DESC, id DESC)%'
           and indexdef like '%WHERE (deleted_at IS NULL)%'
       ) = 1
       and count(*) filter (
