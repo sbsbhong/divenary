@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
+import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
 import {
   LEGACY_GUEST_MIGRATION_MARKER_KEY,
   migrateLegacyGuestData,
 } from '../src/storage/migrate-legacy-guest-data';
 import { dataProfileKeyPrefix, dataStorageKeys } from '../src/storage/data-principal';
+import { withLegacyDataMigrationLock } from '../src/storage/legacy-data-migration-lock';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
@@ -103,6 +105,19 @@ class RecordingProfileStorage implements WatchProfileStorage {
   readonly reads = new Map<string, number>();
   corruptTargetReadback = false;
   failRemovalKeyOnce?: string;
+  pauseReadKeyOnce?: string;
+  private pausedReadStarted?: () => void;
+  private resumePausedRead?: () => void;
+
+  waitForPausedRead(): Promise<void> {
+    return new Promise(resolve => {
+      this.pausedReadStarted = resolve;
+    });
+  }
+
+  resumeRead(): void {
+    this.resumePausedRead?.();
+  }
 
   async write(key: string, value: WatchDepthSample[]): Promise<void> {
     this.writes.push(key);
@@ -111,6 +126,13 @@ class RecordingProfileStorage implements WatchProfileStorage {
 
   async read(key: string): Promise<WatchDepthSample[] | undefined> {
     this.reads.set(key, (this.reads.get(key) ?? 0) + 1);
+    if (key === this.pauseReadKeyOnce) {
+      this.pauseReadKeyOnce = undefined;
+      this.pausedReadStarted?.();
+      await new Promise<void>(resolve => {
+        this.resumePausedRead = resolve;
+      });
+    }
     const value = this.values.get(key)?.map(sample => ({ ...sample }));
     if (value && this.corruptTargetReadback && key.startsWith(dataProfileKeyPrefix({ kind: 'guest' }))) {
       return value.slice(0, 1);
@@ -148,6 +170,42 @@ function markerValue(metadataStorage: RecordingKeyValueStore): Record<string, un
     throw new Error('Expected an in-progress migration marker');
   }
   return JSON.parse(rawMarker) as Record<string, unknown>;
+}
+
+function canonicalStringify(value: unknown): string {
+  return JSON.stringify(toCanonicalJsonValue(value));
+}
+
+function toCanonicalJsonValue(value: unknown): unknown {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean' || typeof value === 'number') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map(toCanonicalJsonValue);
+  }
+  if (typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([, item]) => item !== undefined)
+        .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0)
+        .map(([key, item]) => [key, toCanonicalJsonValue(item)]),
+    );
+  }
+  throw new Error('Test value is not canonical JSON');
+}
+
+function canonicalSha256(rawValue: string): string {
+  const canonical = canonicalStringify(JSON.parse(rawValue) as unknown);
+  return createHash('sha256').update(canonical, 'utf8').digest('hex');
+}
+
+function metadataBinding(sourceKey: string, targetKey: string, source: string, target: string) {
+  return {
+    sourceKey,
+    targetKey,
+    sourceCanonicalSha256: canonicalSha256(source),
+    targetCanonicalSha256: canonicalSha256(target),
+  };
 }
 
 describe('migrateLegacyGuestData', () => {
@@ -224,14 +282,14 @@ describe('migrateLegacyGuestData', () => {
     ]);
   });
 
-  it('persists a versioned content-bound marker before cleanup and resumes a metadata cleanup failure', async () => {
+  it('persists a compact versioned digest marker before cleanup', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     seedLegacy(metadataStorage, profileStorage);
-    metadataStorage.failRemovalKeyOnce = mobileStorageKeys.logbook;
+    profileStorage.failRemovalKeyOnce = sourceProfileKey;
 
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
-      .rejects.toThrow('simulated metadata cleanup crash');
+      .rejects.toThrow('simulated profile cleanup crash');
 
     const marker = markerValue(metadataStorage);
     expect(marker).toMatchObject({
@@ -241,8 +299,8 @@ describe('migrateLegacyGuestData', () => {
         expect.objectContaining({
           sourceKey: mobileStorageKeys.logbook,
           targetKey: dataStorageKeys({ kind: 'guest' }).logbook,
-          targetCanonicalJson: expect.any(String),
-          targetSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+          sourceCanonicalSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+          targetCanonicalSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
         }),
       ]),
       profileBindings: [expect.objectContaining({
@@ -255,26 +313,49 @@ describe('migrateLegacyGuestData', () => {
     });
     const [logbookBinding] = (marker.metadataBindings as Array<{
       sourceKey: string;
-      targetCanonicalJson: string;
-      targetSha256: string;
+      sourceCanonicalSha256: string;
+      targetCanonicalSha256: string;
     }>).filter(binding => binding.sourceKey === mobileStorageKeys.logbook);
-    expect(logbookBinding.targetSha256).toBe(
-      createHash('sha256').update(logbookBinding.targetCanonicalJson, 'utf8').digest('hex'),
-    );
+    expect(logbookBinding.sourceCanonicalSha256).toBe(canonicalSha256(
+      metadataStorage.values.get(mobileStorageKeys.logbook)!,
+    ));
+    expect(logbookBinding.targetCanonicalSha256).toBe(canonicalSha256(
+      metadataStorage.values.get(dataStorageKeys({ kind: 'guest' }).logbook)!,
+    ));
+    expect(JSON.stringify(marker)).not.toContain('targetCanonicalJson');
+    expect(JSON.stringify(marker)).not.toContain('Legacy Reef');
     expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
+    expect(metadataStorage.removals).toEqual([]);
+  });
+
+  it('resumes partial metadata cleanup only after every source profile is gone', async () => {
+    const metadataStorage = new RecordingKeyValueStore();
+    const profileStorage = new RecordingProfileStorage();
+    seedLegacy(metadataStorage, profileStorage);
+    metadataStorage.failRemovalKeyOnce = mobileStorageKeys.planbook;
+
+    await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
+      .rejects.toThrow('simulated metadata cleanup crash');
+
+    expect(profileStorage.values.has(sourceProfileKey)).toBe(false);
+    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(false);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
+    expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).not.toBe('complete');
+    metadataStorage.removals.length = 0;
 
     await migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 401 });
 
     expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).toBe('complete');
-    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(false);
-    expect(profileStorage.values.has(sourceProfileKey)).toBe(false);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(false);
+    expect(metadataStorage.removals).toEqual([mobileStorageKeys.planbook]);
   });
 
   it('keeps all remaining sources when verified target metadata is tampered before resume', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     seedLegacy(metadataStorage, profileStorage);
-    metadataStorage.failRemovalKeyOnce = mobileStorageKeys.logbook;
+    profileStorage.failRemovalKeyOnce = sourceProfileKey;
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 })).rejects.toThrow();
     const guestLogbookKey = dataStorageKeys({ kind: 'guest' }).logbook;
     metadataStorage.values.set(guestLogbookKey, envelope(3, []));
@@ -291,7 +372,31 @@ describe('migrateLegacyGuestData', () => {
     expect(profileStorage.removals).toEqual([]);
   });
 
-  it('keeps the source profile when a verified target profile is tampered after metadata cleanup', async () => {
+  it('rejects a tampered target digest before resuming any cleanup', async () => {
+    const metadataStorage = new RecordingKeyValueStore();
+    const profileStorage = new RecordingProfileStorage();
+    seedLegacy(metadataStorage, profileStorage);
+    profileStorage.failRemovalKeyOnce = sourceProfileKey;
+    await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 })).rejects.toThrow();
+    const marker = markerValue(metadataStorage);
+    const logbookBinding = (marker.metadataBindings as Array<Record<string, unknown>>)
+      .find(binding => binding.sourceKey === mobileStorageKeys.logbook)!;
+    logbookBinding.targetCanonicalSha256 = '0'.repeat(64);
+    metadataStorage.values.set(LEGACY_GUEST_MIGRATION_MARKER_KEY, JSON.stringify(marker));
+    metadataStorage.removals.length = 0;
+    profileStorage.removals.length = 0;
+
+    await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 401 }))
+      .rejects.toThrow(/target.*digest|modified/i);
+
+    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
+    expect(profileStorage.values.has(sourceProfileKey)).toBe(true);
+    expect(metadataStorage.removals).toEqual([]);
+    expect(profileStorage.removals).toEqual([]);
+  });
+
+  it('keeps the source profile and metadata when a verified target profile is tampered', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     seedLegacy(metadataStorage, profileStorage);
@@ -306,26 +411,50 @@ describe('migrateLegacyGuestData', () => {
       .rejects.toThrow(/verified|profile|target/i);
 
     expect(profileStorage.values.has(sourceProfileKey)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
     expect(profileStorage.removals).toEqual([]);
     expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).not.toBe('complete');
   });
 
-  it('resumes a profile cleanup failure and completes only after the retry succeeds', async () => {
+  it('keeps metadata after the second profile removal fails and resumes from the first removal', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
-    seedLegacy(metadataStorage, profileStorage);
-    profileStorage.failRemovalKeyOnce = sourceProfileKey;
+    const secondProfileKey = 'dive-mobile:watch-profile:legacy-session-2:revision-2';
+    const secondSamples: WatchDepthSample[] = [
+      { localSessionId: 'legacy-session-2', timestamp: 200, depthMeters: 5 },
+      { localSessionId: 'legacy-session-2', timestamp: 201, depthMeters: 8 },
+    ];
+    const secondLog = cloneLog();
+    secondLog.localId = 'legacy-log-2';
+    secondLog.watchCapture!.importKey = 'legacy-session-2:300';
+    secondLog.watchCapture!.session.localSessionId = 'legacy-session-2';
+    secondLog.watchCapture!.profile = {
+      storageKey: secondProfileKey,
+      contentRevision: 'revision-2',
+      sampleCount: secondSamples.length,
+    };
+    metadataStorage.values.set(mobileStorageKeys.logbook, envelope(3, [legacyLog, secondLog]));
+    metadataStorage.values.set(mobileStorageKeys.planbook, envelope(2, [legacyPlan]));
+    profileStorage.values.set(sourceProfileKey, samples.map(sample => ({ ...sample })));
+    profileStorage.values.set(secondProfileKey, secondSamples.map(sample => ({ ...sample })));
+    profileStorage.failRemovalKeyOnce = secondProfileKey;
 
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
       .rejects.toThrow('simulated profile cleanup crash');
     expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).not.toBe('complete');
-    expect(profileStorage.values.has(sourceProfileKey)).toBe(true);
-    profileStorage.reads.clear();
+    expect(profileStorage.values.has(sourceProfileKey)).toBe(false);
+    expect(profileStorage.values.has(secondProfileKey)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
+    expect(metadataStorage.removals).toEqual([]);
+    expect(profileStorage.removals).toEqual([sourceProfileKey, secondProfileKey]);
 
     await migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 401 });
 
-    expect(profileStorage.values.has(sourceProfileKey)).toBe(false);
-    expect(profileStorage.reads.get(sourceProfileKey)).toBe(1);
+    expect(profileStorage.values.has(secondProfileKey)).toBe(false);
+    expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(false);
+    expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(false);
     expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).toBe('complete');
   });
 
@@ -333,7 +462,7 @@ describe('migrateLegacyGuestData', () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     seedLegacy(metadataStorage, profileStorage);
-    metadataStorage.failRemovalKeyOnce = mobileStorageKeys.logbook;
+    profileStorage.failRemovalKeyOnce = sourceProfileKey;
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 })).rejects.toThrow();
     const divergedSource = cloneLog();
     divergedSource.manual.notes = 'Changed after target verification';
@@ -561,6 +690,50 @@ describe('migrateLegacyGuestData', () => {
     expect(metadataStorage.values.has(LEGACY_GUEST_MIGRATION_MARKER_KEY)).toBe(false);
   });
 
+  it('serializes a default repository mutation behind migration cleanup so the new source write survives', async () => {
+    const metadataStorage = new RecordingKeyValueStore();
+    const profileStorage = new RecordingProfileStorage();
+    seedLegacy(metadataStorage, profileStorage);
+    profileStorage.pauseReadKeyOnce = sourceProfileKey;
+    const pausedRead = profileStorage.waitForPausedRead();
+    const migration = migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 });
+    await pausedRead;
+    const repository = new PersistentDiveLogRepository({
+      storage: metadataStorage,
+      profileStorage,
+      now: () => 401,
+    });
+    const mutation = repository.save({
+      ...cloneLog(),
+      localId: 'concurrent-source-write',
+      source: 'manual',
+      watchCapture: undefined,
+    });
+
+    profileStorage.resumeRead();
+    await Promise.all([migration, mutation]);
+
+    const rawLegacyLogbook = metadataStorage.values.get(mobileStorageKeys.logbook);
+    expect(rawLegacyLogbook).toBeDefined();
+    expect((JSON.parse(rawLegacyLogbook!) as { value: DiveLogEntry[] }).value.map(entry => entry.localId))
+      .toEqual(['concurrent-source-write']);
+  });
+
+  it('continues the shared migration lock queue after an operation rejects', async () => {
+    const events: string[] = [];
+
+    await expect(withLegacyDataMigrationLock(async () => {
+      events.push('rejected');
+      throw new Error('simulated lock operation failure');
+    })).rejects.toThrow('simulated lock operation failure');
+    await expect(withLegacyDataMigrationLock(async () => {
+      events.push('recovered');
+      return 'ok';
+    })).resolves.toBe('ok');
+
+    expect(events).toEqual(['rejected', 'recovered']);
+  });
+
   it('performs no writes or deletes when the exact complete marker already exists', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
@@ -576,47 +749,29 @@ describe('migrateLegacyGuestData', () => {
     expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
   });
 
-  it('rejects a forged unversioned marker that could delete a guest target', async () => {
-    const metadataStorage = new RecordingKeyValueStore();
-    const profileStorage = new RecordingProfileStorage();
-    const guestLogbookKey = dataStorageKeys({ kind: 'guest' }).logbook;
-    metadataStorage.values.set(guestLogbookKey, envelope(3, []));
-    metadataStorage.values.set(LEGACY_GUEST_MIGRATION_MARKER_KEY, JSON.stringify({
-      state: 'verified',
-      sourceMetadataKeys: [guestLogbookKey],
-      sourceProfileKeys: [],
-      guestMetadataKeys: [guestLogbookKey],
-    }));
-
-    await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
-      .rejects.toThrow(/marker/i);
-
-    expect(metadataStorage.values.has(guestLogbookKey)).toBe(true);
-    expect(metadataStorage.removals).toEqual([]);
-    expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).not.toBe('complete');
-  });
-
-  it('rejects a forged versioned marker with an empty parseable target for nonempty source data', async () => {
+  it('rejects a v1 empty target as divergent with bindings for every existing metadata source', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     seedLegacy(metadataStorage, profileStorage);
-    const guestLogbookKey = dataStorageKeys({ kind: 'guest' }).logbook;
-    const emptyTarget = envelope(3, []);
-    metadataStorage.values.set(guestLogbookKey, emptyTarget);
+    const guestKeys = dataStorageKeys({ kind: 'guest' });
+    const sourceLogbook = metadataStorage.values.get(mobileStorageKeys.logbook)!;
+    const sourcePlanbook = metadataStorage.values.get(mobileStorageKeys.planbook)!;
+    const emptyLogbook = envelope(3, []);
+    const emptyPlanbook = envelope(3, []);
+    metadataStorage.values.set(guestKeys.logbook, emptyLogbook);
+    metadataStorage.values.set(guestKeys.planbook, emptyPlanbook);
     metadataStorage.values.set(LEGACY_GUEST_MIGRATION_MARKER_KEY, JSON.stringify({
       schemaVersion: 1,
       state: 'verified',
-      metadataBindings: [{
-        sourceKey: mobileStorageKeys.logbook,
-        targetKey: guestLogbookKey,
-        targetCanonicalJson: emptyTarget,
-        targetSha256: createHash('sha256').update(emptyTarget, 'utf8').digest('hex'),
-      }],
+      metadataBindings: [
+        metadataBinding(mobileStorageKeys.logbook, guestKeys.logbook, sourceLogbook, emptyLogbook),
+        metadataBinding(mobileStorageKeys.planbook, guestKeys.planbook, sourcePlanbook, emptyPlanbook),
+      ],
       profileBindings: [],
     }));
 
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
-      .rejects.toThrow(/source|target|transformation/i);
+      .rejects.toThrow(/diverged/i);
 
     expect(metadataStorage.values.has(mobileStorageKeys.logbook)).toBe(true);
     expect(metadataStorage.values.has(mobileStorageKeys.planbook)).toBe(true);
@@ -625,24 +780,44 @@ describe('migrateLegacyGuestData', () => {
     expect(profileStorage.removals).toEqual([]);
   });
 
-  it('rejects a verified marker that names an unreferenced source profile', async () => {
+  it('rejects a fully valid v1 marker from deleting an exact legacy profile without its source logbook', async () => {
     const metadataStorage = new RecordingKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     const guestLogbookKey = dataStorageKeys({ kind: 'guest' }).logbook;
-    const unrelatedProfileKey = 'dive-mobile:watch-profile:unrelated:revision';
-    metadataStorage.values.set(guestLogbookKey, envelope(3, []));
+    const targetProfileKey = `${dataProfileKeyPrefix({ kind: 'guest' })}${encodeURIComponent(sourceProfileKey)}`;
+    const forgedSource = envelope(3, [legacyLog]);
+    const forgedTargetLog = cloneLog();
+    forgedTargetLog.watchCapture!.profile!.storageKey = targetProfileKey;
+    const forgedTarget = envelope(3, [forgedTargetLog]);
+    metadataStorage.values.set(guestLogbookKey, forgedTarget);
+    profileStorage.values.set(sourceProfileKey, samples.map(sample => ({ ...sample })));
+    profileStorage.values.set(targetProfileKey, samples.map(sample => ({ ...sample })));
     metadataStorage.values.set(LEGACY_GUEST_MIGRATION_MARKER_KEY, JSON.stringify({
+      schemaVersion: 1,
       state: 'verified',
-      sourceMetadataKeys: [mobileStorageKeys.logbook],
-      sourceProfileKeys: [unrelatedProfileKey],
-      guestMetadataKeys: [guestLogbookKey],
+      metadataBindings: [metadataBinding(
+        mobileStorageKeys.logbook,
+        guestLogbookKey,
+        forgedSource,
+        forgedTarget,
+      )],
+      profileBindings: [{
+        sourceKey: sourceProfileKey,
+        targetKey: targetProfileKey,
+        contentRevision: 'revision-1',
+        sampleCount: samples.length,
+        canonicalSha256: createHash('sha256')
+          .update(canonicalStringify(samples), 'utf8')
+          .digest('hex'),
+      }],
     }));
-    profileStorage.values.set(unrelatedProfileKey, samples);
 
     await expect(migrateLegacyGuestData({ metadataStorage, profileStorage, now: () => 400 }))
-      .rejects.toThrow(/marker/i);
+      .rejects.toThrow(/source logbook|authorize/i);
 
-    expect(profileStorage.values.has(unrelatedProfileKey)).toBe(true);
+    expect(profileStorage.values.has(sourceProfileKey)).toBe(true);
     expect(profileStorage.removals).toEqual([]);
+    expect(metadataStorage.removals).toEqual([]);
+    expect(metadataStorage.values.get(LEGACY_GUEST_MIGRATION_MARKER_KEY)).not.toBe('complete');
   });
 });

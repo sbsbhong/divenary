@@ -25,6 +25,7 @@
     "@hookform/resolvers": "^5.4.0",
     "@invertase/react-native-apple-authentication": "2.5.1",
     "@legendapp/motion": "^2.5.3",
+    "@noble/hashes": "1.8.0",
     "@notifee/react-native": "^9.1.8",
     "@react-aria/dialog": "^3.6.1",
     "@react-aria/focus": "^3.22.1",

@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import { createDefaultDiveLogRepository } from '../repositories/local-dive-log-repository';
 import {
   DIVE_LOGBOOK_SCHEMA_VERSION,
@@ -13,6 +15,7 @@ import type { WatchDepthSample } from '../types/dive-session';
 import type { DivePlan } from '../types/dive-plan';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import { dataProfileKeyPrefix, dataStorageKeys } from './data-principal';
+import { withLegacyDataMigrationLock } from './legacy-data-migration-lock';
 import type { PersistentKeyValueStore } from './persistent-key-value-store';
 import { mobileStorageKeys } from './storage-keys';
 import type { WatchProfileStorage } from './watch-profile-storage';
@@ -35,8 +38,8 @@ type MetadataKind = 'logbook' | 'planbook';
 type MetadataBinding = {
   sourceKey: string;
   targetKey: string;
-  targetCanonicalJson: string;
-  targetSha256: string;
+  sourceCanonicalSha256: string;
+  targetCanonicalSha256: string;
 };
 
 type ProfileBinding = {
@@ -59,7 +62,16 @@ type MetadataCopy = {
   sourceKey: string;
   targetKey: string;
   schemaVersion: number;
+  sourceCanonicalSha256: string;
   entries: DiveLogEntry[] | DivePlan[];
+};
+
+type ProfileReferenceBinding = {
+  sourceKey: string;
+  targetKey: string;
+  contentRevision: string;
+  sampleCount: number;
+  declaredSha256?: string;
 };
 
 type ProfileCopy = ProfileBinding & {
@@ -78,6 +90,12 @@ type LegacyProfileIdentity = {
 };
 
 export async function migrateLegacyGuestData(
+  dependencies: LegacyGuestDataMigrationDependencies,
+): Promise<void> {
+  return withLegacyDataMigrationLock(() => migrateLegacyGuestDataUnlocked(dependencies));
+}
+
+async function migrateLegacyGuestDataUnlocked(
   dependencies: LegacyGuestDataMigrationDependencies,
 ): Promise<void> {
   const { metadataStorage, profileStorage } = dependencies;
@@ -125,6 +143,7 @@ export async function migrateLegacyGuestData(
   const generatedMarker = await createVerifiedMarker(transformation, metadataStorage);
   const marker = parseVerifiedMarker(JSON.stringify(generatedMarker));
   await metadataStorage.setString(LEGACY_GUEST_MIGRATION_MARKER_KEY, JSON.stringify(marker));
+  await verifyInitialCleanupAuthority(marker, transformation, metadataStorage);
   await cleanupLegacySources(marker, metadataStorage, profileStorage, {
     metadataKeys: new Set(transformation.metadataCopies.map(copy => copy.sourceKey)),
     profileKeys: new Set(transformation.profileCopies.map(copy => copy.sourceKey)),
@@ -151,21 +170,23 @@ async function prepareTransformation(
   const guestPlans = legacyPlans?.map(toGuestPlan);
   const metadataCopies: MetadataCopy[] = [];
 
-  if (guestLogs !== undefined) {
+  if (guestLogs !== undefined && rawLegacyLogbook !== undefined) {
     metadataCopies.push({
       kind: 'logbook',
       sourceKey: mobileStorageKeys.logbook,
       targetKey: guestKeys.logbook,
       schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+      sourceCanonicalSha256: canonicalSha256(rawLegacyLogbook),
       entries: guestLogs,
     });
   }
-  if (guestPlans !== undefined) {
+  if (guestPlans !== undefined && rawLegacyPlanbook !== undefined) {
     metadataCopies.push({
       kind: 'planbook',
       sourceKey: mobileStorageKeys.planbook,
       targetKey: guestKeys.planbook,
       schemaVersion: DIVE_PLANBOOK_SCHEMA_VERSION,
+      sourceCanonicalSha256: canonicalSha256(rawLegacyPlanbook),
       entries: guestPlans,
     });
   }
@@ -177,7 +198,29 @@ async function collectProfileCopies(
   entries: DiveLogEntry[],
   profileStorage: WatchProfileStorage,
 ): Promise<ProfileCopy[]> {
-  const copies = new Map<string, ProfileCopy>();
+  const copies: ProfileCopy[] = [];
+
+  for (const reference of collectProfileReferences(entries)) {
+    const identity = requiredLegacyProfileIdentity(reference.sourceKey);
+    const storedSamples = await profileStorage.read(reference.sourceKey);
+    const validatedSamples = assertValidProfile(storedSamples, reference.sourceKey, identity.localSessionId);
+    if (validatedSamples.length !== reference.sampleCount) {
+      throw new Error(`Legacy profile sample count mismatch for ${reference.sourceKey}`);
+    }
+    const canonicalSamples = canonicalStringify(validatedSamples);
+    copies.push({
+      ...reference,
+      sampleCount: validatedSamples.length,
+      canonicalSha256: sha256Hex(canonicalSamples),
+      samples: cloneSamples(validatedSamples),
+    });
+  }
+
+  return copies;
+}
+
+function collectProfileReferences(entries: DiveLogEntry[]): ProfileReferenceBinding[] {
+  const references = new Map<string, ProfileReferenceBinding>();
 
   for (const entry of entries) {
     const reference = entry.watchCapture?.profile;
@@ -195,7 +238,7 @@ async function collectProfileCopies(
       throw new Error(`Legacy profile reference does not match its storage key: ${reference.storageKey}`);
     }
 
-    const existing = copies.get(reference.storageKey);
+    const existing = references.get(reference.storageKey);
     if (existing) {
       if (existing.contentRevision !== reference.contentRevision
         || existing.sampleCount !== reference.sampleCount
@@ -210,27 +253,22 @@ async function collectProfileCopies(
       continue;
     }
 
-    const samples = await profileStorage.read(reference.storageKey);
-    const validatedSamples = assertValidProfile(samples, reference.storageKey, identity.localSessionId);
-    if (validatedSamples.length !== reference.sampleCount) {
-      throw new Error(`Legacy profile sample count mismatch for ${reference.storageKey}`);
-    }
-    const canonicalSamples = canonicalStringify(validatedSamples);
-    copies.set(reference.storageKey, {
+    references.set(reference.storageKey, {
       sourceKey: reference.storageKey,
       targetKey: targetProfileKey(reference.storageKey),
       contentRevision: identity.contentRevision,
-      sampleCount: validatedSamples.length,
-      canonicalSha256: sha256Hex(canonicalSamples),
-      samples: cloneSamples(validatedSamples),
+      sampleCount: reference.sampleCount,
       declaredSha256: reference.sha256,
     });
   }
 
-  return Array.from(copies.values());
+  return Array.from(references.values());
 }
 
-function rewriteGuestLog(entry: DiveLogEntry, copies: Map<string, ProfileCopy>): DiveLogEntry {
+function rewriteGuestLog(
+  entry: DiveLogEntry,
+  copies: Map<string, Pick<ProfileCopy, 'targetKey'>>,
+): DiveLogEntry {
   const cloned = cloneValue(entry);
   delete cloned.ownerUserId;
   const profile = cloned.watchCapture?.profile;
@@ -328,12 +366,11 @@ async function createVerifiedMarker(
       throw new Error(`Verified guest target is missing: ${copy.targetKey}`);
     }
     parseMetadataEnvelope(copy.kind, rawTarget, copy.targetKey);
-    const targetCanonicalJson = canonicalStringify(parseJson(rawTarget, copy.targetKey));
     metadataBindings.push({
       sourceKey: copy.sourceKey,
       targetKey: copy.targetKey,
-      targetCanonicalJson,
-      targetSha256: sha256Hex(targetCanonicalJson),
+      sourceCanonicalSha256: copy.sourceCanonicalSha256,
+      targetCanonicalSha256: canonicalSha256(rawTarget),
     });
   }
 
@@ -349,6 +386,29 @@ async function createVerifiedMarker(
       canonicalSha256: copy.canonicalSha256,
     })),
   };
+}
+
+async function verifyInitialCleanupAuthority(
+  marker: VerifiedMigrationMarker,
+  transformation: PreparedTransformation,
+  metadataStorage: PersistentKeyValueStore,
+): Promise<void> {
+  const bindingsBySource = new Map(marker.metadataBindings.map(binding => [binding.sourceKey, binding]));
+  for (const copy of transformation.metadataCopies) {
+    const binding = bindingsBySource.get(copy.sourceKey);
+    const rawSource = await metadataStorage.getString(copy.sourceKey);
+    if (!binding || rawSource === undefined) {
+      throw new Error(`Exact legacy source metadata is required for cleanup: ${copy.sourceKey}`);
+    }
+    parseMetadataEnvelope(copy.kind, rawSource, copy.sourceKey);
+    if (canonicalSha256(rawSource) !== binding.sourceCanonicalSha256
+      || binding.sourceCanonicalSha256 !== copy.sourceCanonicalSha256) {
+      throw new Error(`Legacy source metadata digest changed before cleanup: ${copy.sourceKey}`);
+    }
+  }
+  if (!profileCopiesMatchBindings(transformation.profileCopies, marker.profileBindings)) {
+    throw new Error('Legacy source-to-target profile transformation diverged');
+  }
 }
 
 function parseVerifiedMarker(rawMarker: string): VerifiedMigrationMarker {
@@ -373,7 +433,6 @@ function parseVerifiedMarker(rawMarker: string): VerifiedMigrationMarker {
     throw new Error('Malformed legacy guest migration marker');
   }
 
-  validateMarkerProfileReferences(metadataBindings, profileBindings);
   return {
     schemaVersion: VERIFIED_MARKER_SCHEMA_VERSION,
     state: 'verified',
@@ -384,12 +443,18 @@ function parseVerifiedMarker(rawMarker: string): VerifiedMigrationMarker {
 
 function parseMetadataBinding(value: unknown): MetadataBinding {
   if (!isRecord(value)
-    || !hasOnlyKeys(value, ['sourceKey', 'targetKey', 'targetCanonicalJson', 'targetSha256'])
+    || !hasOnlyKeys(value, [
+      'sourceKey',
+      'targetKey',
+      'sourceCanonicalSha256',
+      'targetCanonicalSha256',
+    ])
     || typeof value.sourceKey !== 'string'
     || typeof value.targetKey !== 'string'
-    || typeof value.targetCanonicalJson !== 'string'
-    || typeof value.targetSha256 !== 'string'
-    || !sha256Pattern.test(value.targetSha256)) {
+    || typeof value.sourceCanonicalSha256 !== 'string'
+    || !sha256Pattern.test(value.sourceCanonicalSha256)
+    || typeof value.targetCanonicalSha256 !== 'string'
+    || !sha256Pattern.test(value.targetCanonicalSha256)) {
     throw new Error('Malformed legacy guest migration marker');
   }
 
@@ -397,18 +462,12 @@ function parseMetadataBinding(value: unknown): MetadataBinding {
   if (!kind || value.targetKey !== targetMetadataKey(kind)) {
     throw new Error('Malformed legacy guest migration marker');
   }
-  const canonicalValue = parseJson(value.targetCanonicalJson, value.targetKey);
-  if (canonicalStringify(canonicalValue) !== value.targetCanonicalJson
-    || sha256Hex(value.targetCanonicalJson) !== value.targetSha256) {
-    throw new Error('Malformed legacy guest migration marker');
-  }
-  parseMetadataEnvelope(kind, value.targetCanonicalJson, value.targetKey);
 
   return {
     sourceKey: value.sourceKey,
     targetKey: value.targetKey,
-    targetCanonicalJson: value.targetCanonicalJson,
-    targetSha256: value.targetSha256,
+    sourceCanonicalSha256: value.sourceCanonicalSha256,
+    targetCanonicalSha256: value.targetCanonicalSha256,
   };
 }
 
@@ -446,16 +505,15 @@ function parseProfileBinding(value: unknown): ProfileBinding {
   };
 }
 
-function validateMarkerProfileReferences(
-  metadataBindings: MetadataBinding[],
+function validateTargetProfileReferences(
+  targetEntries: Map<string, DiveLogEntry[] | DivePlan[]>,
   profileBindings: ProfileBinding[],
 ): void {
-  const logbookBinding = metadataBindings.find(binding => binding.sourceKey === mobileStorageKeys.logbook);
   const references: NonNullable<DiveLogEntry['watchCapture']>['profile'][] = [];
-  if (logbookBinding) {
-    const entries = parseDiveLogbookEnvelope(logbookBinding.targetCanonicalJson, logbookBinding.targetKey);
+  const entries = targetEntries.get(mobileStorageKeys.logbook);
+  if (entries) {
     for (const entry of entries) {
-      if (entry.watchCapture?.profile) {
+      if ('source' in entry && entry.watchCapture?.profile) {
         references.push(entry.watchCapture.profile);
       }
     }
@@ -479,6 +537,49 @@ function validateMarkerProfileReferences(
   }
 }
 
+function prepareResumeTransformation(
+  rawLegacyLogbook: string | undefined,
+  rawLegacyPlanbook: string | undefined,
+  profileBindings: ProfileBinding[],
+): MetadataCopy[] {
+  const guestKeys = dataStorageKeys({ kind: 'guest' });
+  const legacyLogs = rawLegacyLogbook === undefined
+    ? undefined
+    : parseDiveLogbookEnvelope(rawLegacyLogbook, mobileStorageKeys.logbook)
+      .filter(entry => !isBuiltInDemoFixture(entry));
+  const legacyPlans = rawLegacyPlanbook === undefined
+    ? undefined
+    : parseDivePlanbookEnvelope(rawLegacyPlanbook, mobileStorageKeys.planbook);
+  const references = collectProfileReferences(legacyLogs ?? []);
+  if (rawLegacyLogbook !== undefined && !profileReferencesMatchBindings(references, profileBindings)) {
+    throw new Error('Legacy source-to-target profile transformation diverged');
+  }
+
+  const copiesBySourceKey = new Map(profileBindings.map(binding => [binding.sourceKey, binding]));
+  const metadataCopies: MetadataCopy[] = [];
+  if (legacyLogs !== undefined && rawLegacyLogbook !== undefined) {
+    metadataCopies.push({
+      kind: 'logbook',
+      sourceKey: mobileStorageKeys.logbook,
+      targetKey: guestKeys.logbook,
+      schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+      sourceCanonicalSha256: canonicalSha256(rawLegacyLogbook),
+      entries: legacyLogs.map(entry => rewriteGuestLog(entry, copiesBySourceKey)),
+    });
+  }
+  if (legacyPlans !== undefined && rawLegacyPlanbook !== undefined) {
+    metadataCopies.push({
+      kind: 'planbook',
+      sourceKey: mobileStorageKeys.planbook,
+      targetKey: guestKeys.planbook,
+      schemaVersion: DIVE_PLANBOOK_SCHEMA_VERSION,
+      sourceCanonicalSha256: canonicalSha256(rawLegacyPlanbook),
+      entries: legacyPlans.map(toGuestPlan),
+    });
+  }
+  return metadataCopies;
+}
+
 async function verifyMarkedTransformation(
   marker: VerifiedMigrationMarker,
   metadataStorage: PersistentKeyValueStore,
@@ -491,15 +592,11 @@ async function verifyMarkedTransformation(
     if (rawTarget === undefined) {
       throw new Error(`Verified guest target is missing: ${binding.targetKey}`);
     }
-    const canonicalTarget = canonicalStringify(parseJson(rawTarget, binding.targetKey));
-    if (canonicalTarget !== binding.targetCanonicalJson
-      || sha256Hex(canonicalTarget) !== binding.targetSha256) {
-      throw new Error(`Verified guest target was modified: ${binding.targetKey}`);
+    const entries = parseMetadataEnvelope(kind, rawTarget, binding.targetKey);
+    if (canonicalSha256(rawTarget) !== binding.targetCanonicalSha256) {
+      throw new Error(`Verified guest target digest was modified: ${binding.targetKey}`);
     }
-    actualTargetEntries.set(
-      binding.sourceKey,
-      parseMetadataEnvelope(kind, rawTarget, binding.targetKey),
-    );
+    actualTargetEntries.set(binding.sourceKey, entries);
   }
 
   for (const binding of marker.profileBindings) {
@@ -513,6 +610,7 @@ async function verifyMarkedTransformation(
       throw new Error(`Verified guest target profile was modified: ${binding.targetKey}`);
     }
   }
+  validateTargetProfileReferences(actualTargetEntries, marker.profileBindings);
 
   const [rawLegacyLogbook, rawLegacyPlanbook] = await Promise.all([
     metadataStorage.getString(mobileStorageKeys.logbook),
@@ -527,31 +625,33 @@ async function verifyMarkedTransformation(
     throw new Error('Verified marker does not bind every existing legacy source');
   }
 
-  let preparedSourceProfiles = new Map<string, ProfileCopy>();
   if (existingSourceKeys.length > 0) {
-    const expected = await prepareTransformation(rawLegacyLogbook, rawLegacyPlanbook, profileStorage);
-    for (const copy of expected.metadataCopies) {
+    const expected = prepareResumeTransformation(
+      rawLegacyLogbook,
+      rawLegacyPlanbook,
+      marker.profileBindings,
+    );
+    const bindingsBySource = new Map(marker.metadataBindings.map(binding => [binding.sourceKey, binding]));
+    for (const copy of expected) {
       const actual = actualTargetEntries.get(copy.sourceKey);
-      if (!actual || !deepEqual(actual, copy.entries)) {
+      const binding = bindingsBySource.get(copy.sourceKey);
+      if (!binding
+        || copy.sourceCanonicalSha256 !== binding.sourceCanonicalSha256
+        || !actual
+        || !deepEqual(actual, copy.entries)) {
         throw new Error(`Legacy source-to-target transformation diverged: ${copy.sourceKey}`);
       }
     }
-    if (rawLegacyLogbook !== undefined
-      && !profileCopiesMatchBindings(expected.profileCopies, marker.profileBindings)) {
-      throw new Error('Legacy source-to-target profile transformation diverged');
-    }
-    preparedSourceProfiles = new Map(expected.profileCopies.map(copy => [copy.sourceKey, copy]));
   }
 
   const existingProfileKeys = new Set<string>();
   for (const binding of marker.profileBindings) {
-    if (preparedSourceProfiles.has(binding.sourceKey)) {
-      existingProfileKeys.add(binding.sourceKey);
-      continue;
-    }
     const sourceSamples = await profileStorage.read(binding.sourceKey);
     if (sourceSamples === undefined) {
       continue;
+    }
+    if (rawLegacyLogbook === undefined) {
+      throw new Error('Exact legacy source logbook is required to authorize profile cleanup');
     }
     const identity = requiredLegacyProfileIdentity(binding.sourceKey);
     const validated = assertValidProfile(sourceSamples, binding.sourceKey, identity.localSessionId);
@@ -573,16 +673,20 @@ async function cleanupLegacySources(
   profileStorage: WatchProfileStorage,
   knownExisting?: { metadataKeys: Set<string>; profileKeys: Set<string> },
 ): Promise<void> {
-  for (const binding of marker.metadataBindings) {
-    if (knownExisting?.metadataKeys.has(binding.sourceKey)
-      || await metadataStorage.getString(binding.sourceKey) !== undefined) {
-      await metadataStorage.remove(binding.sourceKey);
+  for (const binding of marker.profileBindings) {
+    const exists = knownExisting
+      ? knownExisting.profileKeys.has(binding.sourceKey)
+      : await profileStorage.read(binding.sourceKey) !== undefined;
+    if (exists) {
+      await profileStorage.remove(binding.sourceKey);
     }
   }
-  for (const binding of marker.profileBindings) {
-    if (knownExisting?.profileKeys.has(binding.sourceKey)
-      || await profileStorage.read(binding.sourceKey) !== undefined) {
-      await profileStorage.remove(binding.sourceKey);
+  for (const binding of marker.metadataBindings) {
+    const exists = knownExisting
+      ? knownExisting.metadataKeys.has(binding.sourceKey)
+      : await metadataStorage.getString(binding.sourceKey) !== undefined;
+    if (exists) {
+      await metadataStorage.remove(binding.sourceKey);
     }
   }
 }
@@ -698,6 +802,23 @@ function profileMatchesBinding(
     && sha256Hex(canonicalStringify(samples)) === binding.canonicalSha256;
 }
 
+function profileReferencesMatchBindings(
+  references: ProfileReferenceBinding[],
+  bindings: ProfileBinding[],
+): boolean {
+  if (references.length !== bindings.length) {
+    return false;
+  }
+  const bindingsBySource = new Map(bindings.map(binding => [binding.sourceKey, binding]));
+  return references.every(reference => {
+    const binding = bindingsBySource.get(reference.sourceKey);
+    return binding !== undefined
+      && binding.targetKey === reference.targetKey
+      && binding.contentRevision === reference.contentRevision
+      && binding.sampleCount === reference.sampleCount;
+  });
+}
+
 function profileCopiesMatchBindings(copies: ProfileCopy[], bindings: ProfileBinding[]): boolean {
   if (copies.length !== bindings.length) {
     return false;
@@ -735,6 +856,10 @@ function canonicalStringify(value: unknown): string {
   return JSON.stringify(toCanonicalJsonValue(value));
 }
 
+function canonicalSha256(rawValue: string): string {
+  return sha256Hex(canonicalStringify(parseJson(rawValue, 'canonical digest input')));
+}
+
 function toCanonicalJsonValue(value: unknown): unknown {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') {
     return value;
@@ -760,125 +885,9 @@ function toCanonicalJsonValue(value: unknown): unknown {
   throw new Error('Cannot canonicalize a non-JSON value');
 }
 
-/* eslint-disable no-bitwise -- SHA-256 is defined in terms of 32-bit word operations. */
 function sha256Hex(value: string): string {
-  const bytes = utf8Bytes(value);
-  const bitLength = bytes.length * 8;
-  bytes.push(0x80);
-  while (bytes.length % 64 !== 56) {
-    bytes.push(0);
-  }
-  const high = Math.floor(bitLength / 0x1_0000_0000);
-  const low = bitLength >>> 0;
-  for (let shift = 24; shift >= 0; shift -= 8) {
-    bytes.push((high >>> shift) & 0xff);
-  }
-  for (let shift = 24; shift >= 0; shift -= 8) {
-    bytes.push((low >>> shift) & 0xff);
-  }
-
-  const hash = [
-    0x6a09e667,
-    0xbb67ae85,
-    0x3c6ef372,
-    0xa54ff53a,
-    0x510e527f,
-    0x9b05688c,
-    0x1f83d9ab,
-    0x5be0cd19,
-  ];
-  const constants = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-  ];
-
-  for (let offset = 0; offset < bytes.length; offset += 64) {
-    const words = new Array<number>(64).fill(0);
-    for (let index = 0; index < 16; index += 1) {
-      const byteOffset = offset + index * 4;
-      words[index] = (
-        (bytes[byteOffset] << 24)
-        | (bytes[byteOffset + 1] << 16)
-        | (bytes[byteOffset + 2] << 8)
-        | bytes[byteOffset + 3]
-      ) >>> 0;
-    }
-    for (let index = 16; index < 64; index += 1) {
-      const sigma0 = rotateRight(words[index - 15], 7)
-        ^ rotateRight(words[index - 15], 18)
-        ^ (words[index - 15] >>> 3);
-      const sigma1 = rotateRight(words[index - 2], 17)
-        ^ rotateRight(words[index - 2], 19)
-        ^ (words[index - 2] >>> 10);
-      words[index] = (words[index - 16] + sigma0 + words[index - 7] + sigma1) >>> 0;
-    }
-
-    let [a, b, c, d, e, f, g, h] = hash;
-    for (let index = 0; index < 64; index += 1) {
-      const sum1 = rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25);
-      const choice = (e & f) ^ (~e & g);
-      const temp1 = (h + sum1 + choice + constants[index] + words[index]) >>> 0;
-      const sum0 = rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22);
-      const majority = (a & b) ^ (a & c) ^ (b & c);
-      const temp2 = (sum0 + majority) >>> 0;
-      h = g;
-      g = f;
-      f = e;
-      e = (d + temp1) >>> 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (temp1 + temp2) >>> 0;
-    }
-    hash[0] = (hash[0] + a) >>> 0;
-    hash[1] = (hash[1] + b) >>> 0;
-    hash[2] = (hash[2] + c) >>> 0;
-    hash[3] = (hash[3] + d) >>> 0;
-    hash[4] = (hash[4] + e) >>> 0;
-    hash[5] = (hash[5] + f) >>> 0;
-    hash[6] = (hash[6] + g) >>> 0;
-    hash[7] = (hash[7] + h) >>> 0;
-  }
-
-  return hash.map(word => word.toString(16).padStart(8, '0')).join('');
+  return bytesToHex(sha256(utf8ToBytes(value)));
 }
-
-function utf8Bytes(value: string): number[] {
-  const bytes: number[] = [];
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) as number;
-    if (codePoint <= 0x7f) {
-      bytes.push(codePoint);
-    } else if (codePoint <= 0x7ff) {
-      bytes.push(0xc0 | (codePoint >>> 6), 0x80 | (codePoint & 0x3f));
-    } else if (codePoint <= 0xffff) {
-      bytes.push(
-        0xe0 | (codePoint >>> 12),
-        0x80 | ((codePoint >>> 6) & 0x3f),
-        0x80 | (codePoint & 0x3f),
-      );
-    } else {
-      bytes.push(
-        0xf0 | (codePoint >>> 18),
-        0x80 | ((codePoint >>> 12) & 0x3f),
-        0x80 | ((codePoint >>> 6) & 0x3f),
-        0x80 | (codePoint & 0x3f),
-      );
-    }
-  }
-  return bytes;
-}
-
-function rotateRight(value: number, amount: number): number {
-  return (value >>> amount) | (value << (32 - amount));
-}
-/* eslint-enable no-bitwise */
 
 function cloneSamples(value: WatchDepthSample[]): WatchDepthSample[] {
   return value.map(sample => ({ ...sample }));

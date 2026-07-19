@@ -4,6 +4,7 @@ import {
   UnsupportedStorageVersionError,
   type StoredEnvelope,
 } from '../storage/persistent-json-store';
+import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lock';
 import { mobileStorageKeys } from '../storage/storage-keys';
 import type { DivePlan } from '../types/dive-plan';
 import type { DivePlanRepository } from './dive-plan-repository';
@@ -77,7 +78,7 @@ export class PersistentDivePlanRepository implements DivePlanRepository {
   }
 
   private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(operation);
+    const result = this.mutationQueue.then(() => withLegacyDataMigrationLock(operation));
     this.mutationQueue = result.then(() => undefined, () => undefined);
     return result;
   }

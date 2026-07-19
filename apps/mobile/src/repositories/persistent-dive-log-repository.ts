@@ -8,6 +8,7 @@ import {
   UnsupportedStorageVersionError,
   type StoredEnvelope,
 } from '../storage/persistent-json-store';
+import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lock';
 import { mobileStorageKeys } from '../storage/storage-keys';
 import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
 import type { DiveLogRepository } from './dive-log-repository';
@@ -166,7 +167,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
   }
 
   private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.mutationQueue.then(operation);
+    const result = this.mutationQueue.then(() => withLegacyDataMigrationLock(operation));
     this.mutationQueue = result.then(() => undefined, () => undefined);
     return result;
   }
