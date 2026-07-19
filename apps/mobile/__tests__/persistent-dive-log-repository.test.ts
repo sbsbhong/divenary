@@ -1,5 +1,6 @@
 import {
   createDefaultPersistentDiveLogRepository,
+  DIVE_LOGBOOK_SCHEMA_VERSION,
   migrateDiveLogbookEnvelope,
   PersistentDiveLogRepository,
 } from '../src/repositories/persistent-dive-log-repository';
@@ -71,6 +72,7 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
   remove(key: string): Promise<void> {
     return this.delegate.remove(key);
   }
+
 }
 
 class RecordingProfileStorage implements WatchProfileStorage {
@@ -88,6 +90,63 @@ class RecordingProfileStorage implements WatchProfileStorage {
   async remove(key: string): Promise<void> {
     this.removals.push(key);
     this.values.delete(key);
+  }
+}
+
+class PausedFirstWriteStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  private isFirstWrite = true;
+  private resolveWriteStarted!: () => void;
+  private resolveWrite!: () => void;
+  readonly writeStarted = new Promise<void>(resolve => {
+    this.resolveWriteStarted = resolve;
+  });
+
+  getString(key: string): Promise<string | undefined> {
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (this.isFirstWrite) {
+      this.isFirstWrite = false;
+      this.resolveWriteStarted();
+      await new Promise<void>(resolve => {
+        this.resolveWrite = resolve;
+      });
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+
+  seedString(key: string, value: string): Promise<void> {
+    return this.delegate.setString(key, value);
+  }
+
+  releaseWrite(): void {
+    this.resolveWrite();
+  }
+}
+
+class PausedProfileStorage extends RecordingProfileStorage {
+  private resolveWriteStarted!: () => void;
+  private resolveWrite!: () => void;
+  readonly writeStarted = new Promise<void>(resolve => {
+    this.resolveWriteStarted = resolve;
+  });
+
+  override async write(key: string, samples: WatchDepthSample[]): Promise<void> {
+    this.resolveWriteStarted();
+    await new Promise<void>(resolve => {
+      this.resolveWrite = resolve;
+    });
+    await super.write(key, samples);
+  }
+
+  releaseWrite(): void {
+    this.resolveWrite();
   }
 }
 
@@ -143,6 +202,103 @@ describe('PersistentDiveLogRepository', () => {
     await expect(repository.save(manualEntry({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
 
     expect((await repository.list()).map(entry => entry.localId)).toEqual(['accepted']);
+  });
+
+  it('rejects a queued watch import when its commit guard becomes stale', async () => {
+    const storage = new PausedFirstWriteStore();
+    const profileStorage = new RecordingProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    const blockingSave = repository.save(manualEntry({localId: 'blocking'}));
+    await storage.writeStarted;
+    let isCurrent = true;
+    const guardedImport = repository.importWatchMessages([watchMessage], {
+      assertCanCommit: () => {
+        if (!isCurrent) {
+          throw new Error('stale principal');
+        }
+      },
+    });
+
+    isCurrent = false;
+    storage.releaseWrite();
+    await blockingSave;
+
+    await expect(guardedImport).rejects.toThrow('stale principal');
+    expect(profileStorage.values).toEqual(new Map());
+    expect((await repository.list()).map(value => value.localId)).toEqual([
+      'blocking',
+    ]);
+  });
+
+  it('checks the commit guard again after awaited profile persistence', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const profileStorage = new PausedProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    let isCurrent = true;
+    const assertCanCommit = jest.fn(() => {
+      if (!isCurrent) {
+        throw new Error('stale principal');
+      }
+    });
+    const guardedImport = repository.importWatchMessages([watchMessage], {
+      assertCanCommit,
+    });
+    await profileStorage.writeStarted;
+
+    isCurrent = false;
+    profileStorage.releaseWrite();
+
+    await expect(guardedImport).rejects.toThrow('stale principal');
+    expect(assertCanCommit).toHaveBeenCalledTimes(2);
+    expect(profileStorage.values).toEqual(new Map());
+    await expect(repository.list()).resolves.toEqual([]);
+    await expect(storage.getString(mobileStorageKeys.logbook)).resolves.toBeUndefined();
+  });
+
+  it('restores profile and metadata when the guard becomes stale during metadata persistence', async () => {
+    const storage = new PausedFirstWriteStore();
+    const priorEntry = manualEntry({localId: 'prior-entry'});
+    const priorMetadata = JSON.stringify({
+      schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+      updatedAt: 123,
+      value: [priorEntry],
+    });
+    await storage.seedString(mobileStorageKeys.logbook, priorMetadata);
+    const profileStorage = new RecordingProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    let isCurrent = true;
+    const assertCanCommit = jest.fn(() => {
+      if (!isCurrent) {
+        throw new Error('stale principal');
+      }
+    });
+    const guardedImport = repository.importWatchMessages([watchMessage], {
+      assertCanCommit,
+    });
+    await storage.writeStarted;
+
+    isCurrent = false;
+    storage.releaseWrite();
+
+    await expect(guardedImport).rejects.toThrow('stale principal');
+    expect(assertCanCommit).toHaveBeenCalledTimes(4);
+    expect(profileStorage.values).toEqual(new Map());
+    await expect(storage.getString(mobileStorageKeys.logbook)).resolves.toBe(
+      priorMetadata,
+    );
+    await expect(repository.list()).resolves.toEqual([priorEntry]);
   });
 
   it('honors explicit metadata and profile key options', async () => {

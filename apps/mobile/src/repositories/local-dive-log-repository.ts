@@ -2,7 +2,10 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 import { watchFixtureMessages } from '../utils/watch-fixtures';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
-import type { DiveLogRepository } from './dive-log-repository';
+import type {
+  DiveLogRepository,
+  ImportWatchMessagesOptions,
+} from './dive-log-repository';
 
 export type LocalDiveLogRepositoryOptions = {
   now?: () => number;
@@ -11,6 +14,7 @@ export type LocalDiveLogRepositoryOptions = {
 export class LocalDiveLogRepository implements DiveLogRepository {
   private entriesByLocalId = new Map<string, DiveLogEntry>();
   private readonly now: () => number;
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(initialEntries: DiveLogEntry[] = [], options: LocalDiveLogRepositoryOptions = {}) {
     this.now = options.now ?? getCurrentTimestampSeconds;
@@ -28,28 +32,58 @@ export class LocalDiveLogRepository implements DiveLogRepository {
   }
 
   async save(entry: DiveLogEntry): Promise<DiveLogEntry> {
-    this.entriesByLocalId.set(entry.localId, cloneDiveLogEntry(entry));
-    return cloneDiveLogEntry(entry);
+    return this.enqueueMutation(async () => {
+      this.entriesByLocalId.set(entry.localId, cloneDiveLogEntry(entry));
+      return cloneDiveLogEntry(entry);
+    });
   }
 
   async delete(localId: string): Promise<void> {
-    this.entriesByLocalId.delete(localId);
+    return this.enqueueMutation(async () => {
+      this.entriesByLocalId.delete(localId);
+    });
   }
 
   async importWatchMessages(
     messages: WatchSyncMessage[],
-    _options?: { profileDigests?: Array<string | undefined> },
+    options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]> {
-    const now = this.now();
+    return this.enqueueMutation(async () => {
+      const now = this.now();
+      const nextEntries = new Map(
+        Array.from(this.entriesByLocalId, ([localId, value]) => [
+          localId,
+          cloneDiveLogEntry(value),
+        ]),
+      );
 
-    for (const message of messages) {
-      const nextEntry = watchSessionToDiveLogEntry({ session: message.session, now });
-      const currentEntry = this.findByImportKey(nextEntry.watchCapture?.importKey);
+      for (const message of messages) {
+        const nextEntry = watchSessionToDiveLogEntry({
+          session: message.session,
+          now,
+        });
+        const currentEntry = findByImportKey(
+          nextEntries,
+          nextEntry.watchCapture?.importKey,
+        );
 
-      this.entriesByLocalId.set(currentEntry?.localId ?? nextEntry.localId, mergeWatchImport(currentEntry, nextEntry));
-    }
+        nextEntries.set(
+          currentEntry?.localId ?? nextEntry.localId,
+          mergeWatchImport(currentEntry, nextEntry),
+        );
+      }
 
-    return this.listSync();
+      options?.assertCanCommit?.();
+      const previousEntries = this.entriesByLocalId;
+      this.entriesByLocalId = nextEntries;
+      try {
+        options?.assertCanCommit?.();
+      } catch (error) {
+        this.entriesByLocalId = previousEntries;
+        throw error;
+      }
+      return this.listSync();
+    });
   }
 
   async getWatchProfile(localId: string): Promise<WatchDepthSample[]> {
@@ -65,12 +99,13 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     return entry ? cloneDiveLogEntry(entry) : undefined;
   }
 
-  private findByImportKey(importKey: string | undefined): DiveLogEntry | undefined {
-    if (!importKey) {
-      return undefined;
-    }
-
-    return Array.from(this.entriesByLocalId.values()).find(entry => entry.watchCapture?.importKey === importKey);
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation);
+    this.mutationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 }
 
@@ -132,6 +167,19 @@ export function mergeWatchImport(currentEntry: DiveLogEntry | undefined, nextEnt
 
 export function compareDiveLogEntries(left: DiveLogEntry, right: DiveLogEntry): number {
   return getEntrySortTimestamp(right) - getEntrySortTimestamp(left);
+}
+
+function findByImportKey(
+  entriesByLocalId: ReadonlyMap<string, DiveLogEntry>,
+  importKey: string | undefined,
+): DiveLogEntry | undefined {
+  if (!importKey) {
+    return undefined;
+  }
+
+  return Array.from(entriesByLocalId.values()).find(
+    entry => entry.watchCapture?.importKey === importKey,
+  );
 }
 
 function getEntrySortTimestamp(entry: DiveLogEntry): number {

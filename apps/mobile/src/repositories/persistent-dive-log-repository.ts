@@ -11,7 +11,10 @@ import {
 import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lock';
 import { mobileStorageKeys } from '../storage/storage-keys';
 import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
-import type { DiveLogRepository } from './dive-log-repository';
+import type {
+  DiveLogRepository,
+  ImportWatchMessagesOptions,
+} from './dive-log-repository';
 import {
   cloneDiveLogEntry,
   compareDiveLogEntries,
@@ -33,6 +36,8 @@ export const DEFAULT_WATCH_PROFILE_KEY_PREFIX = 'dive-mobile:watch-profile:';
 
 export class PersistentDiveLogRepository implements DiveLogRepository {
   private readonly store: PersistentJsonStore<DiveLogEntry[]>;
+  private readonly metadataStorage: PersistentKeyValueStore;
+  private readonly storageKey: string;
   private readonly now: () => number;
   private readonly profileStorage: WatchProfileStorage;
   private readonly profileKeyPrefix: string;
@@ -42,9 +47,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     const initialEntries = options.initialEntries ?? [];
     this.now = options.now ?? getCurrentTimestampSeconds;
     const metadataStorage = options.storage ?? createAsyncStorageKeyValueStore();
+    this.metadataStorage = metadataStorage;
     this.profileStorage = options.profileStorage ?? createWatchProfileStorage(metadataStorage);
     this.profileKeyPrefix = options.profileKeyPrefix ?? DEFAULT_WATCH_PROFILE_KEY_PREFIX;
     const storageKey = options.storageKey ?? mobileStorageKeys.logbook;
+    this.storageKey = storageKey;
     this.store = new PersistentJsonStore<DiveLogEntry[]>({
       key: storageKey,
       schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
@@ -92,56 +99,76 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
 
   async importWatchMessages(
     messages: WatchSyncMessage[],
-    options?: { profileDigests?: Array<string | undefined> },
+    options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]> {
     return this.enqueueMutation(async () => {
+      const metadataSnapshot = await this.metadataStorage.getString(this.storageKey);
+      const profileSnapshots: ProfileWriteSnapshot[] = [];
+      let metadataWriteAttempted = false;
       const now = this.now();
-      let entries = await this.readEntries();
-      const obsoleteProfileKeys = new Set<string>();
+      try {
+        let entries = await this.readEntries();
+        const obsoleteProfileKeys = new Set<string>();
 
-      for (const [messageIndex, message] of messages.entries()) {
-        const fullSamples = message.session.samples;
-        const contentRevision = message.session.profile?.contentRevision
-          ?? `${message.session.endedAt ?? message.session.startedAt}`;
-        const profileStorageKey = makeProfileStorageKey(
-          this.profileKeyPrefix,
-          message.session.localSessionId,
-          contentRevision,
-        );
-        await this.profileStorage.write(profileStorageKey, fullSamples);
-        const previewSamples = makePeakPreservingPreview(fullSamples);
-        const nextEntry = watchSessionToDiveLogEntry({
-          session: { ...message.session, samples: previewSamples },
-          now,
-        });
-        nextEntry.watchCapture = nextEntry.watchCapture
-          ? {
-              ...nextEntry.watchCapture,
-              profile: {
-                storageKey: profileStorageKey,
-                contentRevision,
-                sampleCount: fullSamples.length,
-                sha256: options?.profileDigests?.[messageIndex],
-              },
-            }
-          : undefined;
-        const currentEntry = findByImportKey(entries, nextEntry.watchCapture?.importKey);
-        const currentProfileKey = currentEntry?.watchCapture?.profile?.storageKey;
-        if (currentProfileKey && currentProfileKey !== profileStorageKey) {
-          obsoleteProfileKeys.add(currentProfileKey);
+        for (const [messageIndex, message] of messages.entries()) {
+          const fullSamples = message.session.samples;
+          const contentRevision = message.session.profile?.contentRevision
+            ?? `${message.session.endedAt ?? message.session.startedAt}`;
+          const profileStorageKey = makeProfileStorageKey(
+            this.profileKeyPrefix,
+            message.session.localSessionId,
+            contentRevision,
+          );
+          profileSnapshots.push({
+            key: profileStorageKey,
+            previous: await this.profileStorage.read(profileStorageKey),
+          });
+          options?.assertCanCommit?.();
+          await this.profileStorage.write(profileStorageKey, fullSamples);
+          options?.assertCanCommit?.();
+          const previewSamples = makePeakPreservingPreview(fullSamples);
+          const nextEntry = watchSessionToDiveLogEntry({
+            session: { ...message.session, samples: previewSamples },
+            now,
+          });
+          nextEntry.watchCapture = nextEntry.watchCapture
+            ? {
+                ...nextEntry.watchCapture,
+                profile: {
+                  storageKey: profileStorageKey,
+                  contentRevision,
+                  sampleCount: fullSamples.length,
+                  sha256: options?.profileDigests?.[messageIndex],
+                },
+              }
+            : undefined;
+          const currentEntry = findByImportKey(entries, nextEntry.watchCapture?.importKey);
+          const currentProfileKey = currentEntry?.watchCapture?.profile?.storageKey;
+          if (currentProfileKey && currentProfileKey !== profileStorageKey) {
+            obsoleteProfileKeys.add(currentProfileKey);
+          }
+          const mergedEntry = mergeWatchImport(currentEntry, nextEntry);
+
+          entries = currentEntry
+            ? entries.map(entry => (entry.localId === currentEntry.localId ? mergedEntry : entry))
+            : [...entries, mergedEntry];
         }
-        const mergedEntry = mergeWatchImport(currentEntry, nextEntry);
 
-        entries = currentEntry
-          ? entries.map(entry => (entry.localId === currentEntry.localId ? mergedEntry : entry))
-          : [...entries, mergedEntry];
+        options?.assertCanCommit?.();
+        metadataWriteAttempted = true;
+        await this.writeEntries(entries);
+        options?.assertCanCommit?.();
+        await Promise.all(Array.from(obsoleteProfileKeys)
+          .filter(key => !referencesProfile(entries, key))
+          .map(key => this.profileStorage.remove(key)));
+        return entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries);
+      } catch (error) {
+        if (metadataWriteAttempted) {
+          await this.restoreMetadataSnapshot(metadataSnapshot);
+        }
+        await this.restoreProfileSnapshots(profileSnapshots);
+        throw error;
       }
-
-      await this.writeEntries(entries);
-      await Promise.all(Array.from(obsoleteProfileKeys)
-        .filter(key => !referencesProfile(entries, key))
-        .map(key => this.profileStorage.remove(key)));
-      return entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries);
     });
   }
 
@@ -171,7 +198,32 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     this.mutationQueue = result.then(() => undefined, () => undefined);
     return result;
   }
+
+  private async restoreMetadataSnapshot(snapshot: string | undefined): Promise<void> {
+    if (snapshot === undefined) {
+      await this.metadataStorage.remove(this.storageKey);
+    } else {
+      await this.metadataStorage.setString(this.storageKey, snapshot);
+    }
+  }
+
+  private async restoreProfileSnapshots(
+    snapshots: readonly ProfileWriteSnapshot[],
+  ): Promise<void> {
+    for (const snapshot of [...snapshots].reverse()) {
+      if (snapshot.previous === undefined) {
+        await this.profileStorage.remove(snapshot.key);
+      } else {
+        await this.profileStorage.write(snapshot.key, snapshot.previous);
+      }
+    }
+  }
 }
+
+type ProfileWriteSnapshot = {
+  key: string;
+  previous?: WatchDepthSample[];
+};
 
 type LegacyDiveLogEntry = Omit<DiveLogEntry, 'cloudSyncStatus'> & {
   syncStatus?: 'localOnly' | 'pending' | 'synced' | 'failed';

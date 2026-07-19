@@ -1,6 +1,11 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 
+export type ImportWatchMessagesOptions = {
+  profileDigests?: Array<string | undefined>;
+  assertCanCommit?: () => void;
+};
+
 export type DiveLogRepository = {
   list(): Promise<DiveLogEntry[]>;
   get(localId: string): Promise<DiveLogEntry | undefined>;
@@ -8,7 +13,7 @@ export type DiveLogRepository = {
   delete(localId: string): Promise<void>;
   importWatchMessages(
     messages: WatchSyncMessage[],
-    options?: { profileDigests?: Array<string | undefined> },
+    options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]>;
   getWatchProfile(localId: string): Promise<WatchDepthSample[]>;
 };

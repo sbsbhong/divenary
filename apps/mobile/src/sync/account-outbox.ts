@@ -1,7 +1,3 @@
-import {
-  PersistentJsonStore,
-  type StoredEnvelope,
-} from '../storage/persistent-json-store';
 import type {PersistentKeyValueStore} from '../storage/persistent-key-value-store';
 
 export type AccountOutboxItem = {
@@ -42,60 +38,114 @@ type AccountOutboxOptions = {
 
 const SCHEMA_VERSION = 1;
 const MAXIMUM_RETRY_DELAY_SECONDS = 300;
+const ITEM_KEYS = [
+  'operationId',
+  'userId',
+  'entityKind',
+  'entityLocalId',
+  'mutation',
+  'payload',
+  'expectedRevision',
+  'profileStorageKey',
+  'attemptCount',
+  'nextAttemptAt',
+  'createdAt',
+] as const;
+const CONFLICT_KEYS = [
+  'operationId',
+  'userId',
+  'entityKind',
+  'entityLocalId',
+  'localPayload',
+  'remote',
+  'recordedAt',
+] as const;
+const storageMutationQueues = new Map<string, Promise<void>>();
 
 export class AccountOutbox {
-  private readonly store: PersistentJsonStore<AccountOutboxState>;
+  private readonly storage: PersistentKeyValueStore;
+  private readonly storageKey: string;
   private readonly now: () => number;
   private readonly jitter: () => number;
-  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(options: AccountOutboxOptions) {
+    this.storage = options.storage;
+    this.storageKey = options.storageKey;
     this.now = options.now ?? (() => Date.now() / 1_000);
     this.jitter = options.jitter ?? Math.random;
-    this.store = new PersistentJsonStore<AccountOutboxState>({
-      key: options.storageKey,
-      schemaVersion: SCHEMA_VERSION,
-      defaultValue: emptyState,
-      migrate: migrateOutboxEnvelope,
-      storage: options.storage,
-      now: this.now,
-    });
   }
 
   async list(userId?: string): Promise<AccountOutboxItem[]> {
-    const state = await this.store.read();
-    return state.items
-      .filter(item => userId === undefined || item.userId === userId)
-      .map(cloneItem)
-      .sort(compareItems);
+    return withStorageMutationLock(this.storageKey, async () => {
+      const state = await this.readState();
+      return state.items
+        .filter(item => userId === undefined || item.userId === userId)
+        .map(cloneItem);
+    });
+  }
+
+  async listEntity(
+    userId: string,
+    entityKind: AccountOutboxItem['entityKind'],
+    entityLocalId: string,
+  ): Promise<AccountOutboxItem[]> {
+    return (await this.list(userId)).filter(
+      item =>
+        item.entityKind === entityKind && item.entityLocalId === entityLocalId,
+    );
   }
 
   async listConflicts(userId?: string): Promise<AccountOutboxConflict[]> {
-    const state = await this.store.read();
-    return state.conflicts
-      .filter(conflict => userId === undefined || conflict.userId === userId)
-      .map(cloneConflict)
-      .sort((left, right) => left.recordedAt - right.recordedAt);
+    return withStorageMutationLock(this.storageKey, async () => {
+      const state = await this.readState();
+      return state.conflicts
+        .filter(conflict => userId === undefined || conflict.userId === userId)
+        .map(cloneConflict);
+    });
   }
 
   async enqueue(item: AccountOutboxItem): Promise<AccountOutboxItem> {
     assertItem(item);
+    const normalized = cloneItem(item);
+    if (
+      normalized.profileStorageKey !== undefined &&
+      normalized.profileStorageKey !==
+        this.profileSnapshotKey(normalized.userId, normalized.operationId)
+    ) {
+      throw new Error('Account outbox profile key is not operation-owned');
+    }
+
     return this.mutate(async state => {
-      const existing = state.items.find(candidate => candidate.operationId === item.operationId);
+      const existing = state.items.find(
+        candidate =>
+          candidate.userId === normalized.userId &&
+          candidate.operationId === normalized.operationId,
+      );
       if (existing) {
+        if (!sameImmutableOperation(existing, normalized)) {
+          throw new Error(
+            `Account outbox operation ${normalized.operationId} changed`,
+          );
+        }
         return cloneItem(existing);
       }
 
-      const stored = cloneItem(item);
-      state.items.push(stored);
-      return cloneItem(stored);
+      state.items.push(normalized);
+      return cloneItem(normalized);
     });
   }
 
-  async complete(operationId: string): Promise<void> {
-    await this.mutate(async state => {
-      state.items = state.items.filter(item => item.operationId !== operationId);
+  async complete(userId: string, operationId: string): Promise<void> {
+    const removedProfileKeys = await this.mutate(async state => {
+      const removed = state.items.filter(
+        item => item.userId === userId && item.operationId === operationId,
+      );
+      state.items = state.items.filter(
+        item => item.userId !== userId || item.operationId !== operationId,
+      );
+      return profileKeys(removed);
     });
+    await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
   async completeSavedUpsert(
@@ -105,28 +155,48 @@ export class AccountOutbox {
     if (!Number.isSafeInteger(remoteRevision) || remoteRevision < 1) {
       throw new Error('Remote revision must be a positive integer');
     }
-    return this.mutate(async state => {
-      state.items = state.items.filter(
-        candidate => candidate.operationId !== item.operationId,
+    const result = await this.mutate(async state => {
+      const operationIndex = state.items.findIndex(
+        candidate => sameOperationKey(candidate, item),
       );
-      const pending = state.items.filter(
-        candidate =>
-          candidate.userId === item.userId &&
-          candidate.entityKind === item.entityKind &&
-          candidate.entityLocalId === item.entityLocalId &&
-          candidate.mutation === 'upsert',
+      if (operationIndex < 0) {
+        return {hasPending: false, profileKeys: [] as string[]};
+      }
+      const [completed] = state.items.splice(operationIndex, 1);
+      const pending = state.items.slice(operationIndex).filter(
+        candidate => sameEntity(candidate, item),
       );
       for (const candidate of pending) {
         candidate.expectedRevision = remoteRevision;
         updatePayloadRevision(candidate.payload, remoteRevision);
       }
-      return pending.length > 0;
+      return {
+        hasPending: pending.length > 0,
+        profileKeys: completed ? profileKeys([completed]) : [],
+      };
     });
+    await this.removeSnapshotsBestEffort(result.profileKeys);
+    return result.hasPending;
   }
 
-  async reschedule(operationId: string): Promise<AccountOutboxItem | undefined> {
+  async hasLaterOperations(item: AccountOutboxItem): Promise<boolean> {
+    const items = await this.list(item.userId);
+    const operationIndex = items.findIndex(candidate => sameOperationKey(candidate, item));
+    return (
+      operationIndex >= 0 &&
+      items.slice(operationIndex + 1).some(candidate => sameEntity(candidate, item))
+    );
+  }
+
+  async reschedule(
+    userId: string,
+    operationId: string,
+  ): Promise<AccountOutboxItem | undefined> {
     return this.mutate(async state => {
-      const item = state.items.find(candidate => candidate.operationId === operationId);
+      const item = state.items.find(
+        candidate =>
+          candidate.userId === userId && candidate.operationId === operationId,
+      );
       if (!item) {
         return undefined;
       }
@@ -148,11 +218,14 @@ export class AccountOutbox {
 
   async recordConflict(
     item: AccountOutboxItem,
+    currentLocal: Record<string, unknown>,
     remote: Record<string, unknown>,
   ): Promise<void> {
-    await this.mutate(async state => {
+    const removedProfileKeys = await this.mutate(async state => {
       const existing = state.conflicts.find(
-        conflict => conflict.operationId === item.operationId,
+        conflict =>
+          conflict.userId === item.userId &&
+          conflict.operationId === item.operationId,
       );
       if (!existing) {
         state.conflicts.push({
@@ -160,15 +233,16 @@ export class AccountOutbox {
           userId: item.userId,
           entityKind: item.entityKind,
           entityLocalId: item.entityLocalId,
-          localPayload: cloneRecord(item.payload),
+          localPayload: cloneRecord(currentLocal),
           remote: cloneRecord(remote),
           recordedAt: this.now(),
         });
       }
-      state.items = state.items.filter(
-        candidate => candidate.operationId !== item.operationId,
-      );
+      const removed = state.items.filter(candidate => sameOperationKey(candidate, item));
+      state.items = state.items.filter(candidate => !sameOperationKey(candidate, item));
+      return profileKeys(removed);
     });
+    await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
   async removePendingEntity(
@@ -176,49 +250,120 @@ export class AccountOutbox {
     entityKind: AccountOutboxItem['entityKind'],
     entityLocalId: string,
   ): Promise<void> {
-    await this.mutate(async state => {
-      state.items = state.items.filter(
+    const removedProfileKeys = await this.mutate(async state => {
+      const removed = state.items.filter(
         item =>
-          item.userId !== userId ||
-          item.entityKind !== entityKind ||
-          item.entityLocalId !== entityLocalId,
+          item.userId === userId &&
+          item.entityKind === entityKind &&
+          item.entityLocalId === entityLocalId,
       );
+      state.items = state.items.filter(item => !removed.includes(item));
+      return profileKeys(removed);
     });
+    await this.removeSnapshotsBestEffort(removedProfileKeys);
+  }
+
+  profileSnapshotKey(userId: string, operationId: string): string {
+    return `${this.storageKey}:profile:${encodeURIComponent(
+      userId,
+    )}:${encodeURIComponent(operationId)}`;
+  }
+
+  async writeProfileSnapshot(
+    userId: string,
+    operationId: string,
+    serializedProfile: string,
+  ): Promise<string> {
+    const key = this.profileSnapshotKey(userId, operationId);
+    await this.storage.setString(key, serializedProfile);
+    return key;
+  }
+
+  async readProfileSnapshot(item: AccountOutboxItem): Promise<string | undefined> {
+    if (item.profileStorageKey === undefined) {
+      return undefined;
+    }
+    if (
+      item.profileStorageKey !==
+      this.profileSnapshotKey(item.userId, item.operationId)
+    ) {
+      throw new Error('Account outbox profile key is not operation-owned');
+    }
+    return this.storage.getString(item.profileStorageKey);
   }
 
   private mutate<T>(
     operation: (state: AccountOutboxState) => Promise<T>,
   ): Promise<T> {
-    const result = this.mutationQueue.then(async () => {
-      const state = await this.store.read();
+    return withStorageMutationLock(this.storageKey, async () => {
+      const state = await this.readState();
       const value = await operation(state);
-      await this.store.write(state);
+      await this.writeState(state);
       return value;
     });
-    this.mutationQueue = result.then(
-      () => undefined,
-      () => undefined,
+  }
+
+  private async readState(): Promise<AccountOutboxState> {
+    const rawValue = await this.storage.getString(this.storageKey);
+    if (rawValue === undefined) {
+      return emptyState();
+    }
+
+    let envelope: unknown;
+    try {
+      envelope = JSON.parse(rawValue) as unknown;
+    } catch {
+      throw new Error('Malformed account outbox envelope');
+    }
+    return parseOutboxEnvelope(envelope, this.storageKey);
+  }
+
+  private async writeState(state: AccountOutboxState): Promise<void> {
+    const updatedAt = this.now();
+    if (!Number.isFinite(updatedAt)) {
+      throw new Error('Account outbox timestamp must be finite');
+    }
+    await this.storage.setString(
+      this.storageKey,
+      JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        updatedAt,
+        value: cloneState(state),
+      }),
     );
-    return result;
+  }
+
+  private async removeSnapshotsBestEffort(keys: readonly string[]): Promise<void> {
+    await Promise.all(
+      keys.map(key => this.storage.remove(key).catch(() => undefined)),
+    );
   }
 }
 
-function migrateOutboxEnvelope(
-  envelope: StoredEnvelope<unknown>,
+function parseOutboxEnvelope(
+  envelope: unknown,
+  storageKey: string,
 ): AccountOutboxState {
-  if (envelope.schemaVersion !== SCHEMA_VERSION || !isRecord(envelope.value)) {
-    throw new Error('Unsupported account outbox envelope');
+  if (
+    !isRecord(envelope) ||
+    !hasExactKeys(envelope, ['schemaVersion', 'updatedAt', 'value']) ||
+    envelope.schemaVersion !== SCHEMA_VERSION ||
+    !isFiniteNumber(envelope.updatedAt) ||
+    !isRecord(envelope.value) ||
+    !hasExactKeys(envelope.value, ['items', 'conflicts']) ||
+    !Array.isArray(envelope.value.items) ||
+    !Array.isArray(envelope.value.conflicts)
+  ) {
+    throw new Error(`Malformed account outbox envelope for ${storageKey}`);
   }
-  const items = Reflect.get(envelope.value, 'items');
-  const conflicts = Reflect.get(envelope.value, 'conflicts');
-  if (!Array.isArray(items) || !Array.isArray(conflicts)) {
-    throw new Error('Malformed account outbox envelope');
-  }
-  items.forEach(assertItem);
-  conflicts.forEach(assertConflict);
+
+  envelope.value.items.forEach(assertItem);
+  envelope.value.conflicts.forEach(assertConflict);
+  assertUniqueKeys(envelope.value.items, 'item');
+  assertUniqueKeys(envelope.value.conflicts, 'conflict');
   return {
-    items: items.map(cloneItem),
-    conflicts: conflicts.map(cloneConflict),
+    items: envelope.value.items.map(cloneItem),
+    conflicts: envelope.value.conflicts.map(cloneConflict),
   };
 }
 
@@ -229,6 +374,7 @@ function emptyState(): AccountOutboxState {
 function assertItem(value: unknown): asserts value is AccountOutboxItem {
   if (
     !isRecord(value) ||
+    !hasOnlyKeys(value, ITEM_KEYS) ||
     !isNonEmptyString(value.operationId) ||
     !isNonEmptyString(value.userId) ||
     (value.entityKind !== 'log' && value.entityKind !== 'plan') ||
@@ -248,9 +394,12 @@ function assertItem(value: unknown): asserts value is AccountOutboxItem {
   }
 }
 
-function assertConflict(value: unknown): asserts value is AccountOutboxConflict {
+function assertConflict(
+  value: unknown,
+): asserts value is AccountOutboxConflict {
   if (
     !isRecord(value) ||
+    !hasExactKeys(value, CONFLICT_KEYS) ||
     !isNonEmptyString(value.operationId) ||
     !isNonEmptyString(value.userId) ||
     (value.entityKind !== 'log' && value.entityKind !== 'plan') ||
@@ -263,12 +412,80 @@ function assertConflict(value: unknown): asserts value is AccountOutboxConflict 
   }
 }
 
-function compareItems(left: AccountOutboxItem, right: AccountOutboxItem): number {
+function assertUniqueKeys(
+  values: readonly (AccountOutboxItem | AccountOutboxConflict)[],
+  label: string,
+): void {
+  const keys = new Set<string>();
+  for (const value of values) {
+    const key = operationKey(value.userId, value.operationId);
+    if (keys.has(key)) {
+      throw new Error(`Duplicate account outbox ${label}`);
+    }
+    keys.add(key);
+  }
+}
+
+function sameImmutableOperation(
+  left: AccountOutboxItem,
+  right: AccountOutboxItem,
+): boolean {
+  return canonicalStringify({
+    operationId: left.operationId,
+    userId: left.userId,
+    entityKind: left.entityKind,
+    entityLocalId: left.entityLocalId,
+    mutation: left.mutation,
+    payload: left.payload,
+    expectedRevision: left.expectedRevision,
+    profileStorageKey: left.profileStorageKey,
+    createdAt: left.createdAt,
+  }) === canonicalStringify({
+    operationId: right.operationId,
+    userId: right.userId,
+    entityKind: right.entityKind,
+    entityLocalId: right.entityLocalId,
+    mutation: right.mutation,
+    payload: right.payload,
+    expectedRevision: right.expectedRevision,
+    profileStorageKey: right.profileStorageKey,
+    createdAt: right.createdAt,
+  });
+}
+
+function sameOperationKey(
+  left: Pick<AccountOutboxItem, 'userId' | 'operationId'>,
+  right: Pick<AccountOutboxItem, 'userId' | 'operationId'>,
+): boolean {
+  return left.userId === right.userId && left.operationId === right.operationId;
+}
+
+function sameEntity(
+  left: Pick<AccountOutboxItem, 'userId' | 'entityKind' | 'entityLocalId'>,
+  right: Pick<AccountOutboxItem, 'userId' | 'entityKind' | 'entityLocalId'>,
+): boolean {
   return (
-    left.nextAttemptAt - right.nextAttemptAt ||
-    left.createdAt - right.createdAt ||
-    left.operationId.localeCompare(right.operationId)
+    left.userId === right.userId &&
+    left.entityKind === right.entityKind &&
+    left.entityLocalId === right.entityLocalId
   );
+}
+
+function operationKey(userId: string, operationId: string): string {
+  return `${userId}\u0000${operationId}`;
+}
+
+function profileKeys(items: readonly AccountOutboxItem[]): string[] {
+  return items.flatMap(item =>
+    item.profileStorageKey === undefined ? [] : [item.profileStorageKey],
+  );
+}
+
+function cloneState(state: AccountOutboxState): AccountOutboxState {
+  return {
+    items: state.items.map(cloneItem),
+    conflicts: state.conflicts.map(cloneConflict),
+  };
 }
 
 function cloneItem(item: AccountOutboxItem): AccountOutboxItem {
@@ -299,6 +516,60 @@ function updatePayloadRevision(
   }
 }
 
+function withStorageMutationLock<T>(
+  storageKey: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = storageMutationQueues.get(storageKey) ?? Promise.resolve();
+  const result = previous.catch(() => undefined).then(operation);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  storageMutationQueues.set(storageKey, tail);
+  void tail.finally(() => {
+    if (storageMutationQueues.get(storageKey) === tail) {
+      storageMutationQueues.delete(storageKey);
+    }
+  });
+  return result;
+}
+
+function canonicalStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalStringify).join(',')}]`;
+  }
+  if (isRecord(value)) {
+    return `{${Object.entries(value)
+      .filter(([, nested]) => nested !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(
+        ([key, nested]) =>
+          `${JSON.stringify(key)}:${canonicalStringify(nested)}`,
+      )
+      .join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+function hasExactKeys(
+  record: Record<string, unknown>,
+  expectedKeys: readonly string[],
+): boolean {
+  const keys = Object.keys(record);
+  return (
+    keys.length === expectedKeys.length &&
+    keys.every(key => expectedKeys.includes(key))
+  );
+}
+
+function hasOnlyKeys(
+  record: Record<string, unknown>,
+  allowedKeys: readonly string[],
+): boolean {
+  return Object.keys(record).every(key => allowedKeys.includes(key));
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -312,9 +583,10 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function isOptionalPositiveInteger(value: unknown): boolean {
-  return value === undefined || (
-    typeof value === 'number' &&
-    Number.isSafeInteger(value) &&
-    value >= 1
+  return (
+    value === undefined ||
+    (typeof value === 'number' &&
+      Number.isSafeInteger(value) &&
+      value >= 1)
   );
 }

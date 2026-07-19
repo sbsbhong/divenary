@@ -32,9 +32,11 @@ import {
 import {
   AccountSyncCoordinator,
   type AccountSyncDrainResult,
+  withAccountEntityMutationLock,
 } from '../sync/account-sync-coordinator';
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {DivePlan} from '../types/dive-plan';
+import {parseWatchSyncMessageValue} from '../utils/watch-sync-message-validation';
 import {useAuth, type AuthContextValue, type AuthState} from './auth';
 
 export type AccountDataContextValue = {
@@ -80,8 +82,11 @@ type AccountLocalFirstRepositoryOptions = {
 };
 
 type PublishedAccountData = PrincipalRepositories & {
+  localRepositories: PrincipalRepositories;
   outbox?: AccountOutbox;
   coordinator?: AccountSyncCoordinator;
+  coordinatorAccountRepository?: AccountDataRepository;
+  coordinatorProfileRepository?: GuestClaimRemoteRepository;
 };
 
 const AccountDataContext = React.createContext<AccountDataContextValue | undefined>(
@@ -115,13 +120,16 @@ export function AccountDataProviderCore({
   const isOnline = auth.state.status === 'authenticated';
   const [published, setPublished] = React.useState<PublishedAccountData>();
   const publishedRef = React.useRef<PublishedAccountData | undefined>(undefined);
+  const publicationsRef = React.useRef(new Map<string, PublishedAccountData>());
   const generationRef = React.useRef(0);
   const migrationPromiseRef = React.useRef<Promise<void> | undefined>(undefined);
 
   React.useEffect(() => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    const publications = publicationsRef.current;
 
+    const isCurrent = () => generationRef.current === generation;
     const publish = async () => {
       migrationPromiseRef.current ??= dependencies.migrateLegacyData({
         metadataStorage: dependencies.metadataStorage,
@@ -129,50 +137,112 @@ export function AccountDataProviderCore({
         now: dependencies.now,
       });
       await migrationPromiseRef.current;
+      if (!isCurrent()) {
+        return;
+      }
 
       const currentPublication = publishedRef.current;
       if (
         currentPublication?.queryScope !== undefined &&
         currentPublication.queryScope !== desiredScope
       ) {
+        currentPublication.coordinator?.pause();
         await clearPrincipalQueries(queryClient, currentPublication.queryScope);
       }
-      if (generationRef.current !== generation) {
+      if (!isCurrent()) {
         return;
       }
 
-      const base = dependencies.createRepositories(desiredPrincipal, dependencies);
-      if (desiredPrincipal.kind === 'guest') {
-        publishedRef.current = base;
-        setPublished(base);
-        return;
-      }
-
-      const outbox = new AccountOutbox({
-        storage: dependencies.metadataStorage,
-        storageKey: dataStorageKeys(desiredPrincipal).outbox,
-        now: dependencies.now,
-        jitter: dependencies.jitter,
-      });
-      const localFirst = createAccountLocalFirstRepositories({
-        userId: desiredPrincipal.userId,
-        repositories: base,
-        outbox,
-        createId: dependencies.createId,
-        now: dependencies.now,
-      });
-      const coordinator = auth.accountDataRepository
-        ? new AccountSyncCoordinator({
-            userId: desiredPrincipal.userId,
+      let nextPublication = publications.get(desiredScope);
+      if (!nextPublication) {
+        const base = dependencies.createRepositories(desiredPrincipal, dependencies);
+        if (desiredPrincipal.kind === 'guest') {
+          nextPublication = {...base, localRepositories: base};
+        } else {
+          const outbox = new AccountOutbox({
+            storage: dependencies.metadataStorage,
+            storageKey: dataStorageKeys(desiredPrincipal).outbox,
+            now: dependencies.now,
+            jitter: dependencies.jitter,
+          });
+          nextPublication = {
+            ...createAccountLocalFirstRepositories({
+              userId: desiredPrincipal.userId,
+              repositories: base,
+              outbox,
+              createId: dependencies.createId,
+              now: dependencies.now,
+            }),
+            localRepositories: base,
             outbox,
+          };
+        }
+        publications.set(desiredScope, nextPublication);
+      }
+
+      if (
+        desiredPrincipal.kind === 'user' &&
+        nextPublication.outbox
+      ) {
+        await reconcilePendingAccountOperations({
+          userId: desiredPrincipal.userId,
+          repositories: nextPublication.localRepositories,
+          accountRepositories: nextPublication,
+        });
+        if (!isCurrent()) {
+          return;
+        }
+
+        if (
+          auth.accountDataRepository &&
+          (nextPublication.coordinatorAccountRepository !==
+            auth.accountDataRepository ||
+            nextPublication.coordinatorProfileRepository !==
+              auth.guestClaimRemoteRepository)
+        ) {
+          nextPublication.coordinator?.pause();
+          nextPublication.coordinator = new AccountSyncCoordinator({
+            userId: desiredPrincipal.userId,
+            outbox: nextPublication.outbox,
             accountRepository: auth.accountDataRepository,
             profileUploader: auth.guestClaimRemoteRepository,
-            logbookRepository: base.logbook,
-            planRepository: base.planbook,
+            profileDownloader: auth.guestClaimRemoteRepository,
+            profileStorage: dependencies.profileStorage,
+            logbookRepository: nextPublication.localRepositories.logbook,
+            planRepository: nextPublication.localRepositories.planbook,
             now: dependencies.now,
-          })
-        : undefined;
-      const nextPublication = {...localFirst, outbox, coordinator};
+          });
+          nextPublication.coordinatorAccountRepository =
+            auth.accountDataRepository;
+          nextPublication.coordinatorProfileRepository =
+            auth.guestClaimRemoteRepository;
+        }
+        nextPublication.coordinator?.setOnDidProcess(async () => {
+          if (isCurrent()) {
+            await invalidatePrincipalQueries(queryClient, desiredScope);
+          }
+        });
+
+        if (isOnline && nextPublication.coordinator) {
+          const hydrated =
+            (await nextPublication.coordinator.hydrate({online: true})) ?? 0;
+          if (!isCurrent()) {
+            return;
+          }
+          await nextPublication.coordinator.drain({online: true});
+          if (!isCurrent()) {
+            return;
+          }
+          if (hydrated > 0) {
+            await invalidatePrincipalQueries(queryClient, desiredScope);
+          }
+        } else {
+          nextPublication.coordinator?.pause();
+        }
+      }
+      if (!isCurrent()) {
+        return;
+      }
       publishedRef.current = nextPublication;
       setPublished(nextPublication);
     };
@@ -184,6 +254,7 @@ export function AccountDataProviderCore({
     return () => {
       if (generationRef.current === generation) {
         generationRef.current += 1;
+        publications.get(desiredScope)?.coordinator?.pause();
       }
     };
   }, [
@@ -192,6 +263,7 @@ export function AccountDataProviderCore({
     dependencies,
     desiredPrincipal,
     desiredScope,
+    isOnline,
     queryClient,
   ]);
 
@@ -208,7 +280,8 @@ export function AccountDataProviderCore({
           : 0,
       };
     }
-    return published.coordinator.drain({online: isOnline});
+    const result = await published.coordinator.drain({online: isOnline});
+    return result;
   }, [isOnline, published]);
 
   React.useEffect(() => {
@@ -222,31 +295,6 @@ export function AccountDataProviderCore({
     });
     return () => subscription.remove();
   }, [isOnline, requestSync]);
-
-  React.useEffect(() => {
-    const coordinator = published?.coordinator;
-    if (!isOnline || published?.queryScope !== desiredScope || !coordinator) {
-      return;
-    }
-
-    let cancelled = false;
-    void (async () => {
-      try {
-        await coordinator.hydrate({online: true});
-      } catch (error) {
-        console.warn('Failed to hydrate account data', error);
-      }
-      if (!cancelled) {
-        await requestSync();
-      }
-    })().catch(error => {
-      console.warn('Failed to sync account data', error);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [desiredScope, isOnline, published, requestSync]);
 
   if (!published || published.queryScope !== desiredScope) {
     return <></>;
@@ -288,10 +336,24 @@ export async function clearPrincipalQueries(
   queryClient: QueryClient,
   queryScope: string,
 ): Promise<void> {
-  const predicate = (query: {queryKey: readonly unknown[]}) =>
-    query.queryKey.some(segment => segment === queryScope);
+  const predicate = principalQueryPredicate(queryScope);
   await queryClient.cancelQueries({predicate});
   queryClient.removeQueries({predicate});
+}
+
+export async function invalidatePrincipalQueries(
+  queryClient: QueryClient,
+  queryScope: string,
+): Promise<void> {
+  await queryClient.invalidateQueries({
+    predicate: principalQueryPredicate(queryScope),
+  });
+}
+
+function principalQueryPredicate(queryScope: string) {
+  return (query: {queryKey: readonly unknown[]}) =>
+    (query.queryKey[0] === 'diveLogbook' || query.queryKey[0] === 'divePlans') &&
+    query.queryKey[1] === queryScope;
 }
 
 export function createAccountLocalFirstRepositories({
@@ -332,39 +394,114 @@ function createAccountLogbookRepository(options: {
   createId: () => string;
   now: () => number;
 }): DiveLogRepository {
-  const saveLocalOnly = async (entry: DiveLogEntry): Promise<DiveLogEntry> => {
+  const saveLocalOnlyUnlocked = async (
+    entry: DiveLogEntry,
+  ): Promise<DiveLogEntry> => {
+    const operations = await options.outbox.listEntity(
+      options.userId,
+      'log',
+      entry.localId,
+    );
+    if (operations.some(operation => operation.mutation === 'delete')) {
+      throw new Error('Cannot save an account log pending remote deletion');
+    }
     const current = await options.local.get(entry.localId);
-    const remoteId = entry.remoteId ?? current?.remoteId ?? options.createId();
+    const remoteId = current?.remoteId ?? entry.remoteId ?? options.createId();
     const pending: DiveLogEntry = {
       ...entry,
       remoteId,
-      remoteRevision: entry.remoteRevision ?? current?.remoteRevision,
+      remoteRevision: current?.remoteRevision ?? entry.remoteRevision,
       ownerUserId: options.userId,
       cloudSyncStatus: 'pending',
     };
     return options.local.save(pending);
   };
-  const enqueueSaved = async (saved: DiveLogEntry): Promise<void> => {
-    const remote = toRemoteLog(saved, options.userId);
-    await options.outbox.enqueue({
-      operationId: options.createId(),
+  const enqueueSavedUnlocked = async (
+    saved: DiveLogEntry,
+    onlyIfEntityQueueEmpty: boolean,
+  ): Promise<void> => {
+    const current = await options.local.get(saved.localId);
+    if (!current) {
+      return;
+    }
+    assertOwnedByUser(current, options.userId);
+    const operations = await options.outbox.listEntity(
+      options.userId,
+      'log',
+      current.localId,
+    );
+    if (
+      operations.some(operation => operation.mutation === 'delete') ||
+      (onlyIfEntityQueueEmpty && operations.length > 0)
+    ) {
+      return;
+    }
+
+    const prepared = await prepareLogMutation(current, options);
+    const operationIdentity = {
       userId: options.userId,
-      entityKind: 'log',
-      entityLocalId: saved.localId,
-      mutation: 'upsert',
-      payload: {local: saved, remote},
-      expectedRevision: saved.remoteRevision,
-      ...(saved.watchCapture?.profile?.storageKey
-        ? {profileStorageKey: saved.watchCapture.profile.storageKey}
-        : {}),
+      entityKind: 'log' as const,
+      entityLocalId: prepared.local.localId,
+      mutation: 'upsert' as const,
+      payload: {local: prepared.local, remote: prepared.remote},
+      expectedRevision: prepared.local.remoteRevision,
+    };
+    const operationId = deterministicOperationId(operationIdentity);
+    const profileStorageKey = prepared.serializedProfile
+      ? await options.outbox.writeProfileSnapshot(
+          options.userId,
+          operationId,
+          prepared.serializedProfile,
+        )
+      : undefined;
+    await options.outbox.enqueue({
+      operationId,
+      ...operationIdentity,
+      ...(profileStorageKey === undefined ? {} : {profileStorageKey}),
       attemptCount: 0,
       nextAttemptAt: options.now(),
-      createdAt: options.now(),
+      createdAt: prepared.local.updatedAt,
     });
   };
+  const saveLocalOnly = (entry: DiveLogEntry): Promise<DiveLogEntry> =>
+    withAccountEntityMutationLock(options.userId, 'log', entry.localId, () =>
+      saveLocalOnlyUnlocked(entry),
+    );
+  const enqueueSaved = (saved: DiveLogEntry): Promise<void> =>
+    withAccountEntityMutationLock(options.userId, 'log', saved.localId, () =>
+      enqueueSavedUnlocked(saved, false),
+    );
+  const reconcileSaved = (saved: DiveLogEntry): Promise<void> =>
+    withAccountEntityMutationLock(options.userId, 'log', saved.localId, () =>
+      enqueueSavedUnlocked(saved, true),
+    );
+
   return {
-    list: () => options.local.list(),
-    get: (localId: string) => options.local.get(localId),
+    async list() {
+      const [entries, operations] = await Promise.all([
+        options.local.list(),
+        options.outbox.list(options.userId),
+      ]);
+      const tombstonedIds = new Set(
+        operations
+          .filter(
+            operation =>
+              operation.entityKind === 'log' &&
+              operation.mutation === 'delete',
+          )
+          .map(operation => operation.entityLocalId),
+      );
+      return entries.filter(value => !tombstonedIds.has(value.localId));
+    },
+    async get(localId: string) {
+      const [current, operations] = await Promise.all([
+        options.local.get(localId),
+        options.outbox.listEntity(options.userId, 'log', localId),
+      ]);
+      return operations.some(operation => operation.mutation === 'delete')
+        ? undefined
+        : current;
+    },
     getWatchProfile: (localId: string) => options.local.getWatchProfile(localId),
     importWatchMessages: (
       messages: Parameters<DiveLogRepository['importWatchMessages']>[0],
@@ -372,31 +509,65 @@ function createAccountLogbookRepository(options: {
     ) =>
       options.local.importWatchMessages(messages, importOptions),
     async save(entry: DiveLogEntry) {
-      const saved = await saveLocalOnly(entry);
-      await enqueueSaved(saved);
-      return saved;
-    },
-    async delete(localId: string) {
-      const current = await options.local.get(localId);
-      await options.local.delete(localId);
-      if (!current?.remoteId || !current.remoteRevision) {
-        await options.outbox.removePendingEntity(options.userId, 'log', localId);
-        return;
-      }
-      await options.outbox.removePendingEntity(options.userId, 'log', localId);
-      await options.outbox.enqueue(deleteOperation(
+      return withAccountEntityMutationLock(
         options.userId,
         'log',
-        current,
-        toRemoteLog(current, options.userId),
-        current.remoteRevision,
-        options.createId,
-        options.now,
-      ));
+        entry.localId,
+        async () => {
+          const saved = await saveLocalOnlyUnlocked(entry);
+          await enqueueSavedUnlocked(saved, false);
+          return (await options.local.get(saved.localId)) ?? saved;
+        },
+      );
+    },
+    async delete(localId: string) {
+      return withAccountEntityMutationLock(
+        options.userId,
+        'log',
+        localId,
+        async () => {
+          const current = await options.local.get(localId);
+          if (!current) {
+            return;
+          }
+          const operations = await options.outbox.listEntity(
+            options.userId,
+            'log',
+            localId,
+          );
+          if (operations.some(operation => operation.mutation === 'delete')) {
+            return;
+          }
+          const hasPendingUpsert = operations.some(
+            operation => operation.mutation === 'upsert',
+          );
+          if (current.remoteId && (current.remoteRevision || hasPendingUpsert)) {
+            assertOwnedByUser(current, options.userId);
+            await options.outbox.enqueue(
+              deleteOperation(
+                options.userId,
+                'log',
+                current,
+                toRemoteLog(current, options.userId),
+                current.remoteRevision,
+                options.now,
+              ),
+            );
+            return;
+          }
+          await options.local.delete(localId);
+          await options.outbox.removePendingEntity(
+            options.userId,
+            'log',
+            localId,
+          );
+        },
+      );
     },
     saveLocalOnly,
     enqueueSaved,
-  } as unknown as DiveLogRepository;
+    reconcileSaved,
+  } as DiveLogRepository & AccountQueueRepository<DiveLogEntry>;
 }
 
 function createAccountPlanRepository(options: {
@@ -407,65 +578,289 @@ function createAccountPlanRepository(options: {
   createId: () => string;
   now: () => number;
 }): DivePlanRepository {
-  const saveLocalOnly = async (plan: DivePlan): Promise<DivePlan> => {
+  const saveLocalOnlyUnlocked = async (plan: DivePlan): Promise<DivePlan> => {
+    const operations = await options.outbox.listEntity(
+      options.userId,
+      'plan',
+      plan.localId,
+    );
+    if (operations.some(operation => operation.mutation === 'delete')) {
+      throw new Error('Cannot save an account plan pending remote deletion');
+    }
     const current = await options.local.get(plan.localId);
-    const remoteId = plan.remoteId ?? current?.remoteId ?? options.createId();
+    const remoteId = current?.remoteId ?? plan.remoteId ?? options.createId();
     const pending: DivePlan = {
       ...plan,
       remoteId,
-      remoteRevision: plan.remoteRevision ?? current?.remoteRevision,
+      remoteRevision: current?.remoteRevision ?? plan.remoteRevision,
       ownerUserId: options.userId,
       cloudSyncStatus: 'pending',
     };
     return options.local.save(pending);
   };
-  const enqueueSaved = async (saved: DivePlan): Promise<void> => {
-    const convertedLog = saved.convertedLogLocalId
-      ? await options.logbook.get(saved.convertedLogLocalId)
+  const enqueueSavedUnlocked = async (
+    saved: DivePlan,
+    onlyIfEntityQueueEmpty: boolean,
+  ): Promise<void> => {
+    const current = await options.local.get(saved.localId);
+    if (!current) {
+      return;
+    }
+    assertOwnedByUser(current, options.userId);
+    const operations = await options.outbox.listEntity(
+      options.userId,
+      'plan',
+      current.localId,
+    );
+    if (
+      operations.some(operation => operation.mutation === 'delete') ||
+      (onlyIfEntityQueueEmpty && operations.length > 0)
+    ) {
+      return;
+    }
+    const convertedLog = current.convertedLogLocalId
+      ? await options.logbook.get(current.convertedLogLocalId)
       : undefined;
-    const remote = toRemotePlan(saved, convertedLog?.remoteId);
-    await options.outbox.enqueue({
-      operationId: options.createId(),
+    const remote = toRemotePlan(current, convertedLog?.remoteId);
+    const operationIdentity = {
       userId: options.userId,
-      entityKind: 'plan',
-      entityLocalId: saved.localId,
-      mutation: 'upsert',
-      payload: {local: saved, remote},
-      expectedRevision: saved.remoteRevision,
+      entityKind: 'plan' as const,
+      entityLocalId: current.localId,
+      mutation: 'upsert' as const,
+      payload: {local: current, remote},
+      expectedRevision: current.remoteRevision,
+    };
+    await options.outbox.enqueue({
+      operationId: deterministicOperationId(operationIdentity),
+      ...operationIdentity,
       attemptCount: 0,
       nextAttemptAt: options.now(),
-      createdAt: options.now(),
+      createdAt: current.updatedAt,
     });
   };
+  const saveLocalOnly = (plan: DivePlan): Promise<DivePlan> =>
+    withAccountEntityMutationLock(options.userId, 'plan', plan.localId, () =>
+      saveLocalOnlyUnlocked(plan),
+    );
+  const enqueueSaved = (saved: DivePlan): Promise<void> =>
+    withAccountEntityMutationLock(options.userId, 'plan', saved.localId, () =>
+      enqueueSavedUnlocked(saved, false),
+    );
+  const reconcileSaved = (saved: DivePlan): Promise<void> =>
+    withAccountEntityMutationLock(options.userId, 'plan', saved.localId, () =>
+      enqueueSavedUnlocked(saved, true),
+    );
+
   return {
-    list: () => options.local.list(),
-    get: (localId: string) => options.local.get(localId),
-    async save(plan: DivePlan) {
-      const saved = await saveLocalOnly(plan);
-      await enqueueSaved(saved);
-      return saved;
+    async list() {
+      const [plans, operations] = await Promise.all([
+        options.local.list(),
+        options.outbox.list(options.userId),
+      ]);
+      const tombstonedIds = new Set(
+        operations
+          .filter(
+            operation =>
+              operation.entityKind === 'plan' &&
+              operation.mutation === 'delete',
+          )
+          .map(operation => operation.entityLocalId),
+      );
+      return plans.filter(value => !tombstonedIds.has(value.localId));
     },
-    async delete(localId: string) {
-      const current = await options.local.get(localId);
-      await options.local.delete(localId);
-      if (!current?.remoteId || !current.remoteRevision) {
-        await options.outbox.removePendingEntity(options.userId, 'plan', localId);
-        return;
-      }
-      await options.outbox.removePendingEntity(options.userId, 'plan', localId);
-      await options.outbox.enqueue(deleteOperation(
+    async get(localId: string) {
+      const [current, operations] = await Promise.all([
+        options.local.get(localId),
+        options.outbox.listEntity(options.userId, 'plan', localId),
+      ]);
+      return operations.some(operation => operation.mutation === 'delete')
+        ? undefined
+        : current;
+    },
+    async save(plan: DivePlan) {
+      return withAccountEntityMutationLock(
         options.userId,
         'plan',
-        current,
-        toRemotePlan(current),
-        current.remoteRevision,
-        options.createId,
-        options.now,
-      ));
+        plan.localId,
+        async () => {
+          const saved = await saveLocalOnlyUnlocked(plan);
+          await enqueueSavedUnlocked(saved, false);
+          return (await options.local.get(saved.localId)) ?? saved;
+        },
+      );
+    },
+    async delete(localId: string) {
+      return withAccountEntityMutationLock(
+        options.userId,
+        'plan',
+        localId,
+        async () => {
+          const current = await options.local.get(localId);
+          if (!current) {
+            return;
+          }
+          const operations = await options.outbox.listEntity(
+            options.userId,
+            'plan',
+            localId,
+          );
+          if (operations.some(operation => operation.mutation === 'delete')) {
+            return;
+          }
+          const hasPendingUpsert = operations.some(
+            operation => operation.mutation === 'upsert',
+          );
+          if (current.remoteId && (current.remoteRevision || hasPendingUpsert)) {
+            assertOwnedByUser(current, options.userId);
+            await options.outbox.enqueue(
+              deleteOperation(
+                options.userId,
+                'plan',
+                current,
+                toRemotePlan(current),
+                current.remoteRevision,
+                options.now,
+              ),
+            );
+            return;
+          }
+          await options.local.delete(localId);
+          await options.outbox.removePendingEntity(
+            options.userId,
+            'plan',
+            localId,
+          );
+        },
+      );
     },
     saveLocalOnly,
     enqueueSaved,
-  } as unknown as DivePlanRepository;
+    reconcileSaved,
+  } as DivePlanRepository & AccountQueueRepository<DivePlan>;
+}
+
+type AccountQueueRepository<T> = {
+  saveLocalOnly(value: T): Promise<T>;
+  enqueueSaved(value: T): Promise<void>;
+  reconcileSaved(value: T): Promise<void>;
+};
+
+export async function reconcilePendingAccountOperations(options: {
+  userId: string;
+  repositories: PrincipalRepositories;
+  accountRepositories: PrincipalRepositories;
+}): Promise<void> {
+  const logbook = options.accountRepositories.logbook as DiveLogRepository &
+    Partial<AccountQueueRepository<DiveLogEntry>>;
+  const planbook = options.accountRepositories.planbook as DivePlanRepository &
+    Partial<AccountQueueRepository<DivePlan>>;
+  if (!logbook.reconcileSaved || !planbook.reconcileSaved) {
+    throw new Error('Account repositories do not support reconciliation');
+  }
+  const [logs, plans] = await Promise.all([
+    options.repositories.logbook.list(),
+    options.repositories.planbook.list(),
+  ]);
+  for (const value of logs) {
+    if (value.cloudSyncStatus === 'pending') {
+      assertOwnedByUser(value, options.userId);
+      await logbook.reconcileSaved(value);
+    }
+  }
+  for (const value of plans) {
+    if (value.cloudSyncStatus === 'pending') {
+      assertOwnedByUser(value, options.userId);
+      await planbook.reconcileSaved(value);
+    }
+  }
+}
+
+async function prepareLogMutation(
+  saved: DiveLogEntry,
+  options: {
+    userId: string;
+    local: DiveLogRepository;
+  },
+): Promise<{
+  local: DiveLogEntry;
+  remote: RemoteDiveLog;
+  serializedProfile?: string;
+}> {
+  if (!saved.watchCapture?.profile) {
+    return {
+      local: saved,
+      remote: toRemoteLog(saved, options.userId),
+    };
+  }
+
+  const samples = await options.local.getWatchProfile(saved.localId);
+  const parsed = parseWatchSyncMessageValue({
+    type: 'sessionEnded',
+    session: {...saved.watchCapture.session, samples},
+  });
+  if (!parsed.ok) {
+    throw new Error(`Malformed local watch profile: ${parsed.error.message}`);
+  }
+  const fullSamples = parsed.message.session.samples;
+  if (
+    fullSamples.length !== saved.watchCapture.profile.sampleCount ||
+    fullSamples.some(
+      sample =>
+        sample.localSessionId !==
+        saved.watchCapture?.session.localSessionId,
+    )
+  ) {
+    throw new Error('Local watch profile sample count or session is invalid');
+  }
+
+  const serializedProfile = JSON.stringify(fullSamples);
+  const profileBytes = utf8ToBytes(serializedProfile);
+  const digest = bytesToHex(sha256(profileBytes));
+  if (
+    saved.watchCapture.profile.sha256 !== undefined &&
+    saved.watchCapture.profile.sha256 !== digest
+  ) {
+    throw new Error('Local watch profile digest is invalid');
+  }
+  const local = saved.watchCapture.profile.sha256
+    ? saved
+    : {
+        ...saved,
+        watchCapture: {
+          ...saved.watchCapture,
+          profile: {...saved.watchCapture.profile, sha256: digest},
+        },
+      };
+  if (local !== saved) {
+    await options.local.save(local);
+  }
+  return {
+    local,
+    remote: toRemoteLog(local, options.userId, profileBytes.length),
+    serializedProfile,
+  };
+}
+
+function assertOwnedByUser(
+  value: DiveLogEntry | DivePlan,
+  userId: string,
+): void {
+  if (value.ownerUserId !== userId) {
+    throw new Error('Account local value belongs to another user');
+  }
+}
+
+function deterministicOperationId(
+  operation: Omit<
+    AccountOutboxItem,
+    | 'operationId'
+    | 'profileStorageKey'
+    | 'attemptCount'
+    | 'nextAttemptAt'
+    | 'createdAt'
+  >,
+): string {
+  return `account-operation:${canonicalSha256(operation)}`;
 }
 
 function deleteOperation(
@@ -473,26 +868,31 @@ function deleteOperation(
   entityKind: AccountOutboxItem['entityKind'],
   local: DiveLogEntry | DivePlan,
   remote: RemoteDiveLog | RemoteDivePlan,
-  expectedRevision: number,
-  createId: () => string,
+  expectedRevision: number | undefined,
   now: () => number,
 ): AccountOutboxItem {
-  const timestamp = now();
-  return {
-    operationId: createId(),
+  const operationIdentity = {
     userId,
     entityKind,
     entityLocalId: local.localId,
-    mutation: 'delete',
+    mutation: 'delete' as const,
     payload: {local, remote},
     expectedRevision,
+  };
+  return {
+    operationId: deterministicOperationId(operationIdentity),
+    ...operationIdentity,
     attemptCount: 0,
-    nextAttemptAt: timestamp,
-    createdAt: timestamp,
+    nextAttemptAt: now(),
+    createdAt: local.updatedAt,
   };
 }
 
-function toRemoteLog(entry: DiveLogEntry, userId: string): RemoteDiveLog {
+function toRemoteLog(
+  entry: DiveLogEntry,
+  userId: string,
+  profileByteCount?: number,
+): RemoteDiveLog {
   if (!entry.remoteId) {
     throw new Error('Account log is missing a remote id');
   }
@@ -536,6 +936,7 @@ function toRemoteLog(entry: DiveLogEntry, userId: string): RemoteDiveLog {
     profile_content_revision: contentRevision,
     profile_sha256: entry.watchCapture?.profile?.sha256,
     profile_sample_count: entry.watchCapture?.profile?.sampleCount,
+    profile_byte_count: profileByteCount,
   });
   return {
     id: entry.remoteId,
