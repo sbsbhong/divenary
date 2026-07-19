@@ -596,3 +596,102 @@ Every phase must have a verification gate. If the same gate fails three times wi
   - Re-run foreground Watch pairing/import/local acknowledgement regression and retain the rest of Wave 1 and Wave 2 as physical gates.
 - Gate: Logout privacy tests, deletion authorization/idempotency tests, manual shared-device check, manual account deletion, long-profile/infinite-scroll integration, `yarn mobile:typecheck`, focused Jest, `yarn ios:build`, `yarn watch:build`, `yarn codex:check`, and `git diff --check` pass.
 - Risk: Auth-user deletion and Storage cleanup cross privileged systems; retries must never leave an active session that can access partially deleted data.
+
+## Epic: Guest Data Account Claim and Visible Progress
+
+### Phase 0 Investigation
+
+- Goal: Freeze the approved login-to-account-claim behavior and align it with the existing Wave 3 data boundary, Apple modal/progress guidance, Gluestack tokens, and current local repositories.
+- Files:
+  - `docs/superpowers/specs/2026-07-19-guest-data-account-claim-design.md`
+  - `docs/superpowers/specs/2026-07-13-supabase-auth-cloud-sync-design.md`
+  - `apps/mobile/src/components/navigation/index.tsx`
+  - `apps/mobile/src/components/ui/progress/index.tsx`
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/storage/**`
+  - `apps/mobile/src/states/auth.tsx`
+  - `packages/supabase/src/**`
+  - `supabase/migrations/**`
+- Implementation:
+  - Preserve the approved choices: one combined Logbook/Planbook claim, explicit import or keep-on-device choice, visible `기기 저장` source, Settings retry, persistent resume, and determinate `completed / total` progress.
+  - Use one native form sheet whose content transitions through choice, running, failed, and completion states; do not stack an alert or second modal.
+  - Treat profile upload as part of its log item and increment progress only after remote storage and digest/sample verification.
+  - Keep Watch local acknowledgement independent from Supabase success.
+- Gate: The design spec and detailed plan exist, contain no unresolved product decision, and `git diff --check` passes.
+- Risk: The feature crosses remote schema, private Storage, Edge Functions, local persistence, Auth transitions, and UI; implementation must remain phase-gated and must not start from the dirty main worktree.
+
+### Phase 1 Contract: Remote Claim Boundary
+
+- Goal: Create owner-isolated remote Logbook/Planbook models, private profile Storage, claim staging records, and an atomic publication contract.
+- Files:
+  - `supabase/migrations/**`
+  - `supabase/tests/database/guest_data_claim.test.sql`
+  - `supabase/tests/rest/guest-data-claim.mjs`
+  - `supabase/functions/finalize-guest-claim/**`
+  - `packages/supabase/src/database.types.ts`
+- Implementation:
+  - Add `dive_logs`, `dive_plans`, `guest_claim_batches`, and `guest_claim_records` with explicit grants, active-membership checks, owner RLS, uniqueness, revisions, tombstones, and indexes.
+  - Create private `dive-profiles` Storage policies with immutable owner paths and no overwrite.
+  - Keep staged records outside normal data tables so partial claims cannot appear in account lists.
+  - Authenticate the Edge Function caller, verify profile bytes, digest, and sample count server-side, then invoke a service-role-only transaction that validates counts and plan-log relations before publication.
+- Gate: local reset, pgTAP, REST isolation smoke tests, Edge Function tests, database lint/advisors, and generated type drift all pass.
+- Risk: A public or authenticated execute grant on the privileged finalizer would bypass server verification; its execute privilege must remain `service_role` only.
+
+### Phase 2 Core Implementation: Principal Storage and Sync
+
+- Goal: Partition local data by principal, migrate legacy data to guest exactly once, add account-local outbox delivery, and expose provider-independent remote repositories.
+- Files:
+  - `packages/supabase/src/data/**`
+  - `apps/mobile/src/storage/**`
+  - `apps/mobile/src/repositories/**`
+  - `apps/mobile/src/sync/**`
+  - `apps/mobile/src/types/dive-log-entry.ts`
+  - `apps/mobile/src/types/dive-plan.ts`
+  - focused package/mobile tests
+- Implementation:
+  - Use `guest` and `user:<uuid>` namespaces for metadata, profile files, claim manifests, and outbox items.
+  - Preserve original guest envelopes and profile files until a committed remote batch and account-local copy are both verified.
+  - Add idempotent account mutations keyed by `(user_id, local_id)`, optimistic revisions, retry metadata, and conflict state.
+  - Clear React Query data for the previous principal before exposing the next principal.
+- Gate: package tests and mobile tests for legacy migration, cross-user isolation, outbox retry/idempotency, conflict preservation, and Watch ACK independence pass with `yarn mobile:typecheck`.
+- Risk: A principal switch can briefly leak prior-user cache if repository identity and query scope are not changed atomically.
+
+### Phase 3 Integration: Claim Orchestration and UI
+
+- Goal: Deliver the resumable claim workflow and the Apple-style progress sheet across iOS and Android.
+- Files:
+  - `apps/mobile/src/claim/**`
+  - `apps/mobile/src/states/account-data.tsx`
+  - `apps/mobile/src/screens/account-claim/**`
+  - `apps/mobile/src/components/navigation/index.tsx`
+  - `apps/mobile/src/screens/logbook/screen.tsx`
+  - `apps/mobile/src/screens/planning/screen.tsx`
+  - `apps/mobile/src/screens/settings/screen.tsx`
+  - `apps/mobile/src/i18n/resources.ts`
+  - relevant mobile tests
+- Implementation:
+  - Snapshot plan records before log records, persist per-item completion, resume the same batch after background/termination, and defer without deleting guest originals.
+  - Render exact `3 / 32` progress with a determinate semantic progressbar and tabular numerals; prevent interactive dismiss only while running/finalizing.
+  - Show retained guest rows with `기기 저장`, and expose `기기 데이터 가져오기` in Settings while eligible records remain.
+  - Respect Dynamic Type, dark mode, Reduce Motion, Korean/English text expansion, and 320pt width.
+- Gate: focused UI/state tests, `yarn workspace @repo/mobile test --runInBand`, `yarn mobile:typecheck`, `yarn ios:build`, and Android manual layout inspection pass.
+- Risk: Native form-sheet behavior differs by iOS version and Android; progress content must fit without relying on one fixed detent height.
+
+### Phase 4 Cleanup/Review: Staging Promotion
+
+- Goal: Verify interruption safety, publish the remote boundary to the existing staging project, update durable architecture knowledge, and prepare an isolated merge.
+- Files:
+  - `README.md`
+  - `apps/mobile/AGENTS.md`
+  - `.wiki/raw/architecture/**`
+  - `.wiki/wiki/architecture/**`
+  - `.wiki/wiki/domains/dive-log.md`
+  - `.wiki/wiki/log.md`
+  - `docs/superpowers/plans/2026-07-19-guest-data-account-claim.md`
+- Implementation:
+  - Run dry-run before staging migration push, deploy the Edge Function, and verify two-user RLS plus profile isolation against staging.
+  - Manually test Apple login, keep-on-device, 32-item progress, forced termination/resume, corrupt profile failure, retry, cleanup, second-account isolation, and existing Watch local ACK.
+  - Capture screenshots on iPhone and Android at choice, `3 / 32`, failure, and retained-device badge states; review text clipping and overlap before merge.
+  - Update wiki facts only after implementation and gates establish them.
+- Gate: staging verifier, full focused Jest/package/pgTAP gates, `yarn codex:check`, `git diff --check`, review, and clean feature-branch diff pass before merge to `main`.
+- Risk: Google physical login remains unverified today; do not report the full provider matrix as passing until that manual gate is executed.
