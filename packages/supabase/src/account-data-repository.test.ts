@@ -12,7 +12,6 @@ const LOG_ID = '00000000-0000-4000-8000-000000000010';
 const PLAN_ID = '00000000-0000-4000-8000-000000000020';
 const STARTED_AT = '2026-07-19T10:00:00.000Z';
 const UPDATED_AT = '2026-07-19T11:00:00.000Z';
-const NEXT_UPDATED_AT = '2026-07-20T12:00:00.000Z';
 
 type QueryResponse = {data: unknown; error?: unknown; status?: number};
 
@@ -204,30 +203,30 @@ describe('AccountDataRepository', () => {
     });
   });
 
-  test('includes undated draft plans in an updated-at keyset page', async () => {
+  test('includes undated draft plans in a created-at keyset page', async () => {
     const nextPlanId = '00000000-0000-4000-8000-000000000021';
     const {client, calls} = createClient([{data: [
       planRow({status: 'draft', planned_at: null}),
-      planRow({id: nextPlanId, updated_at: STARTED_AT}),
+      planRow({id: nextPlanId, created_at: '2026-07-18T10:00:00.000Z'}),
     ], error: null}]);
     const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
     const page = await repository.listPlans({
-      cursor: {sortTime: UPDATED_AT, id: PLAN_ID},
+      cursor: {sortTime: STARTED_AT, id: PLAN_ID},
       limit: 1,
     });
 
     assert.equal(page.items[0]?.payload.status, 'draft');
     assert.equal(page.items[0]?.payload.planned_at, null);
-    assert.deepEqual(page.nextCursor, {sortTime: UPDATED_AT, id: PLAN_ID});
+    assert.deepEqual(page.nextCursor, {sortTime: STARTED_AT, id: PLAN_ID});
     assert.deepEqual(calls[0], {
       table: 'dive_plans',
       calls: [
         {method: 'select', columns: undefined},
         {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'is', column: 'deleted_at', value: null},
-        {method: 'or', value: `updated_at.lt.${UPDATED_AT},and(updated_at.eq.${UPDATED_AT},id.lt.${PLAN_ID})`},
-        {method: 'order', column: 'updated_at', options: {ascending: false}},
+        {method: 'or', value: `created_at.lt.${STARTED_AT},and(created_at.eq.${STARTED_AT},id.lt.${PLAN_ID})`},
+        {method: 'order', column: 'created_at', options: {ascending: false}},
         {method: 'order', column: 'id', options: {ascending: false}},
         {method: 'limit', value: 2},
       ],
@@ -463,20 +462,17 @@ describe('AccountDataRepository', () => {
     assert.equal(logResult.status, 'conflict');
   });
 
-  test('advances the plan pagination key with an injected update timestamp', async () => {
+  test('does not write plan pagination timestamps during updates', async () => {
     const {client, calls} = createClient([
-      {data: planRow({revision: 5, updated_at: NEXT_UPDATED_AT}), error: null},
+      {data: planRow({revision: 5}), error: null},
     ]);
-    const repository = createAccountDataRepository(
-      client as never,
-      {userId: USER_ID},
-      {now: () => new Date(NEXT_UPDATED_AT)},
-    );
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
     assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
     const update = calls[0]?.calls[0] as {method: string; value: Record<string, unknown>};
     assert.equal(update.method, 'update');
-    assert.equal(update.value.updated_at, NEXT_UPDATED_AT);
+    assert.equal('created_at' in update.value, false);
+    assert.equal('updated_at' in update.value, false);
   });
 
   test('returns the current remote plan when a revision update affects no rows', async () => {
@@ -484,11 +480,7 @@ describe('AccountDataRepository', () => {
       {data: null, error: null},
       {data: planRow({revision: 8}), error: null},
     ]);
-    const repository = createAccountDataRepository(
-      client as never,
-      {userId: USER_ID},
-      {now: () => new Date(NEXT_UPDATED_AT)},
-    );
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
     const result = await repository.savePlan({
       id: PLAN_ID,
@@ -525,7 +517,6 @@ describe('AccountDataRepository', () => {
           status: 'planned',
           planned_at: STARTED_AT,
           plan_data: {},
-          updated_at: NEXT_UPDATED_AT,
         }},
         {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'eq', column: 'id', value: PLAN_ID},

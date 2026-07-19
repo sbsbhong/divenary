@@ -35,10 +35,6 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const maximumPageSize = 100;
 
-type AccountDataRepositoryOptions = {
-  now?: () => Date;
-};
-
 function fail(operation: AccountDataRepositoryOperation): never {
   throw new AccountDataRepositoryError(operation);
 }
@@ -66,7 +62,7 @@ function pageLimit(value: number | undefined): number {
   return Math.min(value, maximumPageSize);
 }
 
-function cursorFilter(cursor: AccountDataCursor, column: 'started_at' | 'updated_at'): string {
+function cursorFilter(cursor: AccountDataCursor, column: 'started_at' | 'created_at'): string {
   if (
     !timestampPattern.test(cursor.sortTime)
     || !Number.isFinite(Date.parse(cursor.sortTime))
@@ -228,10 +224,8 @@ function accountError(error: unknown, operation: AccountDataRepositoryOperation)
 export function createAccountDataRepository(
   client: SupabaseClient<Database>,
   verifiedCurrentUser: VerifiedCurrentUser,
-  options: AccountDataRepositoryOptions = {},
 ): AccountDataRepository {
   const userId = assertIdentity(verifiedCurrentUser);
-  const now = options.now ?? (() => new Date());
 
   async function listLogs(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDiveLog>> {
     try {
@@ -257,8 +251,8 @@ export function createAccountDataRepository(
     try {
       const limit = pageLimit(input.limit);
       let query = client.from('dive_plans').select().eq('user_id', userId).is('deleted_at', null);
-      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'updated_at'));
-      const result = await query.order('updated_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
+      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'created_at'));
+      const result = await query.order('created_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
       if (resultError(result)) return fail('list');
       const rawRows = ownedRows<DivePlanRow>(result.data, userId, 'list');
       const hasMore = rawRows.length > limit;
@@ -266,7 +260,7 @@ export function createAccountDataRepository(
       const items = itemRows.map(fromDivePlanRow);
       const last = itemRows[itemRows.length - 1];
       return hasMore && last !== undefined
-        ? {items, nextCursor: {sortTime: last.updated_at, id: last.id}}
+        ? {items, nextCursor: {sortTime: last.created_at, id: last.id}}
         : {items};
     } catch (error) {
       throw accountError(error, 'list');
@@ -348,8 +342,7 @@ export function createAccountDataRepository(
         return savedPlanResult(row, value, 1, fields);
       }
       const revision = assertRevision(expectedRevision, 'save');
-      const updatedAt = now().toISOString();
-      const result = await client.from('dive_plans').update({...fields, updated_at: updatedAt, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).is('deleted_at', null).select().maybeSingle();
+      const result = await client.from('dive_plans').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).is('deleted_at', null).select().maybeSingle();
       if (resultError(result)) return fail('save');
       const row = result.data === null
         ? await remotePlanRow(id, 'save')
