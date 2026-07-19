@@ -82,6 +82,270 @@ export type Database = {
           },
         ]
       }
+      dive_logs: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          dive_mode: string | null
+          duration_seconds: number | null
+          ended_at: string | null
+          id: string
+          local_id: string
+          manual_data: Json
+          max_depth_meters: number | null
+          mobile_data: Json
+          payload_sha256: string
+          profile_byte_count: number | null
+          profile_content_revision: string | null
+          profile_path: string | null
+          profile_preview: Json | null
+          profile_sample_count: number | null
+          profile_sha256: string | null
+          provenance: Json
+          rating: number | null
+          revision: number
+          site_name: string | null
+          source: string
+          source_plan_id: string | null
+          started_at: string
+          title: string | null
+          updated_at: string
+          user_id: string
+          watch_metadata: Json | null
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          dive_mode?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          local_id: string
+          manual_data: Json
+          max_depth_meters?: number | null
+          mobile_data: Json
+          payload_sha256: string
+          profile_byte_count?: number | null
+          profile_content_revision?: string | null
+          profile_path?: string | null
+          profile_preview?: Json | null
+          profile_sample_count?: number | null
+          profile_sha256?: string | null
+          provenance: Json
+          rating?: number | null
+          revision?: number
+          site_name?: string | null
+          source: string
+          source_plan_id?: string | null
+          started_at: string
+          title?: string | null
+          updated_at?: string
+          user_id: string
+          watch_metadata?: Json | null
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          dive_mode?: string | null
+          duration_seconds?: number | null
+          ended_at?: string | null
+          id?: string
+          local_id?: string
+          manual_data?: Json
+          max_depth_meters?: number | null
+          mobile_data?: Json
+          payload_sha256?: string
+          profile_byte_count?: number | null
+          profile_content_revision?: string | null
+          profile_path?: string | null
+          profile_preview?: Json | null
+          profile_sample_count?: number | null
+          profile_sha256?: string | null
+          provenance?: Json
+          rating?: number | null
+          revision?: number
+          site_name?: string | null
+          source?: string
+          source_plan_id?: string | null
+          started_at?: string
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+          watch_metadata?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dive_logs_user_id_source_plan_id_fkey"
+            columns: ["user_id", "source_plan_id"]
+            isOneToOne: false
+            referencedRelation: "dive_plans"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      dive_plans: {
+        Row: {
+          converted_log_id: string | null
+          created_at: string
+          deleted_at: string | null
+          dive_mode: string | null
+          id: string
+          local_id: string
+          payload_sha256: string
+          plan_data: Json
+          planned_at: string | null
+          revision: number
+          site_name: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          converted_log_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          dive_mode?: string | null
+          id?: string
+          local_id: string
+          payload_sha256: string
+          plan_data: Json
+          planned_at?: string | null
+          revision?: number
+          site_name?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          converted_log_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          dive_mode?: string | null
+          id?: string
+          local_id?: string
+          payload_sha256?: string
+          plan_data?: Json
+          planned_at?: string | null
+          revision?: number
+          site_name?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "dive_plans_converted_log_owner_fk"
+            columns: ["user_id", "converted_log_id"]
+            isOneToOne: false
+            referencedRelation: "dive_logs"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
+      guest_claim_batches: {
+        Row: {
+          client_batch_id: string
+          committed_at: string | null
+          created_at: string
+          expected_log_count: number
+          expected_plan_count: number
+          id: string
+          manifest_sha256: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          client_batch_id: string
+          committed_at?: string | null
+          created_at?: string
+          expected_log_count: number
+          expected_plan_count: number
+          id?: string
+          manifest_sha256: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          client_batch_id?: string
+          committed_at?: string | null
+          created_at?: string
+          expected_log_count?: number
+          expected_plan_count?: number
+          id?: string
+          manifest_sha256?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      guest_claim_records: {
+        Row: {
+          batch_id: string
+          client_record_id: string
+          converted_log_client_record_id: string | null
+          created_at: string
+          entity_kind: string
+          id: string
+          payload: Json
+          payload_sha256: string
+          profile_byte_count: number | null
+          profile_content_revision: string | null
+          profile_path: string | null
+          profile_sample_count: number | null
+          profile_sha256: string | null
+          source_plan_client_record_id: string | null
+          target_record_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          batch_id: string
+          client_record_id: string
+          converted_log_client_record_id?: string | null
+          created_at?: string
+          entity_kind: string
+          id?: string
+          payload: Json
+          payload_sha256: string
+          profile_byte_count?: number | null
+          profile_content_revision?: string | null
+          profile_path?: string | null
+          profile_sample_count?: number | null
+          profile_sha256?: string | null
+          source_plan_client_record_id?: string | null
+          target_record_id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          batch_id?: string
+          client_record_id?: string
+          converted_log_client_record_id?: string | null
+          created_at?: string
+          entity_kind?: string
+          id?: string
+          payload?: Json
+          payload_sha256?: string
+          profile_byte_count?: number | null
+          profile_content_revision?: string | null
+          profile_path?: string | null
+          profile_sample_count?: number | null
+          profile_sha256?: string | null
+          source_plan_client_record_id?: string | null
+          target_record_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "guest_claim_records_batch_id_user_id_fkey"
+            columns: ["batch_id", "user_id"]
+            isOneToOne: false
+            referencedRelation: "guest_claim_batches"
+            referencedColumns: ["id", "user_id"]
+          },
+        ]
+      }
       legal_documents: {
         Row: {
           document_url: string
@@ -110,6 +374,14 @@ export type Database = {
     Functions: {
       complete_onboarding: {
         Args: { requested_documents: Json }
+        Returns: Json
+      }
+      finalize_guest_claim: {
+        Args: {
+          p_batch_id: string
+          p_user_id: string
+          p_verified_profiles: Json
+        }
         Returns: Json
       }
       get_onboarding_status: { Args: never; Returns: Json }

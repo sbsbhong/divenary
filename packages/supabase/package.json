@@ -7,7 +7,7 @@
   "types": "src/index.ts",
   "scripts": {
     "generate:types": "node ./scripts/generate-database-types.mjs",
-    "test": "node --experimental-strip-types --test src/auth-repository.test.ts",
+    "test": "node --experimental-strip-types --test src/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
