@@ -119,7 +119,7 @@ on public.dive_logs(user_id, started_at desc, id desc)
 where deleted_at is null;
 
 create index dive_plans_owner_cursor_idx
-on public.dive_plans(user_id, planned_at desc nulls last, id desc)
+on public.dive_plans(user_id, created_at desc, id desc)
 where deleted_at is null;
 
 create index guest_claim_records_batch_idx
