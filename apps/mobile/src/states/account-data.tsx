@@ -1,18 +1,31 @@
-import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
-import {sha256} from '@noble/hashes/sha256';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
+import { sha256 } from '@noble/hashes/sha256';
 import type {
   AccountDataRepository,
   GuestClaimRemoteRepository,
   RemoteDiveLog,
   RemoteDivePlan,
 } from '@repo/supabase';
-import type {QueryClient} from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import React from 'react';
-import {AppState, type AppStateStatus} from 'react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 
-import type {DiveLogRepository} from '../repositories/dive-log-repository';
-import type {DivePlanRepository} from '../repositories/dive-plan-repository';
 import {
+  GuestClaimService,
+  GuestClaimServiceError,
+} from '../claim/guest-claim-service';
+import {
+  GuestClaimStore,
+  type GuestClaimSnapshot,
+} from '../claim/guest-claim-store';
+import type {
+  GuestClaimProgress,
+  GuestClaimViewState,
+} from '../claim/guest-claim-types';
+import type { DiveLogRepository } from '../repositories/dive-log-repository';
+import type { DivePlanRepository } from '../repositories/dive-plan-repository';
+import {
+  composeAccountAndDeferredGuestRows,
   createPrincipalRepositories,
   type PrincipalRepositories,
   type PrincipalRepositoryDependencies,
@@ -22,13 +35,10 @@ import {
   principalScope,
   type DataPrincipal,
 } from '../storage/data-principal';
-import {migrateLegacyGuestData} from '../storage/migrate-legacy-guest-data';
-import {createAsyncStorageKeyValueStore} from '../storage/persistent-key-value-store';
-import {createWatchProfileStorage} from '../storage/watch-profile-storage';
-import {
-  AccountOutbox,
-  type AccountOutboxItem,
-} from '../sync/account-outbox';
+import { migrateLegacyGuestData } from '../storage/migrate-legacy-guest-data';
+import { createAsyncStorageKeyValueStore } from '../storage/persistent-key-value-store';
+import { createWatchProfileStorage } from '../storage/watch-profile-storage';
+import { AccountOutbox, type AccountOutboxItem } from '../sync/account-outbox';
 import {
   canonicalAccountPayloadSha256,
   createAccountRemoteLog,
@@ -41,10 +51,10 @@ import {
   type AccountSyncDrainResult,
   withAccountEntityMutationLock,
 } from '../sync/account-sync-coordinator';
-import type {DiveLogEntry} from '../types/dive-log-entry';
-import type {DivePlan} from '../types/dive-plan';
-import {parseWatchSyncMessageValue} from '../utils/watch-sync-message-validation';
-import {useAuth, type AuthContextValue, type AuthState} from './auth';
+import type { DiveLogEntry } from '../types/dive-log-entry';
+import type { DivePlan } from '../types/dive-plan';
+import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
+import { useAuth, type AuthContextValue, type AuthState } from './auth';
 
 export type AccountDataContextValue = {
   principal: DataPrincipal;
@@ -56,13 +66,23 @@ export type AccountDataContextValue = {
   outbox?: AccountOutbox;
   accountRepository?: AccountDataRepository;
   guestClaimRemoteRepository?: GuestClaimRemoteRepository;
+  claim: AccountClaimController;
   requestSync(): Promise<AccountSyncDrainResult>;
+};
+
+export type AccountClaimController = {
+  eligible: { logCount: number; planCount: number };
+  state: GuestClaimViewState;
+  start(): Promise<void>;
+  retry(): Promise<void>;
+  keepOnDevice(): Promise<void>;
 };
 
 type AccountDataProviderProps = {
   children?: React.ReactNode;
   queryClient: QueryClient;
   dependencies?: Partial<AccountDataDependencies>;
+  navigationReady?: boolean;
 };
 
 type AccountDataProviderCoreProps = AccountDataProviderProps & {
@@ -90,29 +110,72 @@ type AccountLocalFirstRepositoryOptions = {
 
 type PublishedAccountData = PrincipalRepositories & {
   localRepositories: PrincipalRepositories;
+  accountRepositories?: PrincipalRepositories;
+  guestRepositories?: PrincipalRepositories;
+  claimStore?: GuestClaimStore;
+  claimService?: GuestClaimService;
+  hiddenGuestIds?: HiddenGuestIds;
   outbox?: AccountOutbox;
   coordinator?: AccountSyncCoordinator;
   coordinatorAccountRepository?: AccountDataRepository;
   coordinatorProfileRepository?: GuestClaimRemoteRepository;
 };
 
-const AccountDataContext = React.createContext<AccountDataContextValue | undefined>(
-  undefined,
-);
+type HiddenGuestIds = {
+  logIds: Set<string>;
+  planIds: Set<string>;
+};
+
+type AccountClaimPresentation = {
+  queryScope: string;
+  eligible: { logCount: number; planCount: number };
+  state: GuestClaimViewState;
+};
+
+const AccountDataContext = React.createContext<
+  AccountDataContextValue | undefined
+>(undefined);
 
 let defaultDependencies: AccountDataDependencies | undefined;
+let accountClaimNavigationReady = false;
+const accountClaimNavigationListeners = new Set<() => void>();
+
+export function setAccountClaimNavigationReady(ready: boolean): void {
+  if (accountClaimNavigationReady === ready) {
+    return;
+  }
+  accountClaimNavigationReady = ready;
+  for (const listener of accountClaimNavigationListeners) {
+    listener();
+  }
+}
 
 export function AccountDataProvider(
   props: AccountDataProviderProps,
 ): React.JSX.Element {
   const auth = useAuth();
-  return <AccountDataProviderCore {...props} auth={auth} />;
+  const navigationReady = React.useSyncExternalStore(
+    listener => {
+      accountClaimNavigationListeners.add(listener);
+      return () => accountClaimNavigationListeners.delete(listener);
+    },
+    () => accountClaimNavigationReady,
+    () => false,
+  );
+  return (
+    <AccountDataProviderCore
+      {...props}
+      auth={auth}
+      navigationReady={props.navigationReady ?? navigationReady}
+    />
+  );
 }
 
 export function AccountDataProviderCore({
   auth,
   children,
   queryClient,
+  navigationReady = false,
   dependencies: dependencyOverrides,
 }: AccountDataProviderCoreProps): React.JSX.Element {
   const [dependencies] = React.useState<AccountDataDependencies>(() => ({
@@ -126,10 +189,21 @@ export function AccountDataProviderCore({
   const desiredScope = principalScope(desiredPrincipal);
   const isOnline = auth.state.status === 'authenticated';
   const [published, setPublished] = React.useState<PublishedAccountData>();
-  const publishedRef = React.useRef<PublishedAccountData | undefined>(undefined);
+  const publishedRef = React.useRef<PublishedAccountData | undefined>(
+    undefined,
+  );
   const publicationsRef = React.useRef(new Map<string, PublishedAccountData>());
   const generationRef = React.useRef(0);
-  const migrationPromiseRef = React.useRef<Promise<void> | undefined>(undefined);
+  const migrationPromiseRef = React.useRef<Promise<void> | undefined>(
+    undefined,
+  );
+  const guestRepositoriesRef = React.useRef<PrincipalRepositories | undefined>(
+    undefined,
+  );
+  const [claimPresentation, setClaimPresentation] =
+    React.useState<AccountClaimPresentation>(() =>
+      hiddenClaimPresentation('guest'),
+    );
 
   React.useEffect(() => {
     const generation = generationRef.current + 1;
@@ -162,25 +236,52 @@ export function AccountDataProviderCore({
 
       let nextPublication = publications.get(desiredScope);
       if (!nextPublication) {
-        const base = dependencies.createRepositories(desiredPrincipal, dependencies);
+        const base = dependencies.createRepositories(
+          desiredPrincipal,
+          dependencies,
+        );
         if (desiredPrincipal.kind === 'guest') {
-          nextPublication = {...base, localRepositories: base};
+          guestRepositoriesRef.current = base;
+          nextPublication = { ...base, localRepositories: base };
         } else {
+          guestRepositoriesRef.current ??= dependencies.createRepositories(
+            { kind: 'guest' },
+            dependencies,
+          );
+          const guestRepositories = guestRepositoriesRef.current;
           const outbox = new AccountOutbox({
             storage: dependencies.metadataStorage,
             storageKey: dataStorageKeys(desiredPrincipal).outbox,
             now: dependencies.now,
             jitter: dependencies.jitter,
           });
+          const accountRepositories = createAccountLocalFirstRepositories({
+            userId: desiredPrincipal.userId,
+            repositories: base,
+            outbox,
+            createId: dependencies.createId,
+            now: dependencies.now,
+          });
+          const hiddenGuestIds: HiddenGuestIds = {
+            logIds: new Set(),
+            planIds: new Set(),
+          };
           nextPublication = {
-            ...createAccountLocalFirstRepositories({
+            ...createComposedAccountRepositories({
               userId: desiredPrincipal.userId,
-              repositories: base,
-              outbox,
-              createId: dependencies.createId,
-              now: dependencies.now,
+              accountRepositories,
+              guestRepositories,
+              hiddenGuestIds,
             }),
             localRepositories: base,
+            accountRepositories,
+            guestRepositories,
+            claimStore: new GuestClaimStore({
+              storage: dependencies.metadataStorage,
+              userId: desiredPrincipal.userId,
+              now: dependencies.now,
+            }),
+            hiddenGuestIds,
             outbox,
           };
         }
@@ -189,12 +290,63 @@ export function AccountDataProviderCore({
 
       if (
         desiredPrincipal.kind === 'user' &&
-        nextPublication.outbox
+        nextPublication.claimStore &&
+        nextPublication.guestRepositories &&
+        nextPublication.accountRepositories &&
+        auth.guestClaimRemoteRepository
       ) {
+        const publication = nextPublication;
+        const claimStore = nextPublication.claimStore;
+        const guestRepositories = nextPublication.guestRepositories;
+        publication.claimService = new GuestClaimService({
+          userId: desiredPrincipal.userId,
+          store: claimStore,
+          guestRepositories,
+          accountRepositories: publication.localRepositories,
+          profileStorage: dependencies.profileStorage,
+          remoteRepository: auth.guestClaimRemoteRepository,
+          now: dependencies.now,
+          assertCanContinue: () => {
+            if (!isCurrent()) {
+              throw new GuestClaimServiceError('session_expired');
+            }
+            if (!isOnline) {
+              throw new GuestClaimServiceError('network_unavailable');
+            }
+          },
+          onProgress: progress => {
+            if (isCurrent()) {
+              setClaimPresentation(
+                runningClaimPresentation(desiredScope, progress),
+              );
+            }
+          },
+          onSnapshot: async snapshot => {
+            if (!isCurrent()) {
+              return;
+            }
+            applyHiddenGuestIds(publication, snapshot);
+            setClaimPresentation(
+              presentationForSnapshot(desiredScope, snapshot),
+            );
+            if (
+              snapshot.manifest.status === 'committed' ||
+              snapshot.manifest.status === 'cleanupPending'
+            ) {
+              await invalidatePrincipalQueries(queryClient, desiredScope);
+            }
+          },
+        });
+      } else if (desiredPrincipal.kind === 'user') {
+        nextPublication.claimService = undefined;
+      }
+
+      if (desiredPrincipal.kind === 'user' && nextPublication.outbox) {
         await reconcilePendingAccountOperations({
           userId: desiredPrincipal.userId,
           repositories: nextPublication.localRepositories,
-          accountRepositories: nextPublication,
+          accountRepositories:
+            nextPublication.accountRepositories ?? nextPublication,
         });
         if (!isCurrent()) {
           return;
@@ -230,21 +382,18 @@ export function AccountDataProviderCore({
           }
         });
         nextPublication.coordinator?.setCommitGuard(() => {
-          if (
-            !isCurrent() ||
-            !isOnline
-          ) {
+          if (!isCurrent() || !isOnline) {
             throw new StaleAccountSyncCommitError();
           }
         });
 
         if (isOnline && nextPublication.coordinator) {
           const hydrated =
-            (await nextPublication.coordinator.hydrate({online: true})) ?? 0;
+            (await nextPublication.coordinator.hydrate({ online: true })) ?? 0;
           if (!isCurrent()) {
             return;
           }
-          await nextPublication.coordinator.drain({online: true});
+          await nextPublication.coordinator.drain({ online: true });
           if (!isCurrent()) {
             return;
           }
@@ -284,22 +433,187 @@ export function AccountDataProviderCore({
     queryClient,
   ]);
 
+  const refreshClaim = React.useCallback(
+    async (
+      publication: PublishedAccountData,
+      options: { resumeActive: boolean },
+    ) => {
+      if (
+        publication.queryScope !== desiredScope ||
+        publication.principal.kind !== 'user' ||
+        !publication.claimStore ||
+        !publication.guestRepositories ||
+        !navigationReady
+      ) {
+        setClaimPresentation(hiddenClaimPresentation(desiredScope));
+        return;
+      }
+
+      let snapshot: GuestClaimSnapshot | undefined;
+      try {
+        snapshot = await publication.claimStore.read();
+      } catch {
+        setClaimPresentation({
+          queryScope: desiredScope,
+          eligible: { logCount: 0, planCount: 0 },
+          state: {
+            status: 'failed',
+            completed: 0,
+            total: 0,
+            errorCode: 'claim_validation_failed',
+          },
+        });
+        return;
+      }
+      if (
+        publishedRef.current !== publication ||
+        (snapshot?.userId !== undefined &&
+          snapshot.userId !== publication.principal.userId)
+      ) {
+        return;
+      }
+      applyHiddenGuestIds(publication, snapshot);
+      const eligible = await eligibleGuestCounts(publication);
+      if (publishedRef.current !== publication) {
+        return;
+      }
+      setClaimPresentation(
+        presentationForSnapshot(desiredScope, snapshot, eligible, isOnline),
+      );
+
+      if (
+        options.resumeActive &&
+        isOnline &&
+        AppState.currentState === 'active' &&
+        publication.claimService &&
+        snapshot !== undefined &&
+        (snapshot.manifest.status === 'running' ||
+          snapshot.manifest.status === 'finalizing' ||
+          snapshot.manifest.status === 'cleanupPending')
+      ) {
+        await publication.claimService.resume();
+        if (publishedRef.current === publication) {
+          const refreshedSnapshot = await publication.claimStore.read();
+          applyHiddenGuestIds(publication, refreshedSnapshot);
+          const refreshedEligible = await eligibleGuestCounts(publication);
+          if (publishedRef.current === publication) {
+            setClaimPresentation(
+              presentationForSnapshot(
+                desiredScope,
+                refreshedSnapshot,
+                refreshedEligible,
+                isOnline,
+              ),
+            );
+          }
+        }
+      }
+    },
+    [desiredScope, isOnline, navigationReady],
+  );
+
+  React.useEffect(() => {
+    if (!published || published.queryScope !== desiredScope) {
+      setClaimPresentation(hiddenClaimPresentation(desiredScope));
+      return;
+    }
+    refreshClaim(published, { resumeActive: true }).catch(() => undefined);
+  }, [desiredScope, published, refreshClaim]);
+
   const requestSync = React.useCallback(async () => {
     if (!published?.coordinator) {
       return {
         processed: 0,
         remaining: published?.outbox
-          ? (await published.outbox.list(
-              published.principal.kind === 'user'
-                ? published.principal.userId
-                : undefined,
-            )).length
+          ? (
+              await published.outbox.list(
+                published.principal.kind === 'user'
+                  ? published.principal.userId
+                  : undefined,
+              )
+            ).length
           : 0,
       };
     }
-    const result = await published.coordinator.drain({online: isOnline});
+    const result = await published.coordinator.drain({ online: isOnline });
     return result;
   }, [isOnline, published]);
+
+  const runClaim = React.useCallback(
+    async (operation: 'start' | 'retry' | 'defer') => {
+      const publication = publishedRef.current;
+      if (
+        publication?.principal.kind !== 'user' ||
+        publication.queryScope !== desiredScope ||
+        !navigationReady ||
+        (operation !== 'defer' && !isOnline) ||
+        !publication.claimService
+      ) {
+        return;
+      }
+      try {
+        if (operation === 'start') {
+          await publication.claimService.start();
+        } else if (operation === 'retry') {
+          await publication.claimService.retry();
+        } else {
+          await publication.claimService.defer();
+        }
+      } catch (error) {
+        if (publishedRef.current !== publication) {
+          return;
+        }
+        const eligible = await eligibleGuestCounts(publication);
+        if (operation === 'defer') {
+          setClaimPresentation({
+            queryScope: desiredScope,
+            eligible,
+            state: { status: 'hidden' },
+          });
+          return;
+        }
+        let completed = 0;
+        try {
+          completed =
+            (await publication.claimStore?.read())?.manifest.items.filter(
+              item => item.completedAt !== undefined,
+            ).length ?? 0;
+        } catch {
+          completed = 0;
+        }
+        setClaimPresentation({
+          queryScope: desiredScope,
+          eligible,
+          state: {
+            status: 'failed',
+            completed,
+            total: eligible.logCount + eligible.planCount,
+            errorCode:
+              error instanceof GuestClaimServiceError
+                ? error.code
+                : 'claim_validation_failed',
+          },
+        });
+        return;
+      }
+      if (publishedRef.current === publication) {
+        await refreshClaim(publication, { resumeActive: false });
+      }
+    },
+    [desiredScope, isOnline, navigationReady, refreshClaim],
+  );
+
+  const resumeClaim = React.useCallback(async () => {
+    const publication = publishedRef.current;
+    if (
+      publication?.principal.kind === 'user' &&
+      publication.queryScope === desiredScope &&
+      navigationReady &&
+      isOnline
+    ) {
+      await refreshClaim(publication, { resumeActive: true });
+    }
+  }, [desiredScope, isOnline, navigationReady, refreshClaim]);
 
   React.useEffect(() => {
     let previousState = AppState.currentState as AppStateStatus;
@@ -308,10 +622,11 @@ export function AccountDataProviderCore({
       previousState = nextState;
       if (becameActive && isOnline) {
         void requestSync();
+        resumeClaim().catch(() => undefined);
       }
     });
     return () => subscription.remove();
-  }, [isOnline, requestSync]);
+  }, [isOnline, requestSync, resumeClaim]);
 
   if (!published || published.queryScope !== desiredScope) {
     return <></>;
@@ -327,6 +642,16 @@ export function AccountDataProviderCore({
     outbox: published.outbox,
     accountRepository: auth.accountDataRepository,
     guestClaimRemoteRepository: auth.guestClaimRemoteRepository,
+    claim:
+      claimPresentation.queryScope === desiredScope
+        ? {
+            eligible: claimPresentation.eligible,
+            state: claimPresentation.state,
+            start: () => runClaim('start'),
+            retry: () => runClaim('retry'),
+            keepOnDevice: () => runClaim('defer'),
+          }
+        : hiddenClaimController(),
     requestSync,
   };
 
@@ -354,8 +679,8 @@ export async function clearPrincipalQueries(
   queryScope: string,
 ): Promise<void> {
   const predicate = principalQueryPredicate(queryScope);
-  await queryClient.cancelQueries({predicate});
-  queryClient.removeQueries({predicate});
+  await queryClient.cancelQueries({ predicate });
+  queryClient.removeQueries({ predicate });
 }
 
 export async function invalidatePrincipalQueries(
@@ -368,9 +693,277 @@ export async function invalidatePrincipalQueries(
 }
 
 function principalQueryPredicate(queryScope: string) {
-  return (query: {queryKey: readonly unknown[]}) =>
-    (query.queryKey[0] === 'diveLogbook' || query.queryKey[0] === 'divePlans') &&
+  return (query: { queryKey: readonly unknown[] }) =>
+    (query.queryKey[0] === 'diveLogbook' ||
+      query.queryKey[0] === 'divePlans') &&
     query.queryKey[1] === queryScope;
+}
+
+function createComposedAccountRepositories(options: {
+  userId: string;
+  accountRepositories: PrincipalRepositories;
+  guestRepositories: PrincipalRepositories;
+  hiddenGuestIds: HiddenGuestIds;
+}): PrincipalRepositories {
+  const accountLogbook = options.accountRepositories
+    .logbook as DiveLogRepository &
+    Partial<AccountQueueRepository<DiveLogEntry>>;
+  const logbook: DiveLogRepository = {
+    async list() {
+      const [accountRows, guestRows] = await Promise.all([
+        options.accountRepositories.logbook.list(),
+        options.guestRepositories.logbook.list(),
+      ]);
+      return composeAccountAndDeferredGuestRows(
+        accountRows,
+        guestRows.filter(
+          row => !options.hiddenGuestIds.logIds.has(row.localId),
+        ),
+      );
+    },
+    async get(localId) {
+      const account = await options.accountRepositories.logbook.get(localId);
+      if (account || options.hiddenGuestIds.logIds.has(localId)) {
+        return account;
+      }
+      return options.guestRepositories.logbook.get(localId);
+    },
+    async save(value) {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.logbook.get(value.localId)) !==
+          undefined
+      ) {
+        return options.guestRepositories.logbook.save(value);
+      }
+      return options.accountRepositories.logbook.save(value);
+    },
+    async delete(localId, deleteOptions) {
+      if (await options.accountRepositories.logbook.get(localId)) {
+        return options.accountRepositories.logbook.delete(
+          localId,
+          deleteOptions,
+        );
+      }
+      return options.guestRepositories.logbook.delete(localId, deleteOptions);
+    },
+    async getWatchProfile(localId) {
+      return (await options.accountRepositories.logbook.get(localId))
+        ? options.accountRepositories.logbook.getWatchProfile(localId)
+        : options.guestRepositories.logbook.getWatchProfile(localId);
+    },
+    importWatchMessages(messages, importOptions) {
+      return options.accountRepositories.logbook.importWatchMessages(
+        messages,
+        importOptions,
+      );
+    },
+    removeWatchProfileIfUnreferenced(storageKey) {
+      return options.accountRepositories.logbook.removeWatchProfileIfUnreferenced(
+        storageKey,
+      );
+    },
+  };
+  const composedLogbook = logbook as DiveLogRepository &
+    Partial<AccountQueueRepository<DiveLogEntry>>;
+  if (accountLogbook.saveLocalOnly) {
+    composedLogbook.saveLocalOnly = value =>
+      accountLogbook.saveLocalOnly!(value);
+  }
+  if (accountLogbook.enqueueSaved) {
+    composedLogbook.enqueueSaved = value => accountLogbook.enqueueSaved!(value);
+  }
+  if (accountLogbook.reconcileSaved) {
+    composedLogbook.reconcileSaved = value =>
+      accountLogbook.reconcileSaved!(value);
+  }
+  const accountPlanbook = options.accountRepositories
+    .planbook as DivePlanRepository & Partial<AccountQueueRepository<DivePlan>>;
+  const planbook: DivePlanRepository = {
+    async list() {
+      const [accountRows, guestRows] = await Promise.all([
+        options.accountRepositories.planbook.list(),
+        options.guestRepositories.planbook.list(),
+      ]);
+      return composeAccountAndDeferredGuestRows(
+        accountRows,
+        guestRows.filter(
+          row => !options.hiddenGuestIds.planIds.has(row.localId),
+        ),
+      );
+    },
+    async get(localId) {
+      const account = await options.accountRepositories.planbook.get(localId);
+      if (account || options.hiddenGuestIds.planIds.has(localId)) {
+        return account;
+      }
+      return options.guestRepositories.planbook.get(localId);
+    },
+    async save(value) {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.planbook.get(value.localId)) !==
+          undefined
+      ) {
+        return options.guestRepositories.planbook.save(value);
+      }
+      return options.accountRepositories.planbook.save(value);
+    },
+    async delete(localId) {
+      if (await options.accountRepositories.planbook.get(localId)) {
+        return options.accountRepositories.planbook.delete(localId);
+      }
+      return options.guestRepositories.planbook.delete(localId);
+    },
+  };
+  const composedPlanbook = planbook as DivePlanRepository &
+    Partial<AccountQueueRepository<DivePlan>>;
+  if (accountPlanbook.saveLocalOnly) {
+    composedPlanbook.saveLocalOnly = value =>
+      accountPlanbook.saveLocalOnly!(value);
+  }
+  if (accountPlanbook.enqueueSaved) {
+    composedPlanbook.enqueueSaved = value =>
+      accountPlanbook.enqueueSaved!(value);
+  }
+  if (accountPlanbook.reconcileSaved) {
+    composedPlanbook.reconcileSaved = value =>
+      accountPlanbook.reconcileSaved!(value);
+  }
+  return {
+    principal: { kind: 'user', userId: options.userId },
+    queryScope: principalScope({ kind: 'user', userId: options.userId }),
+    logbook,
+    planbook,
+  };
+}
+
+async function eligibleGuestCounts(
+  publication: PublishedAccountData,
+): Promise<{ logCount: number; planCount: number }> {
+  if (!publication.guestRepositories) {
+    return { logCount: 0, planCount: 0 };
+  }
+  const [logs, plans] = await Promise.all([
+    publication.guestRepositories.logbook.list(),
+    publication.guestRepositories.planbook.list(),
+  ]);
+  return {
+    logCount: logs.filter(
+      value => !publication.hiddenGuestIds?.logIds.has(value.localId),
+    ).length,
+    planCount: plans.filter(
+      value => !publication.hiddenGuestIds?.planIds.has(value.localId),
+    ).length,
+  };
+}
+
+function applyHiddenGuestIds(
+  publication: PublishedAccountData,
+  snapshot: GuestClaimSnapshot | undefined,
+): void {
+  const hidden = publication.hiddenGuestIds;
+  if (!hidden) {
+    return;
+  }
+  hidden.logIds.clear();
+  hidden.planIds.clear();
+  if (
+    snapshot?.manifest.status !== 'committed' &&
+    snapshot?.manifest.status !== 'cleanupPending'
+  ) {
+    return;
+  }
+  for (const item of snapshot.manifest.items) {
+    (item.entityKind === 'log' ? hidden.logIds : hidden.planIds).add(
+      item.clientRecordId,
+    );
+  }
+}
+
+function hiddenClaimPresentation(queryScope: string): AccountClaimPresentation {
+  return {
+    queryScope,
+    eligible: { logCount: 0, planCount: 0 },
+    state: { status: 'hidden' },
+  };
+}
+
+function hiddenClaimController(): AccountClaimController {
+  return {
+    eligible: { logCount: 0, planCount: 0 },
+    state: { status: 'hidden' },
+    start: async () => undefined,
+    retry: async () => undefined,
+    keepOnDevice: async () => undefined,
+  };
+}
+
+function runningClaimPresentation(
+  queryScope: string,
+  progress: GuestClaimProgress,
+): AccountClaimPresentation {
+  return {
+    queryScope,
+    eligible: { logCount: 0, planCount: 0 },
+    state: {
+      status: 'running',
+      completed: progress.completed,
+      total: progress.total,
+      ...(progress.currentLabel === undefined
+        ? {}
+        : { currentLabel: progress.currentLabel }),
+    },
+  };
+}
+
+function presentationForSnapshot(
+  queryScope: string,
+  snapshot: GuestClaimSnapshot | undefined,
+  eligible: { logCount: number; planCount: number } = {
+    logCount: 0,
+    planCount: 0,
+  },
+  isOnline = true,
+): AccountClaimPresentation {
+  if (snapshot === undefined) {
+    return {
+      queryScope,
+      eligible,
+      state:
+        isOnline && eligible.logCount + eligible.planCount > 0
+          ? { status: 'choice', ...eligible }
+          : { status: 'hidden' },
+    };
+  }
+  const completed = snapshot.manifest.items.filter(
+    item => item.completedAt !== undefined,
+  ).length;
+  const total = snapshot.manifest.items.length;
+  let state: GuestClaimViewState;
+  if (
+    snapshot.manifest.status === 'running' ||
+    snapshot.manifest.status === 'finalizing'
+  ) {
+    state = { status: 'running', completed, total };
+  } else if (snapshot.manifest.status === 'failed') {
+    state = {
+      status: 'failed',
+      completed,
+      total,
+      errorCode: snapshot.errorCode ?? 'claim_validation_failed',
+    };
+  } else if (
+    snapshot.manifest.status === 'committed' ||
+    snapshot.manifest.status === 'cleanupPending'
+  ) {
+    state = { status: 'complete', imported: total };
+  } else if (snapshot.manifest.status === 'prepared' && isOnline) {
+    state = { status: 'choice', ...eligible };
+  } else {
+    state = { status: 'hidden' };
+  }
+  return { queryScope, eligible, state };
 }
 
 export function createAccountLocalFirstRepositories({
@@ -397,8 +990,8 @@ export function createAccountLocalFirstRepositories({
   });
 
   return {
-    principal: {kind: 'user', userId},
-    queryScope: principalScope({kind: 'user', userId}),
+    principal: { kind: 'user', userId },
+    queryScope: principalScope({ kind: 'user', userId }),
     logbook,
     planbook,
   };
@@ -433,9 +1026,7 @@ function createAccountLogbookRepository(options: {
     };
     return options.local.save(pending);
   };
-  const enqueueSavedUnlocked = async (
-    saved: DiveLogEntry,
-  ): Promise<void> => {
+  const enqueueSavedUnlocked = async (saved: DiveLogEntry): Promise<void> => {
     const current = await options.local.get(saved.localId);
     if (!current) {
       return;
@@ -446,9 +1037,7 @@ function createAccountLogbookRepository(options: {
       'log',
       current.localId,
     );
-    if (
-      operations.some(operation => operation.mutation === 'delete')
-    ) {
+    if (operations.some(operation => operation.mutation === 'delete')) {
       return;
     }
 
@@ -458,7 +1047,7 @@ function createAccountLogbookRepository(options: {
       entityKind: 'log' as const,
       entityLocalId: prepared.local.localId,
       mutation: 'upsert' as const,
-      payload: {local: prepared.local, remote: prepared.remote},
+      payload: { local: prepared.local, remote: prepared.remote },
       expectedRevision: prepared.local.remoteRevision,
     };
     const operationId = deterministicOperationId(operationIdentity);
@@ -472,7 +1061,7 @@ function createAccountLogbookRepository(options: {
     await options.outbox.enqueue({
       operationId,
       ...operationIdentity,
-      ...(profileStorageKey === undefined ? {} : {profileStorageKey}),
+      ...(profileStorageKey === undefined ? {} : { profileStorageKey }),
       attemptCount: 0,
       nextAttemptAt: options.now(),
       createdAt: prepared.local.updatedAt,
@@ -501,8 +1090,7 @@ function createAccountLogbookRepository(options: {
         operations
           .filter(
             operation =>
-              operation.entityKind === 'log' &&
-              operation.mutation === 'delete',
+              operation.entityKind === 'log' && operation.mutation === 'delete',
           )
           .map(operation => operation.entityLocalId),
       );
@@ -517,12 +1105,12 @@ function createAccountLogbookRepository(options: {
         ? undefined
         : current;
     },
-    getWatchProfile: (localId: string) => options.local.getWatchProfile(localId),
+    getWatchProfile: (localId: string) =>
+      options.local.getWatchProfile(localId),
     importWatchMessages: (
       messages: Parameters<DiveLogRepository['importWatchMessages']>[0],
       importOptions?: Parameters<DiveLogRepository['importWatchMessages']>[1],
-    ) =>
-      options.local.importWatchMessages(messages, importOptions),
+    ) => options.local.importWatchMessages(messages, importOptions),
     async save(entry: DiveLogEntry) {
       return withAccountEntityMutationLock(
         options.userId,
@@ -556,7 +1144,10 @@ function createAccountLogbookRepository(options: {
           const hasPendingUpsert = operations.some(
             operation => operation.mutation === 'upsert',
           );
-          if (current.remoteId && (current.remoteRevision || hasPendingUpsert)) {
+          if (
+            current.remoteId &&
+            (current.remoteRevision || hasPendingUpsert)
+          ) {
             assertOwnedByUser(current, options.userId);
             await options.outbox.enqueue(
               deleteOperation(
@@ -613,9 +1204,7 @@ function createAccountPlanRepository(options: {
     };
     return options.local.save(pending);
   };
-  const enqueueSavedUnlocked = async (
-    saved: DivePlan,
-  ): Promise<void> => {
+  const enqueueSavedUnlocked = async (saved: DivePlan): Promise<void> => {
     const current = await options.local.get(saved.localId);
     if (!current) {
       return;
@@ -626,9 +1215,7 @@ function createAccountPlanRepository(options: {
       'plan',
       current.localId,
     );
-    if (
-      operations.some(operation => operation.mutation === 'delete')
-    ) {
+    if (operations.some(operation => operation.mutation === 'delete')) {
       return;
     }
     const convertedLog = current.convertedLogLocalId
@@ -640,7 +1227,7 @@ function createAccountPlanRepository(options: {
       entityKind: 'plan' as const,
       entityLocalId: current.localId,
       mutation: 'upsert' as const,
-      payload: {local: current, remote},
+      payload: { local: current, remote },
       expectedRevision: current.remoteRevision,
     };
     const operationId = deterministicOperationId(operationIdentity);
@@ -724,7 +1311,10 @@ function createAccountPlanRepository(options: {
           const hasPendingUpsert = operations.some(
             operation => operation.mutation === 'upsert',
           );
-          if (current.remoteId && (current.remoteRevision || hasPendingUpsert)) {
+          if (
+            current.remoteId &&
+            (current.remoteRevision || hasPendingUpsert)
+          ) {
             assertOwnedByUser(current, options.userId);
             await options.outbox.enqueue(
               deleteOperation(
@@ -810,7 +1400,7 @@ async function prepareLogMutation(
   const samples = await options.local.getWatchProfile(saved.localId);
   const parsed = parseWatchSyncMessageValue({
     type: 'sessionEnded',
-    session: {...saved.watchCapture.session, samples},
+    session: { ...saved.watchCapture.session, samples },
   });
   if (!parsed.ok) {
     throw new Error(`Malformed local watch profile: ${parsed.error.message}`);
@@ -820,8 +1410,7 @@ async function prepareLogMutation(
     fullSamples.length !== saved.watchCapture.profile.sampleCount ||
     fullSamples.some(
       sample =>
-        sample.localSessionId !==
-        saved.watchCapture?.session.localSessionId,
+        sample.localSessionId !== saved.watchCapture?.session.localSessionId,
     )
   ) {
     throw new Error('Local watch profile sample count or session is invalid');
@@ -842,7 +1431,7 @@ async function prepareLogMutation(
         ...saved,
         watchCapture: {
           ...saved.watchCapture,
-          profile: {...saved.watchCapture.profile, sha256: digest},
+          profile: { ...saved.watchCapture.profile, sha256: digest },
         },
       };
   if (local !== saved) {
@@ -882,7 +1471,7 @@ function deterministicOperationId(
     mutation: operation.mutation,
     remoteId: remote.id,
     payloadSha256: remote.payloadSha256,
-    profilePath: 'profilePath' in remote ? remote.profilePath ?? null : null,
+    profilePath: 'profilePath' in remote ? (remote.profilePath ?? null) : null,
   })}`;
 }
 
@@ -899,7 +1488,7 @@ function deleteOperation(
     entityKind,
     entityLocalId: local.localId,
     mutation: 'delete' as const,
-    payload: {local, remote},
+    payload: { local, remote },
     expectedRevision,
   };
   return {
@@ -924,9 +1513,10 @@ function toRemotePlan(plan: DivePlan, convertedLogId?: string): RemoteDivePlan {
 }
 
 function principalForAuthState(state: AuthState): DataPrincipal {
-  return state.status === 'authenticated' || state.status === 'authenticatedOffline'
-    ? {kind: 'user', userId: state.userId}
-    : {kind: 'guest'};
+  return state.status === 'authenticated' ||
+    state.status === 'authenticatedOffline'
+    ? { kind: 'user', userId: state.userId }
+    : { kind: 'guest' };
 }
 
 function getDefaultDependencies(): AccountDataDependencies {
@@ -948,7 +1538,7 @@ function getDefaultDependencies(): AccountDataDependencies {
 
 function createUuid(): string {
   const randomUuid = (
-    globalThis as typeof globalThis & {crypto?: {randomUUID?: () => string}}
+    globalThis as typeof globalThis & { crypto?: { randomUUID?: () => string } }
   ).crypto?.randomUUID;
   if (randomUuid) {
     return randomUuid.call(globalThis.crypto);

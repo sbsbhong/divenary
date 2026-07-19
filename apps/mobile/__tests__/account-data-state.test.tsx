@@ -1,14 +1,15 @@
 import { QueryClient } from '@tanstack/react-query';
-import {sha256} from '@noble/hashes/sha256';
-import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import type {
   AccountDataRepository,
+  GuestClaimRemoteRepository,
   RemoteDiveLog,
   RemoteDivePlan,
 } from '@repo/supabase';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import {AppState, type AppStateStatus} from 'react-native';
+import { AppState, type AppStateStatus } from 'react-native';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import {
@@ -20,11 +21,15 @@ import {
   useAccountData,
 } from '../src/states/account-data';
 import { AccountOutbox } from '../src/sync/account-outbox';
-import {AccountSyncCoordinator} from '../src/sync/account-sync-coordinator';
+import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
-import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
+import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
-import type {DivePlan} from '../src/types/dive-plan';
+import type { DivePlan } from '../src/types/dive-plan';
+import {
+  createGuestClaimSnapshot,
+  GuestClaimStore,
+} from '../src/claim/guest-claim-store';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 
@@ -35,14 +40,14 @@ const entry: DiveLogEntry = {
   createdAt: 100,
   updatedAt: 100,
   manual: {
-    site: {name: 'Local Reef'},
+    site: { name: 'Local Reef' },
     buddyIds: [],
     gearIds: [],
     tags: [],
     observedMarineLife: [],
-    measuredValues: {startedAt: 100},
+    measuredValues: { startedAt: 100 },
   },
-  mobile: {mediaPlaceholders: []},
+  mobile: { mediaPlaceholders: [] },
   provenance: {},
 };
 
@@ -52,7 +57,7 @@ const plan: DivePlan = {
   cloudSyncStatus: 'notConfigured',
   createdAt: 100,
   updatedAt: 100,
-  site: {name: 'Local Reef'},
+  site: { name: 'Local Reef' },
   buddyIds: [],
   gearIds: [],
   tags: [],
@@ -67,17 +72,32 @@ describe('account data state', () => {
     queryClient.setQueryData(['divePlans', 'user:old-user', 'list'], ['old']);
     queryClient.setQueryData(['diveLogbook', 'user:new-user', 'list'], ['new']);
     queryClient.setQueryData(['accountSummary', 'user:old-user'], ['keep']);
-    queryClient.setQueryData(['other', 'diveLogbook', 'user:old-user'], ['keep']);
+    queryClient.setQueryData(
+      ['other', 'diveLogbook', 'user:old-user'],
+      ['keep'],
+    );
     const cancelQueries = jest.spyOn(queryClient, 'cancelQueries');
 
     await clearPrincipalQueries(queryClient, 'user:old-user');
 
-    expect(cancelQueries).toHaveBeenCalledWith({predicate: expect.any(Function)});
-    expect(queryClient.getQueryData(['diveLogbook', 'user:old-user', 'list'])).toBeUndefined();
-    expect(queryClient.getQueryData(['divePlans', 'user:old-user', 'list'])).toBeUndefined();
-    expect(queryClient.getQueryData(['diveLogbook', 'user:new-user', 'list'])).toEqual(['new']);
-    expect(queryClient.getQueryData(['accountSummary', 'user:old-user'])).toEqual(['keep']);
-    expect(queryClient.getQueryData(['other', 'diveLogbook', 'user:old-user'])).toEqual(['keep']);
+    expect(cancelQueries).toHaveBeenCalledWith({
+      predicate: expect.any(Function),
+    });
+    expect(
+      queryClient.getQueryData(['diveLogbook', 'user:old-user', 'list']),
+    ).toBeUndefined();
+    expect(
+      queryClient.getQueryData(['divePlans', 'user:old-user', 'list']),
+    ).toBeUndefined();
+    expect(
+      queryClient.getQueryData(['diveLogbook', 'user:new-user', 'list']),
+    ).toEqual(['new']);
+    expect(
+      queryClient.getQueryData(['accountSummary', 'user:old-user']),
+    ).toEqual(['keep']);
+    expect(
+      queryClient.getQueryData(['other', 'diveLogbook', 'user:old-user']),
+    ).toEqual(['keep']);
     queryClient.clear();
   });
 
@@ -88,10 +108,22 @@ describe('account data state', () => {
     await invalidatePrincipalQueries(queryClient, `user:${userId}`);
 
     const predicate = invalidate.mock.calls[0][0]?.predicate;
-    expect(predicate?.({queryKey: ['diveLogbook', `user:${userId}`, 'list']} as never)).toBe(true);
-    expect(predicate?.({queryKey: ['divePlans', `user:${userId}`, 'detail']} as never)).toBe(true);
-    expect(predicate?.({queryKey: ['diveLogbook', 'user:other', 'list']} as never)).toBe(false);
-    expect(predicate?.({queryKey: ['accountSummary', `user:${userId}`]} as never)).toBe(false);
+    expect(
+      predicate?.({
+        queryKey: ['diveLogbook', `user:${userId}`, 'list'],
+      } as never),
+    ).toBe(true);
+    expect(
+      predicate?.({
+        queryKey: ['divePlans', `user:${userId}`, 'detail'],
+      } as never),
+    ).toBe(true);
+    expect(
+      predicate?.({ queryKey: ['diveLogbook', 'user:other', 'list'] } as never),
+    ).toBe(false);
+    expect(
+      predicate?.({ queryKey: ['accountSummary', `user:${userId}`] } as never),
+    ).toBe(false);
     queryClient.clear();
   });
 
@@ -103,7 +135,10 @@ describe('account data state', () => {
       order.push('local');
       return originalSave(value);
     });
-    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
     const originalEnqueue = outbox.enqueue.bind(outbox);
     jest.spyOn(outbox, 'enqueue').mockImplementation(async value => {
       order.push('outbox');
@@ -116,7 +151,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -165,7 +200,7 @@ describe('account data state', () => {
     expect(remote.payload).toMatchObject({
       ended_at: null,
       duration_seconds: null,
-      manual_data: {_local_record: {schemaVersion: 1}},
+      manual_data: { _local_record: { schemaVersion: 1 } },
       watch_metadata: null,
       source_plan_id: null,
     });
@@ -174,9 +209,12 @@ describe('account data state', () => {
   });
 
   it('keeps guest writes local-only', async () => {
-    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
     const guest = {
-      principal: {kind: 'guest'} as const,
+      principal: { kind: 'guest' } as const,
       queryScope: 'guest',
       logbook: new LocalDiveLogRepository(),
       planbook: new LocalDivePlanRepository(),
@@ -189,11 +227,14 @@ describe('account data state', () => {
   });
 
   it('keeps the device profile key out of the remote watch metadata', async () => {
-    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: new LocalDiveLogRepository(),
         planbook: new LocalDivePlanRepository(),
@@ -212,8 +253,8 @@ describe('account data state', () => {
       watchCapture: {
         importKey: 'watch-1:100',
         importedAt: 100,
-        session: {localSessionId: 'watch-1', startedAt: 100, samples: []},
-        measuredValues: {startedAt: 100},
+        session: { localSessionId: 'watch-1', startedAt: 100, samples: [] },
+        measuredValues: { startedAt: 100 },
         samples: [],
         profile: {
           storageKey: 'dive-mobile:watch-profile:user:private-device-key',
@@ -225,19 +266,23 @@ describe('account data state', () => {
     });
 
     const [queued] = await outbox.list(userId);
-    const remote = queued.payload.remote as {payload: {watch_metadata: unknown}};
-    expect(JSON.stringify(remote.payload.watch_metadata)).not.toContain('storageKey');
+    const remote = queued.payload.remote as {
+      payload: { watch_metadata: unknown };
+    };
+    expect(JSON.stringify(remote.payload.watch_metadata)).not.toContain(
+      'storageKey',
+    );
     expect(remote.payload.watch_metadata).toMatchObject({
-      profile: {contentRevision: 'revision-1', sampleCount: 0},
+      profile: { contentRevision: 'revision-1', sampleCount: 0 },
     });
   });
 
   it('snapshots exact full profile bytes under an outbox-owned operation key', async () => {
     const storage = new InMemoryKeyValueStore();
-    const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
+    const outbox = new AccountOutbox({ storage, storageKey: 'outbox' });
     const fullSamples = [
-      {localSessionId: 'watch-1', timestamp: 100, depthMeters: 2},
-      {localSessionId: 'watch-1', timestamp: 101, depthMeters: 8},
+      { localSessionId: 'watch-1', timestamp: 100, depthMeters: 2 },
+      { localSessionId: 'watch-1', timestamp: 101, depthMeters: 8 },
     ];
     const serialized = JSON.stringify(fullSamples);
     const digest = bytesToHex(sha256(utf8ToBytes(serialized)));
@@ -246,7 +291,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -262,8 +307,8 @@ describe('account data state', () => {
       watchCapture: {
         importKey: 'watch-1:100',
         importedAt: 100,
-        session: {localSessionId: 'watch-1', startedAt: 100, samples: []},
-        measuredValues: {startedAt: 100},
+        session: { localSessionId: 'watch-1', startedAt: 100, samples: [] },
+        measuredValues: { startedAt: 100 },
         samples: fullSamples.slice(0, 1),
         profile: {
           storageKey: 'device-profile-key',
@@ -298,7 +343,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -320,8 +365,8 @@ describe('account data state', () => {
         watchCapture: {
           importKey: 'watch-1:100',
           importedAt: 100,
-          session: {localSessionId: 'watch-1', startedAt: 100, samples: []},
-          measuredValues: {startedAt: 100},
+          session: { localSessionId: 'watch-1', startedAt: 100, samples: [] },
+          measuredValues: { startedAt: 100 },
           samples: [sample],
           profile: {
             storageKey: 'device-profile-key',
@@ -341,10 +386,10 @@ describe('account data state', () => {
 
   it('reconciles a pending local row after an outbox write failure without duplicates', async () => {
     const storage = new FailOnceOutboxStorage('outbox');
-    const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
+    const outbox = new AccountOutbox({ storage, storageKey: 'outbox' });
     const localLogbook = new LocalDiveLogRepository();
     const base = {
-      principal: {kind: 'user', userId} as const,
+      principal: { kind: 'user', userId } as const,
       queryScope: `user:${userId}`,
       logbook: localLogbook,
       planbook: new LocalDivePlanRepository(),
@@ -357,7 +402,9 @@ describe('account data state', () => {
       now: () => 100,
     });
 
-    await expect(repositories.logbook.save(entry)).rejects.toThrow('outbox write failed');
+    await expect(repositories.logbook.save(entry)).rejects.toThrow(
+      'outbox write failed',
+    );
     await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
       cloudSyncStatus: 'pending',
       remoteId: '10000000-0000-4000-8000-000000000001',
@@ -384,7 +431,7 @@ describe('account data state', () => {
     });
     const localLogbook = new LocalDiveLogRepository();
     const base = {
-      principal: {kind: 'user', userId} as const,
+      principal: { kind: 'user', userId } as const,
       queryScope: `user:${userId}`,
       logbook: localLogbook,
       planbook: new LocalDivePlanRepository(),
@@ -401,7 +448,7 @@ describe('account data state', () => {
     await localLogbook.save({
       ...pending!,
       updatedAt: 200,
-      manual: {...pending!.manual, notes: 'newer crash-recovered edit'},
+      manual: { ...pending!.manual, notes: 'newer crash-recovered edit' },
     });
 
     await reconcilePendingAccountOperations({
@@ -426,29 +473,31 @@ describe('account data state', () => {
           deliveredNotes.push(manualData.notes);
           return {
             status: 'saved' as const,
-            value: {...value, revision: (expectedRevision ?? 0) + 1},
+            value: { ...value, revision: (expectedRevision ?? 0) + 1 },
           };
         }),
       }),
       logbookRepository: localLogbook,
       planRepository: base.planbook,
       now: () => 200,
-      schedule: () => ({cancel: jest.fn()}),
+      schedule: () => ({ cancel: jest.fn() }),
     });
 
-    await expect(coordinator.drain({online: true})).resolves.toMatchObject({
+    await expect(coordinator.drain({ online: true })).resolves.toMatchObject({
       processed: 1,
       remaining: 1,
     });
-    await expect(outbox.listEntity(userId, 'log', entry.localId)).resolves.toMatchObject([
-      {operationId: newerOperationId, expectedRevision: 1},
+    await expect(
+      outbox.listEntity(userId, 'log', entry.localId),
+    ).resolves.toMatchObject([
+      { operationId: newerOperationId, expectedRevision: 1 },
     ]);
     await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
       cloudSyncStatus: 'pending',
-      manual: {notes: 'newer crash-recovered edit'},
+      manual: { notes: 'newer crash-recovered edit' },
     });
 
-    await coordinator.drain({online: true});
+    await coordinator.drain({ online: true });
     expect(deliveredNotes).toEqual([undefined, 'newer crash-recovered edit']);
     await expect(outbox.list(userId)).resolves.toEqual([]);
     await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
@@ -465,7 +514,7 @@ describe('account data state', () => {
     });
     const localPlanbook = new LocalDivePlanRepository();
     const base = {
-      principal: {kind: 'user', userId} as const,
+      principal: { kind: 'user', userId } as const,
       queryScope: `user:${userId}`,
       logbook: new LocalDiveLogRepository(),
       planbook: localPlanbook,
@@ -506,7 +555,7 @@ describe('account data state', () => {
       planned_at: null,
       dive_mode: null,
       converted_log_id: null,
-      plan_data: {_schemaVersion: 1},
+      plan_data: { _schemaVersion: 1 },
     });
     expect(firstRemote.payload.plan_data).not.toMatchObject({
       remoteId: expect.anything(),
@@ -523,33 +572,35 @@ describe('account data state', () => {
       outbox,
       accountRepository: accountRepository({
         savePlan: jest.fn(async (value, expectedRevision) => {
-          const planData = value.payload.plan_data as {objective?: string};
+          const planData = value.payload.plan_data as { objective?: string };
           deliveredObjectives.push(planData.objective);
           return {
             status: 'saved' as const,
-            value: {...value, revision: (expectedRevision ?? 0) + 1},
+            value: { ...value, revision: (expectedRevision ?? 0) + 1 },
           };
         }),
       }),
       logbookRepository: base.logbook,
       planRepository: localPlanbook,
       now: () => 200,
-      schedule: () => ({cancel: jest.fn()}),
+      schedule: () => ({ cancel: jest.fn() }),
     });
 
-    await expect(coordinator.drain({online: true})).resolves.toMatchObject({
+    await expect(coordinator.drain({ online: true })).resolves.toMatchObject({
       processed: 1,
       remaining: 1,
     });
-    await expect(outbox.listEntity(userId, 'plan', plan.localId)).resolves.toMatchObject([
-      {operationId: newerOperationId, expectedRevision: 1},
+    await expect(
+      outbox.listEntity(userId, 'plan', plan.localId),
+    ).resolves.toMatchObject([
+      { operationId: newerOperationId, expectedRevision: 1 },
     ]);
     await expect(localPlanbook.get(plan.localId)).resolves.toMatchObject({
       cloudSyncStatus: 'pending',
       objective: 'newer crash-recovered objective',
     });
 
-    await coordinator.drain({online: true});
+    await coordinator.drain({ online: true });
     expect(deliveredObjectives).toEqual([
       undefined,
       'newer crash-recovered objective',
@@ -578,7 +629,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -589,11 +640,13 @@ describe('account data state', () => {
 
     await repositories.logbook.delete(current.localId);
 
-    await expect(repositories.logbook.get(current.localId)).resolves.toBeUndefined();
+    await expect(
+      repositories.logbook.get(current.localId),
+    ).resolves.toBeUndefined();
     await expect(repositories.logbook.list()).resolves.toEqual([]);
     await expect(localLogbook.get(current.localId)).resolves.toEqual(current);
     await expect(outbox.list(userId)).resolves.toMatchObject([
-      {mutation: 'delete', expectedRevision: 2},
+      { mutation: 'delete', expectedRevision: 2 },
     ]);
 
     const coordinator = new AccountSyncCoordinator({
@@ -604,7 +657,7 @@ describe('account data state', () => {
       planRepository: new LocalDivePlanRepository(),
       now: () => 100,
     });
-    await coordinator.drain({online: true});
+    await coordinator.drain({ online: true });
     await expect(localLogbook.get(current.localId)).resolves.toBeUndefined();
     await expect(outbox.list(userId)).resolves.toEqual([]);
   });
@@ -625,7 +678,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -652,7 +705,7 @@ describe('account data state', () => {
       remoteRevision: 2,
       ownerUserId: userId,
       cloudSyncStatus: 'synced' as const,
-      manual: {...entry.manual, notes: 'current local'},
+      manual: { ...entry.manual, notes: 'current local' },
     };
     const localLogbook = new LocalDiveLogRepository([current]);
     const outbox = new AccountOutbox({
@@ -663,7 +716,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -672,27 +725,32 @@ describe('account data state', () => {
       now: () => 100,
     });
     await repositories.logbook.delete(current.localId);
-    const latest = remoteLog({revision: 4});
+    const latest = remoteLog({ revision: 4 });
     const coordinator = new AccountSyncCoordinator({
       userId,
       outbox,
       accountRepository: accountRepository({
-        deleteLog: jest.fn(async () => ({status: 'conflict' as const, remote: latest})),
+        deleteLog: jest.fn(async () => ({
+          status: 'conflict' as const,
+          remote: latest,
+        })),
       }),
       logbookRepository: localLogbook,
       planRepository: new LocalDivePlanRepository(),
       now: () => 100,
     });
 
-    await coordinator.drain({online: true});
+    await coordinator.drain({ online: true });
 
-    await expect(repositories.logbook.get(current.localId)).resolves.toMatchObject({
+    await expect(
+      repositories.logbook.get(current.localId),
+    ).resolves.toMatchObject({
       cloudSyncStatus: 'conflict',
-      manual: {notes: 'current local'},
+      manual: { notes: 'current local' },
     });
     await expect(outbox.listConflicts(userId)).resolves.toEqual([
       expect.objectContaining({
-        localPayload: {...current, cloudSyncStatus: 'conflict'},
+        localPayload: { ...current, cloudSyncStatus: 'conflict' },
         remote: latest,
       }),
     ]);
@@ -707,7 +765,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -730,7 +788,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -751,26 +809,26 @@ describe('account data state', () => {
       logbookRepository: localLogbook,
       planRepository: new LocalDivePlanRepository(),
       now: () => 100,
-      schedule: () => ({cancel: jest.fn()}),
+      schedule: () => ({ cancel: jest.fn() }),
     });
 
-    const draining = coordinator.drain({online: true});
+    const draining = coordinator.drain({ online: true });
     await Promise.resolve();
     const editing = repositories.logbook.save({
       ...initiallySaved,
       updatedAt: 110,
-      manual: {...initiallySaved.manual, notes: 'edited while saving'},
+      manual: { ...initiallySaved.manual, notes: 'edited while saving' },
     });
-    saveResult.resolve({status: 'saved', value: remoteLog({revision: 2})});
+    saveResult.resolve({ status: 'saved', value: remoteLog({ revision: 2 }) });
     await Promise.all([draining, editing]);
 
     await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
       remoteRevision: 2,
       cloudSyncStatus: 'pending',
-      manual: {notes: 'edited while saving'},
+      manual: { notes: 'edited while saving' },
     });
     await expect(outbox.list(userId)).resolves.toMatchObject([
-      {mutation: 'upsert', expectedRevision: 2},
+      { mutation: 'upsert', expectedRevision: 2 },
     ]);
   });
 
@@ -783,7 +841,7 @@ describe('account data state', () => {
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
-        principal: {kind: 'user', userId},
+        principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
         logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
@@ -804,25 +862,27 @@ describe('account data state', () => {
       logbookRepository: localLogbook,
       planRepository: new LocalDivePlanRepository(),
       now: () => 100,
-      schedule: () => ({cancel: jest.fn()}),
+      schedule: () => ({ cancel: jest.fn() }),
     });
 
-    const draining = coordinator.drain({online: true});
+    const draining = coordinator.drain({ online: true });
     await Promise.resolve();
     const deleting = repositories.logbook.delete(entry.localId);
     saveResult.resolve({
       status: 'saved',
-      value: remoteLog({revision: 2}),
+      value: remoteLog({ revision: 2 }),
     });
     await Promise.all([draining, deleting]);
 
-    await expect(repositories.logbook.get(entry.localId)).resolves.toBeUndefined();
+    await expect(
+      repositories.logbook.get(entry.localId),
+    ).resolves.toBeUndefined();
     await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
       remoteRevision: 2,
       cloudSyncStatus: 'synced',
     });
     await expect(outbox.list(userId)).resolves.toMatchObject([
-      {mutation: 'delete', expectedRevision: 2},
+      { mutation: 'delete', expectedRevision: 2 },
     ]);
   });
 
@@ -843,7 +903,7 @@ describe('account data state', () => {
         <AccountDataProviderCore
           queryClient={queryClient}
           auth={{
-            state: {status: 'authenticated', userId},
+            state: { status: 'authenticated', userId },
             accountDataRepository: remote,
           }}
           dependencies={{
@@ -876,10 +936,12 @@ describe('account data state', () => {
     expect(invalidate).toHaveBeenCalled();
     const predicate = invalidate.mock.calls.at(-1)?.[0]?.predicate;
     expect(
-      predicate?.({queryKey: ['diveLogbook', `user:${userId}`, 'list']} as never),
+      predicate?.({
+        queryKey: ['diveLogbook', `user:${userId}`, 'list'],
+      } as never),
     ).toBe(true);
     expect(
-      predicate?.({queryKey: ['diveLogbook', 'user:other', 'list']} as never),
+      predicate?.({ queryKey: ['diveLogbook', 'user:other', 'list'] } as never),
     ).toBe(false);
 
     await ReactTestRenderer.act(async () => renderer.unmount());
@@ -888,16 +950,18 @@ describe('account data state', () => {
 
   it('resumes an online account drain when the app returns to the foreground', async () => {
     let appStateListener: ((state: AppStateStatus) => void) | undefined;
-    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
-      appStateListener = listener;
-      return {remove: jest.fn()};
-    });
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((_event, listener) => {
+        appStateListener = listener;
+        return { remove: jest.fn() };
+      });
     jest
       .spyOn(AccountSyncCoordinator.prototype, 'hydrate')
       .mockResolvedValue(0);
     const drain = jest
       .spyOn(AccountSyncCoordinator.prototype, 'drain')
-      .mockResolvedValue({processed: 0, remaining: 0});
+      .mockResolvedValue({ processed: 0, remaining: 0 });
     const metadataStorage = new InMemoryKeyValueStore();
     const queryClient = new QueryClient();
     const accountRepository = {} as AccountDataRepository;
@@ -908,7 +972,7 @@ describe('account data state', () => {
         <AccountDataProviderCore
           queryClient={queryClient}
           auth={{
-            state: {status: 'authenticated', userId},
+            state: { status: 'authenticated', userId },
             accountDataRepository: accountRepository,
           }}
           dependencies={{
@@ -943,16 +1007,445 @@ describe('account data state', () => {
     });
 
     expect(drain).toHaveBeenCalledTimes(initialDrainCount + 1);
-    expect(drain).toHaveBeenLastCalledWith({online: true});
+    expect(drain).toHaveBeenLastCalledWith({ online: true });
 
     await ReactTestRenderer.act(async () => renderer.unmount());
     queryClient.clear();
     jest.restoreAllMocks();
   });
 
+  it('waits for navigation readiness and blocks remote claim start while offline', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const remote = guestClaimRepository();
+    const captures: Array<{
+      claim: ReturnType<typeof useAccountData>['claim'];
+      isOnline: boolean;
+    }> = [];
+    const Capture = () => {
+      const data = useAccountData();
+      captures.push({ claim: data.claim, isOnline: data.isOnline });
+      return null;
+    };
+    const dependencies = {
+      metadataStorage,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook:
+          principal.kind === 'guest'
+            ? guestLogbook
+            : new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      })),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady={false}
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    expect(captures.at(-1)?.claim).toMatchObject({
+      eligible: { logCount: 0, planCount: 0 },
+      state: { status: 'hidden' },
+    });
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(captures.at(-1)?.claim).toMatchObject({
+        eligible: { logCount: 1, planCount: 0 },
+        state: { status: 'choice', logCount: 1, planCount: 0 },
+      }),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticatedOffline', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(captures.at(-1)?.isOnline).toBe(false));
+    await ReactTestRenderer.act(async () => {
+      await captures.at(-1)?.claim.start();
+    });
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('maps claim preparation failures into controller state without remote work', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profileLog: DiveLogEntry = {
+      ...entry,
+      localId: 'profile-log',
+      source: 'watch',
+      watchCapture: {
+        importKey: 'watch:profile-log',
+        importedAt: 100,
+        session: {
+          localSessionId: 'session-profile-log',
+          startedAt: 100,
+          samples: [],
+        },
+        measuredValues: { startedAt: 100 },
+        samples: [],
+        profile: {
+          storageKey: 'missing-profile',
+          contentRevision: 'revision-1',
+          sampleCount: 1,
+        },
+      },
+    };
+    const remote = guestClaimRepository();
+    const guestLogbook = new LocalDiveLogRepository([profileLog]);
+    const captures: ReturnType<typeof useAccountData>['claim'][] = [];
+    const Capture = () => {
+      captures.push(useAccountData().claim);
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(captures.at(-1)?.state.status).toBe('choice'));
+
+    await ReactTestRenderer.act(async () => {
+      await expect(captures.at(-1)!.start()).resolves.toBeUndefined();
+    });
+    await waitFor(() =>
+      expect(captures.at(-1)?.state).toEqual({
+        status: 'failed',
+        completed: 0,
+        total: 1,
+        errorCode: 'profile_missing',
+      }),
+    );
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await captures.at(-1)!.keepOnDevice();
+    });
+    await waitFor(() =>
+      expect(captures.at(-1)?.state).toEqual({ status: 'hidden' }),
+    );
+    expect(captures.at(-1)?.eligible).toEqual({ logCount: 1, planCount: 0 });
+    await expect(guestLogbook.get('profile-log')).resolves.toBeDefined();
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('composes deferred guest rows with account rows and gives the account copy precedence', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([
+      entry,
+      { ...entry, localId: 'guest-only-log' },
+    ]);
+    const guestPlanbook = new LocalDivePlanRepository([plan]);
+    const store = new GuestClaimStore({ storage: metadataStorage, userId });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'deferred';
+    await store.write(snapshot);
+    const accountLog = {
+      ...entry,
+      ownerUserId: userId,
+      remoteId: '10000000-0000-4000-8000-000000000001',
+      remoteRevision: 1,
+      cloudSyncStatus: 'synced' as const,
+      manual: { ...entry.manual, title: 'account copy' },
+    };
+    let capture:
+      | {
+          rows: DiveLogEntry[];
+          eligible: { logCount: number; planCount: number };
+        }
+      | undefined;
+    const Capture = () => {
+      const data = useAccountData();
+      React.useEffect(() => {
+        data.logbookRepository.list().then(rows => {
+          capture = { rows, eligible: data.claim.eligible };
+        });
+      }, [data]);
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{ state: { status: 'authenticated', userId } }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository([accountLog]),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.eligible).toEqual({ logCount: 2, planCount: 1 }),
+    );
+    const result = capture!;
+
+    expect(result.rows.map(row => row.localId)).toEqual([
+      'local-log-1',
+      'guest-only-log',
+    ]);
+    expect(result.rows[0]?.manual.title).toBe('account copy');
+    expect(result.rows[1]?.ownerUserId).toBeUndefined();
+    expect(result.eligible).toEqual({ logCount: 2, planCount: 1 });
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('hides cleanup-pending guest ids before physical cleanup and does not resume offline', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestClaimed = { ...entry, localId: 'claimed-log' };
+    const guestRemaining = { ...entry, localId: 'remaining-log' };
+    const guestLogbook = new LocalDiveLogRepository([
+      guestClaimed,
+      guestRemaining,
+    ]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const store = new GuestClaimStore({ storage: metadataStorage, userId });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([guestClaimed]),
+      planRepository: guestPlanbook,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'cleanupPending';
+    snapshot.manifest.remoteBatchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      completedAt: 101,
+    };
+    snapshot.manifest.updatedAt = 101;
+    await store.write(snapshot);
+    const remote = guestClaimRepository();
+    const accountClaimed = {
+      ...guestClaimed,
+      ownerUserId: userId,
+      remoteId: '30000000-0000-4000-8000-000000000001',
+      remoteRevision: 1,
+      cloudSyncStatus: 'synced' as const,
+    };
+    let capture:
+      | {
+          rows: DiveLogEntry[];
+          eligible: { logCount: number; planCount: number };
+        }
+      | undefined;
+    const Capture = () => {
+      const data = useAccountData();
+      React.useEffect(() => {
+        data.logbookRepository.list().then(rows => {
+          capture = { rows, eligible: data.claim.eligible };
+        });
+      }, [data]);
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticatedOffline', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository([accountClaimed]),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.eligible).toEqual({ logCount: 1, planCount: 0 }),
+    );
+    const result = capture!;
+
+    expect(result.rows.map(row => row.localId)).toEqual([
+      'claimed-log',
+      'remaining-log',
+    ]);
+    expect(result.eligible).toEqual({ logCount: 1, planCount: 0 });
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+    expect(remote.finalize).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
   it('suppresses stale hydration publication and reuses one principal repository instance', async () => {
-    const firstLogs = deferred<{items: RemoteDiveLog[]}>();
-    const firstRemote = accountRepository({listLogs: jest.fn(() => firstLogs.promise)});
+    const firstLogs = deferred<{ items: RemoteDiveLog[] }>();
+    const firstRemote = accountRepository({
+      listLogs: jest.fn(() => firstLogs.promise),
+    });
     const secondRemote = accountRepository();
     const localByScope = new Map<string, LocalDiveLogRepository>();
     const createRepositories = jest.fn(principal => {
@@ -996,10 +1489,11 @@ describe('account data state', () => {
         <AccountDataProviderCore
           queryClient={queryClient}
           auth={{
-            state: {status: 'authenticated', userId: 'user-a'},
+            state: { status: 'authenticated', userId: 'user-a' },
             accountDataRepository: firstRemote,
           }}
-          dependencies={dependencies}>
+          dependencies={dependencies}
+        >
           <Capture />
         </AccountDataProviderCore>,
       );
@@ -1014,19 +1508,20 @@ describe('account data state', () => {
         <AccountDataProviderCore
           queryClient={queryClient}
           auth={{
-            state: {status: 'authenticated', userId: 'user-b'},
+            state: { status: 'authenticated', userId: 'user-b' },
             accountDataRepository: secondRemote,
           }}
-          dependencies={dependencies}>
+          dependencies={dependencies}
+        >
           <Capture />
         </AccountDataProviderCore>,
       );
       await flushPromises();
     });
-    firstLogs.resolve({items: [remoteLog({localId: 'stale-user-a-log'})]});
+    firstLogs.resolve({ items: [remoteLog({ localId: 'stale-user-a-log' })] });
     await ReactTestRenderer.act(flushPromises);
 
-    expect(publishedUsers).toEqual(['user-b']);
+    expect(new Set(publishedUsers)).toEqual(new Set(['user-b']));
     await expect(localByScope.get('user:user-a')?.list()).resolves.toEqual([]);
 
     await ReactTestRenderer.act(async () => {
@@ -1034,23 +1529,34 @@ describe('account data state', () => {
         <AccountDataProviderCore
           queryClient={queryClient}
           auth={{
-            state: {status: 'authenticatedOffline', userId: 'user-b'},
+            state: { status: 'authenticatedOffline', userId: 'user-b' },
             accountDataRepository: secondRemote,
           }}
-          dependencies={dependencies}>
+          dependencies={dependencies}
+        >
           <Capture />
         </AccountDataProviderCore>,
       );
       await flushPromises();
     });
-    expect(createRepositories).toHaveBeenCalledTimes(2);
+    expect(
+      createRepositories.mock.calls.map(([principal]) => principal),
+    ).toEqual([
+      { kind: 'user', userId: 'user-a' },
+      { kind: 'guest' },
+      { kind: 'user', userId: 'user-b' },
+    ]);
     await ReactTestRenderer.act(async () => renderer.unmount());
     queryClient.clear();
   });
 });
 
 function remoteLog(overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog {
-  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const {
+    payload: payloadOverride,
+    payloadSha256,
+    ...outerOverrides
+  } = overrides;
   const payload = {
     source: 'manual',
     started_at: '1970-01-01T00:01:40.000Z',
@@ -1063,7 +1569,7 @@ function remoteLog(overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog {
     dive_mode: null,
     manual_data: {
       ...entry.manual,
-      _local_record: {schemaVersion: 1, createdAt: 100, updatedAt: 100},
+      _local_record: { schemaVersion: 1, createdAt: 100, updatedAt: 100 },
     },
     mobile_data: entry.mobile,
     watch_metadata: null,
@@ -1087,13 +1593,17 @@ function remoteLog(overrides: Partial<RemoteDiveLog> = {}): RemoteDiveLog {
 }
 
 function remotePlan(overrides: Partial<RemoteDivePlan> = {}): RemoteDivePlan {
-  const {payload: payloadOverride, payloadSha256, ...outerOverrides} = overrides;
+  const {
+    payload: payloadOverride,
+    payloadSha256,
+    ...outerOverrides
+  } = overrides;
   const payload = {
     status: 'draft',
     planned_at: null,
     dive_mode: null,
     site_name: plan.site.name ?? null,
-    plan_data: {...plan, _schemaVersion: 1},
+    plan_data: { ...plan, _schemaVersion: 1 },
     converted_log_id: null,
     ...(payloadOverride ?? {}),
   };
@@ -1118,7 +1628,10 @@ function canonicalStringify(value: unknown): string {
   if (value !== null && typeof value === 'object') {
     return `{${Object.entries(value as Record<string, unknown>)
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalStringify(nested)}`)
+      .map(
+        ([key, nested]) =>
+          `${JSON.stringify(key)}:${canonicalStringify(nested)}`,
+      )
       .join(',')}}`;
   }
   return JSON.stringify(value) ?? 'null';
@@ -1128,14 +1641,53 @@ function accountRepository(
   overrides: Partial<AccountDataRepository> = {},
 ): jest.Mocked<AccountDataRepository> {
   return {
-    listLogs: jest.fn(async () => ({items: []})),
-    listPlans: jest.fn(async () => ({items: []})),
-    saveLog: jest.fn(async value => ({status: 'saved', value})),
-    savePlan: jest.fn(async value => ({status: 'saved', value})),
-    deleteLog: jest.fn(async () => ({status: 'saved', value: remoteLog()})),
-    deletePlan: jest.fn(async () => ({status: 'saved', value: remotePlan()})),
+    listLogs: jest.fn(async () => ({ items: [] })),
+    listPlans: jest.fn(async () => ({ items: [] })),
+    saveLog: jest.fn(async value => ({ status: 'saved', value })),
+    savePlan: jest.fn(async value => ({ status: 'saved', value })),
+    deleteLog: jest.fn(async () => ({ status: 'saved', value: remoteLog() })),
+    deletePlan: jest.fn(async () => ({ status: 'saved', value: remotePlan() })),
     ...overrides,
   } as jest.Mocked<AccountDataRepository>;
+}
+
+function guestClaimRepository(): jest.Mocked<GuestClaimRemoteRepository> {
+  return {
+    createOrLoadBatch: jest.fn(
+      async (
+        _input: Parameters<GuestClaimRemoteRepository['createOrLoadBatch']>[0],
+      ) => ({
+        id: '10000000-0000-4000-8000-000000000001',
+        status: 'uploading' as const,
+      }),
+    ),
+    stageRecord: jest.fn(
+      async (
+        _input: Parameters<GuestClaimRemoteRepository['stageRecord']>[0],
+      ) => ({
+        stagingRecordId: '20000000-0000-4000-8000-000000000001',
+        targetRecordId: '30000000-0000-4000-8000-000000000001',
+      }),
+    ),
+    attachProfile: jest.fn(
+      async (
+        _input: Parameters<GuestClaimRemoteRepository['attachProfile']>[0],
+      ) => undefined,
+    ),
+    uploadProfile: jest.fn(
+      async (_path: string, _bytes: Uint8Array) => undefined,
+    ),
+    downloadProfile: jest.fn(async (_path: string) => new Uint8Array()),
+    finalize: jest.fn(async (_batchId: string) => ({
+      status: 'committed' as const,
+      planCount: 0,
+      logCount: 0,
+    })),
+    listCommittedBatch: jest.fn(async (_batchId: string) => ({
+      plans: [] as RemoteDivePlan[],
+      logs: [] as RemoteDiveLog[],
+    })),
+  };
 }
 
 class FailOnceOutboxStorage implements PersistentKeyValueStore {
