@@ -125,8 +125,6 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
           await this.profileStorage.remove(profileKeyToRemove);
           options?.assertCanCommit?.();
         }
-        options?.assertCanCommit?.();
-        await options?.commitAfterDelete?.();
       } catch (error) {
         let rollbackError: unknown;
         if (removedProfileKey !== undefined) {
@@ -150,6 +148,15 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
           throw rollbackError;
         }
         throw error;
+      }
+    });
+  }
+
+  async removeWatchProfileIfUnreferenced(storageKey: string): Promise<void> {
+    return this.enqueueMutation(async () => {
+      const entries = await this.readEntries();
+      if (!referencesProfile(entries, storageKey)) {
+        await this.profileStorage.remove(storageKey);
       }
     });
   }

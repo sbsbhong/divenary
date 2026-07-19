@@ -476,7 +476,7 @@ describe('PersistentDiveLogRepository', () => {
     await expect(profileStorage.read(profileKey)).resolves.toEqual(fullProfile);
   });
 
-  it('retains an unreferenced profile when delete cleanup is deferred', async () => {
+  it('retains a profile after metadata delete until serialized cleanup runs', async () => {
     const storage = new InMemoryKeyValueStore();
     const profileStorage = new RecordingProfileStorage();
     const profileKey = 'retained-delete-profile';
@@ -505,6 +505,58 @@ describe('PersistentDiveLogRepository', () => {
     await expect(repository.get(existing.localId)).resolves.toBeUndefined();
     await expect(profileStorage.read(profileKey)).resolves.toEqual(fullProfile);
     expect(profileStorage.removals).toEqual([]);
+
+    await repository.removeWatchProfileIfUnreferenced(profileKey);
+
+    await expect(profileStorage.read(profileKey)).resolves.toBeUndefined();
+    expect(profileStorage.removals).toEqual([profileKey]);
+  });
+
+  it('serializes profile cleanup behind a concurrent import of the same key', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const profileStorage = new PausedProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      profileKeyPrefix: 'profile:',
+      now: () => 500,
+    });
+    const contentRevision = 'shared-revision';
+    const profileKey = `profile:${watchMessage.session.localSessionId}:${contentRevision}`;
+    const message: WatchSyncMessage = {
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        profile: {
+          formatVersion: 1,
+          contentRevision,
+          sampleIntervalSeconds: 1,
+          sampleCount: 1,
+        },
+        samples: [
+          {
+            localSessionId: watchMessage.session.localSessionId,
+            timestamp: 200,
+            depthMeters: 7,
+          },
+        ],
+      },
+    };
+    const observedImport = repository.importWatchMessages([message]);
+    await profileStorage.writeStarted;
+    const observedCleanup = repository.removeWatchProfileIfUnreferenced(
+      profileKey,
+    );
+
+    profileStorage.releaseWrite();
+    const [imported] = await observedImport;
+    await observedCleanup;
+
+    expect(imported.watchCapture?.profile?.storageKey).toBe(profileKey);
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(
+      message.session.samples,
+    );
+    expect(profileStorage.removals).not.toContain(profileKey);
   });
 
   it('persists account revision and conflict state in the current schema', async () => {

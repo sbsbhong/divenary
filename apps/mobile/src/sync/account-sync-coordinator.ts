@@ -593,8 +593,7 @@ export class AccountSyncCoordinator {
       );
       return;
     }
-    const current = await this.planRepository.get(item.entityLocalId);
-    await this.commitPlanDelete(current, item.entityLocalId, assertCanCommit, async () => {
+    await this.commitPlanDelete(item.entityLocalId, assertCanCommit, async () => {
       assertCanCommit();
       await this.outbox.complete(item.userId, item.operationId, {
         assertCanCommit,
@@ -829,55 +828,26 @@ export class AccountSyncCoordinator {
   ): Promise<void> {
     assertCanCommit();
     await this.logbookRepository.delete(localId, {
-      assertCanCommit,
-      commitAfterDelete: async () => {
-        assertCanCommit();
-        await finalize();
-      },
       retainProfileAfterDelete: true,
     });
-    await this.removeRetainedLogProfileBestEffort(previous);
-  }
-
-  private async removeRetainedLogProfileBestEffort(
-    deleted: DiveLogEntry | undefined,
-  ): Promise<void> {
-    const profileKey = deleted?.watchCapture?.profile?.storageKey;
-    if (!profileKey || !this.profileStorage) {
-      return;
+    assertCanCommit();
+    const profileKey = previous?.watchCapture?.profile?.storageKey;
+    if (profileKey) {
+      await this.logbookRepository.removeWatchProfileIfUnreferenced(profileKey);
+      assertCanCommit();
     }
-    try {
-      const remaining = await this.logbookRepository.list();
-      if (
-        remaining.some(
-          entry => entry.watchCapture?.profile?.storageKey === profileKey,
-        )
-      ) {
-        return;
-      }
-      await this.profileStorage.remove(profileKey);
-    } catch {
-      // Metadata is already committed; obsolete profile cleanup is best effort.
-    }
+    await finalize();
   }
 
   private async commitPlanDelete(
-    previous: DivePlan | undefined,
     localId: string,
     assertCanCommit: AssertCanCommit,
     finalize: () => Promise<void>,
   ): Promise<void> {
     assertCanCommit();
     await this.planRepository.delete(localId);
-    try {
-      assertCanCommit();
-      await finalize();
-    } catch (error) {
-      if (isStaleAccountSyncCommitError(error) && previous) {
-        await this.planRepository.save(previous);
-      }
-      throw error;
-    }
+    assertCanCommit();
+    await finalize();
   }
 
   private async restoreLog(

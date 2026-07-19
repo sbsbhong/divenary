@@ -49,7 +49,6 @@ export class LocalDiveLogRepository implements DiveLogRepository {
       this.entriesByLocalId.delete(localId);
       try {
         options?.assertCanCommit?.();
-        await options?.commitAfterDelete?.();
       } catch (error) {
         if (previous) {
           this.entriesByLocalId.set(localId, previous);
@@ -57,6 +56,10 @@ export class LocalDiveLogRepository implements DiveLogRepository {
         throw error;
       }
     });
+  }
+
+  async removeWatchProfileIfUnreferenced(_storageKey: string): Promise<void> {
+    return this.enqueueMutation(async () => undefined);
   }
 
   async importWatchMessages(

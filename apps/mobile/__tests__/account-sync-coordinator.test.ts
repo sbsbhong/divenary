@@ -717,22 +717,20 @@ describe('AccountSyncCoordinator', () => {
     await expect(logbook.get(localBefore.localId)).resolves.toEqual(localBefore);
   });
 
-  it('preserves exact persistent metadata and full profile when remote-delete dequeue becomes stale', async () => {
+  it('keeps the delete item after profile cleanup when dequeue becomes stale and retry completes', async () => {
     const outboxStorage = new PausedNextWriteStore();
     const fixture = await createPersistentDeleteFixture(outboxStorage);
     const queueBefore = await outboxStorage.getString('outbox');
-    const metadataBefore = await fixture.metadataStorage.getString(
-      mobileStorageKeys.logbook,
-    );
+    const remote = accountRepository({
+      deleteLog: jest.fn(async () => ({
+        status: 'saved' as const,
+        value: remoteLog({localId: fixture.current.localId}),
+      })),
+    });
     const coordinator = new AccountSyncCoordinator({
       userId,
       outbox: fixture.outbox,
-      accountRepository: accountRepository({
-        deleteLog: jest.fn(async () => ({
-          status: 'saved' as const,
-          value: remoteLog({localId: fixture.current.localId}),
-        })),
-      }),
+      accountRepository: remote,
       logbookRepository: fixture.logbook,
       planRepository: new LocalDivePlanRepository(),
       profileStorage: fixture.profileStorage,
@@ -745,6 +743,9 @@ describe('AccountSyncCoordinator', () => {
       drainError = error;
     });
     await pausedWrite.started;
+    const metadataAfterDelete = await fixture.metadataStorage.getString(
+      mobileStorageKeys.logbook,
+    );
     const profileDuringDequeue = await fixture.profileStorage.read(
       fixture.profileKey,
     );
@@ -753,26 +754,99 @@ describe('AccountSyncCoordinator', () => {
     pausedWrite.release();
     await observedDrain;
 
-    expect(profileDuringDequeue).toEqual(fixture.fullProfile);
+    expect(profileDuringDequeue).toBeUndefined();
     expect((drainError as Error | undefined)?.message).toMatch(/stale/i);
     await expect(outboxStorage.getString('outbox')).resolves.toBe(queueBefore);
     await expect(
       fixture.metadataStorage.getString(mobileStorageKeys.logbook),
-    ).resolves.toBe(metadataBefore);
+    ).resolves.toBe(metadataAfterDelete);
     await expect(fixture.outbox.list(userId)).resolves.toEqual([
       fixture.queued,
     ]);
-    await expect(fixture.logbook.get(fixture.current.localId)).resolves.toEqual(
-      fixture.current,
-    );
+    await expect(
+      fixture.logbook.get(fixture.current.localId),
+    ).resolves.toBeUndefined();
     await expect(
       fixture.profileStorage.read(fixture.profileKey),
-    ).resolves.toEqual(fixture.fullProfile);
+    ).resolves.toBeUndefined();
+
+    await expect(coordinator.drain({online: true})).resolves.toEqual({
+      processed: 1,
+      remaining: 0,
+    });
+    expect(remote.deleteLog).toHaveBeenCalledTimes(2);
+    await expect(fixture.outbox.list(userId)).resolves.toEqual([]);
   });
 
-  it('cleans a retained profile only after remote-delete dequeue commits', async () => {
+  it('keeps a plan delete queued without restoring metadata when dequeue becomes stale', async () => {
+    const outboxStorage = new PausedNextWriteStore();
+    const outbox = new AccountOutbox({
+      storage: outboxStorage,
+      storageKey: 'outbox',
+      now: () => 600,
+    });
+    const plan = localPlan({cloudSyncStatus: 'pending'});
+    const queued: AccountOutboxItem = {
+      operationId: 'delete-plan-operation',
+      userId,
+      entityKind: 'plan',
+      entityLocalId: plan.localId,
+      mutation: 'delete',
+      payload: {
+        local: plan,
+        remote: remotePlan({localId: plan.localId}),
+      },
+      expectedRevision: 1,
+      attemptCount: 0,
+      nextAttemptAt: 600,
+      createdAt: 600,
+    };
+    await outbox.enqueue(queued);
+    const queueBefore = await outboxStorage.getString('outbox');
+    const planbook = new LocalDivePlanRepository([plan]);
+    const remote = accountRepository({
+      deletePlan: jest.fn(async () => ({
+        status: 'saved' as const,
+        value: remotePlan({localId: plan.localId}),
+      })),
+    });
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: remote,
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+      now: () => 600,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+    const pausedWrite = outboxStorage.pauseNextWrite();
+    let drainError: unknown;
+    const observedDrain = coordinator.drain({online: true}).catch(error => {
+      drainError = error;
+    });
+    await pausedWrite.started;
+
+    coordinator.pause();
+    pausedWrite.release();
+    await observedDrain;
+
+    expect((drainError as Error | undefined)?.message).toMatch(/stale/i);
+    await expect(outboxStorage.getString('outbox')).resolves.toBe(queueBefore);
+    await expect(outbox.list(userId)).resolves.toEqual([queued]);
+    await expect(planbook.get(plan.localId)).resolves.toBeUndefined();
+
+    await expect(coordinator.drain({online: true})).resolves.toEqual({
+      processed: 1,
+      remaining: 0,
+    });
+    expect(remote.deletePlan).toHaveBeenCalledTimes(2);
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+  });
+
+  it('cleans metadata and profile before dequeuing a successful delete', async () => {
     const outboxStorage = new PausedNextWriteStore();
     const fixture = await createPersistentDeleteFixture(outboxStorage);
+    const queueBefore = await outboxStorage.getString('outbox');
     const coordinator = new AccountSyncCoordinator({
       userId,
       outbox: fixture.outbox,
@@ -795,14 +869,71 @@ describe('AccountSyncCoordinator', () => {
       fixture.profileKey,
     );
 
+    await expect(outboxStorage.getString('outbox')).resolves.toBe(queueBefore);
+    await expect(
+      fixture.logbook.get(fixture.current.localId),
+    ).resolves.toBeUndefined();
+    expect(profileDuringDequeue).toBeUndefined();
+
     pausedWrite.release();
     await expect(observedDrain).resolves.toEqual({processed: 1, remaining: 0});
 
-    expect(profileDuringDequeue).toEqual(fixture.fullProfile);
     await expect(fixture.outbox.list(userId)).resolves.toEqual([]);
     await expect(
       fixture.logbook.get(fixture.current.localId),
     ).resolves.toBeUndefined();
+    await expect(
+      fixture.profileStorage.read(fixture.profileKey),
+    ).resolves.toBeUndefined();
+  });
+
+  it('keeps a delete queued when profile cleanup fails after metadata delete and retry completes', async () => {
+    let now = 600;
+    const fixture = await createPersistentDeleteFixture(
+      new InMemoryKeyValueStore(),
+    );
+    const cleanup = jest
+      .spyOn(fixture.logbook, 'removeWatchProfileIfUnreferenced')
+      .mockRejectedValueOnce(new Error('profile cleanup failed'));
+    const remote = accountRepository({
+      deleteLog: jest.fn(async () => ({
+        status: 'saved' as const,
+        value: remoteLog({localId: fixture.current.localId}),
+      })),
+    });
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: fixture.outbox,
+      accountRepository: remote,
+      logbookRepository: fixture.logbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: fixture.profileStorage,
+      now: () => now,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+
+    await expect(coordinator.drain({online: true})).resolves.toEqual({
+      processed: 0,
+      remaining: 1,
+    });
+    await expect(
+      fixture.logbook.get(fixture.current.localId),
+    ).resolves.toBeUndefined();
+    await expect(
+      fixture.profileStorage.read(fixture.profileKey),
+    ).resolves.toEqual(fixture.fullProfile);
+    await expect(fixture.outbox.list(userId)).resolves.toMatchObject([
+      {operationId: fixture.queued.operationId, attemptCount: 1},
+    ]);
+
+    now = 603;
+    await expect(coordinator.drain({online: true})).resolves.toEqual({
+      processed: 1,
+      remaining: 0,
+    });
+    expect(remote.deleteLog).toHaveBeenCalledTimes(2);
+    expect(cleanup).toHaveBeenCalledTimes(2);
+    await expect(fixture.outbox.list(userId)).resolves.toEqual([]);
     await expect(
       fixture.profileStorage.read(fixture.profileKey),
     ).resolves.toBeUndefined();

@@ -8,7 +8,6 @@ export type ImportWatchMessagesOptions = {
 
 export type DeleteDiveLogOptions = {
   assertCanCommit?: () => void;
-  commitAfterDelete?: () => Promise<void>;
   retainProfileAfterDelete?: boolean;
 };
 
@@ -17,6 +16,7 @@ export type DiveLogRepository = {
   get(localId: string): Promise<DiveLogEntry | undefined>;
   save(entry: DiveLogEntry): Promise<DiveLogEntry>;
   delete(localId: string, options?: DeleteDiveLogOptions): Promise<void>;
+  removeWatchProfileIfUnreferenced(storageKey: string): Promise<void>;
   importWatchMessages(
     messages: WatchSyncMessage[],
     options?: ImportWatchMessagesOptions,
