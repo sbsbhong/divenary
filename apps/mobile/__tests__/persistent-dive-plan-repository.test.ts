@@ -1,10 +1,12 @@
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { PersistentDivePlanRepository } from '../src/repositories/persistent-dive-plan-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { DivePlan } from '../src/types/dive-plan';
 
 const plan = (overrides: Partial<DivePlan>): DivePlan => ({
   localId: 'plan-base',
+  cloudSyncStatus: 'notConfigured',
   status: 'draft',
   createdAt: 100,
   updatedAt: 100,
@@ -18,6 +20,49 @@ const plan = (overrides: Partial<DivePlan>): DivePlan => ({
 });
 
 describe('PersistentDivePlanRepository', () => {
+  it('migrates schema-2 plans to guest cloud metadata without fabricating ownership', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const { cloudSyncStatus: _cloudSyncStatus, ...legacyPlan } = plan({ localId: 'legacy-plan' });
+    await storage.setString(
+      mobileStorageKeys.planbook,
+      JSON.stringify({ schemaVersion: 2, updatedAt: 300, value: [legacyPlan] }),
+    );
+
+    const [migrated] = await new PersistentDivePlanRepository({ storage, now: () => 350 }).list();
+
+    expect(migrated.cloudSyncStatus).toBe('notConfigured');
+    expect(migrated.ownerUserId).toBeUndefined();
+    expect(migrated.remoteId).toBeUndefined();
+  });
+
+  it('serializes concurrent read-modify-write saves', async () => {
+    const repository = new PersistentDivePlanRepository({ storage: new InMemoryKeyValueStore(), now: () => 350 });
+
+    await Promise.all([
+      repository.save(plan({ localId: 'concurrent-a' })),
+      repository.save(plan({ localId: 'concurrent-b' })),
+    ]);
+
+    expect((await repository.list()).map(currentPlan => currentPlan.localId).sort()).toEqual([
+      'concurrent-a',
+      'concurrent-b',
+    ]);
+  });
+
+  it('honors an explicit metadata storage key', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDivePlanRepository({
+      storage,
+      storageKey: 'custom-planbook',
+      now: () => 350,
+    });
+
+    await repository.save(plan({ localId: 'custom-key-plan' }));
+
+    expect(await storage.getString('custom-planbook')).toBeDefined();
+    expect(await storage.getString(mobileStorageKeys.planbook)).toBeUndefined();
+  });
+
   it('saves, reloads, sorts, and deletes persisted plans', async () => {
     const storage = new InMemoryKeyValueStore();
     const repository = new PersistentDivePlanRepository({ storage, now: () => 350 });

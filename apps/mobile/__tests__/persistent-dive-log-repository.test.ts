@@ -1,4 +1,7 @@
-import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
+import {
+  createDefaultPersistentDiveLogRepository,
+  PersistentDiveLogRepository,
+} from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
@@ -47,6 +50,43 @@ const watchMessage: WatchSyncMessage = {
 };
 
 describe('PersistentDiveLogRepository', () => {
+  it('does not seed the built-in presentation fixture into persistent storage', async () => {
+    const repository = createDefaultPersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 500,
+    });
+
+    await expect(repository.list()).resolves.toEqual([]);
+  });
+
+  it('serializes concurrent read-modify-write saves', async () => {
+    const repository = new PersistentDiveLogRepository({ storage: new InMemoryKeyValueStore(), now: () => 500 });
+
+    await Promise.all([
+      repository.save(manualEntry({ localId: 'concurrent-a' })),
+      repository.save(manualEntry({ localId: 'concurrent-b' })),
+    ]);
+
+    expect((await repository.list()).map(entry => entry.localId).sort()).toEqual(['concurrent-a', 'concurrent-b']);
+  });
+
+  it('honors explicit metadata and profile key options', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      storageKey: 'custom-logbook',
+      profileKeyPrefix: 'custom-profile:',
+      now: () => 500,
+    });
+
+    const [entry] = await repository.importWatchMessages([{ ...watchMessage, session: { ...watchMessage.session, samples: [
+      { localSessionId: 'persistent-watch-1', timestamp: 200, depthMeters: 3 },
+    ] } }]);
+
+    expect(await storage.getString('custom-logbook')).toBeDefined();
+    expect(entry.watchCapture?.profile?.storageKey).toBe('custom-profile:persistent-watch-1:260');
+  });
+
   it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {
     const storage = new InMemoryKeyValueStore();
     const legacyStatuses = ['localOnly', 'pending', 'synced', 'failed'] as const;

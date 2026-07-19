@@ -1,5 +1,5 @@
 import type { WatchSession } from './dive-session';
-import type { DivePressureValues } from './dive-log-entry';
+import type { CloudSyncStatus, DivePressureValues } from './dive-log-entry';
 
 export type DivePlanStatus = 'draft' | 'planned' | 'completed';
 export type DiveEntryStyle = 'shore' | 'boat' | 'pool';
@@ -31,6 +31,9 @@ export type DivePlanChecklistItem = {
 
 export type DivePlan = {
   localId: string;
+  remoteId?: string;
+  ownerUserId?: string;
+  cloudSyncStatus?: CloudSyncStatus;
   status: DivePlanStatus;
   createdAt: number;
   updatedAt: number;
