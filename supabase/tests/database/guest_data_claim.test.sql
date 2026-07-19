@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(37);
+select plan(38);
 
 select has_table('public', 'dive_logs', 'dive logs table exists');
 select has_table('public', 'dive_plans', 'dive plans table exists');
@@ -287,6 +287,86 @@ select results_eq(
 select results_eq(
   $$
     select
+      relation.relname::text collate "C",
+      constraint_row.conname::text collate "C",
+      pg_catalog.pg_get_constraintdef(constraint_row.oid, true)::text collate "C"
+    from pg_catalog.pg_constraint as constraint_row
+    join pg_catalog.pg_class as relation
+      on relation.oid = constraint_row.conrelid
+    join pg_catalog.pg_namespace as namespace
+      on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname in (
+        'dive_logs',
+        'dive_plans',
+        'guest_claim_batches',
+        'guest_claim_records'
+      )
+      and constraint_row.contype in ('c', 'p')
+    order by relation.relname, constraint_row.conname
+  $$,
+  $$
+    values
+      ('dive_logs'::text collate "C", 'dive_logs_dive_mode_check'::text collate "C",
+        'CHECK (dive_mode IS NULL OR (dive_mode = ANY (ARRAY[''scuba''::text, ''freedive''::text])))'::text collate "C"),
+      ('dive_logs', 'dive_logs_local_id_check',
+        'CHECK (length(local_id) >= 1 AND length(local_id) <= 256)'),
+      ('dive_logs', 'dive_logs_payload_sha256_check',
+        'CHECK (payload_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
+      ('dive_logs', 'dive_logs_pkey', 'PRIMARY KEY (id)'),
+      ('dive_logs', 'dive_logs_profile_byte_count_check',
+        'CHECK (profile_byte_count IS NULL OR profile_byte_count >= 0)'),
+      ('dive_logs', 'dive_logs_profile_sample_count_check',
+        'CHECK (profile_sample_count IS NULL OR profile_sample_count >= 0)'),
+      ('dive_logs', 'dive_logs_profile_sha256_check',
+        'CHECK (profile_sha256 IS NULL OR profile_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
+      ('dive_logs', 'dive_logs_rating_check',
+        'CHECK (rating IS NULL OR rating >= 1 AND rating <= 5)'),
+      ('dive_logs', 'dive_logs_revision_check', 'CHECK (revision > 0)'),
+      ('dive_logs', 'dive_logs_source_check',
+        'CHECK (source = ANY (ARRAY[''manual''::text, ''watch''::text]))'),
+      ('dive_plans', 'dive_plans_dive_mode_check',
+        'CHECK (dive_mode IS NULL OR (dive_mode = ANY (ARRAY[''scuba''::text, ''freedive''::text])))'),
+      ('dive_plans', 'dive_plans_local_id_check',
+        'CHECK (length(local_id) >= 1 AND length(local_id) <= 256)'),
+      ('dive_plans', 'dive_plans_payload_sha256_check',
+        'CHECK (payload_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
+      ('dive_plans', 'dive_plans_pkey', 'PRIMARY KEY (id)'),
+      ('dive_plans', 'dive_plans_revision_check', 'CHECK (revision > 0)'),
+      ('dive_plans', 'dive_plans_status_check',
+        'CHECK (status = ANY (ARRAY[''draft''::text, ''planned''::text, ''completed''::text]))'),
+      ('guest_claim_batches', 'guest_claim_batches_client_batch_id_check',
+        'CHECK (length(client_batch_id) >= 1 AND length(client_batch_id) <= 256)'),
+      ('guest_claim_batches', 'guest_claim_batches_expected_log_count_check',
+        'CHECK (expected_log_count >= 0)'),
+      ('guest_claim_batches', 'guest_claim_batches_expected_plan_count_check',
+        'CHECK (expected_plan_count >= 0)'),
+      ('guest_claim_batches', 'guest_claim_batches_manifest_sha256_check',
+        'CHECK (manifest_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
+      ('guest_claim_batches', 'guest_claim_batches_pkey', 'PRIMARY KEY (id)'),
+      ('guest_claim_batches', 'guest_claim_batches_status_check',
+        'CHECK (status = ANY (ARRAY[''uploading''::text, ''committed''::text]))'),
+      ('guest_claim_records',
+        'guest_claim_records_client_record_id_check',
+        'CHECK (length(client_record_id) >= 1 AND length(client_record_id) <= 256)'),
+      ('guest_claim_records', 'guest_claim_records_entity_kind_check',
+        'CHECK (entity_kind = ANY (ARRAY[''plan''::text, ''log''::text]))'),
+      ('guest_claim_records', 'guest_claim_records_payload_sha256_check',
+        'CHECK (payload_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
+      ('guest_claim_records', 'guest_claim_records_pkey', 'PRIMARY KEY (id)'),
+      ('guest_claim_records', 'guest_claim_records_profile_byte_count_check',
+        'CHECK (profile_byte_count IS NULL OR profile_byte_count >= 0)'),
+      ('guest_claim_records', 'guest_claim_records_profile_sample_count_check',
+        'CHECK (profile_sample_count IS NULL OR profile_sample_count >= 0)'),
+      ('guest_claim_records', 'guest_claim_records_profile_sha256_check',
+        'CHECK (profile_sha256 IS NULL OR profile_sha256 ~ ''^[0-9a-f]{64}$''::text)')
+  $$,
+  'primary keys and check expressions match the exact Task 2 contract'
+);
+
+select results_eq(
+  $$
+    select
       source_relation.relname::text collate "C",
       constraint_row.conname::text collate "C",
       (
@@ -487,7 +567,6 @@ select ok(
       and count(*) filter (
         where schemaname = 'storage'
           and tablename = 'objects'
-          and policyname like 'dive_profiles_%'
           and cmd in ('UPDATE', 'DELETE')
       ) = 0
       and count(*) filter (

@@ -170,12 +170,15 @@ async function uploadProfile(
   accessToken,
   objectPath,
   profile,
+  upsert = false,
 ) {
   return request(
     `${apiUrl}/storage/v1/object/dive-profiles/${objectPath}`,
     {
       method: 'POST',
-      headers: headers(publishableKey, accessToken, {'x-upsert': 'false'}),
+      headers: headers(publishableKey, accessToken, {
+        'x-upsert': String(upsert),
+      }),
       body: JSON.stringify(profile),
     },
   );
@@ -398,6 +401,21 @@ try {
   }
   logCheck('owner rows and claim staging writes');
 
+  const uploadingBatchUpdate = await updateRows(
+    status.API_URL,
+    status.PUBLISHABLE_KEY,
+    accessTokens[0],
+    'guest_claim_records',
+    `id=eq.${ownerRecords[0].staged.id}`,
+    {payload: {version: 2}},
+  );
+  assertStatus(uploadingBatchUpdate, [200], 'update uploading claim record');
+  assert.deepEqual(uploadingBatchUpdate.body, [
+    {...ownerRecords[0].staged, payload: {version: 2}},
+  ]);
+  ownerRecords[0].staged = uploadingBatchUpdate.body[0];
+  logCheck('uploading claim record update');
+
   const committedBatch = await updateRows(
     status.API_URL,
     status.SECRET_KEY,
@@ -434,7 +452,7 @@ try {
     accessTokens[0],
     'guest_claim_records',
     `id=eq.${ownerRecords[0].staged.id}`,
-    {payload: {version: 2}},
+    {payload: {version: 3}},
   );
   assertStatus(
     postCommitUpdate,
@@ -453,7 +471,7 @@ try {
     `select=payload&id=eq.${ownerRecords[0].staged.id}`,
   );
   assertStatus(unchangedRecord, [200], 'read committed claim record');
-  assert.deepEqual(unchangedRecord.body, [{payload: {version: 1}}]);
+  assert.deepEqual(unchangedRecord.body, [{payload: {version: 2}}]);
   logCheck('post-commit claim record immutability');
 
   for (let index = 0; index < userIds.length; index += 1) {
@@ -544,8 +562,20 @@ try {
       accessTokens[index],
       objectPath,
       {samples: []},
+      true,
     );
     assertStatus(overwrite, [400, 403, 409], 'immutable profile overwrite');
+
+    const unchangedDownload = await downloadProfile(
+      status.API_URL,
+      status.PUBLISHABLE_KEY,
+      accessTokens[index],
+      objectPath,
+    );
+    assertStatus(unchangedDownload, [200], 'download immutable owner profile');
+    assert.deepEqual(unchangedDownload.body, {
+      samples: [{elapsedSeconds: 0, depthMeters: index + 1}],
+    });
   }
   logCheck('private immutable profile objects');
 
