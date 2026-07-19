@@ -22,7 +22,10 @@ import { diveLogbookQueryKeys } from './use-dive-logbook-queries';
 import { divePlanQueryKeys } from './use-dive-plan-queries';
 import {
   defaultWatchConnectivityImportCoordinator,
+  isStaleWatchConnectivityImportError,
+  type WatchConnectivityImportGuard,
   type WatchConnectivityImportCoordinator,
+  type WatchConnectivityImportScope,
 } from './watch-connectivity-import-coordinator';
 import { useOptionalAccountData } from './account-data';
 
@@ -77,7 +80,15 @@ type WatchConnectivityPayloadImportOptions = {
   acknowledgeImportedPayloads: WatchConnectivityAcknowledgement;
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
   coordinator: WatchConnectivityImportCoordinator;
+  scope: WatchConnectivityImportScope;
   onLocalWritesCommitted?: () => Promise<unknown>;
+};
+
+type WatchConnectivityPayloadImportOnceOptions = Omit<
+  WatchConnectivityPayloadImportOptions,
+  'coordinator' | 'scope'
+> & {
+  guard: WatchConnectivityImportGuard;
 };
 
 export function WatchConnectivitySyncProvider(
@@ -100,8 +111,13 @@ export function WatchConnectivitySyncProvider(
     ?? (props.repository ? undefined : accountData?.requestSync);
   const queryClient = useQueryClient();
 
-  const importPayload = React.useCallback(
-    async (payload: WatchConnectivityPayload) => {
+  React.useEffect(() => {
+    if (!preferencesHydrated) {
+      return;
+    }
+    const scope = coordinator.activateScope(queryScope);
+    let isMounted = true;
+    const importPayload = async (payload: WatchConnectivityPayload) => {
       const importedEntry = await importWatchConnectivityPayload({
         payload,
         repository,
@@ -111,6 +127,7 @@ export function WatchConnectivitySyncProvider(
         acknowledgeImportedPayloads,
         notifyImportedEntry,
         coordinator,
+        scope,
         queryScope,
         onLocalWritesCommitted,
       });
@@ -118,35 +135,14 @@ export function WatchConnectivitySyncProvider(
       if (importedEntry) {
         onImportedEntry?.(importedEntry);
       }
-    },
-    [
-      acknowledgeImportedPayloads,
-      acknowledgePayloads,
-      coordinator,
-      notifyImportedEntry,
-      onLocalWritesCommitted,
-      onImportedEntry,
-      planRepository,
-      queryClient,
-      queryScope,
-      repository,
-    ],
-  );
-
-  const importPayloadSafely = React.useCallback(
-    (payload: WatchConnectivityPayload) => {
+    };
+    const importPayloadSafely = (payload: WatchConnectivityPayload) => {
       void importPayload(payload).catch(error => {
-        console.warn('Failed to import watch sync payload', error);
+        if (!isStaleWatchConnectivityImportError(error)) {
+          console.warn('Failed to import watch sync payload', error);
+        }
       });
-    },
-    [importPayload],
-  );
-
-  React.useEffect(() => {
-    if (!preferencesHydrated) {
-      return;
-    }
-    let isMounted = true;
+    };
     const subscription = subscribeToPayloads(payload => {
       importPayloadSafely(payload);
     });
@@ -170,7 +166,9 @@ export function WatchConnectivitySyncProvider(
             try {
               await importPayload(payload);
             } catch (error) {
-              console.warn('Failed to import watch sync payload', error);
+              if (!isStaleWatchConnectivityImportError(error)) {
+                console.warn('Failed to import watch sync payload', error);
+              }
               return;
             }
           }
@@ -188,10 +186,25 @@ export function WatchConnectivitySyncProvider(
 
     return () => {
       isMounted = false;
+      coordinator.invalidateScope(scope);
       subscription.remove();
       appStateSubscription.remove();
     };
-  }, [drainPendingPayloads, importPayload, importPayloadSafely, preferencesHydrated, subscribeToPayloads]);
+  }, [
+    acknowledgeImportedPayloads,
+    acknowledgePayloads,
+    coordinator,
+    drainPendingPayloads,
+    notifyImportedEntry,
+    onImportedEntry,
+    onLocalWritesCommitted,
+    planRepository,
+    preferencesHydrated,
+    queryClient,
+    queryScope,
+    repository,
+    subscribeToPayloads,
+  ]);
 
   return <>{children}</>;
 }
@@ -211,6 +224,7 @@ export async function importPendingWatchConnectivityPayloads({
   let importedCount = 0;
   let receivedCount = 0;
   const seenPayloadIds = new Set<string>();
+  const scope = coordinator.activateScope(queryScope);
 
   while (true) {
     const payloads = await drainPendingPayloads();
@@ -236,6 +250,7 @@ export async function importPendingWatchConnectivityPayloads({
         acknowledgeImportedPayloads,
         notifyImportedEntry,
         coordinator,
+        scope,
         onLocalWritesCommitted,
       });
 
@@ -261,9 +276,10 @@ async function importWatchConnectivityPayload({
   acknowledgeImportedPayloads,
   notifyImportedEntry,
   coordinator,
+  scope,
   onLocalWritesCommitted,
 }: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
-  return coordinator.run(payload, () => importWatchConnectivityPayloadOnce({
+  return coordinator.run(scope, payload, guard => importWatchConnectivityPayloadOnce({
     payload,
     repository,
     planRepository,
@@ -272,7 +288,7 @@ async function importWatchConnectivityPayload({
     acknowledgePayloads,
     acknowledgeImportedPayloads,
     notifyImportedEntry,
-    coordinator,
+    guard,
     onLocalWritesCommitted,
   }));
 }
@@ -286,8 +302,9 @@ async function importWatchConnectivityPayloadOnce({
   acknowledgePayloads,
   acknowledgeImportedPayloads,
   notifyImportedEntry,
+  guard,
   onLocalWritesCommitted,
-}: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
+}: WatchConnectivityPayloadImportOnceOptions): Promise<DiveLogEntry | undefined> {
   const result = parseWatchSyncMessageJson(payload.payloadJson);
 
   if (!result.ok) {
@@ -304,9 +321,15 @@ async function importWatchConnectivityPayloadOnce({
       && entry.watchCapture?.profile?.sha256 === payload.sha256,
   );
   if (duplicate) {
+    const existingPlan = await findSourcePlan(planRepository, result.message);
+    guard.assertActive();
     await acknowledgePayload(payload, acknowledgeImportedPayloads);
+    await enqueueExistingPendingAccountValue(repository, duplicate);
+    await enqueueExistingPendingAccountValue(planRepository, existingPlan);
+    requestAccountSyncSafely(onLocalWritesCommitted);
     return undefined;
   }
+  guard.assertActive();
   const entries = await repository.importWatchMessages([result.message], {
     profileDigests: [payload.sha256],
   });
@@ -318,9 +341,12 @@ async function importWatchConnectivityPayloadOnce({
     result.message,
     payload,
     queryScope,
+    guard,
   );
+  guard.assertActive();
   queryClient.setQueryData(diveLogbookQueryKeys.list(repository, queryScope), importedEntries);
   queryClient.invalidateQueries({ queryKey: diveLogbookQueryKeys.all(repository, queryScope) });
+  guard.assertActive();
   await acknowledgePayload(payload, acknowledgeImportedPayloads);
   await enqueueSavedAccountValue<DiveLogEntry>(repository, importedEntry);
   await enqueueSavedAccountValue<DivePlan>(planRepository, completedPlan);
@@ -374,6 +400,7 @@ async function markWatchConnectivityImported(
   message: WatchSyncMessage,
   payload: WatchConnectivityPayload,
   queryScope?: string,
+  guard?: WatchConnectivityImportGuard,
 ): Promise<{
   importedEntry?: DiveLogEntry;
   completedPlan?: DivePlan;
@@ -400,10 +427,20 @@ async function markWatchConnectivityImported(
     cloudSyncStatus: 'notConfigured',
     updatedAt: payload.receivedAt ?? Date.now() / 1000,
   };
+  guard?.assertActive();
   const savedEntry = await saveLocalAccountValue(repository, pendingEntry);
 
   if (sourcePlan) {
-    completedPlan = await completeSourcePlanSafely(planRepository, queryClient, sourcePlan, savedEntry, message, payload, queryScope);
+    completedPlan = await completeSourcePlanSafely(
+      planRepository,
+      queryClient,
+      sourcePlan,
+      savedEntry,
+      message,
+      payload,
+      queryScope,
+      guard,
+    );
   }
 
   const currentEntries = await repository.list();
@@ -432,10 +469,23 @@ async function completeSourcePlanSafely(
   message: WatchSyncMessage,
   payload: WatchConnectivityPayload,
   queryScope?: string,
+  guard?: WatchConnectivityImportGuard,
 ): Promise<DivePlan | undefined> {
   try {
-    return await completeSourcePlan(planRepository, queryClient, plan, entry, message, payload, queryScope);
+    return await completeSourcePlan(
+      planRepository,
+      queryClient,
+      plan,
+      entry,
+      message,
+      payload,
+      queryScope,
+      guard,
+    );
   } catch (error) {
+    if (isStaleWatchConnectivityImportError(error)) {
+      throw error;
+    }
     console.warn('Failed to complete source dive plan after watch import', error);
     return undefined;
   }
@@ -449,8 +499,10 @@ async function completeSourcePlan(
   message: WatchSyncMessage,
   payload: WatchConnectivityPayload,
   queryScope?: string,
+  guard?: WatchConnectivityImportGuard,
 ): Promise<DivePlan> {
   const completedAt = message.session.endedAt ?? payload.receivedAt ?? Date.now() / 1000;
+  guard?.assertActive();
   const savedPlan = await saveLocalAccountValue(planRepository, {
     ...plan,
     status: 'completed',
@@ -459,6 +511,7 @@ async function completeSourcePlan(
     updatedAt: completedAt,
   });
 
+  guard?.assertActive();
   queryClient.setQueryData(divePlanQueryKeys.detail(savedPlan.localId, planRepository, queryScope), savedPlan);
   queryClient.setQueryData<DivePlan[]>(divePlanQueryKeys.list(planRepository, queryScope), currentPlans =>
     (currentPlans ?? []).map(currentPlan => (currentPlan.localId === savedPlan.localId ? savedPlan : currentPlan)),
@@ -484,4 +537,16 @@ async function enqueueSavedAccountValue<T>(
   if (value !== undefined && accountRepository.enqueueSaved) {
     await accountRepository.enqueueSaved(value);
   }
+}
+
+async function enqueueExistingPendingAccountValue<
+  T extends {cloudSyncStatus?: string},
+>(
+  repository: object,
+  value: T | undefined,
+): Promise<void> {
+  if (value?.cloudSyncStatus !== 'pending') {
+    return;
+  }
+  await enqueueSavedAccountValue(repository, value);
 }

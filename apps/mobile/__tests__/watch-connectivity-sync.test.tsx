@@ -14,6 +14,13 @@ import { dataStorageKeys } from '../src/storage/data-principal';
 import { AccountOutbox } from '../src/sync/account-outbox';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+const createDeferred = () => {
+  let resolve = () => {};
+  const promise = new Promise<void>(nextResolve => {
+    resolve = nextResolve;
+  });
+  return {promise, resolve};
+};
 const queryClients: QueryClient[] = [];
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
@@ -1017,5 +1024,494 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(result.importedCount).toBe(1);
     expect(await repository.list()).toHaveLength(1);
     expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels an A import before local mutation and replays the same payload under B', async () => {
+    const repositoryA = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const listStarted = createDeferred();
+    const releaseList = createDeferred();
+    const originalListA = repositoryA.list.bind(repositoryA);
+    jest.spyOn(repositoryA, 'list').mockImplementationOnce(async () => {
+      listStarted.resolve();
+      await releaseList.promise;
+      return originalListA();
+    });
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const requestSync = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    const subscribeToPayloads = (handler: (payload: WatchConnectivityPayload) => void) => {
+      listener = handler;
+      return {remove: jest.fn()};
+    };
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'principal-switch-before-save',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repositoryA}
+            queryScope="user:A"
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            onLocalWritesCommitted={requestSync}
+            subscribeToPayloads={subscribeToPayloads}
+          />
+        </QueryClientProvider>,
+      );
+      renderers.push(renderer);
+      await flushPromises();
+    });
+    listener?.(payload);
+    await listStarted.promise;
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repositoryB}
+            queryScope="user:B"
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            onLocalWritesCommitted={requestSync}
+            subscribeToPayloads={subscribeToPayloads}
+          />
+        </QueryClientProvider>,
+      );
+    });
+    releaseList.resolve();
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(await repositoryA.list()).toEqual([]);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
+    expect(requestSync).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      listener?.(payload);
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(await repositoryB.list()).toHaveLength(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([payload.payloadId]);
+    expect(requestSync).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not acknowledge or enqueue when A becomes stale after its local save', async () => {
+    const repositoryA = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const enqueueSaved = jest.fn().mockResolvedValue(undefined);
+    Object.assign(repositoryA, {enqueueSaved});
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const localSaveCompleted = createDeferred();
+    const releasePostSaveList = createDeferred();
+    const originalListA = repositoryA.list.bind(repositoryA);
+    let listCallCount = 0;
+    jest.spyOn(repositoryA, 'list').mockImplementation(async () => {
+      listCallCount += 1;
+      if (listCallCount === 2) {
+        localSaveCompleted.resolve();
+        await releasePostSaveList.promise;
+      }
+      return originalListA();
+    });
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const requestSync = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    const subscribeToPayloads = (handler: (payload: WatchConnectivityPayload) => void) => {
+      listener = handler;
+      return {remove: jest.fn()};
+    };
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'principal-switch-after-save',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repositoryA}
+            queryScope="user:A"
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            onLocalWritesCommitted={requestSync}
+            subscribeToPayloads={subscribeToPayloads}
+          />
+        </QueryClientProvider>,
+      );
+      renderers.push(renderer);
+      await flushPromises();
+    });
+    listener?.(payload);
+    await localSaveCompleted.promise;
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repositoryB}
+            queryScope="user:B"
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            onLocalWritesCommitted={requestSync}
+            subscribeToPayloads={subscribeToPayloads}
+          />
+        </QueryClientProvider>,
+      );
+    });
+    releasePostSaveList.resolve();
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(await repositoryA.list()).toHaveLength(1);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
+    expect(enqueueSaved).not.toHaveBeenCalled();
+    expect(requestSync).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      listener?.(payload);
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(await repositoryB.list()).toHaveLength(1);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([payload.payloadId]);
+  });
+
+  it('separates the same payload single-flight by principal scope', async () => {
+    const repositoryA = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const listStarted = createDeferred();
+    const releaseList = createDeferred();
+    const originalListA = repositoryA.list.bind(repositoryA);
+    jest.spyOn(repositoryA, 'list').mockImplementationOnce(async () => {
+      listStarted.resolve();
+      await releaseList.promise;
+      return originalListA();
+    });
+    const acknowledgeA = jest.fn().mockResolvedValue(undefined);
+    const acknowledgeB = jest.fn().mockResolvedValue(undefined);
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'same-payload-different-scope',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+
+    const importA = importPendingWatchConnectivityPayloads({
+      repository: repositoryA,
+      queryClient,
+      queryScope: 'user:A',
+      coordinator,
+      drainPendingPayloads: async () => [payload],
+      acknowledgeImportedPayloads: acknowledgeA,
+    });
+    await listStarted.promise;
+
+    const importB = importPendingWatchConnectivityPayloads({
+      repository: repositoryB,
+      queryClient,
+      queryScope: 'user:B',
+      coordinator,
+      drainPendingPayloads: async () => [payload],
+      acknowledgeImportedPayloads: acknowledgeB,
+    });
+
+    await flushPromises();
+    releaseList.resolve();
+    const results = await Promise.allSettled([importA, importB]);
+
+    expect(results[0]).toMatchObject({
+      status: 'rejected',
+      reason: {name: 'StaleWatchConnectivityImportError'},
+    });
+    expect(results[1]).toEqual({
+      status: 'fulfilled',
+      value: {receivedCount: 1, importedCount: 1},
+    });
+    expect(await repositoryA.list()).toEqual([]);
+    expect(await repositoryB.list()).toHaveLength(1);
+    expect(acknowledgeA).not.toHaveBeenCalled();
+    expect(acknowledgeB).toHaveBeenCalledWith([payload.payloadId]);
+  });
+
+  it('repairs a duplicate account import after ACK by enqueueing the existing pending log and plan', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const planRepository = new LocalDivePlanRepository([{
+      localId: 'duplicate-plan',
+      status: 'planned',
+      createdAt: 1781350000,
+      updatedAt: 1781351000,
+      plannedAt: 1781352000,
+      title: 'Duplicate recovery',
+      diveMode: 'scuba',
+      site: {name: 'Recovery Reef'},
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      objective: 'Recover the pending outbox write',
+      plannedValues: {},
+      checklistItems: [],
+    }]);
+    const queryClient = createQueryClient();
+    const fixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        sourcePlanLocalId: 'duplicate-plan',
+        samples: metadataRichFixture.session.samples.map(sample => ({...sample})),
+      },
+    };
+    const seedPayload: WatchConnectivityPayload = {
+      payloadId: 'duplicate-seed',
+      payloadJson: JSON.stringify(fixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    await importPendingWatchConnectivityPayloads({
+      repository,
+      planRepository,
+      queryClient,
+      drainPendingPayloads: async () => [seedPayload],
+      acknowledgeImportedPayloads: jest.fn().mockResolvedValue(undefined),
+      coordinator: new WatchConnectivityImportCoordinator(),
+    });
+    const [seededEntry] = await repository.list();
+    await repository.save({
+      ...seededEntry,
+      cloudSyncStatus: 'pending',
+      watchCapture: seededEntry.watchCapture
+        ? {
+            ...seededEntry.watchCapture,
+            profile: {
+              storageKey: 'watch-profile:fixture-rich-session',
+              contentRevision: 'fixture-rich-revision-1',
+              sampleCount: metadataRichFixture.session.samples.length,
+              sha256: 'fixture-profile-sha',
+            },
+          }
+        : undefined,
+    });
+    const seededPlan = await planRepository.get('duplicate-plan');
+    expect(seededPlan).toBeDefined();
+    await planRepository.save({...seededPlan!, cloudSyncStatus: 'pending'});
+
+    const order: string[] = [];
+    const enqueueLog = jest.fn(async () => {
+      order.push('enqueue-log');
+    });
+    const enqueuePlan = jest.fn(async () => {
+      order.push('enqueue-plan');
+    });
+    Object.assign(repository, {enqueueSaved: enqueueLog});
+    Object.assign(planRepository, {enqueueSaved: enqueuePlan});
+    const payload: WatchConnectivityPayload = {
+      ...seedPayload,
+      payloadId: 'duplicate-replay',
+      contentRevision: 'fixture-rich-revision-1',
+      sha256: 'fixture-profile-sha',
+    };
+
+    const result = await importPendingWatchConnectivityPayloads({
+      repository,
+      planRepository,
+      queryClient,
+      queryScope: 'user:duplicate-recovery',
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [payload],
+      acknowledgeImportedPayloads: async payloadIds => {
+        order.push('ack');
+        expect(payloadIds).toEqual([payload.payloadId]);
+        expect(enqueueLog).not.toHaveBeenCalled();
+        expect(enqueuePlan).not.toHaveBeenCalled();
+      },
+      onLocalWritesCommitted: async () => {
+        order.push('remote');
+      },
+    });
+
+    expect(result).toEqual({receivedCount: 1, importedCount: 0});
+    expect(order).toEqual(['ack', 'enqueue-log', 'enqueue-plan', 'remote']);
+    expect(enqueueLog).toHaveBeenCalledWith(expect.objectContaining({
+      localId: seededEntry.localId,
+      cloudSyncStatus: 'pending',
+    }));
+    expect(enqueuePlan).toHaveBeenCalledWith(expect.objectContaining({
+      localId: 'duplicate-plan',
+      cloudSyncStatus: 'pending',
+    }));
+  });
+
+  it('commits log and plan locally before ACK, then enqueues before requesting remote sync', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const planRepository = new LocalDivePlanRepository([{
+      localId: 'ordered-plan',
+      status: 'planned',
+      createdAt: 1781350000,
+      updatedAt: 1781351000,
+      plannedAt: 1781352000,
+      title: 'Ordered import',
+      diveMode: 'scuba',
+      site: {name: 'Order Reef'},
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      objective: 'Preserve durable ordering',
+      plannedValues: {},
+      checklistItems: [],
+    }]);
+    const order: string[] = [];
+    const saveLog = repository.save.bind(repository);
+    const savePlan = planRepository.save.bind(planRepository);
+    Object.assign(repository, {
+      saveLocalOnly: async (entry: Parameters<typeof repository.save>[0]) => {
+        const saved = await saveLog(entry);
+        order.push('local-log');
+        return saved;
+      },
+      enqueueSaved: async () => {
+        order.push('enqueue-log');
+      },
+    });
+    Object.assign(planRepository, {
+      saveLocalOnly: async (plan: Parameters<typeof planRepository.save>[0]) => {
+        const saved = await savePlan(plan);
+        order.push('local-plan');
+        return saved;
+      },
+      enqueueSaved: async () => {
+        order.push('enqueue-plan');
+      },
+    });
+    const fixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        sourcePlanLocalId: 'ordered-plan',
+        samples: metadataRichFixture.session.samples.map(sample => ({...sample})),
+      },
+    };
+
+    await importPendingWatchConnectivityPayloads({
+      repository,
+      planRepository,
+      queryClient: createQueryClient(),
+      queryScope: 'user:ordered-import',
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [{
+        payloadId: 'ordered-import-payload',
+        payloadJson: JSON.stringify(fixture),
+        localSessionId: 'fixture-rich-session',
+        receivedAt: 1781355000,
+      }],
+      acknowledgeImportedPayloads: async () => {
+        order.push('ack');
+      },
+      onLocalWritesCommitted: async () => {
+        order.push('remote');
+      },
+    });
+
+    expect(order).toEqual([
+      'local-log',
+      'local-plan',
+      'ack',
+      'enqueue-log',
+      'enqueue-plan',
+      'remote',
+    ]);
+  });
+
+  it('invalidates an active import when the provider is cleaned up', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const listStarted = createDeferred();
+    const releaseList = createDeferred();
+    const originalList = repository.list.bind(repository);
+    jest.spyOn(repository, 'list').mockImplementationOnce(async () => {
+      listStarted.resolve();
+      await releaseList.promise;
+      return originalList();
+    });
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const enqueueSaved = jest.fn().mockResolvedValue(undefined);
+    Object.assign(repository, {enqueueSaved});
+    const requestSync = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      const renderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            queryScope="user:cleanup"
+            coordinator={coordinator}
+            drainPendingPayloads={async () => []}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            onLocalWritesCommitted={requestSync}
+            subscribeToPayloads={handler => {
+              listener = handler;
+              return {remove: jest.fn()};
+            }}
+          />
+        </QueryClientProvider>,
+      );
+      renderers.push(renderer);
+      await flushPromises();
+    });
+    listener?.({
+      payloadId: 'cleanup-payload',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    });
+    await listStarted.promise;
+
+    await ReactTestRenderer.act(async () => {
+      const renderer = renderers[renderers.length - 1];
+      renderer.unmount();
+      renderers.splice(renderers.indexOf(renderer), 1);
+    });
+    releaseList.resolve();
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(await repository.list()).toEqual([]);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
+    expect(enqueueSaved).not.toHaveBeenCalled();
+    expect(requestSync).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
   });
 });
