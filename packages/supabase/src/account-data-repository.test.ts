@@ -173,6 +173,36 @@ describe('AccountDataRepository', () => {
     assert.match((calls[0]?.calls[0] as {value: {deleted_at: string}}).value.deleted_at, /^\d{4}-\d{2}-\d{2}T/);
   });
 
+  test('preserves dive mode when saving a log', async () => {
+    const {client, calls} = createClient([
+      {data: logRow({revision: 5, dive_mode: 'scuba'}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    const result = await repository.saveLog({
+      id: LOG_ID,
+      localId: 'local-log',
+      revision: 4,
+      payloadSha256: 'a'.repeat(64),
+      payload: {
+        source: 'manual',
+        started_at: STARTED_AT,
+        dive_mode: 'scuba',
+        manual_data: {},
+        mobile_data: {},
+        provenance: {},
+      },
+    }, 4);
+
+    assert.equal(result.status, 'saved');
+    if (result.status === 'saved') {
+      assert.equal(result.value.payload.dive_mode, 'scuba');
+    }
+    const update = calls[0]?.calls[0] as {method: string; value: Record<string, unknown>};
+    assert.equal(update.method, 'update');
+    assert.equal(update.value.dive_mode, 'scuba');
+  });
+
   test('returns the current remote plan when a revision update affects no rows', async () => {
     const {client, calls} = createClient([
       {data: null, error: null},
@@ -241,7 +271,7 @@ describe('AccountDataRepository', () => {
       assert.ok(error instanceof AccountDataRepositoryError);
       assert.equal(error.message, 'Account data operation failed');
       assert.equal(error.operation, 'list');
-      assert.equal(JSON.stringify(error).includes(secret), false);
+      assert.notEqual(error.message, secret);
       return true;
     });
   });

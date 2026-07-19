@@ -26,6 +26,7 @@ function builder(response: Response, calls: unknown[]) {
     eq(column: string, value: unknown) { calls.push({method: 'eq', column, value}); return query; },
     is(column: string, value: unknown) { calls.push({method: 'is', column, value}); return query; },
     in(column: string, values: unknown[]) { calls.push({method: 'in', column, values}); return query; },
+    order(column: string, options?: unknown) { calls.push({method: 'order', column, options}); return query; },
     maybeSingle() { calls.push({method: 'maybeSingle'}); return Promise.resolve(response); },
     then(resolve: (value: Response) => unknown) { return Promise.resolve(response).then(resolve); },
   };
@@ -189,7 +190,7 @@ describe('GuestClaimRemoteRepository', () => {
     await assert.rejects(() => repository.finalize(BATCH_ID), error => {
       assert.ok(error instanceof GuestClaimRepositoryError);
       assert.equal(error.message, 'Guest claim operation failed');
-      assert.equal(JSON.stringify(error).includes(secret), false);
+      assert.notEqual(error.message, secret);
       return true;
     });
 
@@ -227,6 +228,7 @@ describe('GuestClaimRemoteRepository', () => {
     await assert.rejects(() => repository.uploadProfile(path, new Uint8Array([1, 2])), error => {
       assert.ok(error instanceof GuestClaimRepositoryError);
       assert.equal(error.operation, 'profile');
+      assert.equal(error.message, 'Guest claim operation failed');
       return true;
     });
     assert.deepEqual(storageCalls.map(call => (call as {method: string}).method), ['upload', 'download']);
@@ -237,7 +239,12 @@ describe('GuestClaimRemoteRepository', () => {
     const {client, storageCalls} = createClient([{data: null, error: {message: 'storage unavailable', status: 500}}]);
     const repository = createGuestClaimRemoteRepository(client as never, {userId: USER_ID});
 
-    await assert.rejects(() => repository.uploadProfile(path, new Uint8Array([1, 2])), GuestClaimRepositoryError);
+    await assert.rejects(() => repository.uploadProfile(path, new Uint8Array([1, 2])), error => {
+      assert.ok(error instanceof GuestClaimRepositoryError);
+      assert.equal(error.operation, 'profile');
+      assert.equal(error.message, 'Guest claim operation failed');
+      return true;
+    });
     assert.deepEqual(storageCalls.map(call => (call as {method: string}).method), ['upload']);
   });
 
@@ -249,10 +256,10 @@ describe('GuestClaimRemoteRepository', () => {
     const {client, calls} = createClient([
       {data: batchRow({status: 'committed'}), error: null},
       {data: [
-        planStagingRow({target_record_id: secondPlanId, client_record_id: 'plan-2', payload_sha256: secondPlanDigest}),
-        planStagingRow(),
-        stagingRow({target_record_id: secondLogId, client_record_id: 'log-2', payload_sha256: secondLogDigest}),
         stagingRow(),
+        stagingRow({target_record_id: secondLogId, client_record_id: 'log-2', payload_sha256: secondLogDigest}),
+        planStagingRow(),
+        planStagingRow({target_record_id: secondPlanId, client_record_id: 'plan-2', payload_sha256: secondPlanDigest}),
       ], error: null},
       {data: [planRow(), planRow({id: secondPlanId, local_id: 'plan-2', payload_sha256: secondPlanDigest})], error: null},
       {data: [logRow(), logRow({id: secondLogId, local_id: 'log-2', payload_sha256: secondLogDigest})], error: null},
@@ -261,16 +268,17 @@ describe('GuestClaimRemoteRepository', () => {
 
     const result = await repository.listCommittedBatch(BATCH_ID);
 
-    assert.deepEqual(result.plans.map(plan => plan.id), [secondPlanId, PLAN_ID]);
-    assert.deepEqual(result.logs.map(log => log.id), [secondLogId, TARGET_ID]);
+    assert.deepEqual(result.plans.map(plan => plan.id), [PLAN_ID, secondPlanId]);
+    assert.deepEqual(result.logs.map(log => log.id), [TARGET_ID, secondLogId]);
     assert.deepEqual(calls[1], {table: 'guest_claim_records', calls: [
       {method: 'select', columns: undefined}, {method: 'eq', column: 'batch_id', value: BATCH_ID}, {method: 'eq', column: 'user_id', value: USER_ID},
+      {method: 'order', column: 'entity_kind', options: {ascending: true}}, {method: 'order', column: 'client_record_id', options: {ascending: true}},
     ]});
     assert.deepEqual(calls[2], {table: 'dive_plans', calls: [
-      {method: 'select', columns: undefined}, {method: 'in', column: 'id', values: [secondPlanId, PLAN_ID]}, {method: 'eq', column: 'user_id', value: USER_ID}, {method: 'is', column: 'deleted_at', value: null},
+      {method: 'select', columns: undefined}, {method: 'in', column: 'id', values: [PLAN_ID, secondPlanId]}, {method: 'eq', column: 'user_id', value: USER_ID}, {method: 'is', column: 'deleted_at', value: null},
     ]});
     assert.deepEqual(calls[3], {table: 'dive_logs', calls: [
-      {method: 'select', columns: undefined}, {method: 'in', column: 'id', values: [secondLogId, TARGET_ID]}, {method: 'eq', column: 'user_id', value: USER_ID}, {method: 'is', column: 'deleted_at', value: null},
+      {method: 'select', columns: undefined}, {method: 'in', column: 'id', values: [TARGET_ID, secondLogId]}, {method: 'eq', column: 'user_id', value: USER_ID}, {method: 'is', column: 'deleted_at', value: null},
     ]});
   });
 

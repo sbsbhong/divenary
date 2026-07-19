@@ -263,7 +263,13 @@ export function createGuestClaimRemoteRepository(
       const batch = await client.from('guest_claim_batches').select().eq('id', batchId).eq('user_id', userId).maybeSingle();
       if (errorResult(batch)) return fail('list');
       assertCommittedBatchRow(single<BatchRow>(batch.data, 'list'), batchId, userId);
-      const recordsResult = await client.from('guest_claim_records').select().eq('batch_id', batchId).eq('user_id', userId);
+      const recordsResult = await client
+        .from('guest_claim_records')
+        .select()
+        .eq('batch_id', batchId)
+        .eq('user_id', userId)
+        .order('entity_kind', {ascending: true})
+        .order('client_record_id', {ascending: true});
       if (errorResult(recordsResult)) return fail('list');
       const records = array<ClaimRow>(recordsResult.data, 'list');
       const {plans: stagedPlans, logs: stagedLogs} = committedRecordsByKind(records, batchId, userId);
