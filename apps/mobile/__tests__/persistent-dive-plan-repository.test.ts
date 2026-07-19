@@ -45,6 +45,22 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
 }
 
 describe('PersistentDivePlanRepository', () => {
+  it('persists account revision and conflict state in the current schema', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDivePlanRepository({storage, now: () => 500});
+    await repository.save({
+      ...plan({}),
+      remoteId: '10000000-0000-4000-8000-000000000001',
+      remoteRevision: 3,
+      ownerUserId: '00000000-0000-4000-8000-000000000001',
+      cloudSyncStatus: 'conflict',
+    });
+
+    await expect(
+      new PersistentDivePlanRepository({storage, now: () => 500}).get('plan-base'),
+    ).resolves.toMatchObject({remoteRevision: 3, cloudSyncStatus: 'conflict'});
+  });
+
   it('migrates schema-2 plans to guest cloud metadata without fabricating ownership', async () => {
     const storage = new InMemoryKeyValueStore();
     const legacyPlan = plan({ localId: 'legacy-plan' });

@@ -395,6 +395,34 @@ describe('AuthProvider', () => {
     expect(getLocalDevelopmentAuthEnvironment).not.toHaveBeenCalled();
   });
 
+  test('builds account and claim repositories from the configured Auth client only', () => {
+    const client = {client: 'shared-supabase-client'};
+    const fixture = createAuthFixture();
+    const createAccountDataRepository = jest.fn(() => ({kind: 'account'}));
+    const createGuestClaimRemoteRepository = jest.fn(() => ({kind: 'claim'}));
+    const auth = createMobileAuth({
+      getMobileEnvironmentMode: () => 'staging',
+      getSupabaseEnvironment: () => ({
+        url: 'https://mclvhwzsuvsxjerdouka.supabase.co',
+        publishableKey: 'staging-key',
+      }),
+      getGoogleEnvironment: () => undefined,
+      createSupabaseClient: jest.fn(() => client) as never,
+      createAuthRepository: jest.fn(() => fixture.repository),
+      createAccountDataRepository: createAccountDataRepository as never,
+      createGuestClaimRemoteRepository: createGuestClaimRemoteRepository as never,
+      createMembershipCache: jest.fn(() => fixture.membershipCache),
+      createRecentSocialProviderStore: jest.fn(() => fixture.recentProviderStore),
+      isAppleNativeAuthAvailable: () => false,
+    });
+
+    expect(auth?.accountDataRepositoryForUser?.(userId)).toEqual({kind: 'account'});
+    expect(auth?.guestClaimRemoteRepositoryForUser?.(userId)).toEqual({kind: 'claim'});
+    expect(createAccountDataRepository).toHaveBeenCalledWith(client, {userId});
+    expect(createGuestClaimRemoteRepository).toHaveBeenCalledWith(client, {userId});
+    expect(auth).not.toHaveProperty('client');
+  });
+
   test('boots guest with no stored session and owns one listener of each kind', async () => {
     const fixture = createAuthFixture();
     const auth = await mountAuth(fixture.mobileAuth);

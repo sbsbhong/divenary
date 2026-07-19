@@ -10,7 +10,6 @@ import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-r
 import App from '../src/App';
 import { resolveAuthLoginSheetAllowedDetents } from '../src/components/navigation';
 import i18n from '../src/i18n';
-import { defaultDiveLogRepository } from '../src/repositories/default-dive-log-repository';
 
 type MockAuthState =
   | { status: 'bootstrapping' }
@@ -641,11 +640,6 @@ describe('App navigation', () => {
     });
     await waitForTestID(root, 'watch-auto-import-toast');
 
-    const importedToastEntry = (await defaultDiveLogRepository.list()).find(
-      entry => entry.watchCapture?.session.localSessionId === 'app-toast-session',
-    );
-    expect(importedToastEntry?.cloudSyncStatus).toBe('notConfigured');
-
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
     expect(root.findByProps({ testID: 'watch-auto-import-message' }).props.children).toBe('워치 기록 저장됨');
     expect(root.findAll(node => node.props.children === '워치 다이브 기록이 이 기기에 저장되었습니다.')).toHaveLength(0);
@@ -720,10 +714,4 @@ describe('App navigation', () => {
     );
   });
 
-  test('uses the persistent default logbook repository', async () => {
-    const entries = await defaultDiveLogRepository.list();
-
-    expect(entries.length).toBeGreaterThan(0);
-    expect(entries[0].watchCapture?.importKey).toBeTruthy();
-  });
 });

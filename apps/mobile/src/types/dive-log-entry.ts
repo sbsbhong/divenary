@@ -3,7 +3,7 @@ import type { DiveEntryStyle } from './dive-plan';
 
 export type DiveLogSource = 'manual' | 'watch';
 export type DiveFieldSource = 'manual' | 'mobile' | 'watch';
-export type CloudSyncStatus = 'notConfigured' | 'pending' | 'synced' | 'failed';
+export type CloudSyncStatus = 'notConfigured' | 'pending' | 'synced' | 'failed' | 'conflict';
 export type DivePressureUnit = 'bar' | 'psi';
 
 export type DivePressureValues = {
@@ -110,6 +110,7 @@ export type DiveLogFieldProvenance = Partial<
 export type DiveLogEntry = {
   localId: string;
   remoteId?: string;
+  remoteRevision?: number;
   ownerUserId?: string;
   source: DiveLogSource;
   cloudSyncStatus: CloudSyncStatus;

@@ -1,5 +1,7 @@
 import {
   AuthRepositoryError,
+  type AccountDataRepository,
+  type GuestClaimRemoteRepository,
   type OnboardingStatus,
   type RequiredLegalDocument,
 } from '@repo/supabase';
@@ -35,6 +37,8 @@ export type AuthContextValue = {
   availableProviders: SocialProvider[];
   isDevelopmentSignInAvailable: boolean;
   recentProvider: SocialProvider | undefined;
+  accountDataRepository?: AccountDataRepository;
+  guestClaimRemoteRepository?: GuestClaimRemoteRepository;
   signIn(provider: SocialProvider): Promise<void>;
   signInForDevelopment(): Promise<void>;
   completeOnboarding(
@@ -599,6 +603,24 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
   );
   const isDevelopmentSignInAvailable =
     mobileAuth?.developmentSignIn !== undefined;
+  const authenticatedUserId =
+    state.status === 'authenticated' || state.status === 'authenticatedOffline'
+      ? state.userId
+      : undefined;
+  const accountDataRepository = React.useMemo(
+    () =>
+      authenticatedUserId === undefined
+        ? undefined
+        : mobileAuth?.accountDataRepositoryForUser?.(authenticatedUserId),
+    [authenticatedUserId, mobileAuth],
+  );
+  const guestClaimRemoteRepository = React.useMemo(
+    () =>
+      authenticatedUserId === undefined
+        ? undefined
+        : mobileAuth?.guestClaimRemoteRepositoryForUser?.(authenticatedUserId),
+    [authenticatedUserId, mobileAuth],
+  );
   const contextValue = React.useMemo<AuthContextValue>(
     () => ({
       state,
@@ -606,6 +628,8 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       availableProviders,
       isDevelopmentSignInAvailable,
       recentProvider,
+      accountDataRepository,
+      guestClaimRemoteRepository,
       signIn,
       signInForDevelopment,
       completeOnboarding,
@@ -614,9 +638,12 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     }),
     [
       availableProviders,
+      accountDataRepository,
       completeOnboarding,
       endLocalSession,
       mobileAuth,
+      guestClaimRemoteRepository,
+      isDevelopmentSignInAvailable,
       recentProvider,
       signIn,
       signInForDevelopment,

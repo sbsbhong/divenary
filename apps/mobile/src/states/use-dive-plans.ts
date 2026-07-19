@@ -4,6 +4,7 @@ import type { DivePlan } from '../types/dive-plan';
 import type { DivePlanRepository } from '../repositories/dive-plan-repository';
 import { defaultDivePlanRepository } from '../repositories/default-dive-plan-repository';
 import { useDeleteDivePlanMutation, useDivePlansQuery, useSaveDivePlanMutation } from './use-dive-plan-queries';
+import { useOptionalAccountData } from './account-data';
 
 type UseDivePlansOptions = {
   repository?: DivePlanRepository;
@@ -15,7 +16,9 @@ type DivePlanRepositoryWithSyncList = DivePlanRepository & {
 };
 
 export const useDivePlans = (options: UseDivePlansOptions = {}) => {
-  const repository = options.repository ?? defaultDivePlanRepository;
+  const accountData = useOptionalAccountData();
+  const repository = options.repository ?? accountData?.planRepository ?? defaultDivePlanRepository;
+  const queryScope = options.queryScope ?? (options.repository ? undefined : accountData?.queryScope);
   const initialPlans = React.useMemo(() => {
     const repositoryWithSyncList = repository as DivePlanRepositoryWithSyncList;
 
@@ -28,15 +31,31 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
   const plansQuery = useDivePlansQuery(repository, {
     initialData: initialPlans,
     staleTime: Infinity,
-    queryScope: options.queryScope,
+    queryScope,
   });
-  const savePlanMutation = useSaveDivePlanMutation(repository, { queryScope: options.queryScope });
-  const deletePlanMutation = useDeleteDivePlanMutation(repository, { queryScope: options.queryScope });
-  const plans = plansQuery.data ?? initialPlans ?? [];
+  const savePlanMutation = useSaveDivePlanMutation(repository, { queryScope });
+  const deletePlanMutation = useDeleteDivePlanMutation(repository, { queryScope });
+  const plans = React.useMemo(
+    () => plansQuery.data ?? initialPlans ?? [],
+    [initialPlans, plansQuery.data],
+  );
   const [plannedWatchSyncStatus, setPlannedWatchSyncStatus] = React.useState<PlannedWatchDivesUpdateStatus | undefined>();
   const refresh = React.useCallback(async () => {
     await plansQuery.refetch();
   }, [plansQuery]);
+  const savePlan = React.useCallback(async (plan: DivePlan) => {
+    const saved = await savePlanMutation.mutateAsync(plan);
+    if (!options.repository) {
+      void accountData?.requestSync();
+    }
+    return saved;
+  }, [accountData, options.repository, savePlanMutation]);
+  const deletePlan = React.useCallback(async (localId: string) => {
+    await deletePlanMutation.mutateAsync(localId);
+    if (!options.repository) {
+      void accountData?.requestSync();
+    }
+  }, [accountData, deletePlanMutation, options.repository]);
 
   React.useEffect(() => {
     let isCurrent = true;
@@ -59,8 +78,8 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
   return {
     plans,
     refresh,
-    savePlan: savePlanMutation.mutateAsync,
-    deletePlan: deletePlanMutation.mutateAsync,
+    savePlan,
+    deletePlan,
     isLoading: plansQuery.isLoading,
     isRefreshing: plansQuery.isRefetching,
     isSaving: savePlanMutation.isPending,

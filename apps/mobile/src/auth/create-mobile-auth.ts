@@ -1,7 +1,11 @@
 import {
+  createAccountDataRepository,
   createAuthRepository,
+  createGuestClaimRemoteRepository,
   createSupabaseClient,
+  type AccountDataRepository,
   type AuthRepository,
+  type GuestClaimRemoteRepository,
   type Session,
 } from '@repo/supabase';
 
@@ -36,6 +40,10 @@ export type MobileAuth = {
   membershipCache: MembershipCache;
   recentProviderStore: RecentSocialProviderStore;
   providers: Partial<Record<SocialProvider, NativeSocialSignIn>>;
+  accountDataRepositoryForUser?: (userId: string) => AccountDataRepository;
+  guestClaimRemoteRepositoryForUser?: (
+    userId: string,
+  ) => GuestClaimRemoteRepository;
   developmentSignIn?: () => Promise<Session>;
   now: () => number;
 };
@@ -47,6 +55,8 @@ export type CreateMobileAuthOptions = {
   getGoogleEnvironment?: typeof getGoogleEnvironment;
   createSupabaseClient?: typeof createSupabaseClient;
   createAuthRepository?: typeof createAuthRepository;
+  createAccountDataRepository?: typeof createAccountDataRepository;
+  createGuestClaimRemoteRepository?: typeof createGuestClaimRemoteRepository;
   createMembershipCache?: typeof createMembershipCache;
   createRecentSocialProviderStore?: typeof createRecentSocialProviderStore;
   createGoogleNativeAuth?: typeof createGoogleNativeAuth;
@@ -69,6 +79,10 @@ export function createMobileAuth(
     getLocalDevelopmentAuthEnvironment;
   const makeClient = options.createSupabaseClient ?? createSupabaseClient;
   const makeRepository = options.createAuthRepository ?? createAuthRepository;
+  const makeAccountDataRepository =
+    options.createAccountDataRepository ?? createAccountDataRepository;
+  const makeGuestClaimRemoteRepository =
+    options.createGuestClaimRemoteRepository ?? createGuestClaimRemoteRepository;
   const makeMembershipCache =
     options.createMembershipCache ?? createMembershipCache;
   const makeRecentProviderStore =
@@ -134,6 +148,10 @@ export function createMobileAuth(
       membershipCache: makeMembershipCache(),
       recentProviderStore: makeRecentProviderStore(),
       providers,
+      accountDataRepositoryForUser: userId =>
+        makeAccountDataRepository(client, {userId}),
+      guestClaimRemoteRepositoryForUser: userId =>
+        makeGuestClaimRemoteRepository(client, {userId}),
       developmentSignIn:
         localDevelopmentAuthEnvironment === undefined
           ? undefined

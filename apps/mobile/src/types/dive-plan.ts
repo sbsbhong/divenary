@@ -32,6 +32,7 @@ export type DivePlanChecklistItem = {
 export type DivePlan = {
   localId: string;
   remoteId?: string;
+  remoteRevision?: number;
   ownerUserId?: string;
   cloudSyncStatus?: CloudSyncStatus;
   status: DivePlanStatus;

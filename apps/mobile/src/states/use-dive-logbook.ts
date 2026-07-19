@@ -12,6 +12,7 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DiveSessionFilter, MobileDiveSession } from '../types/dive-session';
 import { importPendingWatchConnectivityPayloads, type WatchConnectivityImportSummary } from './watch-connectivity-sync';
 import { firstNonBlankText } from '../utils/notes';
+import { useOptionalAccountData } from './account-data';
 
 type UseDiveLogbookOptions = {
   repository?: DiveLogRepository;
@@ -27,7 +28,10 @@ export type WatchSyncActionResult = WatchConnectivityImportSummary & {
 };
 
 export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
-  const repository = options.repository ?? defaultDiveLogRepository;
+  const accountData = useOptionalAccountData();
+  const repository = options.repository ?? accountData?.logbookRepository ?? defaultDiveLogRepository;
+  const planRepository = accountData?.planRepository;
+  const queryScope = options.queryScope ?? (options.repository ? undefined : accountData?.queryScope);
   const queryClient = useQueryClient();
   const [filter, setFilter] = React.useState<DiveSessionFilter>({ query: '' });
   const initialEntries = React.useMemo(() => {
@@ -42,11 +46,14 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
   const entriesQuery = useDiveLogEntriesQuery(repository, {
     initialData: initialEntries,
     staleTime: Infinity,
-    queryScope: options.queryScope,
+    queryScope,
   });
-  const saveEntryMutation = useSaveDiveLogEntryMutation(repository, { queryScope: options.queryScope });
-  const deleteEntryMutation = useDeleteDiveLogEntryMutation(repository, { queryScope: options.queryScope });
-  const entries: DiveLogEntry[] = entriesQuery.data ?? initialEntries ?? [];
+  const saveEntryMutation = useSaveDiveLogEntryMutation(repository, { queryScope });
+  const deleteEntryMutation = useDeleteDiveLogEntryMutation(repository, { queryScope });
+  const entries = React.useMemo<DiveLogEntry[]>(
+    () => entriesQuery.data ?? initialEntries ?? [],
+    [entriesQuery.data, initialEntries],
+  );
   const sessions = React.useMemo(() => entries.map(diveLogEntryToMobileSession), [entries]);
 
   const filteredEntries = React.useMemo(() => {
@@ -78,15 +85,32 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
   const syncWatchPayloads = React.useCallback(async (): Promise<WatchSyncActionResult> => {
     const summary = await importPendingWatchConnectivityPayloads({
       repository,
+      planRepository,
       queryClient,
-      queryScope: options.queryScope,
+      queryScope,
+      onLocalWritesCommitted: options.repository ? undefined : accountData?.requestSync,
     });
 
     return {
       ...summary,
       unavailable: !isWatchConnectivityAvailable(),
     };
-  }, [options.queryScope, queryClient, repository]);
+  }, [accountData?.requestSync, options.repository, planRepository, queryClient, queryScope, repository]);
+
+  const saveEntry = React.useCallback(async (entry: DiveLogEntry) => {
+    const saved = await saveEntryMutation.mutateAsync(entry);
+    if (!options.repository) {
+      void accountData?.requestSync();
+    }
+    return saved;
+  }, [accountData, options.repository, saveEntryMutation]);
+
+  const deleteEntry = React.useCallback(async (localId: string) => {
+    await deleteEntryMutation.mutateAsync(localId);
+    if (!options.repository) {
+      void accountData?.requestSync();
+    }
+  }, [accountData, deleteEntryMutation, options.repository]);
 
   const refresh = React.useCallback(async () => {
     await entriesQuery.refetch();
@@ -106,8 +130,8 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
     syncWatchPayloads,
     refresh,
     loadWatchProfile,
-    saveEntry: saveEntryMutation.mutateAsync,
-    deleteEntry: deleteEntryMutation.mutateAsync,
+    saveEntry,
+    deleteEntry,
     isLoading: entriesQuery.isLoading,
     isRefreshing: entriesQuery.isRefetching,
     isSaving: saveEntryMutation.isPending,

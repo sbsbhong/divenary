@@ -260,6 +260,7 @@ function assertDiveLogEntries(value: unknown, requireCloudStatus: boolean, stora
       || !hasOnlyKeys(entry, [
         'localId',
         'remoteId',
+        'remoteRevision',
         'ownerUserId',
         'source',
         'cloudSyncStatus',
@@ -277,6 +278,7 @@ function assertDiveLogEntries(value: unknown, requireCloudStatus: boolean, stora
       || !isFiniteNumber(entry.updatedAt)
       || !isOptionalNonEmptyString(entry.ownerUserId)
       || !isOptionalNonEmptyString(entry.remoteId)
+      || !isOptionalPositiveInteger(entry.remoteRevision)
       || (requireCloudStatus
         ? !isCloudSyncStatus(entry.cloudSyncStatus) || entry.syncStatus !== undefined
         : entry.cloudSyncStatus !== undefined || !isOptionalLegacySyncStatus(entry.syncStatus))) {
@@ -473,7 +475,11 @@ function assertProvenance(value: unknown, storageKey: string): void {
 }
 
 function isCloudSyncStatus(value: unknown): boolean {
-  return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed';
+  return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed' || value === 'conflict';
+}
+
+function isOptionalPositiveInteger(value: unknown): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && (value as number) >= 1);
 }
 
 function isOptionalLegacySyncStatus(value: unknown): boolean {

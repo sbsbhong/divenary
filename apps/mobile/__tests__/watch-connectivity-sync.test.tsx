@@ -8,6 +8,10 @@ import type { WatchConnectivityPayload } from '../src/native/watch-connectivity'
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
 import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
 import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
+import { AccountDataProviderCore } from '../src/states/account-data';
+import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import { dataStorageKeys } from '../src/storage/data-principal';
+import { AccountOutbox } from '../src/sync/account-outbox';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const queryClients: QueryClient[] = [];
@@ -68,6 +72,94 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     expect(startupOrder.slice(0, 2)).toEqual(['subscribe', 'drain']);
+  });
+
+  it('uses the active principal repositories and scope, then acknowledges before account enqueue and drain', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const planRepository = new LocalDivePlanRepository();
+    const queryClient = createQueryClient();
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const queryScope = `user:${userId}`;
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+    });
+    const order: string[] = [];
+    let didDrain = false;
+    let identifier = 0;
+    const nextId = () => {
+      identifier += 1;
+      return `10000000-0000-4000-8000-${String(identifier).padStart(12, '0')}`;
+    };
+    let drained = false;
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            auth={{state: {status: 'authenticatedOffline', userId}}}
+            dependencies={{
+              metadataStorage,
+              profileStorage: {
+                write: jest.fn(async () => undefined),
+                read: jest.fn(async () => undefined),
+                remove: jest.fn(async () => undefined),
+              },
+              migrateLegacyData: jest.fn(async () => undefined),
+              createRepositories: jest.fn(principal => ({
+                principal,
+                queryScope,
+                logbook: repository,
+                planbook: planRepository,
+              })),
+              createId: nextId,
+              now: () => 1781355000,
+              jitter: () => 0,
+            }}>
+            <WatchConnectivitySyncProvider
+              drainPendingPayloads={async () => {
+                if (drained) {
+                  return [];
+                }
+                drained = true;
+                return [{
+                  payloadId: 'principal-payload',
+                  payloadJson: JSON.stringify(metadataRichFixture),
+                  localSessionId: 'fixture-rich-session',
+                  receivedAt: 1781355000,
+                }];
+              }}
+              acknowledgeImportedPayloads={async () => {
+                order.push('ack');
+                expect(await outbox.list(userId)).toEqual([]);
+              }}
+              onLocalWritesCommitted={async () => {
+                order.push('remote');
+                expect(await outbox.list(userId)).toHaveLength(1);
+                didDrain = true;
+              }}
+              subscribeToPayloads={() => ({remove: jest.fn()})}
+            />
+          </AccountDataProviderCore>
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(order).toEqual(['ack', 'remote']);
+    expect(didDrain).toBe(true);
+    expect(await repository.list()).toHaveLength(1);
+    expect(
+      queryClient.getQueryCache().findAll({
+        predicate: query =>
+          query.queryKey[0] === 'diveLogbook' &&
+          query.queryKey.includes(queryScope),
+      }),
+    ).toHaveLength(1);
   });
 
   it('drains pending native payloads and imports valid watch sync JSON', async () => {

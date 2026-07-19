@@ -235,6 +235,21 @@ describe('PersistentDiveLogRepository', () => {
     expect((await new PersistentDiveLogRepository({ storage, now: () => 999 }).list()).map(entry => entry.localId)).toEqual(['older']);
   });
 
+  it('persists account revision and conflict state in the current schema', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDiveLogRepository({storage, now: () => 999});
+    await repository.save(manualEntry({
+      remoteId: '10000000-0000-4000-8000-000000000001',
+      remoteRevision: 4,
+      ownerUserId: '00000000-0000-4000-8000-000000000001',
+      cloudSyncStatus: 'conflict',
+    }));
+
+    await expect(
+      new PersistentDiveLogRepository({storage, now: () => 999}).get('manual-1'),
+    ).resolves.toMatchObject({remoteRevision: 4, cloudSyncStatus: 'conflict'});
+  });
+
   it('dedupes watch imports while preserving manual edits after reload', async () => {
     const storage = new InMemoryKeyValueStore();
     const repository = new PersistentDiveLogRepository({ storage, now: () => 500 });

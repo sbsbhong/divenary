@@ -15,6 +15,15 @@ jest.mock('../src/states/auth', () => {
   };
 });
 
+jest.mock('../src/states/account-data', () => {
+  const ReactModule = require('react') as typeof import('react');
+
+  return {
+    AccountDataProvider: ({children}: {children?: React.ReactNode}) =>
+      ReactModule.createElement(ReactModule.Fragment, null, children),
+  };
+});
+
 jest.mock('react-native-safe-area-context', () => {
   const ReactModule = require('react') as typeof import('react');
   const actual = jest.requireActual('react-native-safe-area-context');

@@ -158,6 +158,7 @@ function assertDivePlans(value: unknown, requireCloudStatus: boolean, storageKey
       || !hasOnlyKeys(plan, [
         'localId',
         'remoteId',
+        'remoteRevision',
         'ownerUserId',
         'cloudSyncStatus',
         'status',
@@ -192,6 +193,7 @@ function assertDivePlans(value: unknown, requireCloudStatus: boolean, storageKey
       || !isOptionalString(plan.notes)
       || !isOptionalNonEmptyString(plan.ownerUserId)
       || !isOptionalNonEmptyString(plan.remoteId)
+      || !isOptionalPositiveInteger(plan.remoteRevision)
       || (requireCloudStatus ? !isCloudSyncStatus(plan.cloudSyncStatus) : plan.cloudSyncStatus !== undefined)) {
       throw new Error(`Malformed planbook entry for ${storageKey}`);
     }
@@ -265,7 +267,11 @@ function assertChecklistItems(value: unknown, storageKey: string): void {
 }
 
 function isCloudSyncStatus(value: unknown): boolean {
-  return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed';
+  return value === 'notConfigured' || value === 'pending' || value === 'synced' || value === 'failed' || value === 'conflict';
+}
+
+function isOptionalPositiveInteger(value: unknown): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && (value as number) >= 1);
 }
 
 function isOptionalEnum(value: unknown, values: readonly string[]): boolean {
