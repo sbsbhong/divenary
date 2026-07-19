@@ -2,7 +2,22 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(38);
+select plan(42);
+
+select function_privs_are(
+  'public',
+  'finalize_guest_claim',
+  array['uuid', 'uuid', 'jsonb'],
+  'service_role',
+  array['EXECUTE']
+);
+select function_privs_are(
+  'public',
+  'finalize_guest_claim',
+  array['uuid', 'uuid', 'jsonb'],
+  'authenticated',
+  array[]::text[]
+);
 
 select has_table('public', 'dive_logs', 'dive logs table exists');
 select has_table('public', 'dive_plans', 'dive plans table exists');
@@ -901,6 +916,108 @@ select throws_ok(
 reset role;
 
 select set_config('request.jwt.claims', '{}', true);
+
+insert into public.guest_claim_batches (
+  id,
+  user_id,
+  client_batch_id,
+  manifest_sha256,
+  expected_plan_count,
+  expected_log_count
+) values (
+  '00000000-0000-0000-0000-000000000100',
+  '00000000-0000-0000-0000-000000000011',
+  'null-verified-profiles',
+  repeat('9', 64),
+  0,
+  0
+);
+
+select throws_ok(
+  $$
+    select public.finalize_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000100',
+      null
+    )
+  $$,
+  'P0001',
+  'claim validation failed',
+  'the finalizer rejects a null verified profile list'
+);
+
+insert into public.guest_claim_batches (
+  id,
+  user_id,
+  client_batch_id,
+  manifest_sha256,
+  expected_plan_count,
+  expected_log_count
+) values (
+  '00000000-0000-0000-0000-000000000110',
+  '00000000-0000-0000-0000-000000000011',
+  'changed-profile-counts',
+  repeat('8', 64),
+  0,
+  1
+);
+
+insert into public.guest_claim_records (
+  id,
+  batch_id,
+  user_id,
+  entity_kind,
+  client_record_id,
+  target_record_id,
+  payload_sha256,
+  payload,
+  profile_path,
+  profile_content_revision,
+  profile_sha256,
+  profile_byte_count,
+  profile_sample_count
+) values (
+  '00000000-0000-0000-0000-000000000111',
+  '00000000-0000-0000-0000-000000000110',
+  '00000000-0000-0000-0000-000000000011',
+  'log',
+  'changed-profile-counts-log',
+  '00000000-0000-0000-0000-000000000112',
+  repeat('7', 64),
+  '{
+    "source":"watch",
+    "started_at":"2026-07-20T02:00:00Z",
+    "manual_data":{},
+    "mobile_data":{},
+    "provenance":{"source":"watch"}
+  }'::jsonb,
+  '00000000-0000-0000-0000-000000000011/claims/profile-counts.json',
+  'profile-v1',
+  repeat('6', 64),
+  2,
+  1
+);
+
+select throws_ok(
+  $$
+    select public.finalize_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000110',
+      jsonb_build_array(
+        jsonb_build_object(
+          'record_id', '00000000-0000-0000-0000-000000000111',
+          'sha256', repeat('6', 64),
+          'byte_count', 3,
+          'sample_count', 1
+        )
+      )
+    )
+  $$,
+  'P0001',
+  'claim validation failed',
+  'the finalizer rejects profile counts changed after server verification'
+);
+
 select * from finish();
 
 rollback;
