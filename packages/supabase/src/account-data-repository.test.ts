@@ -12,6 +12,7 @@ const LOG_ID = '00000000-0000-4000-8000-000000000010';
 const PLAN_ID = '00000000-0000-4000-8000-000000000020';
 const STARTED_AT = '2026-07-19T10:00:00.000Z';
 const UPDATED_AT = '2026-07-19T11:00:00.000Z';
+const NEXT_UPDATED_AT = '2026-07-20T12:00:00.000Z';
 
 type QueryResponse = {data: unknown; error?: unknown; status?: number};
 
@@ -343,6 +344,43 @@ describe('AccountDataRepository', () => {
     assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
   });
 
+  test('excludes soft-deleted rows from log and plan update predicates', async () => {
+    const {client, calls} = createClient([
+      {data: logRow({revision: 5}), error: null},
+      {data: planRow({revision: 5}), error: null},
+    ]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.equal((await repository.saveLog(remoteLog({revision: 4}), 4)).status, 'saved');
+    assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
+
+    for (const call of calls) {
+      assert.deepEqual(call.calls.filter(item => (
+        item as {method?: string}
+      ).method === 'is'), [
+        {method: 'is', column: 'deleted_at', value: null},
+      ]);
+    }
+  });
+
+  test('never accepts soft-deleted rows as saved upsert results or replays', async () => {
+    const direct = createClient([
+      {data: logRow({revision: 5, deleted_at: UPDATED_AT}), error: null},
+    ]);
+    const directRepository = createAccountDataRepository(direct.client as never, {userId: USER_ID});
+    assert.equal(
+      (await directRepository.saveLog(remoteLog({revision: 4}), 4)).status,
+      'conflict',
+    );
+
+    const replay = createClient([
+      {data: null, error: {code: '23505'}},
+      {data: planRow({revision: 1, deleted_at: UPDATED_AT}), error: null},
+    ]);
+    const replayRepository = createAccountDataRepository(replay.client as never, {userId: USER_ID});
+    assert.equal((await replayRepository.savePlan(remotePlan())).status, 'conflict');
+  });
+
   test('returns a conflict when replay content or revision does not match', async () => {
     const {client} = createClient([
       {data: null, error: {code: '23505'}},
@@ -369,7 +407,7 @@ describe('AccountDataRepository', () => {
     assert.equal((await repository.deletePlan(PLAN_ID, 4)).status, 'conflict');
   });
 
-  test('preserves dive mode when saving a log', async () => {
+  test('returns a conflict when persisted dive mode differs despite the same hash', async () => {
     const {client, calls} = createClient([
       {data: logRow({revision: 5, dive_mode: 'freedive'}), error: null},
     ]);
@@ -390,13 +428,55 @@ describe('AccountDataRepository', () => {
       },
     }, 4);
 
-    assert.equal(result.status, 'saved');
-    if (result.status === 'saved') {
-      assert.equal(result.value.payload.dive_mode, 'freedive');
+    assert.equal(result.status, 'conflict');
+    if (result.status === 'conflict') {
+      assert.equal(result.remote.payload.dive_mode, 'freedive');
     }
     const update = calls[0]?.calls[0] as {method: string; value: Record<string, unknown>};
     assert.equal(update.method, 'update');
     assert.equal(update.value.dive_mode, 'scuba');
+  });
+
+  test('returns conflicts for mismatched nested plan data and log profile paths', async () => {
+    const plan = createClient([
+      {data: null, error: null},
+      {data: planRow({revision: 5, plan_data: {gas: {name: 'air'}}}), error: null},
+    ]);
+    const planRepository = createAccountDataRepository(plan.client as never, {userId: USER_ID});
+    const planResult = await planRepository.savePlan(remotePlan({
+      revision: 4,
+      payload: {
+        status: 'planned',
+        planned_at: STARTED_AT,
+        plan_data: {gas: {name: 'nitrox'}},
+      },
+    }), 4);
+    assert.equal(planResult.status, 'conflict');
+
+    const expectedPath = `${USER_ID}/logs/${LOG_ID}/expected.json`;
+    const log = createClient([
+      {data: null, error: {code: '23505'}},
+      {data: logRow({revision: 1, profile_path: `${USER_ID}/logs/${LOG_ID}/other.json`}), error: null},
+    ]);
+    const logRepository = createAccountDataRepository(log.client as never, {userId: USER_ID});
+    const logResult = await logRepository.saveLog(remoteLog({profilePath: expectedPath}));
+    assert.equal(logResult.status, 'conflict');
+  });
+
+  test('advances the plan pagination key with an injected update timestamp', async () => {
+    const {client, calls} = createClient([
+      {data: planRow({revision: 5, updated_at: NEXT_UPDATED_AT}), error: null},
+    ]);
+    const repository = createAccountDataRepository(
+      client as never,
+      {userId: USER_ID},
+      {now: () => new Date(NEXT_UPDATED_AT)},
+    );
+
+    assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
+    const update = calls[0]?.calls[0] as {method: string; value: Record<string, unknown>};
+    assert.equal(update.method, 'update');
+    assert.equal(update.value.updated_at, NEXT_UPDATED_AT);
   });
 
   test('returns the current remote plan when a revision update affects no rows', async () => {
@@ -404,7 +484,11 @@ describe('AccountDataRepository', () => {
       {data: null, error: null},
       {data: planRow({revision: 8}), error: null},
     ]);
-    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+    const repository = createAccountDataRepository(
+      client as never,
+      {userId: USER_ID},
+      {now: () => new Date(NEXT_UPDATED_AT)},
+    );
 
     const result = await repository.savePlan({
       id: PLAN_ID,
@@ -441,10 +525,12 @@ describe('AccountDataRepository', () => {
           status: 'planned',
           planned_at: STARTED_AT,
           plan_data: {},
+          updated_at: NEXT_UPDATED_AT,
         }},
         {method: 'eq', column: 'user_id', value: USER_ID},
         {method: 'eq', column: 'id', value: PLAN_ID},
         {method: 'eq', column: 'revision', value: 4},
+        {method: 'is', column: 'deleted_at', value: null},
         {method: 'select', columns: undefined},
         {method: 'maybeSingle'},
       ],

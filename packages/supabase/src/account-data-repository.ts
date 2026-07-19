@@ -35,6 +35,10 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const maximumPageSize = 100;
 
+type AccountDataRepositoryOptions = {
+  now?: () => Date;
+};
+
 function fail(operation: AccountDataRepositoryOperation): never {
   throw new AccountDataRepositoryError(operation);
 }
@@ -125,16 +129,55 @@ function ownedRows<T extends {user_id: string}>(
   return result;
 }
 
+function samePersistedValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) && Array.isArray(right)) {
+    return left.length === right.length
+      && left.every((item, index) => samePersistedValue(item, right[index]));
+  }
+  if (
+    typeof left === 'object'
+    && left !== null
+    && !Array.isArray(left)
+    && typeof right === 'object'
+    && right !== null
+    && !Array.isArray(right)
+  ) {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const leftKeys = Object.keys(leftRecord).sort();
+    const rightKeys = Object.keys(rightRecord).sort();
+    return leftKeys.length === rightKeys.length
+      && leftKeys.every((key, index) => (
+        key === rightKeys[index]
+        && samePersistedValue(leftRecord[key], rightRecord[key])
+      ));
+  }
+  return false;
+}
+
+function hasPersistedFields(
+  row: Record<string, unknown>,
+  fields: Record<string, unknown>,
+): boolean {
+  return Object.entries(fields).every(([key, value]) => (
+    samePersistedValue(row[key], value)
+  ));
+}
+
 function savedLogResult(
   row: DiveLogRow,
   value: RemoteDiveLog,
   appliedRevision: number,
+  fields: Record<string, unknown>,
 ): AccountMutationResult<RemoteDiveLog> {
   const remote = fromDiveLogRow(row);
   return row.id === value.id
     && row.local_id === value.localId
     && row.payload_sha256 === value.payloadSha256
     && row.revision === appliedRevision
+    && row.deleted_at === null
+    && hasPersistedFields(row as unknown as Record<string, unknown>, fields)
     ? {status: 'saved', value: remote}
     : {status: 'conflict', remote};
 }
@@ -143,12 +186,15 @@ function savedPlanResult(
   row: DivePlanRow,
   value: RemoteDivePlan,
   appliedRevision: number,
+  fields: Record<string, unknown>,
 ): AccountMutationResult<RemoteDivePlan> {
   const remote = fromDivePlanRow(row);
   return row.id === value.id
     && row.local_id === value.localId
     && row.payload_sha256 === value.payloadSha256
     && row.revision === appliedRevision
+    && row.deleted_at === null
+    && hasPersistedFields(row as unknown as Record<string, unknown>, fields)
     ? {status: 'saved', value: remote}
     : {status: 'conflict', remote};
 }
@@ -182,8 +228,10 @@ function accountError(error: unknown, operation: AccountDataRepositoryOperation)
 export function createAccountDataRepository(
   client: SupabaseClient<Database>,
   verifiedCurrentUser: VerifiedCurrentUser,
+  options: AccountDataRepositoryOptions = {},
 ): AccountDataRepository {
   const userId = assertIdentity(verifiedCurrentUser);
+  const now = options.now ?? (() => new Date());
 
   async function listLogs(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDiveLog>> {
     try {
@@ -273,15 +321,15 @@ export function createAccountDataRepository(
         const row = resultError(result) || result.data === null
           ? await insertedLogRow(value)
           : ownedRow<DiveLogRow>(result.data, userId, 'save');
-        return savedLogResult(row, value, 1);
+        return savedLogResult(row, value, 1, fields);
       }
       const revision = assertRevision(expectedRevision, 'save');
-      const result = await client.from('dive_logs').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).select().maybeSingle();
+      const result = await client.from('dive_logs').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).is('deleted_at', null).select().maybeSingle();
       if (resultError(result)) return fail('save');
       const row = result.data === null
         ? await remoteLogRow(id, 'save')
         : ownedRow<DiveLogRow>(result.data, userId, 'save');
-      return savedLogResult(row, value, revision + 1);
+      return savedLogResult(row, value, revision + 1, fields);
     } catch (error) {
       throw accountError(error, 'save');
     }
@@ -297,15 +345,16 @@ export function createAccountDataRepository(
         const row = resultError(result) || result.data === null
           ? await insertedPlanRow(value)
           : ownedRow<DivePlanRow>(result.data, userId, 'save');
-        return savedPlanResult(row, value, 1);
+        return savedPlanResult(row, value, 1, fields);
       }
       const revision = assertRevision(expectedRevision, 'save');
-      const result = await client.from('dive_plans').update({...fields, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).select().maybeSingle();
+      const updatedAt = now().toISOString();
+      const result = await client.from('dive_plans').update({...fields, updated_at: updatedAt, revision: revision + 1} as never).eq('user_id', userId).eq('id', id).eq('revision', revision).is('deleted_at', null).select().maybeSingle();
       if (resultError(result)) return fail('save');
       const row = result.data === null
         ? await remotePlanRow(id, 'save')
         : ownedRow<DivePlanRow>(result.data, userId, 'save');
-      return savedPlanResult(row, value, revision + 1);
+      return savedPlanResult(row, value, revision + 1, fields);
     } catch (error) {
       throw accountError(error, 'save');
     }
