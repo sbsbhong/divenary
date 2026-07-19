@@ -496,12 +496,17 @@ export class AccountSyncCoordinator {
       return;
     }
     const current = await this.logbookRepository.get(item.entityLocalId);
-    await this.commitLogDelete(current, item.entityLocalId, assertCanCommit, async () => {
-      assertCanCommit();
-      await this.outbox.complete(item.userId, item.operationId, {
-        assertCanCommit,
-      });
-    });
+    await this.commitLogDelete(
+      current ?? local,
+      item.entityLocalId,
+      assertCanCommit,
+      async () => {
+        assertCanCommit();
+        await this.outbox.complete(item.userId, item.operationId, {
+          assertCanCommit,
+        });
+      },
+    );
   }
 
   private async deliverPlan(
@@ -823,15 +828,36 @@ export class AccountSyncCoordinator {
     finalize: () => Promise<void>,
   ): Promise<void> {
     assertCanCommit();
-    await this.logbookRepository.delete(localId, {assertCanCommit});
+    await this.logbookRepository.delete(localId, {
+      assertCanCommit,
+      commitAfterDelete: async () => {
+        assertCanCommit();
+        await finalize();
+      },
+      retainProfileAfterDelete: true,
+    });
+    await this.removeRetainedLogProfileBestEffort(previous);
+  }
+
+  private async removeRetainedLogProfileBestEffort(
+    deleted: DiveLogEntry | undefined,
+  ): Promise<void> {
+    const profileKey = deleted?.watchCapture?.profile?.storageKey;
+    if (!profileKey || !this.profileStorage) {
+      return;
+    }
     try {
-      assertCanCommit();
-      await finalize();
-    } catch (error) {
-      if (isStaleAccountSyncCommitError(error) && previous) {
-        await this.logbookRepository.save(previous);
+      const remaining = await this.logbookRepository.list();
+      if (
+        remaining.some(
+          entry => entry.watchCapture?.profile?.storageKey === profileKey,
+        )
+      ) {
+        return;
       }
-      throw error;
+      await this.profileStorage.remove(profileKey);
+    } catch {
+      // Metadata is already committed; obsolete profile cleanup is best effort.
     }
   }
 

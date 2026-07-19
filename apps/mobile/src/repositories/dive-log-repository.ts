@@ -8,6 +8,8 @@ export type ImportWatchMessagesOptions = {
 
 export type DeleteDiveLogOptions = {
   assertCanCommit?: () => void;
+  commitAfterDelete?: () => Promise<void>;
+  retainProfileAfterDelete?: boolean;
 };
 
 export type DiveLogRepository = {

@@ -476,6 +476,37 @@ describe('PersistentDiveLogRepository', () => {
     await expect(profileStorage.read(profileKey)).resolves.toEqual(fullProfile);
   });
 
+  it('retains an unreferenced profile when delete cleanup is deferred', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const profileStorage = new RecordingProfileStorage();
+    const profileKey = 'retained-delete-profile';
+    const fullProfile: WatchDepthSample[] = [
+      {localSessionId: 'retained-session', timestamp: 200, depthMeters: 4},
+      {localSessionId: 'retained-session', timestamp: 201, depthMeters: 11},
+    ];
+    profileStorage.values.set(profileKey, fullProfile);
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    const existing = watchEntryWithProfile(
+      'retained-delete',
+      'retained-session:260',
+      profileKey,
+    );
+    existing.watchCapture!.profile!.sampleCount = fullProfile.length;
+    await repository.save(existing);
+
+    await repository.delete(existing.localId, {
+      retainProfileAfterDelete: true,
+    });
+
+    await expect(repository.get(existing.localId)).resolves.toBeUndefined();
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(fullProfile);
+    expect(profileStorage.removals).toEqual([]);
+  });
+
   it('persists account revision and conflict state in the current schema', async () => {
     const storage = new InMemoryKeyValueStore();
     const repository = new PersistentDiveLogRepository({storage, now: () => 999});

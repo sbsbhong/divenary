@@ -8,6 +8,7 @@ import {sha256} from '@noble/hashes/sha256';
 import {bytesToHex, bytesToUtf8, utf8ToBytes} from '@noble/hashes/utils';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
+import {PersistentDiveLogRepository} from '../src/repositories/persistent-dive-log-repository';
 import { AccountOutbox, type AccountOutboxItem } from '../src/sync/account-outbox';
 import {
   parseAccountRemoteLog,
@@ -16,9 +17,11 @@ import {
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
+import {mobileStorageKeys} from '../src/storage/storage-keys';
+import {createWatchProfileStorage} from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type {DivePlan} from '../src/types/dive-plan';
-import type {WatchDepthSample} from '../src/types/dive-session';
+import type {WatchDepthSample, WatchSyncMessage} from '../src/types/dive-session';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const remoteId = '10000000-0000-4000-8000-000000000001';
@@ -171,6 +174,85 @@ function accountRepository(overrides: Partial<AccountDataRepository> = {}): jest
   } as jest.Mocked<AccountDataRepository>;
 }
 
+async function createPersistentDeleteFixture(
+  outboxStorage: PersistentKeyValueStore,
+): Promise<{
+  current: DiveLogEntry;
+  fullProfile: WatchDepthSample[];
+  logbook: PersistentDiveLogRepository;
+  metadataStorage: InMemoryKeyValueStore;
+  outbox: AccountOutbox;
+  profileKey: string;
+  profileStorage: ReturnType<typeof createWatchProfileStorage>;
+  queued: AccountOutboxItem;
+}> {
+  let timestamp = 500;
+  const metadataStorage = new InMemoryKeyValueStore();
+  const profileStorage = createWatchProfileStorage(metadataStorage);
+  const logbook = new PersistentDiveLogRepository({
+    storage: metadataStorage,
+    profileStorage,
+    now: () => timestamp++,
+  });
+  const fullProfile: WatchDepthSample[] = [
+    {localSessionId: 'delete-session', timestamp: 200, depthMeters: 4},
+    {localSessionId: 'delete-session', timestamp: 201, depthMeters: 12},
+  ];
+  const message: WatchSyncMessage = {
+    type: 'sessionEnded',
+    session: {
+      localSessionId: 'delete-session',
+      schemaVersion: 1,
+      syncStatus: 'synced',
+      startedAt: 200,
+      endedAt: 260,
+      maxDepthMeters: 12,
+      samples: fullProfile,
+      profile: {
+        formatVersion: 1,
+        contentRevision: 'delete-revision',
+        sampleIntervalSeconds: 1,
+        sampleCount: fullProfile.length,
+      },
+    },
+  };
+  const [imported] = await logbook.importWatchMessages([message]);
+  const current: DiveLogEntry = {
+    ...imported,
+    remoteId,
+    remoteRevision: 1,
+    ownerUserId: userId,
+    cloudSyncStatus: 'pending',
+  };
+  await logbook.save(current);
+  const profileKey = current.watchCapture?.profile?.storageKey;
+  if (!profileKey) {
+    throw new Error('Persistent delete fixture is missing its profile key');
+  }
+  const remote = remoteLog({localId: current.localId});
+  const queued = operation(0, {
+    entityLocalId: current.localId,
+    mutation: 'delete',
+    payload: {local: current, remote},
+  });
+  const outbox = new AccountOutbox({
+    storage: outboxStorage,
+    storageKey: 'outbox',
+    now: () => 600,
+  });
+  await outbox.enqueue(queued);
+  return {
+    current,
+    fullProfile,
+    logbook,
+    metadataStorage,
+    outbox,
+    profileKey,
+    profileStorage,
+    queued,
+  };
+}
+
 describe('AccountSyncCoordinator', () => {
   it('normalizes package mapper timestamp variants before validating a log digest', () => {
     const canonical = remoteLog({
@@ -183,8 +265,8 @@ describe('AccountSyncCoordinator', () => {
       ...canonical,
       payload: {
         ...canonical.payload,
-        started_at: '1970-01-01T00:01:40+00:00',
-        ended_at: '1970-01-01T00:01:41+00:00',
+        started_at: '1970-01-01T09:01:40.000000+09:00',
+        ended_at: '1970-01-01T09:01:41+09:00',
       },
     };
 
@@ -199,44 +281,107 @@ describe('AccountSyncCoordinator', () => {
     const canonical = remotePlan({
       payload: {
         ...remotePlan().payload,
-        planned_at: '2026-07-20T10:00:00.000Z',
+        planned_at: '2024-02-29T10:00:00.000Z',
       },
     });
     const mapperValue = {
       ...canonical,
       payload: {
         ...canonical.payload,
-        planned_at: '2026-07-20T10:00:00+00:00',
+        planned_at: '2024-02-29T19:00:00.000000+09:00',
       },
     };
 
     const parsed = parseAccountRemotePlan(mapperValue);
 
-    expect(parsed.payload.planned_at).toBe('2026-07-20T10:00:00.000Z');
+    expect(parsed.payload.planned_at).toBe('2024-02-29T10:00:00.000Z');
     expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
   });
 
   it.each([
-    ['log started_at', () => {
+    ['impossible log started_at', () => {
       const invalid = remoteLog({
-        payload: {...remoteLog().payload, started_at: 'not-a-timestamp'},
+        payload: {
+          ...remoteLog().payload,
+          started_at: '2023-02-29T10:00:00Z',
+        },
       });
       return parseAccountRemoteLog(invalid);
     }],
-    ['log ended_at', () => {
+    ['non-ISO log started_at', () => {
       const invalid = remoteLog({
-        payload: {...remoteLog().payload, ended_at: 'not-a-timestamp'},
+        payload: {
+          ...remoteLog().payload,
+          started_at: 'July 20, 2026 10:00:00 UTC',
+        },
       });
       return parseAccountRemoteLog(invalid);
     }],
-    ['plan planned_at', () => {
+    ['time in log started_at', () => {
+      const invalid = remoteLog({
+        payload: {
+          ...remoteLog().payload,
+          started_at: '2026-07-20T24:00:00Z',
+        },
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['impossible log ended_at', () => {
+      const invalid = remoteLog({
+        payload: {
+          ...remoteLog().payload,
+          ended_at: '2026-04-31T10:00:00Z',
+        },
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['non-ISO log ended_at', () => {
+      const invalid = remoteLog({
+        payload: {
+          ...remoteLog().payload,
+          ended_at: 'Mon, 20 Jul 2026 10:00:00 GMT',
+        },
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['offset in log ended_at', () => {
+      const invalid = remoteLog({
+        payload: {
+          ...remoteLog().payload,
+          ended_at: '2026-07-20T10:00:00+14:01',
+        },
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['impossible plan planned_at', () => {
       const invalid = remotePlan({
-        payload: {...remotePlan().payload, planned_at: 'not-a-timestamp'},
+        payload: {
+          ...remotePlan().payload,
+          planned_at: '2026-13-01T10:00:00Z',
+        },
+      });
+      return parseAccountRemotePlan(invalid);
+    }],
+    ['non-ISO plan planned_at', () => {
+      const invalid = remotePlan({
+        payload: {
+          ...remotePlan().payload,
+          planned_at: '2026-07-20 10:00:00+00:00',
+        },
+      });
+      return parseAccountRemotePlan(invalid);
+    }],
+    ['trailing text in plan planned_at', () => {
+      const invalid = remotePlan({
+        payload: {
+          ...remotePlan().payload,
+          planned_at: '2026-07-20T10:00:00Z trailing',
+        },
       });
       return parseAccountRemotePlan(invalid);
     }],
   ])('rejects an invalid %s value', (_name, parse) => {
-    expect(parse).toThrow(/timestamp|malformed/i);
+    expect(parse).toThrow(/timestamp/i);
   });
 
   it('does no remote work while offline and resumes the persisted queue online', async () => {
@@ -570,6 +715,131 @@ describe('AccountSyncCoordinator', () => {
     await expect(storage.getString('outbox')).resolves.toBe(rawBefore);
     await expect(outbox.list(userId)).resolves.toEqual([queued]);
     await expect(logbook.get(localBefore.localId)).resolves.toEqual(localBefore);
+  });
+
+  it('preserves exact persistent metadata and full profile when remote-delete dequeue becomes stale', async () => {
+    const outboxStorage = new PausedNextWriteStore();
+    const fixture = await createPersistentDeleteFixture(outboxStorage);
+    const queueBefore = await outboxStorage.getString('outbox');
+    const metadataBefore = await fixture.metadataStorage.getString(
+      mobileStorageKeys.logbook,
+    );
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: fixture.outbox,
+      accountRepository: accountRepository({
+        deleteLog: jest.fn(async () => ({
+          status: 'saved' as const,
+          value: remoteLog({localId: fixture.current.localId}),
+        })),
+      }),
+      logbookRepository: fixture.logbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: fixture.profileStorage,
+      now: () => 600,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+    const pausedWrite = outboxStorage.pauseNextWrite();
+    let drainError: unknown;
+    const observedDrain = coordinator.drain({online: true}).catch(error => {
+      drainError = error;
+    });
+    await pausedWrite.started;
+    const profileDuringDequeue = await fixture.profileStorage.read(
+      fixture.profileKey,
+    );
+
+    coordinator.pause();
+    pausedWrite.release();
+    await observedDrain;
+
+    expect(profileDuringDequeue).toEqual(fixture.fullProfile);
+    expect((drainError as Error | undefined)?.message).toMatch(/stale/i);
+    await expect(outboxStorage.getString('outbox')).resolves.toBe(queueBefore);
+    await expect(
+      fixture.metadataStorage.getString(mobileStorageKeys.logbook),
+    ).resolves.toBe(metadataBefore);
+    await expect(fixture.outbox.list(userId)).resolves.toEqual([
+      fixture.queued,
+    ]);
+    await expect(fixture.logbook.get(fixture.current.localId)).resolves.toEqual(
+      fixture.current,
+    );
+    await expect(
+      fixture.profileStorage.read(fixture.profileKey),
+    ).resolves.toEqual(fixture.fullProfile);
+  });
+
+  it('cleans a retained profile only after remote-delete dequeue commits', async () => {
+    const outboxStorage = new PausedNextWriteStore();
+    const fixture = await createPersistentDeleteFixture(outboxStorage);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: fixture.outbox,
+      accountRepository: accountRepository({
+        deleteLog: jest.fn(async () => ({
+          status: 'saved' as const,
+          value: remoteLog({localId: fixture.current.localId}),
+        })),
+      }),
+      logbookRepository: fixture.logbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: fixture.profileStorage,
+      now: () => 600,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+    const pausedWrite = outboxStorage.pauseNextWrite();
+    const observedDrain = coordinator.drain({online: true});
+    await pausedWrite.started;
+    const profileDuringDequeue = await fixture.profileStorage.read(
+      fixture.profileKey,
+    );
+
+    pausedWrite.release();
+    await expect(observedDrain).resolves.toEqual({processed: 1, remaining: 0});
+
+    expect(profileDuringDequeue).toEqual(fixture.fullProfile);
+    await expect(fixture.outbox.list(userId)).resolves.toEqual([]);
+    await expect(
+      fixture.logbook.get(fixture.current.localId),
+    ).resolves.toBeUndefined();
+    await expect(
+      fixture.profileStorage.read(fixture.profileKey),
+    ).resolves.toBeUndefined();
+  });
+
+  it('cleans a retained profile on successful replay after metadata was already deleted', async () => {
+    const fixture = await createPersistentDeleteFixture(
+      new InMemoryKeyValueStore(),
+    );
+    await fixture.logbook.delete(fixture.current.localId, {
+      retainProfileAfterDelete: true,
+    });
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: fixture.outbox,
+      accountRepository: accountRepository({
+        deleteLog: jest.fn(async () => ({
+          status: 'saved' as const,
+          value: remoteLog({localId: fixture.current.localId}),
+        })),
+      }),
+      logbookRepository: fixture.logbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: fixture.profileStorage,
+      now: () => 600,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+
+    await expect(coordinator.drain({online: true})).resolves.toEqual({
+      processed: 1,
+      remaining: 0,
+    });
+
+    await expect(fixture.outbox.list(userId)).resolves.toEqual([]);
+    await expect(
+      fixture.profileStorage.read(fixture.profileKey),
+    ).resolves.toBeUndefined();
   });
 
   it('keeps a remotely completed operation queued when the local metadata write fails', async () => {

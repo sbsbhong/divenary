@@ -101,6 +101,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       const nextEntries = entries.filter(entry => entry.localId !== localId);
       const deletedProfileKey = deletedEntry?.watchCapture?.profile?.storageKey;
       const profileKeyToRemove =
+        options?.retainProfileAfterDelete !== true &&
         deletedProfileKey !== undefined &&
         !referencesProfile(nextEntries, deletedProfileKey)
           ? deletedProfileKey
@@ -124,6 +125,8 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
           await this.profileStorage.remove(profileKeyToRemove);
           options?.assertCanCommit?.();
         }
+        options?.assertCanCommit?.();
+        await options?.commitAfterDelete?.();
       } catch (error) {
         let rollbackError: unknown;
         if (removedProfileKey !== undefined) {
