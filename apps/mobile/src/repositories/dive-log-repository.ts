@@ -6,11 +6,15 @@ export type ImportWatchMessagesOptions = {
   assertCanCommit?: () => void;
 };
 
+export type DeleteDiveLogOptions = {
+  assertCanCommit?: () => void;
+};
+
 export type DiveLogRepository = {
   list(): Promise<DiveLogEntry[]>;
   get(localId: string): Promise<DiveLogEntry | undefined>;
   save(entry: DiveLogEntry): Promise<DiveLogEntry>;
-  delete(localId: string): Promise<void>;
+  delete(localId: string, options?: DeleteDiveLogOptions): Promise<void>;
   importWatchMessages(
     messages: WatchSyncMessage[],
     options?: ImportWatchMessagesOptions,

@@ -162,7 +162,170 @@ describe('AccountOutbox', () => {
       },
     ]);
   });
+
+  it('restores the exact envelope and retained snapshot when a guarded rebase becomes stale during persistence', async () => {
+    const storage = new PausedNextWriteStorage();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'account-outbox',
+      now: () => 200,
+    });
+    const profileStorageKey = await outbox.writeProfileSnapshot(
+      userId,
+      'operation-1',
+      '[{"depthMeters":3}]',
+    );
+    const first = item({profileStorageKey});
+    const second = item({operationId: 'operation-2', createdAt: 101});
+    await outbox.enqueue(first);
+    await outbox.enqueue(second);
+    const rawBefore = await storage.getString('account-outbox');
+    const itemsBefore = await outbox.list(userId);
+    let isCurrent = true;
+    const pausedWrite = storage.pauseNextWrite();
+    let completionError: unknown;
+    const observedCompletion = outbox
+      .completeSavedUpsert(first, 2, {
+        assertCanCommit: () => {
+          if (!isCurrent) {
+            throw new Error('stale principal');
+          }
+        },
+      })
+      .catch(error => {
+        completionError = error;
+      });
+    await pausedWrite.started;
+
+    isCurrent = false;
+    pausedWrite.release();
+    await observedCompletion;
+
+    expect((completionError as Error | undefined)?.message).toBe(
+      'stale principal',
+    );
+    await expect(storage.getString('account-outbox')).resolves.toBe(rawBefore);
+    await expect(outbox.list(userId)).resolves.toEqual(itemsBefore);
+    await expect(storage.getString(profileStorageKey)).resolves.toBe(
+      '[{"depthMeters":3}]',
+    );
+  });
+
+  it('restores the exact queue and conflict envelope when conflict persistence becomes stale', async () => {
+    const storage = new PausedNextWriteStorage();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'account-outbox',
+      now: () => 200,
+    });
+    const operation = item();
+    await outbox.enqueue(operation);
+    const rawBefore = await storage.getString('account-outbox');
+    let isCurrent = true;
+    const pausedWrite = storage.pauseNextWrite();
+    let conflictError: unknown;
+    const observedConflict = outbox
+      .recordConflict(
+        operation,
+        {localId: operation.entityLocalId},
+        {id: 'remote-log-1', revision: 3},
+        {
+          assertCanCommit: () => {
+            if (!isCurrent) {
+              throw new Error('stale principal');
+            }
+          },
+        },
+      )
+      .catch(error => {
+        conflictError = error;
+      });
+    await pausedWrite.started;
+
+    isCurrent = false;
+    pausedWrite.release();
+    await observedConflict;
+
+    expect((conflictError as Error | undefined)?.message).toBe(
+      'stale principal',
+    );
+    await expect(storage.getString('account-outbox')).resolves.toBe(rawBefore);
+    await expect(outbox.list(userId)).resolves.toEqual([operation]);
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('restores an absent envelope when guarded completion becomes stale', async () => {
+    const storage = new PausedNextWriteStorage();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'account-outbox',
+      now: () => 200,
+    });
+    let isCurrent = true;
+    const pausedWrite = storage.pauseNextWrite();
+    let completionError: unknown;
+    const observedCompletion = outbox
+      .complete(userId, 'missing-operation', {
+        assertCanCommit: () => {
+          if (!isCurrent) {
+            throw new Error('stale principal');
+          }
+        },
+      })
+      .catch(error => {
+        completionError = error;
+      });
+    await pausedWrite.started;
+
+    isCurrent = false;
+    pausedWrite.release();
+    await observedCompletion;
+
+    expect((completionError as Error | undefined)?.message).toBe(
+      'stale principal',
+    );
+    await expect(storage.getString('account-outbox')).resolves.toBeUndefined();
+  });
 });
+
+class PausedNextWriteStorage implements PersistentKeyValueStore {
+  private readonly values = new Map<string, string>();
+  private nextPause?: {
+    resolveStarted: () => void;
+    release: Promise<void>;
+  };
+
+  async getString(key: string): Promise<string | undefined> {
+    return this.values.get(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    const pause = this.nextPause;
+    this.nextPause = undefined;
+    if (pause) {
+      pause.resolveStarted();
+      await pause.release;
+    }
+    this.values.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.values.delete(key);
+  }
+
+  pauseNextWrite(): {started: Promise<void>; release(): void} {
+    let resolveStarted!: () => void;
+    let resolveRelease!: () => void;
+    const started = new Promise<void>(resolve => {
+      resolveStarted = resolve;
+    });
+    const release = new Promise<void>(resolve => {
+      resolveRelease = resolve;
+    });
+    this.nextPause = {resolveStarted, release};
+    return {started, release: resolveRelease};
+  }
+}
 
 class FirstWritePausedStorage implements PersistentKeyValueStore {
   private readonly values = new Map<string, string>();

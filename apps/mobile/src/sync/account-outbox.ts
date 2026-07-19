@@ -24,6 +24,10 @@ export type AccountOutboxConflict = {
   recordedAt: number;
 };
 
+export type AccountOutboxMutationOptions = {
+  assertCanCommit?: () => void;
+};
+
 type AccountOutboxState = {
   items: AccountOutboxItem[];
   conflicts: AccountOutboxConflict[];
@@ -135,7 +139,11 @@ export class AccountOutbox {
     });
   }
 
-  async complete(userId: string, operationId: string): Promise<void> {
+  async complete(
+    userId: string,
+    operationId: string,
+    options?: AccountOutboxMutationOptions,
+  ): Promise<void> {
     const removedProfileKeys = await this.mutate(async state => {
       const removed = state.items.filter(
         item => item.userId === userId && item.operationId === operationId,
@@ -144,13 +152,14 @@ export class AccountOutbox {
         item => item.userId !== userId || item.operationId !== operationId,
       );
       return profileKeys(removed);
-    });
+    }, options);
     await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
   async completeSavedUpsert(
     item: AccountOutboxItem,
     remoteRevision: number,
+    options?: AccountOutboxMutationOptions,
   ): Promise<boolean> {
     if (!Number.isSafeInteger(remoteRevision) || remoteRevision < 1) {
       throw new Error('Remote revision must be a positive integer');
@@ -174,7 +183,7 @@ export class AccountOutbox {
         hasPending: pending.length > 0,
         profileKeys: completed ? profileKeys([completed]) : [],
       };
-    });
+    }, options);
     await this.removeSnapshotsBestEffort(result.profileKeys);
     return result.hasPending;
   }
@@ -191,6 +200,7 @@ export class AccountOutbox {
   async reschedule(
     userId: string,
     operationId: string,
+    options?: AccountOutboxMutationOptions,
   ): Promise<AccountOutboxItem | undefined> {
     return this.mutate(async state => {
       const item = state.items.find(
@@ -213,13 +223,14 @@ export class AccountOutbox {
         Math.min(MAXIMUM_RETRY_DELAY_SECONDS, 2 ** attemptCount) +
         jitter;
       return cloneItem(item);
-    });
+    }, options);
   }
 
   async recordConflict(
     item: AccountOutboxItem,
     currentLocal: Record<string, unknown>,
     remote: Record<string, unknown>,
+    options?: AccountOutboxMutationOptions,
   ): Promise<void> {
     const removedProfileKeys = await this.mutate(async state => {
       const existing = state.conflicts.find(
@@ -241,7 +252,7 @@ export class AccountOutbox {
       const removed = state.items.filter(candidate => sameOperationKey(candidate, item));
       state.items = state.items.filter(candidate => !sameOperationKey(candidate, item));
       return profileKeys(removed);
-    });
+    }, options);
     await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
@@ -249,6 +260,7 @@ export class AccountOutbox {
     userId: string,
     entityKind: AccountOutboxItem['entityKind'],
     entityLocalId: string,
+    options?: AccountOutboxMutationOptions,
   ): Promise<void> {
     const removedProfileKeys = await this.mutate(async state => {
       const removed = state.items.filter(
@@ -259,7 +271,7 @@ export class AccountOutbox {
       );
       state.items = state.items.filter(item => !removed.includes(item));
       return profileKeys(removed);
-    });
+    }, options);
     await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
@@ -294,17 +306,30 @@ export class AccountOutbox {
 
   private mutate<T>(
     operation: (state: AccountOutboxState) => Promise<T>,
+    options?: AccountOutboxMutationOptions,
   ): Promise<T> {
     return withStorageMutationLock(this.storageKey, async () => {
-      const state = await this.readState();
+      const previousRaw = await this.storage.getString(this.storageKey);
+      const state = this.parseState(previousRaw);
       const value = await operation(state);
-      await this.writeState(state);
+      options?.assertCanCommit?.();
+      try {
+        await this.writeState(state);
+        options?.assertCanCommit?.();
+      } catch (error) {
+        await this.restoreRawState(previousRaw);
+        throw error;
+      }
       return value;
     });
   }
 
   private async readState(): Promise<AccountOutboxState> {
     const rawValue = await this.storage.getString(this.storageKey);
+    return this.parseState(rawValue);
+  }
+
+  private parseState(rawValue: string | undefined): AccountOutboxState {
     if (rawValue === undefined) {
       return emptyState();
     }
@@ -316,6 +341,14 @@ export class AccountOutbox {
       throw new Error('Malformed account outbox envelope');
     }
     return parseOutboxEnvelope(envelope, this.storageKey);
+  }
+
+  private async restoreRawState(rawValue: string | undefined): Promise<void> {
+    if (rawValue === undefined) {
+      await this.storage.remove(this.storageKey);
+    } else {
+      await this.storage.setString(this.storageKey, rawValue);
+    }
   }
 
   private async writeState(state: AccountOutboxState): Promise<void> {

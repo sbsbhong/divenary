@@ -9,8 +9,13 @@ import {bytesToHex, bytesToUtf8, utf8ToBytes} from '@noble/hashes/utils';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { AccountOutbox, type AccountOutboxItem } from '../src/sync/account-outbox';
+import {
+  parseAccountRemoteLog,
+  parseAccountRemotePlan,
+} from '../src/sync/account-payload';
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type {DivePlan} from '../src/types/dive-plan';
 import type {WatchDepthSample} from '../src/types/dive-session';
@@ -167,6 +172,73 @@ function accountRepository(overrides: Partial<AccountDataRepository> = {}): jest
 }
 
 describe('AccountSyncCoordinator', () => {
+  it('normalizes package mapper timestamp variants before validating a log digest', () => {
+    const canonical = remoteLog({
+      payload: {
+        ...remoteLog().payload,
+        ended_at: '1970-01-01T00:01:41.000Z',
+      },
+    });
+    const mapperValue = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        started_at: '1970-01-01T00:01:40+00:00',
+        ended_at: '1970-01-01T00:01:41+00:00',
+      },
+    };
+
+    const parsed = parseAccountRemoteLog(mapperValue);
+
+    expect(parsed.payload.started_at).toBe('1970-01-01T00:01:40.000Z');
+    expect(parsed.payload.ended_at).toBe('1970-01-01T00:01:41.000Z');
+    expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('normalizes a package mapper plan timestamp before validating its original digest', () => {
+    const canonical = remotePlan({
+      payload: {
+        ...remotePlan().payload,
+        planned_at: '2026-07-20T10:00:00.000Z',
+      },
+    });
+    const mapperValue = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        planned_at: '2026-07-20T10:00:00+00:00',
+      },
+    };
+
+    const parsed = parseAccountRemotePlan(mapperValue);
+
+    expect(parsed.payload.planned_at).toBe('2026-07-20T10:00:00.000Z');
+    expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it.each([
+    ['log started_at', () => {
+      const invalid = remoteLog({
+        payload: {...remoteLog().payload, started_at: 'not-a-timestamp'},
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['log ended_at', () => {
+      const invalid = remoteLog({
+        payload: {...remoteLog().payload, ended_at: 'not-a-timestamp'},
+      });
+      return parseAccountRemoteLog(invalid);
+    }],
+    ['plan planned_at', () => {
+      const invalid = remotePlan({
+        payload: {...remotePlan().payload, planned_at: 'not-a-timestamp'},
+      });
+      return parseAccountRemotePlan(invalid);
+    }],
+  ])('rejects an invalid %s value', (_name, parse) => {
+    expect(parse).toThrow(/timestamp|malformed/i);
+  });
+
   it('does no remote work while offline and resumes the persisted queue online', async () => {
     const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
     const remote = accountRepository();
@@ -459,6 +531,45 @@ describe('AccountSyncCoordinator', () => {
     await coordinator.drain({online: true});
 
     expect(order).toEqual(['remote', 'local', 'outbox']);
+  });
+
+  it('rolls back local and exact outbox state when pause occurs during dequeue persistence', async () => {
+    const storage = new PausedNextWriteStore();
+    const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
+    const queued = operation();
+    await outbox.enqueue(queued);
+    const rawBefore = await storage.getString('outbox');
+    const localBefore = localLog();
+    const logbook = new LocalDiveLogRepository([localBefore]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        saveLog: jest.fn(async value => ({
+          status: 'saved' as const,
+          value: {...value, revision: 2},
+        })),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+      schedule: () => ({cancel: jest.fn()}),
+    });
+    const pausedWrite = storage.pauseNextWrite();
+    let drainError: unknown;
+    const observedDrain = coordinator.drain({online: true}).catch(error => {
+      drainError = error;
+    });
+    await pausedWrite.started;
+
+    coordinator.pause();
+    pausedWrite.release();
+    await observedDrain;
+
+    expect((drainError as Error | undefined)?.message).toMatch(/stale/i);
+    await expect(storage.getString('outbox')).resolves.toBe(rawBefore);
+    await expect(outbox.list(userId)).resolves.toEqual([queued]);
+    await expect(logbook.get(localBefore.localId)).resolves.toEqual(localBefore);
   });
 
   it('keeps a remotely completed operation queued when the local metadata write fails', async () => {
@@ -1117,4 +1228,43 @@ function deferred<T>(): {
 async function flushPromises(): Promise<void> {
   await Promise.resolve();
   await new Promise(resolve => setTimeout(resolve, 0));
+}
+
+class PausedNextWriteStore implements PersistentKeyValueStore {
+  private readonly values = new Map<string, string>();
+  private nextPause?: {
+    resolveStarted: () => void;
+    release: Promise<void>;
+  };
+
+  async getString(key: string): Promise<string | undefined> {
+    return this.values.get(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    const pause = this.nextPause;
+    this.nextPause = undefined;
+    if (pause) {
+      pause.resolveStarted();
+      await pause.release;
+    }
+    this.values.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.values.delete(key);
+  }
+
+  pauseNextWrite(): {started: Promise<void>; release(): void} {
+    let resolveStarted!: () => void;
+    let resolveRelease!: () => void;
+    const started = new Promise<void>(resolve => {
+      resolveStarted = resolve;
+    });
+    const release = new Promise<void>(resolve => {
+      resolveRelease = resolve;
+    });
+    this.nextPause = {resolveStarted, release};
+    return {started, release: resolveRelease};
+  }
 }

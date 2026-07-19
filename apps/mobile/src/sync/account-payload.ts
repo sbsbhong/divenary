@@ -166,8 +166,14 @@ export function parseAccountRemoteLog(value: unknown): RemoteDiveLog {
   ) {
     throw new Error('Malformed remote log payload');
   }
-  assertLogPayload(value.payload);
-  if (canonicalAccountPayloadSha256(value.payload) !== value.payloadSha256) {
+  const payload = jsonRecord(value.payload);
+  payload.started_at = normalizeTimestamp(payload.started_at, 'log started_at');
+  payload.ended_at = normalizeNullableTimestamp(
+    payload.ended_at,
+    'log ended_at',
+  );
+  assertLogPayload(payload);
+  if (canonicalAccountPayloadSha256(payload) !== value.payloadSha256) {
     throw new Error('Malformed remote log payload digest');
   }
   return {
@@ -175,7 +181,7 @@ export function parseAccountRemoteLog(value: unknown): RemoteDiveLog {
     localId: value.localId,
     revision: value.revision,
     payloadSha256: value.payloadSha256,
-    payload: jsonRecord(value.payload),
+    payload,
     ...(value.profilePath === undefined
       ? {}
       : {profilePath: value.profilePath}),
@@ -201,8 +207,13 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
   ) {
     throw new Error('Malformed remote plan payload');
   }
-  assertPlanPayload(value.payload);
-  if (canonicalAccountPayloadSha256(value.payload) !== value.payloadSha256) {
+  const payload = jsonRecord(value.payload);
+  payload.planned_at = normalizeNullableTimestamp(
+    payload.planned_at,
+    'plan planned_at',
+  );
+  assertPlanPayload(payload);
+  if (canonicalAccountPayloadSha256(payload) !== value.payloadSha256) {
     throw new Error('Malformed remote plan payload digest');
   }
   return {
@@ -210,7 +221,7 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
     localId: value.localId,
     revision: value.revision,
     payloadSha256: value.payloadSha256,
-    payload: jsonRecord(value.payload),
+    payload,
   };
 }
 
@@ -286,6 +297,27 @@ function assertPlanPayload(payload: Record<string, unknown>): void {
   ) {
     throw new Error('Malformed remote plan payload schema');
   }
+}
+
+function normalizeTimestamp(value: unknown, label: string): string {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`Malformed remote ${label} timestamp`);
+  }
+  const milliseconds = Date.parse(value);
+  if (!Number.isFinite(milliseconds)) {
+    throw new Error(`Malformed remote ${label} timestamp`);
+  }
+  return new Date(milliseconds).toISOString();
+}
+
+function normalizeNullableTimestamp(
+  value: unknown,
+  label: string,
+): string | null {
+  if (value === null) {
+    return null;
+  }
+  return normalizeTimestamp(value, label);
 }
 
 function canonicalStringify(value: unknown): string {

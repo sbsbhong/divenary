@@ -12,6 +12,7 @@ import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lo
 import { mobileStorageKeys } from '../storage/storage-keys';
 import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
 import type {
+  DeleteDiveLogOptions,
   DiveLogRepository,
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
@@ -84,15 +85,68 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     });
   }
 
-  async delete(localId: string): Promise<void> {
+  async delete(
+    localId: string,
+    options?: DeleteDiveLogOptions,
+  ): Promise<void> {
     return this.enqueueMutation(async () => {
+      options?.assertCanCommit?.();
+      const metadataSnapshot = await this.metadataStorage.getString(
+        this.storageKey,
+      );
+      options?.assertCanCommit?.();
       const entries = await this.readEntries();
+      options?.assertCanCommit?.();
       const deletedEntry = entries.find(entry => entry.localId === localId);
       const nextEntries = entries.filter(entry => entry.localId !== localId);
-      await this.writeEntries(nextEntries);
       const deletedProfileKey = deletedEntry?.watchCapture?.profile?.storageKey;
-      if (deletedProfileKey && !referencesProfile(nextEntries, deletedProfileKey)) {
-        await this.profileStorage.remove(deletedProfileKey);
+      const profileKeyToRemove =
+        deletedProfileKey !== undefined &&
+        !referencesProfile(nextEntries, deletedProfileKey)
+          ? deletedProfileKey
+          : undefined;
+      let profileSnapshot: WatchDepthSample[] | undefined;
+      if (profileKeyToRemove !== undefined) {
+        options?.assertCanCommit?.();
+        profileSnapshot = await this.profileStorage.read(profileKeyToRemove);
+        options?.assertCanCommit?.();
+      }
+      let metadataWriteAttempted = false;
+      let removedProfileKey: string | undefined;
+      try {
+        options?.assertCanCommit?.();
+        metadataWriteAttempted = true;
+        await this.writeEntries(nextEntries);
+        options?.assertCanCommit?.();
+        if (profileKeyToRemove !== undefined) {
+          options?.assertCanCommit?.();
+          removedProfileKey = profileKeyToRemove;
+          await this.profileStorage.remove(profileKeyToRemove);
+          options?.assertCanCommit?.();
+        }
+      } catch (error) {
+        let rollbackError: unknown;
+        if (removedProfileKey !== undefined) {
+          try {
+            await this.restoreProfileSnapshot({
+              key: removedProfileKey,
+              previous: profileSnapshot,
+            });
+          } catch (profileError) {
+            rollbackError = profileError;
+          }
+        }
+        if (metadataWriteAttempted) {
+          try {
+            await this.restoreMetadataSnapshot(metadataSnapshot);
+          } catch (metadataError) {
+            rollbackError ??= metadataError;
+          }
+        }
+        if (rollbackError !== undefined) {
+          throw rollbackError;
+        }
+        throw error;
       }
     });
   }
@@ -216,11 +270,17 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     snapshots: readonly ProfileWriteSnapshot[],
   ): Promise<void> {
     for (const snapshot of [...snapshots].reverse()) {
-      if (snapshot.previous === undefined) {
-        await this.profileStorage.remove(snapshot.key);
-      } else {
-        await this.profileStorage.write(snapshot.key, snapshot.previous);
-      }
+      await this.restoreProfileSnapshot(snapshot);
+    }
+  }
+
+  private async restoreProfileSnapshot(
+    snapshot: ProfileWriteSnapshot,
+  ): Promise<void> {
+    if (snapshot.previous === undefined) {
+      await this.profileStorage.remove(snapshot.key);
+    } else {
+      await this.profileStorage.write(snapshot.key, snapshot.previous);
     }
   }
 }

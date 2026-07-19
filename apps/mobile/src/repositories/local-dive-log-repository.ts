@@ -3,6 +3,7 @@ import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 import { watchFixtureMessages } from '../utils/watch-fixtures';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import type {
+  DeleteDiveLogOptions,
   DiveLogRepository,
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
@@ -38,9 +39,22 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     });
   }
 
-  async delete(localId: string): Promise<void> {
+  async delete(
+    localId: string,
+    options?: DeleteDiveLogOptions,
+  ): Promise<void> {
     return this.enqueueMutation(async () => {
+      options?.assertCanCommit?.();
+      const previous = this.entriesByLocalId.get(localId);
       this.entriesByLocalId.delete(localId);
+      try {
+        options?.assertCanCommit?.();
+      } catch (error) {
+        if (previous) {
+          this.entriesByLocalId.set(localId, previous);
+        }
+        throw error;
+      }
     });
   }
 

@@ -150,6 +150,26 @@ class PausedProfileStorage extends RecordingProfileStorage {
   }
 }
 
+class PausedRemoveProfileStorage extends RecordingProfileStorage {
+  private resolveRemoveStarted!: () => void;
+  private resolveRemove!: () => void;
+  readonly removeStarted = new Promise<void>(resolve => {
+    this.resolveRemoveStarted = resolve;
+  });
+
+  override async remove(key: string): Promise<void> {
+    this.resolveRemoveStarted();
+    await new Promise<void>(resolve => {
+      this.resolveRemove = resolve;
+    });
+    await super.remove(key);
+  }
+
+  releaseRemove(): void {
+    this.resolveRemove();
+  }
+}
+
 class FailingObsoleteProfileStorage extends RecordingProfileStorage {
   constructor(private readonly failingKey: string) {
     super();
@@ -403,6 +423,57 @@ describe('PersistentDiveLogRepository', () => {
     await reloadedRepository.delete('newer');
 
     expect((await new PersistentDiveLogRepository({ storage, now: () => 999 }).list()).map(entry => entry.localId)).toEqual(['older']);
+  });
+
+  it('restores exact metadata and full profile when guarded delete becomes stale during profile removal', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const profileStorage = new PausedRemoveProfileStorage();
+    const profileKey = 'delete-profile';
+    const fullProfile: WatchDepthSample[] = [
+      {localSessionId: 'session-delete', timestamp: 200, depthMeters: 3},
+      {localSessionId: 'session-delete', timestamp: 201, depthMeters: 9},
+    ];
+    profileStorage.values.set(profileKey, fullProfile);
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    const existing = watchEntryWithProfile(
+      'delete',
+      'session-delete:260',
+      profileKey,
+    );
+    existing.watchCapture!.profile!.sampleCount = fullProfile.length;
+    await repository.save(existing);
+    const rawBefore = await storage.getString(mobileStorageKeys.logbook);
+    let isCurrent = true;
+    let deleteError: unknown;
+    const observedDelete = repository
+      .delete(existing.localId, {
+        assertCanCommit: () => {
+          if (!isCurrent) {
+            throw new Error('stale principal');
+          }
+        },
+      })
+      .catch(error => {
+        deleteError = error;
+      });
+    await profileStorage.removeStarted;
+
+    isCurrent = false;
+    profileStorage.releaseRemove();
+    await observedDelete;
+
+    expect((deleteError as Error | undefined)?.message).toBe(
+      'stale principal',
+    );
+    await expect(storage.getString(mobileStorageKeys.logbook)).resolves.toBe(
+      rawBefore,
+    );
+    await expect(repository.get(existing.localId)).resolves.toEqual(existing);
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(fullProfile);
   });
 
   it('persists account revision and conflict state in the current schema', async () => {

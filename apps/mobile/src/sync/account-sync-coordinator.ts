@@ -339,7 +339,9 @@ export class AccountSyncCoordinator {
           throw error;
         }
         assertCanCommit();
-        await this.outbox.reschedule(head.userId, head.operationId);
+        await this.outbox.reschedule(head.userId, head.operationId, {
+          assertCanCommit,
+        });
       }
     }
 
@@ -441,7 +443,9 @@ export class AccountSyncCoordinator {
       const current = await this.logbookRepository.get(item.entityLocalId);
       if (item.mutation === 'delete' && current === undefined) {
         assertCanCommit();
-        await this.outbox.complete(item.userId, item.operationId);
+        await this.outbox.complete(item.userId, item.operationId, {
+          assertCanCommit,
+        });
         return;
       }
       if (!current) {
@@ -458,6 +462,7 @@ export class AccountSyncCoordinator {
             item,
             localAsRecord(conflicted),
             remoteAsRecord(result.remote),
+            {assertCanCommit},
           );
         },
       );
@@ -483,7 +488,9 @@ export class AccountSyncCoordinator {
         assertCanCommit,
         async () => {
           assertCanCommit();
-          await this.outbox.completeSavedUpsert(item, result.value.revision);
+          await this.outbox.completeSavedUpsert(item, result.value.revision, {
+            assertCanCommit,
+          });
         },
       );
       return;
@@ -491,7 +498,9 @@ export class AccountSyncCoordinator {
     const current = await this.logbookRepository.get(item.entityLocalId);
     await this.commitLogDelete(current, item.entityLocalId, assertCanCommit, async () => {
       assertCanCommit();
-      await this.outbox.complete(item.userId, item.operationId);
+      await this.outbox.complete(item.userId, item.operationId, {
+        assertCanCommit,
+      });
     });
   }
 
@@ -527,7 +536,9 @@ export class AccountSyncCoordinator {
       const current = await this.planRepository.get(item.entityLocalId);
       if (item.mutation === 'delete' && current === undefined) {
         assertCanCommit();
-        await this.outbox.complete(item.userId, item.operationId);
+        await this.outbox.complete(item.userId, item.operationId, {
+          assertCanCommit,
+        });
         return;
       }
       if (!current) {
@@ -544,6 +555,7 @@ export class AccountSyncCoordinator {
             item,
             localAsRecord(conflicted),
             remoteAsRecord(result.remote),
+            {assertCanCommit},
           );
         },
       );
@@ -569,7 +581,9 @@ export class AccountSyncCoordinator {
         assertCanCommit,
         async () => {
           assertCanCommit();
-          await this.outbox.completeSavedUpsert(item, result.value.revision);
+          await this.outbox.completeSavedUpsert(item, result.value.revision, {
+            assertCanCommit,
+          });
         },
       );
       return;
@@ -577,7 +591,9 @@ export class AccountSyncCoordinator {
     const current = await this.planRepository.get(item.entityLocalId);
     await this.commitPlanDelete(current, item.entityLocalId, assertCanCommit, async () => {
       assertCanCommit();
-      await this.outbox.complete(item.userId, item.operationId);
+      await this.outbox.complete(item.userId, item.operationId, {
+        assertCanCommit,
+      });
     });
   }
 
@@ -807,7 +823,7 @@ export class AccountSyncCoordinator {
     finalize: () => Promise<void>,
   ): Promise<void> {
     assertCanCommit();
-    await this.logbookRepository.delete(localId);
+    await this.logbookRepository.delete(localId, {assertCanCommit});
     try {
       assertCanCommit();
       await finalize();
