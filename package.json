@@ -30,6 +30,7 @@
     "supabase:staging:push": "node supabase/scripts/run-staging-supabase.mjs db push --linked",
     "supabase:staging:seed:auth": "node supabase/scripts/staging-project.mjs seed",
     "supabase:staging:verify:auth": "node supabase/scripts/verify-staging-auth.mjs",
+    "supabase:staging:verify:guest-claim": "node supabase/scripts/verify-staging-guest-claim.mjs",
     "supabase:start": "node supabase/scripts/run-local-supabase.mjs start",
     "supabase:stop": "node supabase/scripts/run-local-supabase.mjs stop",
     "supabase:test:db": "node supabase/scripts/run-local-supabase.mjs test db",
