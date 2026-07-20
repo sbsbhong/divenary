@@ -850,3 +850,13 @@
 ## [2026-07-18] ingest | Watch callback, retry, re-entry, navigation hardening
 - Updated: Watch 앱 구조
 - Updated: Knowledge Base Index
+
+## [2026-07-20] ingest | Guest data account claim implementation evidence
+- Updated: Supabase 구조
+- Updated: 모바일 구조
+- Updated: 동기화 흐름 구조
+- Updated: 다이브 로그 도메인
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+
+## [2026-07-20] lint | 1 issues found, 0 auto-fixed

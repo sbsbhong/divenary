@@ -7,8 +7,8 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
 핵심 전제:
 - 워치 앱은 로그인 없이 로컬 기록과 iPhone 전송 enqueue만 수행
 - `userId`는 contract에 포함하지 않음
-- Wave 3A의 모바일 Google/Apple Auth와 필수 약관 동의 기반은 구현됐지만, guest Logbook/Planbook은 계속 local-only이며 로그인으로 claim/upload/delete되지 않음
-- Supabase remote Logbook/Planbook, cloud backup, guest claim, account-local purge와 계정 삭제는 아직 구현되지 않음
+- 모바일 Google/Apple Auth와 필수 약관 동의, 주체별 local Logbook/Planbook, account local-first outbox와 재개 가능한 guest data claim 기반을 구현함
+- Supabase account Logbook/Planbook schema, owner RLS, private profile Storage 경로와 atomic guest claim finalizer는 staging 대상이며 hosted staging 배포와 기기 claim 검증은 아직 완료되지 않음
 - 이 앱은 인증된 다이브 컴퓨터, 감압 컴퓨터, 의료기기, 비상 판단 시스템이 아님
 
 ## 현재 구현 범위
@@ -22,15 +22,19 @@ Apple Watch 기록과 React Native 모바일 로그북을 함께 다루는 compa
   - AsyncStorage 기반 Logbook/Planbook/설정 metadata와 Application Support 파일 기반 session/revision별 Watch profile 분리 저장
   - React Navigation 기반 bottom tab navigation
   - Keychain-compatible session, iOS native Google/Apple credential adapter, guest-preserving login, versioned 필수 약관/개인정보 동의 UI
+  - `guest`와 `user:<uuid>`로 분리된 local repository, account local-first outbox/sync, account-copy-wins 목록 합성
+  - immutable snapshot/manifest 기반 guest data claim, 원격 readback 검증, commit 뒤 재개 가능한 local cleanup과 기기에 유지 선택
   - runtime watch sync JSON validation, WatchConnectivity pending inbox 수동 동기화, active simulator import/ack 확인 경로
   - 실행하지 않은 Planbook planned dive를 watch companion에 전달하는 PoC
   - Settings 기기 관리에서 공개 `WCSession` paired/install/reachable 상태 표시
 - `supabase`:
   - local Supabase configuration, Auth foundation migration/seed, pgTAP와 REST smoke test
   - immutable legal document/current pointer, append-only consent, membership와 RLS/RPC 경계
+  - account `dive_logs`/`dive_plans`, owner RLS, private `dive-profiles` bucket, immutable guest claim staging과 atomic finalizer
   - local password fixture와 staging-only promotion/verification 명령
 - `packages/supabase`:
-  - generated database type, typed client factory, onboarding parser와 provider-independent Auth repository
+  - generated database type, typed client factory, onboarding parser, provider-independent Auth repository
+  - typed account Logbook/Planbook/profile 및 guest claim repository
 - `apps/mobile/ios/DivenaryWatchApp`:
   - `apps/mobile/ios/Divenary.xcodeproj` 안의 embedded watchOS companion target
   - Start/End 기록 흐름, 원시 live callback과 분리된 최대 1Hz profile, 세션 요약, Application Support 기반 immutable artifact/manifest 저장
@@ -141,14 +145,14 @@ yarn supabase:staging:verify:auth
 
 Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. verifier는 deployed legal URL에서 promotion SHA를 추론합니다. 같은 promotion commit의 seed 재실행은 idempotent하며, 이후 commit을 새로 promotion하려면 seed 전에 새 legal version과 그 version의 immutable URL을 정의해야 합니다.
 
-Google/Apple native token exchange, cancellation/repeat, signed callback, session restore는 signed physical device와 수동 상호작용이 필요한 별도 gate이며 아직 통과로 기록하지 않습니다. Auth 여부와 관계없이 guest Logbook/Planbook은 local-only이고 cloud sync나 account claim은 없습니다.
+사용자는 physical iPhone에서 Apple 로그인을 성공했다고 확인했습니다. Google physical login, cancellation/repeat, session restore와 re-consent는 아직 검증되지 않았습니다. Account Logbook/Planbook migration과 `finalize-guest-claim` Edge Function은 staging 대상 구현이지만, 이 문서 갱신 시점에는 hosted staging 배포나 physical guest claim 완료를 통과로 기록하지 않습니다.
 
 ## 다음 단계
 
-1. staging이 아닌 production Supabase 프로젝트와 production 법률 문서를 준비하고 physical iPhone에서 Google/Apple Auth/re-consent matrix를 검증
-2. Auth 도입 뒤 guest Logbook/Planbook 보존과 foreground Watch pairing/import/local acknowledgement 회귀를 확인
-3. WatchConnectivity reconnect, background/force-quit, retry와 large transfer를 paired hardware에서 검증
-4. `CMWaterSubmersionManager` 기반 실제 underwater sensor behavior를 지원 hardware의 통제된 환경에서 검증
-5. Wave 3B remote data/infinite pagination/profile Storage, 3C local-first sync/guest claim, 3D account-local purge/즉시 영구 계정 삭제를 순서대로 구현
+1. account data migration과 `finalize-guest-claim` Edge Function을 staging에 배포하고 [guest data account claim 기기 체크리스트](docs/2026-07-19-guest-data-account-claim-device-checklist.md)를 iPhone/Android에서 수행
+2. physical iPhone에서 Google Auth, cancellation/repeat, session restore와 re-consent matrix를 검증
+3. Authenticated/guest 상태의 foreground Watch pairing/import/local acknowledgement 회귀와 WatchConnectivity background/force-quit/retry를 paired hardware에서 검증
+4. staging과 분리된 production Supabase 프로젝트, production 법률 문서와 앱 내 즉시 영구 계정 삭제를 준비
+5. `CMWaterSubmersionManager` 기반 실제 underwater sensor behavior를 지원 hardware의 통제된 환경에서 검증
 
-Wave 3A 자동화 체크포인트는 완료됐지만 hosted physical 승격 gate는 아직 대기 중이다. Wave 3B는 그 gate와 post-Auth Watch 회귀 전에는 시작하지 않으며, 앱 내 계정 삭제가 포함된 3D 전에는 release하지 않는다.
+Apple physical login은 사용자 확인을 받았지만 Google physical login, hosted staging guest claim, post-Auth Watch 회귀와 account deletion gate는 아직 대기 중이다. Production Supabase와 앱 내 계정 삭제가 준비되기 전에는 release하지 않는다.

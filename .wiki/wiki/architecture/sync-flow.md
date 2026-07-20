@@ -1,12 +1,12 @@
 # 동기화 흐름 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository source, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; Diving App repository implementation, 2026-07-09; pre-device depth safety sync readiness implementation, 2026-07-09; Watch session UI and sync startup fixes, 2026-07-10; Large watch session file transfer, 2026-07-11; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
-Raw: [Pre-Karpathy: 동기화 흐름 구조](../../raw/architecture/sync-flow.md); [Planned dive application context delivery](../../raw/architecture/2026-06-28-planned-dive-application-context-delivery.md); [Planned dive context breakpoint hardening](../../raw/architecture/2026-06-28-planned-dive-context-breakpoint-hardening.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Watch session persistence sanitizer](../../raw/architecture/2026-07-09-watch-session-persistence-sanitizer.md); [Watch session file storage](../../raw/architecture/2026-07-09-watch-session-file-storage.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Large watch session file transfer](../../raw/architecture/2026-07-11-large-watch-session-file-transfer.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
-Updated: 2026-07-15
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository source, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; Diving App repository implementation, 2026-07-09; pre-device depth safety sync readiness implementation, 2026-07-09; Watch session UI and sync startup fixes, 2026-07-10; Large watch session file transfer, 2026-07-11; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-19
+Raw: [Pre-Karpathy: 동기화 흐름 구조](../../raw/architecture/sync-flow.md); [Planned dive application context delivery](../../raw/architecture/2026-06-28-planned-dive-application-context-delivery.md); [Planned dive context breakpoint hardening](../../raw/architecture/2026-06-28-planned-dive-context-breakpoint-hardening.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Watch session persistence sanitizer](../../raw/architecture/2026-07-09-watch-session-persistence-sanitizer.md); [Watch session file storage](../../raw/architecture/2026-07-09-watch-session-file-storage.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Large watch session file transfer](../../raw/architecture/2026-07-11-large-watch-session-file-transfer.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Updated: 2026-07-20
 
 ## 요약
 
-현재 동기화 모델은 계약을 먼저 정의한다. Watch session body는 크기와 관계없이 immutable JSON artifact 하나를 `transferFile`로 보내며 direct message/user info session path와 chunk protocol은 사용하지 않는다. 모바일 iOS native code는 수신 파일을 Application Support에 복사하고 identity만 pending index에 저장한다. 모바일 JS의 자동 event와 수동 drain은 하나의 process-wide coordinator를 공유한다. Import acknowledgement는 profile과 local repository 저장 완료만 뜻하며 future cloud sync 성공을 뜻하지 않는다. ACK는 activation 전 durable outbox에 남고 revision/digest가 일치해야 Watch 상태가 `synced`가 된다.
+현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote readback과 atomic commit을 마친 뒤에만 guest cleanup을 시작한다.
 
 ## 현재 상태
 
@@ -22,6 +22,8 @@ Generated output은 다음과 같다.
 - `packages/contracts/generated/swift/WatchContracts.swift`
 
 `WatchSyncMessage` type은 `sessionCreated`, `sessionUpdated`, `sessionEnded`를 지원한다. `WatchSession`은 `localSessionId`, `startedAt`, `samples`를 require하고, 대부분의 metadata는 optional이다. `diveMode`가 있으면 `freedive` mode에는 `freedive` nested payload가 필요하고, `scuba` mode에는 `scuba` nested payload가 필요하다. Schema는 `freedive`와 `scuba` payload가 동시에 있는 payload나 mode와 nested payload가 맞지 않는 payload를 거부한다. 모바일 계획에서 시작한 watch session은 `sourcePlanLocalId`와 `planTitle`을 포함해 import 시점에 원본 계획과 다시 연결할 수 있다.
+
+모바일 local data는 `guest`와 `user:<uuid>` principal로 분리된다. Account 저장은 durable outbox를 통해 typed Supabase repository로 전달되고, guest claim은 separate persistent manifest로 재개된다. 두 cloud 흐름 모두 현재 authenticated user에 묶이며 user 전환 뒤 stale callback을 publish하지 않는다.
 
 ## 상세
 
@@ -78,13 +80,29 @@ Watch sync notification 동작은 다음과 같다.
 - Foreground 사용자는 local notification 대신 사용자가 닫기 전까지 유지되는 in-app toast를 본다.
 - Notification 문구는 local repository 저장 결과만 뜻하며 Supabase upload, cloud backup, certified dive computer data verification을 뜻하지 않는다.
 
+Account local-first sync 동작은 다음과 같다.
+
+- Account Logbook/Planbook save는 user-scoped local repository와 durable outbox를 먼저 갱신한다. Coordinator는 outbox operation을 순서대로 remote repository에 적용한다.
+- 성공한 remote revision은 local row와 뒤따르는 같은 entity operation에 반영한다. Expected revision이 맞지 않으면 현재 local payload와 remote latest를 conflict record로 보존한다.
+- Profile이 있는 log operation은 operation-owned profile snapshot을 outbox에 보존해 원본 local profile이 바뀌거나 정리되어도 같은 operation을 재시도할 수 있게 한다.
+- User 전환과 logout은 account repository, outbox, downloaded profile, claim state와 React Query cache를 user scope로 분리한다. 이전 user generation의 비동기 결과는 새 user state에 commit할 수 없다.
+
+Guest data claim 동작은 다음과 같다.
+
+- Remote 작업 전에 guest logs/plans와 profile full bytes를 immutable snapshot/manifest로 저장한다. Manifest는 user, item kind/local ID, target ID, payload digest, 관계와 profile metadata를 고정한다.
+- Plan staging 뒤 log staging 순서를 사용하고, 각 record/profile의 remote write와 exact readback이 끝난 뒤에만 completed progress를 증가시킨다. Profile은 parsing 결과뿐 아니라 downloaded raw bytes의 digest와 byte count도 검증한다.
+- Edge Function과 privileged database finalizer는 complete batch를 한 transaction에서 account rows로 publish한다. 이미 committed 된 같은 batch는 같은 결과를 반환하지만 같은 owner/local ID의 다른 digest는 덮어쓰지 않는다.
+- Remote commit을 persistent manifest에 기록한 뒤 account local publication과 guest source cleanup을 수행한다. `cleanupPending`은 앱 중단 뒤 cleanup 재개 지점이다. Guest record가 snapshot과 달라졌으면 exact-match delete 대상이 아니다.
+- 사용자는 eligible data를 기기에 유지하도록 defer할 수 있다. Deferred claim은 자동 재개하지 않으며 guest row는 account row와 함께 합성된다. 기본 합성은 같은 local ID에서 account-copy-wins지만 snapshot 뒤 변경된 guest row는 삭제하지 않고 임시 guest 우선순위로 보존한다.
+- Claim 선택/진행 UI는 commit `47e8cb6` 이후 구현 중이며, hosted staging 배포와 iPhone/Android physical claim 검증은 아직 통과로 기록하지 않는다.
+
 현재 비어 있는 부분은 다음과 같다.
 
 - 실기기 foreground pairing/import/local acknowledgement 기준선은 있지만 build identifier와 signed entitlement inspection, post-Auth regression, disconnect/reconnect, background/force-quit delivery, 장시간 retry와 8,000-sample large transfer는 아직 지원 hardware에서 검증되지 않았다.
 - Durable file inbox, activation-gated acknowledgement outbox, revision/digest 기반 재처리 경로가 있고 Logbook import action은 pending native inbox를 수동 drain한다. 자동 import provider는 preferences hydration 뒤 event subscription과 drain을 시작하고 active 복귀 때 다시 drain한다. 실제 연결 끊김 후 재연결과 background/force-quit wake는 지원 hardware에서 확인해야 한다.
 - Watch sync notification code boundary와 Settings opt-in은 구현됐지만, background/killed 상태의 실제 OS delivery와 local notification 표시가 physical paired device에서 검증되지는 않았다.
-- Wave 3A mobile Auth는 구현됐지만 Supabase upload와 cloud data sync는 없다. 따라서 cloud status는 `notConfigured`이며 사용자 화면에 cloud 성공·대기·실패 상태를 표시하지 않는다.
-- Watch payload와 현재 local Logbook/Planbook에는 account principal이나 `userId` 연결이 없다. Login/consent는 이 데이터를 claim, upload, delete, partition하지 않는다.
+- Account remote schema, local-first outbox/sync와 guest claim service는 구현됐지만 hosted staging migration/Edge Function 배포, physical retry/resume와 completion cleanup은 아직 검증되지 않았다.
+- Watch payload에는 account principal이나 `userId`를 추가하지 않는다. Watch import는 현재 mobile principal repository에 저장되지만 그 ACK는 account cloud 성공과 계속 독립적이다.
 - Generated Swift contract는 현재 watch target에 compile되지 않음.
 - Legacy watch sessions는 record adapter 또는 mobile runtime compatibility path를 통해 새 mode-aware payload로 동기화될 수 있다. 기존 freedive log는 하나의 segment로 보존되고, 기존 scuba log의 safety stop 상태는 unknown 또는 not required로 취급한다.
 

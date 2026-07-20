@@ -4,9 +4,9 @@
 
 ## 앱 목적
 
-`apps/mobile`은 다이빙 로그를 탐색하고 watch-captured 세션을 리뷰하는 모바일 surface이자 iPhone/watch companion bundle의 소유자다. 현재 production remote data/backend는 없지만, generated watch contract type, AsyncStorage 기반 local persistence, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, embedded watchOS companion target과 Wave 3A native social Auth foundation을 사용해 앱 구조와 UX boundary를 잡고 있다.
+`apps/mobile`은 다이빙 로그를 탐색하고 watch-captured 세션을 리뷰하는 모바일 surface이자 iPhone/watch companion bundle의 소유자다. 현재 production backend는 없지만, generated watch contract type, principal-partitioned local persistence, account local-first outbox/sync, resumable guest data claim, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, embedded watchOS companion target과 native social Auth foundation을 사용한다.
 
-모바일 앱은 현재 authentication과 mandatory consent를 소유하며, 장기적으로 user profile, dive log list/detail, manual dive creation, Supabase data sync, statistics, search, planning, memory/share, backup flow의 중심이 된다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, server/user data 연결은 3B/3C의 mobile/backend layer에서 처리한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DivenaryWatchApp`와 `ios/Divenary.xcodeproj`에서 관리한다.
+모바일 앱은 authentication과 mandatory consent, user-scoped Logbook/Planbook repository, Supabase data sync orchestration과 guest data claim을 소유한다. watch 앱에서 온 원본 기록은 손실 없이 보존하고, Watch local import acknowledgement는 account cloud operation과 독립적으로 유지한다. 별도 watch workspace를 다시 만들지 않고, watch source와 target membership은 `ios/DivenaryWatchApp`와 `ios/Divenary.xcodeproj`에서 관리한다.
 
 ## 현재 Stack
 
@@ -30,6 +30,10 @@
 - `src/App.tsx`: app UI entry
 - `src/providers.tsx`: app-owned `QueryClient`, `SafeAreaProvider`, preferences/Auth provider와 top-level status bar
 - `src/auth/`: Keychain session, native Google/Apple credential adapter, membership cache, recent provider와 mobile Auth assembly
+- `src/claim/`: immutable guest snapshot/manifest, profile byte 검증, resumable claim service와 persistent claim store
+- `src/states/account-data.tsx`: auth principal에 맞는 repository publication, account/guest composition, claim/outbox lifecycle과 cache isolation
+- `src/sync/`: account outbox와 revision-aware remote sync coordinator
+- `src/storage/data-principal.ts`: `guest`와 `user:<uuid>` local namespace 정의
 - `src/states/auth.tsx`: restore/revalidation/concurrency를 포함한 Auth state provider
 - `src/screens/auth/`: guest-preserving login과 versioned mandatory-consent 화면
 - `src/components/navigation/index.tsx`: React Navigation 기반 custom bottom-tab navigator
@@ -58,7 +62,8 @@
 - watch sync payload import와 imported values 보존
 - 실행하지 않은 planned dive를 watch companion에 전달
 - iOS WatchConnectivity receiver와 companion watch target embed 구조
-- 3B/3C에서 추가될 Supabase data sync orchestration
+- Supabase account Logbook/Planbook/profile data sync orchestration
+- 명시적으로 선택한 guest Logbook/Planbook의 resumable account claim과 commit 이후 local cleanup
 - non-certified planning reminder, memory/share preview, statistics
 
 모바일 앱에 넣지 않는다.
@@ -70,7 +75,8 @@
 - 별도 watch workspace 재도입
 - 감압, 조직 loading, gas switching safety, emergency dive decision 계산
 - certified dive computer 또는 medical/emergency recommendation copy
-- guest Logbook/Planbook을 Wave 3A login만으로 claim, upload, delete, partition하거나 영구히 숨기는 동작
+- 로그인만으로 guest Logbook/Planbook을 자동 삭제하는 동작
+- remote commit/readback 전에 guest source를 삭제하거나, 다른 account partition/cache를 노출하는 동작
 - Watch target의 Supabase client, account id, Auth entitlement 또는 provider callback
 
 ## 작업 지침
@@ -81,7 +87,9 @@
 - app-wide provider 변경은 `src/providers.tsx`에서 처리한다.
 - watch sync contract type은 `packages/contracts/generated/typescript`에서 가져온다. generated output은 직접 수정하지 않는다.
 - Supabase나 auth를 변경할 때 mobile 코드에 직접 SQL을 넣지 말고 `packages/supabase`의 typed package/repository boundary를 사용한다.
-- Wave 3A Auth 변경은 기존 guest Logbook/Planbook repository와 `cloudSyncStatus: notConfigured`를 유지해야 한다. Remote data, principal partition, guest claim, account-local purge는 각각 3B, 3C, 3D 전에는 추가하지 않는다.
+- Guest repository는 `guest`, account repository는 `user:<uuid>` namespace를 사용한다. 로그인 시 guest data는 명시적 claim 또는 기기에 유지 선택 전까지 보존한다.
+- Account write는 local save와 durable outbox를 먼저 완료하고 revision-aware remote sync를 수행한다. Guest claim은 immutable snapshot/manifest, profile byte digest, remote write/readback, atomic finalization, account local publication, exact-match guest cleanup 순서를 유지한다.
+- Watch import 완료 ACK는 mobile local repository 저장을 뜻한다. Supabase upload 또는 account claim 완료로 재해석하지 않는다.
 - 안전 관련 copy는 항상 non-certified assistant, reminder, review wording으로 제한한다.
 
 ## Skill 사용
