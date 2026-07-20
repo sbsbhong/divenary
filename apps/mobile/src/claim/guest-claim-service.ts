@@ -29,8 +29,10 @@ import type {
   GuestClaimProgress,
 } from './guest-claim-types';
 import {
+  createProfileBytesSnapshot,
   encodeUtf8,
   GuestClaimProfileError,
+  type ProfileBytesSnapshot,
   verifyRawProfileBytes,
   verifyProfileBytesSnapshot,
 } from './profile-bytes';
@@ -47,12 +49,24 @@ export type GuestClaimServiceOptions = {
   store: GuestClaimStoreLike;
   guestRepositories: PrincipalRepositories;
   accountRepositories: PrincipalRepositories;
+  accountMutationRepositories: PrincipalRepositories;
   profileStorage: WatchProfileStorage;
   remoteRepository: GuestClaimRemoteRepository;
   now?: () => number;
   onProgress?: (progress: GuestClaimProgress) => void;
   onSnapshot?: (snapshot: GuestClaimSnapshot) => void | Promise<void>;
   assertCanContinue?: () => void;
+};
+
+type ChangedGuestCapture = {
+  record: DiveLogEntry | DivePlan;
+  recordBytes: string;
+  profile?: {
+    storageKey: string;
+    contentRevision: string;
+    localSessionId: string;
+    snapshot: ProfileBytesSnapshot;
+  };
 };
 
 export class GuestClaimService {
@@ -182,11 +196,7 @@ export class GuestClaimService {
     }
     if (
       snapshot.manifest.status !== 'prepared' &&
-      !(
-        snapshot.manifest.status === 'failed' &&
-        snapshot.manifest.remoteBatchId === undefined &&
-        snapshot.manifest.items.every(item => item.completedAt === undefined)
-      )
+      snapshot.manifest.status !== 'failed'
     ) {
       throw new GuestClaimServiceError('claim_validation_failed');
     }
@@ -431,13 +441,11 @@ export class GuestClaimService {
     await this.writeAccountSnapshot(snapshot, verified);
     this.assertCanContinue();
 
-    snapshot.manifest.status = 'committed';
+    snapshot.manifest.status = 'cleanupPending';
     delete snapshot.errorCode;
     await this.persist(snapshot);
-    snapshot.manifest.status = 'cleanupPending';
-    await this.persist(snapshot);
     this.emitProgress(snapshot, 'cleanup');
-    return this.cleanup(snapshot);
+    return this.cleanup(snapshot, true);
   }
 
   private async writeAccountSnapshot(
@@ -488,12 +496,11 @@ export class GuestClaimService {
           sampleCount: item.profile.sampleCount,
           sha256: item.profile.sha256,
         });
-        const accountStorageKey = `${dataProfileKeyPrefix({
-          kind: 'user',
-          userId: this.options.userId,
-        })}${encodeURIComponent(
+        const accountStorageKey = accountProfileStorageKey(
+          this.options.userId,
           local.watchCapture.session.localSessionId,
-        )}:${encodeURIComponent(item.profile.contentRevision)}`;
+          item.profile.contentRevision,
+        );
         await this.options.profileStorage.write(
           accountStorageKey,
           profile.samples,
@@ -548,10 +555,13 @@ export class GuestClaimService {
 
   private async cleanup(
     snapshot: GuestClaimSnapshot,
+    cleanupPendingPersisted = false,
   ): Promise<GuestClaimSnapshot> {
-    snapshot.manifest.status = 'cleanupPending';
-    delete snapshot.errorCode;
-    await this.persist(snapshot);
+    if (!cleanupPendingPersisted) {
+      snapshot.manifest.status = 'cleanupPending';
+      delete snapshot.errorCode;
+      await this.persist(snapshot);
+    }
     try {
       for (const [index, item] of snapshot.manifest.items.entries()) {
         this.assertCanContinue();
@@ -570,6 +580,7 @@ export class GuestClaimService {
           profileStorage: this.options.profileStorage,
         });
         if (!matches) {
+          await this.promoteChangedGuest(snapshot, index, current);
           continue;
         }
         if (item.entityKind === 'plan') {
@@ -608,6 +619,265 @@ export class GuestClaimService {
       await this.persist(snapshot);
     }
     return snapshot;
+  }
+
+  private async promoteChangedGuest(
+    snapshot: GuestClaimSnapshot,
+    index: number,
+    current: DiveLogEntry | DivePlan,
+  ): Promise<void> {
+    const item = snapshot.manifest.items[index]!;
+    const sidecar = snapshot.snapshots[index]!;
+    const capture = await this.captureChangedGuest(item, current);
+    const accountRepository =
+      item.entityKind === 'log'
+        ? this.options.accountRepositories.logbook
+        : this.options.accountRepositories.planbook;
+    const committed = await accountRepository.get(item.clientRecordId);
+    if (
+      committed === undefined ||
+      committed.remoteId !== item.targetRecordId ||
+      committed.ownerUserId !== this.options.userId ||
+      committed.remoteRevision === undefined ||
+      !Number.isSafeInteger(committed.remoteRevision) ||
+      committed.remoteRevision < 1
+    ) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+
+    if (item.entityKind === 'plan') {
+      const promoted: DivePlan = {
+        ...(capture.record as DivePlan),
+        remoteId: committed.remoteId,
+        remoteRevision: committed.remoteRevision,
+        ownerUserId: this.options.userId,
+        cloudSyncStatus: 'pending',
+      };
+      await this.options.accountMutationRepositories.planbook.save(promoted);
+      this.assertCanContinue();
+      assertLocalReadback(
+        promoted,
+        await this.options.accountRepositories.planbook.get(
+          item.clientRecordId,
+        ),
+      );
+      await this.deleteCapturedGuest(item, capture);
+      return;
+    }
+
+    let promoted: DiveLogEntry = {
+      ...(capture.record as DiveLogEntry),
+      remoteId: committed.remoteId,
+      remoteRevision: committed.remoteRevision,
+      ownerUserId: this.options.userId,
+      cloudSyncStatus: 'pending',
+    };
+    let promotedProfileKey: string | undefined;
+    if (capture.profile !== undefined && promoted.watchCapture !== undefined) {
+      const accountProfile = await this.publishAccountProfile(capture.profile);
+      promotedProfileKey = accountProfile.storageKey;
+      promoted = {
+        ...promoted,
+        watchCapture: {
+          ...promoted.watchCapture,
+          profile: {
+            ...promoted.watchCapture.profile!,
+            storageKey: accountProfile.storageKey,
+            contentRevision: accountProfile.contentRevision,
+            sha256: capture.profile.snapshot.sha256,
+            sampleCount: capture.profile.snapshot.sampleCount,
+          },
+        },
+      };
+    }
+
+    await this.options.accountMutationRepositories.logbook.save(promoted);
+    this.assertCanContinue();
+    assertLocalReadback(
+      promoted,
+      await this.options.accountRepositories.logbook.get(item.clientRecordId),
+    );
+    if (capture.profile !== undefined) {
+      const profileReadback =
+        await this.options.accountRepositories.logbook.getWatchProfile(
+          item.clientRecordId,
+        );
+      const verified = createProfileBytesSnapshot(profileReadback, {
+        localSessionId: capture.profile.localSessionId,
+        sampleCount: capture.profile.snapshot.sampleCount,
+        sha256: capture.profile.snapshot.sha256,
+      });
+      if (verified.bytes !== capture.profile.snapshot.bytes) {
+        throw new GuestClaimServiceError('profile_corrupt');
+      }
+    }
+    await this.removeSupersededAccountProfile(
+      item,
+      sidecar,
+      promotedProfileKey,
+    );
+    await this.deleteCapturedGuest(item, capture);
+  }
+
+  private async captureChangedGuest(
+    item: GuestClaimItem,
+    current: DiveLogEntry | DivePlan,
+  ): Promise<ChangedGuestCapture> {
+    if (current.localId !== item.clientRecordId) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    const capture: ChangedGuestCapture = {
+      record: current,
+      recordBytes: canonicalLocal(current),
+    };
+    if (item.entityKind !== 'log') {
+      return capture;
+    }
+    const log = current as DiveLogEntry;
+    const reference = log.watchCapture?.profile;
+    if (reference === undefined || log.watchCapture === undefined) {
+      return capture;
+    }
+    assertGuestProfileKey(reference.storageKey);
+    capture.profile = {
+      storageKey: reference.storageKey,
+      contentRevision: reference.contentRevision,
+      localSessionId: log.watchCapture.session.localSessionId,
+      snapshot: createProfileBytesSnapshot(
+        await this.options.profileStorage.read(reference.storageKey),
+        {
+          localSessionId: log.watchCapture.session.localSessionId,
+          sampleCount: reference.sampleCount,
+          sha256: reference.sha256,
+        },
+      ),
+    };
+    return capture;
+  }
+
+  private async publishAccountProfile(profile: NonNullable<ChangedGuestCapture['profile']>): Promise<{
+    storageKey: string;
+    contentRevision: string;
+  }> {
+    const revisions = [
+      profile.contentRevision,
+      `${profile.contentRevision}:reconciled:${profile.snapshot.sha256.slice(0, 16)}`,
+    ];
+    for (const [index, contentRevision] of revisions.entries()) {
+      const storageKey = accountProfileStorageKey(
+        this.options.userId,
+        profile.localSessionId,
+        contentRevision,
+      );
+      const existing = await this.options.profileStorage.read(storageKey);
+      if (existing === undefined) {
+        await this.options.profileStorage.write(
+          storageKey,
+          profile.snapshot.samples,
+        );
+      } else {
+        try {
+          const verified = createProfileBytesSnapshot(existing, {
+            localSessionId: profile.localSessionId,
+            sampleCount: profile.snapshot.sampleCount,
+            sha256: profile.snapshot.sha256,
+          });
+          if (verified.bytes === profile.snapshot.bytes) {
+            return {storageKey, contentRevision};
+          }
+        } catch {
+          if (index === revisions.length - 1) {
+            throw new GuestClaimServiceError('profile_corrupt');
+          }
+          continue;
+        }
+        if (index !== revisions.length - 1) {
+          continue;
+        }
+        throw new GuestClaimServiceError('profile_corrupt');
+      }
+      this.assertCanContinue();
+      const readback = createProfileBytesSnapshot(
+        await this.options.profileStorage.read(storageKey),
+        {
+          localSessionId: profile.localSessionId,
+          sampleCount: profile.snapshot.sampleCount,
+          sha256: profile.snapshot.sha256,
+        },
+      );
+      if (readback.bytes !== profile.snapshot.bytes) {
+        throw new GuestClaimServiceError('profile_corrupt');
+      }
+      return {storageKey, contentRevision};
+    }
+    throw new GuestClaimServiceError('profile_corrupt');
+  }
+
+  private async removeSupersededAccountProfile(
+    item: GuestClaimItem,
+    sidecar: GuestClaimSnapshotItem,
+    promotedProfileKey: string | undefined,
+  ): Promise<void> {
+    if (item.profile === undefined) {
+      return;
+    }
+    const original = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+    const originalKey = accountProfileStorageKey(
+      this.options.userId,
+      original.watchCapture!.session.localSessionId,
+      item.profile.contentRevision,
+    );
+    if (originalKey !== promotedProfileKey) {
+      await this.options.accountRepositories.logbook.removeWatchProfileIfUnreferenced(
+        originalKey,
+      );
+      this.assertCanContinue();
+    }
+  }
+
+  private async deleteCapturedGuest(
+    item: GuestClaimItem,
+    capture: ChangedGuestCapture,
+  ): Promise<void> {
+    const repository =
+      item.entityKind === 'log'
+        ? this.options.guestRepositories.logbook
+        : this.options.guestRepositories.planbook;
+    const current = await repository.get(item.clientRecordId);
+    if (current === undefined) {
+      return;
+    }
+    if (canonicalLocal(current) !== capture.recordBytes) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    if (capture.profile !== undefined) {
+      const currentLog = current as DiveLogEntry;
+      const currentProfileKey = currentLog.watchCapture?.profile?.storageKey;
+      if (currentProfileKey !== capture.profile.storageKey) {
+        throw new GuestClaimServiceError('claim_validation_failed');
+      }
+      assertGuestProfileKey(currentProfileKey);
+      const verified = createProfileBytesSnapshot(
+        await this.options.profileStorage.read(currentProfileKey),
+        {
+          localSessionId: capture.profile.localSessionId,
+          sampleCount: capture.profile.snapshot.sampleCount,
+          sha256: capture.profile.snapshot.sha256,
+        },
+      );
+      if (verified.bytes !== capture.profile.snapshot.bytes) {
+        throw new GuestClaimServiceError('profile_corrupt');
+      }
+    }
+    if (item.entityKind === 'log') {
+      await this.options.guestRepositories.logbook.delete(item.clientRecordId);
+    } else {
+      await this.options.guestRepositories.planbook.delete(item.clientRecordId);
+    }
+    this.assertCanContinue();
+    if ((await repository.get(item.clientRecordId)) !== undefined) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
   }
 
   private async readOwned(): Promise<GuestClaimSnapshot | undefined> {
@@ -703,9 +973,7 @@ export class GuestClaimService {
 function isTransientClaimError(
   errorCode: GuestClaimErrorCode | undefined,
 ): boolean {
-  return (
-    errorCode === 'network_unavailable' || errorCode === 'session_expired'
-  );
+  return errorCode === 'network_unavailable';
 }
 
 function verifyCommittedBatch(
@@ -806,6 +1074,22 @@ function assertLocalReadback<T extends DiveLogEntry | DivePlan>(
 
 function canonicalLocal(value: DiveLogEntry | DivePlan): string {
   return canonicalJson(value);
+}
+
+function assertGuestProfileKey(storageKey: string): void {
+  if (!storageKey.startsWith(dataProfileKeyPrefix({kind: 'guest'}))) {
+    throw new GuestClaimServiceError('claim_validation_failed');
+  }
+}
+
+function accountProfileStorageKey(
+  userId: string,
+  localSessionId: string,
+  contentRevision: string,
+): string {
+  return `${dataProfileKeyPrefix({kind: 'user', userId})}${encodeURIComponent(
+    localSessionId,
+  )}:${encodeURIComponent(contentRevision)}`;
 }
 
 function canonicalJson(value: unknown): string {

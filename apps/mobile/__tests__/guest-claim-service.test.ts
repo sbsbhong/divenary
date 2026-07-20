@@ -14,10 +14,15 @@ import {
   GuestClaimService,
   GuestClaimServiceError,
 } from '../src/claim/guest-claim-service';
+import {createAccountLocalFirstRepositories} from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
-import { dataProfileKeyPrefix } from '../src/storage/data-principal';
+import {
+  dataProfileKeyPrefix,
+  dataStorageKeys,
+} from '../src/storage/data-principal';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
+import {AccountOutbox} from '../src/sync/account-outbox';
 import type { DiveLogRepository } from '../src/repositories/dive-log-repository';
 import type { DivePlanRepository } from '../src/repositories/dive-plan-repository';
 import type { PrincipalRepositories } from '../src/repositories/principal-repositories';
@@ -108,13 +113,13 @@ describe('guest claim service', () => {
       order.indexOf('account:save:plan:plan-a'),
     );
     expect(order.indexOf('account:save:log:log-a')).toBeLessThan(
-      order.indexOf('persist:committed'),
-    );
-    expect(order.indexOf('persist:committed')).toBeLessThan(
-      order.indexOf('guest:delete:plan:plan-a'),
+      order.indexOf('persist:cleanupPending'),
     );
     expect(order.indexOf('persist:cleanupPending')).toBeLessThan(
       order.indexOf('guest:delete:plan:plan-a'),
+    );
+    expect(order.indexOf('guest:delete:log:log-a')).toBeLessThan(
+      order.indexOf('persist:committed'),
     );
     await expect(account.planbook.get('plan-a')).resolves.toMatchObject({
       ownerUserId: userId,
@@ -133,6 +138,48 @@ describe('guest claim service', () => {
     await expect(
       account.logbook.getWatchProfile('log-a'),
     ).resolves.toHaveLength(200);
+  });
+
+  it('does not publish committed before cleanup deletion finishes', async () => {
+    const statuses: string[] = [];
+    const guest = repositories([diveLog('log-a')], []);
+    const deleteLog = guest.logbook.delete.getMockImplementation()!;
+    const cleanupRelease = deferred<void>();
+    guest.logbook.delete.mockImplementation(async (localId, options) => {
+      await cleanupRelease.promise;
+      return deleteLog(localId, options);
+    });
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const service = new GuestClaimService({
+      userId,
+      store,
+      guestRepositories: guest,
+      accountRepositories: repositories([], []),
+      accountMutationRepositories: repositories([], []),
+      profileStorage: profileStorage(),
+      remoteRepository: remoteRepository(store),
+      now: clock(),
+      onSnapshot: snapshot => {
+        statuses.push(snapshot.manifest.status);
+      },
+    });
+
+    const running = service.start();
+    await waitFor(() => expect(guest.logbook.delete).toHaveBeenCalled());
+
+    expect(statuses.at(-1)).toBe('cleanupPending');
+    expect(statuses).not.toContain('committed');
+
+    cleanupRelease.resolve(undefined);
+    const result = await running;
+
+    expect(result?.manifest.status).toBe('committed');
+    expect(statuses.at(-1)).toBe('committed');
+    expect(statuses.filter(status => status === 'committed')).toHaveLength(1);
   });
 
   it('resumes at exactly 3 / 32 from persisted completion rather than memory', async () => {
@@ -272,7 +319,64 @@ describe('guest claim service', () => {
     });
   });
 
-  it('preserves same-id guest metadata and a changed profile after deferred snapshot cleanup', async () => {
+  it('defers a failed snapshot with remote progress and never auto-resumes it', async () => {
+    const guest = repositories([diveLog('log-a')], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: uuid('2', 1),
+      targetRecordId: uuid('3', 1),
+      completedAt: 101,
+    };
+    snapshot.errorCode = 'network_unavailable';
+    await store.write(snapshot);
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote,
+    });
+
+    const deferredSnapshot = await service.defer();
+    const resumedSnapshot = await service.resume();
+
+    expect(deferredSnapshot).toMatchObject({
+      manifest: {
+        status: 'deferred',
+        remoteBatchId: batchId,
+        items: [
+          {
+            stagingRecordId: uuid('2', 1),
+            targetRecordId: uuid('3', 1),
+            completedAt: 101,
+          },
+        ],
+      },
+    });
+    expect(resumedSnapshot).toEqual(deferredSnapshot);
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+    expect(remote.stageRecord).not.toHaveBeenCalled();
+    expect(remote.finalize).not.toHaveBeenCalled();
+  });
+
+  it('promotes a changed log through account local-first and resumes after outbox failure', async () => {
+    const order: string[] = [];
+    const metadataStorage = new InMemoryKeyValueStore();
     const profile = profileStorage();
     const originalSamples = depthSamples(200);
     const changedSamples = originalSamples.map(sample => ({
@@ -284,15 +388,46 @@ describe('guest claim service', () => {
     })}session-log-a:revision-2`;
     await profile.write(guestProfileKey, originalSamples);
     const original = watchLog('log-a', originalSamples.slice(0, 160));
-    const guest = repositories([original], []);
-    const account = repositories([], [], [], 'account');
+    const guest = repositories([original], [], order);
+    const account = repositories([], [], order, 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const enqueue = outbox.enqueue.bind(outbox);
+    jest
+      .spyOn(outbox, 'enqueue')
+      .mockImplementationOnce(async item => {
+        order.push(`outbox:failed:${item.entityLocalId}`);
+        throw new Error('simulated outbox interruption');
+      })
+      .mockImplementation(async item => {
+        order.push(`outbox:enqueued:${item.entityLocalId}`);
+        return enqueue(item);
+      });
     const store = new GuestClaimStore({
-      storage: new InMemoryKeyValueStore(),
+      storage: metadataStorage,
       userId,
       now: clock(),
     });
     const remote = remoteRepository(store);
-    const service = claimService({ store, guest, account, profile, remote });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile,
+      remote,
+    });
     await service.prepare();
     await service.defer();
 
@@ -314,28 +449,164 @@ describe('guest claim service', () => {
 
     const result = await service.retry();
 
-    expect(result?.manifest.status).toBe('committed');
+    expect(result?.manifest.status).toBe('cleanupPending');
     await expect(guest.logbook.get('log-a')).resolves.toMatchObject({
       manual: { title: 'changed guest row' },
       watchCapture: { profile: { storageKey: changedProfileKey } },
     });
-    await expect(profile.read(changedProfileKey)).resolves.toEqual(
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+    const partiallyPromoted = await account.logbook.get('log-a');
+    expect(partiallyPromoted).toMatchObject({
+      manual: { title: 'changed guest row' },
+      ownerUserId: userId,
+      remoteId: uuid('3', 2),
+      remoteRevision: 1,
+      cloudSyncStatus: 'pending',
+      watchCapture: {
+        profile: {
+          contentRevision: 'revision-2',
+          sampleCount: changedSamples.length,
+        },
+      },
+    });
+    expect(
+      partiallyPromoted?.watchCapture?.profile?.storageKey.startsWith(
+        dataProfileKeyPrefix({kind: 'user', userId}),
+      ),
+    ).toBe(true);
+    await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
       changedSamples,
     );
-    const accountSnapshot = await account.logbook.get('log-a');
-    expect(accountSnapshot?.manual.title).toBeUndefined();
-    expect(accountSnapshot?.ownerUserId).toBe(userId);
+    expect(guest.logbook.delete).not.toHaveBeenCalled();
 
-    const nextClaim = await service.start();
+    const resumed = await service.resume();
 
-    expect(nextClaim?.manifest.status).toBe('committed');
+    expect(resumed?.manifest.status).toBe('committed');
     await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
+    await expect(profile.read(changedProfileKey)).resolves.toBeUndefined();
     await expect(account.logbook.get('log-a')).resolves.toMatchObject({
       manual: { title: 'changed guest row' },
+      remoteId: uuid('3', 2),
+      remoteRevision: 1,
+      cloudSyncStatus: 'pending',
       watchCapture: {
         profile: { contentRevision: 'revision-2', sampleCount: 200 },
       },
     });
+    await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
+      changedSamples,
+    );
+    const operations = await outbox.list(userId);
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      entityKind: 'log',
+      entityLocalId: 'log-a',
+      mutation: 'upsert',
+      expectedRevision: 1,
+      payload: {
+        local: {
+          manual: { title: 'changed guest row' },
+          remoteId: uuid('3', 2),
+          remoteRevision: 1,
+          cloudSyncStatus: 'pending',
+        },
+      },
+    });
+    await expect(outbox.readProfileSnapshot(operations[0]!)).resolves.toBe(
+      JSON.stringify(changedSamples),
+    );
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+    expect(remote.stageRecord).toHaveBeenCalledTimes(1);
+    expect(order.indexOf('outbox:enqueued:log-a')).toBeLessThan(
+      order.indexOf('guest:delete:log:log-a'),
+    );
+  });
+
+  it('promotes a changed plan as a pending account update before guest deletion', async () => {
+    const order: string[] = [];
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const original = divePlan('plan-a');
+    const changed: DivePlan = {
+      ...original,
+      updatedAt: 12,
+      site: {name: 'Changed Reef'},
+      checklistItems: [
+        {id: 'item-a', label: 'Changed item', completed: true},
+      ],
+    };
+    const guest = repositories([], [original], order);
+    const account = repositories([], [], order, 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const enqueue = outbox.enqueue.bind(outbox);
+    jest.spyOn(outbox, 'enqueue').mockImplementation(async item => {
+      order.push(`outbox:enqueued:${item.entityLocalId}`);
+      return enqueue(item);
+    });
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile,
+      remote,
+    });
+    await service.prepare();
+    await service.defer();
+    await guest.planbook.save(changed);
+
+    const result = await service.retry();
+
+    expect(result?.manifest.status).toBe('committed');
+    await expect(guest.planbook.get('plan-a')).resolves.toBeUndefined();
+    await expect(account.planbook.get('plan-a')).resolves.toMatchObject({
+      site: {name: 'Changed Reef'},
+      checklistItems: [
+        {id: 'item-a', label: 'Changed item', completed: true},
+      ],
+      ownerUserId: userId,
+      remoteId: uuid('3', 1),
+      remoteRevision: 1,
+      cloudSyncStatus: 'pending',
+    });
+    await expect(outbox.list(userId)).resolves.toEqual([
+      expect.objectContaining({
+        entityKind: 'plan',
+        entityLocalId: 'plan-a',
+        mutation: 'upsert',
+        expectedRevision: 1,
+        payload: expect.objectContaining({
+          local: expect.objectContaining({
+            site: {name: 'Changed Reef'},
+            remoteId: uuid('3', 1),
+            remoteRevision: 1,
+            cloudSyncStatus: 'pending',
+          }),
+        }),
+      }),
+    ]);
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+    expect(order.indexOf('outbox:enqueued:plan-a')).toBeLessThan(
+      order.indexOf('guest:delete:plan:plan-a'),
+    );
   });
 
   it('rejects non-identical downloaded profile bytes before progress increments', async () => {
@@ -534,6 +805,7 @@ describe('guest claim service', () => {
       },
       guestRepositories: guest,
       accountRepositories: repositories([], []),
+      accountMutationRepositories: repositories([], []),
       profileStorage: profile,
       remoteRepository: remoteRepository(
         new GuestClaimStore({
@@ -585,6 +857,45 @@ describe('guest claim service', () => {
     expect(remote.createOrLoadBatch.mock.calls[1]?.[0]).toEqual(
       remote.createOrLoadBatch.mock.calls[0]?.[0],
     );
+  });
+
+  it.each([
+    'claim_validation_failed',
+    'session_expired',
+    'remote_conflict',
+  ] as const)('does not auto-resume a %s failure', async errorCode => {
+    const guest = repositories([diveLog('log-a')], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = errorCode;
+    await store.write(snapshot);
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.resume();
+
+    expect(result).toEqual(snapshot);
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+    expect(remote.stageRecord).not.toHaveBeenCalled();
+    expect(remote.finalize).not.toHaveBeenCalled();
   });
 
   it('finishes idempotent account publication after the second local copy fails', async () => {
@@ -674,6 +985,7 @@ describe('guest claim service', () => {
         },
         guestRepositories: guest,
         accountRepositories: repositories([], []),
+        accountMutationRepositories: repositories([], []),
         profileStorage: profileStorage(),
         remoteRepository: remoteRepository(
           new GuestClaimStore({
@@ -707,6 +1019,7 @@ describe('guest claim service', () => {
       store: { read: async () => snapshot, write: async () => undefined },
       guestRepositories: guest,
       accountRepositories: repositories([], []),
+      accountMutationRepositories: repositories([], []),
       profileStorage: profileStorage(),
       remoteRepository: remoteRepository(store),
       now: clock(),
@@ -762,6 +1075,7 @@ function claimService(input: {
   store: GuestClaimStore;
   guest: PrincipalRepositories;
   account: PrincipalRepositories;
+  accountMutations?: PrincipalRepositories;
   profile: WatchProfileStorage;
   remote: jest.Mocked<GuestClaimRemoteRepository>;
   order?: string[];
@@ -772,6 +1086,7 @@ function claimService(input: {
     store: input.store,
     guestRepositories: input.guest,
     accountRepositories: input.account,
+    accountMutationRepositories: input.accountMutations ?? input.account,
     profileStorage: input.profile,
     remoteRepository: input.remote,
     now: clock(),
@@ -914,12 +1229,33 @@ function repositories(
       logs.set(value.localId, structuredClone(value));
       return structuredClone(value);
     }),
-    delete: jest.fn(async localId => {
+    delete: jest.fn(async (
+      localId,
+      options?: Parameters<DiveLogRepository['delete']>[1],
+    ) => {
       order.push(`${label}:delete:log:${localId}`);
+      const profileKey = logs.get(localId)?.watchCapture?.profile?.storageKey;
       logs.delete(localId);
+      if (
+        options?.retainProfileAfterDelete !== true &&
+        profileKey !== undefined &&
+        ![...logs.values()].some(
+          value => value.watchCapture?.profile?.storageKey === profileKey,
+        )
+      ) {
+        profileRegistry.delete(profileKey);
+      }
     }),
     removeWatchProfileIfUnreferenced: jest.fn(
-      async (_storageKey: string) => undefined,
+      async (storageKey: string) => {
+        if (
+          ![...logs.values()].some(
+            value => value.watchCapture?.profile?.storageKey === storageKey,
+          )
+        ) {
+          profileRegistry.delete(storageKey);
+        }
+      },
     ),
     importWatchMessages: jest.fn(
       async (

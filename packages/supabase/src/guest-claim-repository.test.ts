@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {describe, test} from 'node:test';
+import {FunctionsHttpError} from '@supabase/supabase-js';
 
 import {
   createGuestClaimRemoteRepository,
@@ -164,6 +165,11 @@ describe('GuestClaimRemoteRepository', () => {
         response: {data: null, error: {message: 'private constraint detail', code: '23514'}},
         expectedKind: 'remote_conflict',
       },
+      {
+        name: 'unknown transport error',
+        response: {data: null, error: new Error('private transport detail')},
+        expectedKind: 'network_unavailable',
+      },
     ];
 
     for (const item of cases) {
@@ -200,6 +206,45 @@ describe('GuestClaimRemoteRepository', () => {
         return true;
       },
     );
+  });
+
+  test('classifies Edge Function response statuses without reading response bodies', async () => {
+    const cases = [
+      {statusField: 'status', status: 400, expectedKind: 'claim_validation_failed'},
+      {statusField: 'statusCode', status: 401, expectedKind: 'session_expired'},
+      {statusField: 'status', status: 409, expectedKind: 'remote_conflict'},
+    ] as const;
+
+    for (const item of cases) {
+      let bodyReadCount = 0;
+      const context = {
+        [item.statusField]: item.status,
+        async json() {
+          bodyReadCount += 1;
+          throw new Error('private response body');
+        },
+        async text() {
+          bodyReadCount += 1;
+          throw new Error('private response body');
+        },
+      };
+      const {client} = createClient([{
+        data: null,
+        error: new FunctionsHttpError(context),
+      }]);
+      const repository = createGuestClaimRemoteRepository(client as never, {userId: USER_ID});
+
+      await assert.rejects(
+        () => repository.finalize(BATCH_ID),
+        error => {
+          assert.ok(error instanceof GuestClaimRepositoryError);
+          assert.equal(Reflect.get(error, 'kind'), item.expectedKind);
+          assert.equal(error.message, 'Guest claim operation failed');
+          return true;
+        },
+      );
+      assert.equal(bodyReadCount, 0);
+    }
   });
 
   test('stages a log idempotently and bounds profile previews before upsert', async () => {

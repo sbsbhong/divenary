@@ -310,11 +310,14 @@ export function AccountDataProviderCore({
           isCurrent() && publication.claimGeneration === generation;
         const claimStore = nextPublication.claimStore;
         const guestRepositories = nextPublication.guestRepositories;
+        const accountMutationRepositories =
+          nextPublication.accountRepositories;
         publication.claimService = new GuestClaimService({
           userId: desiredPrincipal.userId,
           store: claimStore,
           guestRepositories,
           accountRepositories: publication.localRepositories,
+          accountMutationRepositories,
           profileStorage: dependencies.profileStorage,
           remoteRepository: auth.guestClaimRemoteRepository,
           now: dependencies.now,
@@ -526,8 +529,7 @@ export function AccountDataProviderCore({
             (snapshot.manifest.status === 'committed' &&
               hasHiddenGuestIds(publication)) ||
             (snapshot.manifest.status === 'failed' &&
-              (snapshot.errorCode === 'network_unavailable' ||
-                snapshot.errorCode === 'session_expired')))
+              snapshot.errorCode === 'network_unavailable'))
       ) {
         await publication.claimService.resume();
         if (isClaimCurrent()) {

@@ -71,11 +71,23 @@ function safeCode(error: unknown): string | undefined {
 
 function safeStatus(error: unknown): number | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
-  const raw = Reflect.get(error, 'statusCode') ?? Reflect.get(error, 'status');
-  const status = typeof raw === 'string' ? Number(raw) : raw;
-  return typeof status === 'number' && Number.isFinite(status)
-    ? status
+  const direct = statusFromObject(error);
+  if (direct !== undefined) return direct;
+  const context = Reflect.get(error, 'context');
+  return typeof context === 'object' && context !== null
+    ? statusFromObject(context)
     : undefined;
+}
+
+function statusFromObject(value: object): number | undefined {
+  for (const key of ['statusCode', 'status'] as const) {
+    const raw = Reflect.get(value, key);
+    const status = typeof raw === 'string' ? Number(raw) : raw;
+    if (typeof status === 'number' && Number.isFinite(status)) {
+      return status;
+    }
+  }
+  return undefined;
 }
 
 function duplicateObject(error: unknown): boolean {
@@ -109,6 +121,12 @@ function claimError(error: unknown, operation: GuestClaimRepositoryOperation): G
   }
   if (status === 409 || code === '23505') {
     return new GuestClaimRepositoryError(operation, 'remote_conflict');
+  }
+  if (status !== undefined && status >= 400 && status < 500) {
+    return new GuestClaimRepositoryError(
+      operation,
+      'claim_validation_failed',
+    );
   }
   return new GuestClaimRepositoryError(
     operation,
