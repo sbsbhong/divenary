@@ -25,13 +25,18 @@ import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import type { DiveLogbookSection } from '../../types/dive-session';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DivePlan } from '../../types/dive-plan';
+import type { GuestClaimViewState } from '../../claim/guest-claim-types';
 import {
   getInitialWatchSyncNotificationOpen,
   notifyWatchSyncImport,
   subscribeToWatchSyncNotificationOpens,
 } from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences } from '../../states/app-preferences';
-import { useAuth } from '../../states/auth';
+import {
+  setAccountClaimNavigationReady,
+  useAccountData,
+} from '../../states/account-data';
+import { useAuth, type AuthState } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
 import { useDivePlans } from '../../states/use-dive-plans';
 import { WatchConnectivitySyncProvider } from '../../states/watch-connectivity-sync';
@@ -47,6 +52,7 @@ import { Text } from '../ui/text';
 import { VStack } from '../ui/vstack';
 import LoginScreen from '../../screens/auth/login-screen';
 import OnboardingScreen from '../../screens/auth/onboarding-screen';
+import AccountClaimScreen from '../../screens/account-claim/screen';
 import HomeScreen from '../../screens/home/screen';
 import { LogEntryDetail } from '../../screens/logbook/log-entry-detail';
 import { LogEntryEditor } from '../../screens/logbook/log-entry-editor';
@@ -60,6 +66,7 @@ export type RootStackParamList = {
   tabs: undefined;
   authLogin: undefined;
   authOnboarding: undefined;
+  accountClaim: undefined;
   logbookCreate: { draftLocalId?: string; sourcePlanLocalId?: string } | undefined;
   logbookDetail: { localId: string };
   logbookEdit: { localId: string };
@@ -94,6 +101,53 @@ const AUTO_IMPORT_TOAST_EDGE_GAP = 16;
 const AUTO_IMPORT_TOAST_TAB_OFFSET = 68;
 const AUTH_LOGIN_SHEET_ALLOWED_DETENTS = resolveAuthLoginSheetAllowedDetents(Platform.OS, Platform.Version);
 
+type AccountClaimAutoRouteInput = {
+  authStatus: AuthState['status'];
+  userId?: string;
+  isOnline: boolean;
+  eligibleCount: number;
+  claimStatus: GuestClaimViewState['status'];
+  currentRoute?: keyof RootStackParamList;
+  lastRoutedUserId?: string;
+};
+
+type AccountClaimAutoRoute = {
+  action: 'navigate' | 'replace';
+  route: 'accountClaim';
+  userId: string;
+};
+
+export function resolveAccountClaimAutoRoute({
+  authStatus,
+  userId,
+  isOnline,
+  eligibleCount,
+  claimStatus,
+  currentRoute,
+  lastRoutedUserId,
+}: AccountClaimAutoRouteInput): AccountClaimAutoRoute | undefined {
+  if (
+    authStatus !== 'authenticated' ||
+    !userId ||
+    !isOnline ||
+    eligibleCount <= 0 ||
+    claimStatus !== 'choice' ||
+    currentRoute === 'accountClaim' ||
+    lastRoutedUserId === userId
+  ) {
+    return undefined;
+  }
+
+  return {
+    action:
+      currentRoute === 'authLogin' || currentRoute === 'authOnboarding'
+        ? 'replace'
+        : 'navigate',
+    route: 'accountClaim',
+    userId,
+  };
+}
+
 export function resolveAuthLoginSheetAllowedDetents(
   platformOS: string,
   platformVersion: number | string,
@@ -103,9 +157,17 @@ export function resolveAuthLoginSheetAllowedDetents(
   return platformOS === 'ios' && (!Number.isFinite(majorVersion) || majorVersion < 16) ? [0.5, 1] : 'fitToContents';
 }
 
+export const ACCOUNT_CLAIM_SHEET_OPTIONS: NativeStackNavigationOptions = {
+  presentation: 'formSheet',
+  sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS,
+  sheetGrabberVisible: true,
+  sheetCornerRadius: 28,
+};
+
 export default function RootNavigation(): React.JSX.Element {
   const { t } = useTranslation();
   const { state } = useAuth();
+  const accountData = useAccountData();
   const authStatusRef = React.useRef(state.status);
   authStatusRef.current = state.status;
   const [autoImportToast, setAutoImportToast] = React.useState<AutoImportToast | undefined>();
@@ -114,6 +176,8 @@ export default function RootNavigation(): React.JSX.Element {
   const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
   const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
+  const lastRoutedClaimUserIdRef = React.useRef<string | undefined>(undefined);
+  const observedClaimUserIdRef = React.useRef<string | undefined>(undefined);
   const [reselectTokens, setReselectTokens] = React.useState<Record<NavigationRouteName, number>>({
     home: 0,
     logbook: 0,
@@ -288,6 +352,7 @@ export default function RootNavigation(): React.JSX.Element {
 
   const handleNavigationReady = React.useCallback(() => {
     setNavigationReady(true);
+    setAccountClaimNavigationReady(true);
     refreshVisibleStackRoute();
     const pendingLocalId = pendingNotificationOpenRef.current;
     if (pendingLocalId) {
@@ -295,6 +360,13 @@ export default function RootNavigation(): React.JSX.Element {
       openStackScreen('logbookDetail', { localId: pendingLocalId }, 'logbook');
     }
   }, [openStackScreen, refreshVisibleStackRoute]);
+
+  React.useEffect(
+    () => () => {
+      setAccountClaimNavigationReady(false);
+    },
+    [],
+  );
 
   const openImportedLogToast = React.useCallback(() => {
     if (!autoImportToast) {
@@ -367,6 +439,38 @@ export default function RootNavigation(): React.JSX.Element {
       return;
     }
 
+    const authenticatedUserId =
+      state.status === 'authenticated' ||
+      state.status === 'authenticatedOffline'
+        ? state.userId
+        : undefined;
+    if (observedClaimUserIdRef.current !== authenticatedUserId) {
+      observedClaimUserIdRef.current = authenticatedUserId;
+      lastRoutedClaimUserIdRef.current = undefined;
+    }
+
+    const accountClaimRoute = resolveAccountClaimAutoRoute({
+      authStatus: state.status,
+      userId: authenticatedUserId,
+      isOnline: accountData.isOnline,
+      eligibleCount:
+        accountData.claim.eligible.logCount +
+        accountData.claim.eligible.planCount,
+      claimStatus: accountData.claim.state.status,
+      currentRoute: currentRouteName,
+      lastRoutedUserId: lastRoutedClaimUserIdRef.current,
+    });
+
+    if (accountClaimRoute) {
+      lastRoutedClaimUserIdRef.current = accountClaimRoute.userId;
+      rootStackNavigationRef.dispatch(
+        accountClaimRoute.action === 'replace'
+          ? StackActions.replace(accountClaimRoute.route)
+          : CommonActions.navigate(accountClaimRoute.route),
+      );
+      return;
+    }
+
     if (
       currentRouteName === 'authOnboarding' &&
       (state.status === 'guest' || state.status === 'authenticated' || state.status === 'authenticatedOffline')
@@ -378,7 +482,16 @@ export default function RootNavigation(): React.JSX.Element {
     if (currentRouteName === 'authLogin' && (state.status === 'authenticated' || state.status === 'authenticatedOffline')) {
       returnToTabs();
     }
-  }, [navigationReady, returnToTabs, state.status]);
+  }, [
+    accountData.claim.eligible.logCount,
+    accountData.claim.eligible.planCount,
+    accountData.claim.state.status,
+    accountData.isOnline,
+    navigationReady,
+    returnToTabs,
+    state,
+    visibleStackRoute,
+  ]);
 
   const reselectRoute = React.useCallback((routeName: NavigationRouteName) => {
     setReselectTokens(currentTokens => ({
@@ -495,6 +608,11 @@ export default function RootNavigation(): React.JSX.Element {
                 sheetCornerRadius: 28,
               }}>
               {props => <AuthLoginRoute {...props} />}
+            </Stack.Screen>
+            <Stack.Screen
+              name="accountClaim"
+              options={ACCOUNT_CLAIM_SHEET_OPTIONS}>
+              {() => <AccountClaimScreen />}
             </Stack.Screen>
             <Stack.Screen name="authOnboarding" options={{ gestureEnabled: false, presentation: 'modal' }}>
               {() => <AuthOnboardingRoute />}

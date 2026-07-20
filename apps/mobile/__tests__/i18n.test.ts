@@ -33,6 +33,38 @@ describe('mobile i18n', () => {
     expect(i18n.getResource('en', 'translation', 'settings.account.offlineDescription')).toContain('Local data');
   });
 
+  test('ships concise Korean and English account claim copy', () => {
+    expect(i18n.t('accountClaim.choiceTitle')).toBe(
+      '기기 데이터를 계정으로 가져올까요?',
+    );
+    expect(i18n.t('accountClaim.logCount')).toBe('다이빙 로그');
+    expect(i18n.t('accountClaim.planCount')).toBe('다이빙 계획');
+    expect(i18n.t('accountClaim.importAction')).toBe('계정으로 가져오기');
+    expect(i18n.t('accountClaim.keepAction')).toBe('기기에 유지');
+    expect(i18n.t('accountClaim.progressTitle')).toBe('계정으로 가져오는 중');
+    expect(
+      i18n.t('accountClaim.progressCount', { completed: 3, total: 32 }),
+    ).toBe('3 / 32');
+    expect(i18n.t('accountClaim.failureTitle')).toBe(
+      '가져오기를 완료하지 못했습니다',
+    );
+    expect(i18n.t('accountClaim.retryAction')).toBe('다시 시도');
+    expect(i18n.t('accountClaim.deviceBadge')).toBe('기기 저장');
+    expect(i18n.t('accountClaim.settingsAction')).toBe(
+      '기기 데이터 가져오기',
+    );
+
+    expect(
+      i18n.getResource('en', 'translation', 'accountClaim.choiceTitle'),
+    ).toBe('Import device data to your account?');
+    expect(
+      i18n.getResource('en', 'translation', 'accountClaim.progressCount'),
+    ).toBe('{{completed}} / {{total}}');
+    expect(
+      i18n.getResource('en', 'translation', 'accountClaim.keepAction'),
+    ).toBe('Keep on device');
+  });
+
   test('keeps Korean and English translation leaf keys in parity', () => {
     expect(logicalLeafKeys(resources.ko.translation)).toEqual(logicalLeafKeys(resources.en.translation));
   });
