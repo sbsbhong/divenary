@@ -3,6 +3,7 @@ import type {
   RemoteDiveLog,
   RemoteDivePlan,
 } from '@repo/supabase';
+import { GuestClaimRepositoryError } from '@repo/supabase';
 
 import type { PrincipalRepositories } from '../repositories/principal-repositories';
 import { dataProfileKeyPrefix } from '../storage/data-principal';
@@ -12,6 +13,8 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import {
   createGuestClaimSnapshot,
+  claimProfileStillMatches,
+  guestRecordMatchesClaimSnapshot,
   GuestClaimPreparationError,
   GuestClaimStorageError,
   parseSnapshotLocalRecord,
@@ -26,9 +29,9 @@ import type {
   GuestClaimProgress,
 } from './guest-claim-types';
 import {
-  decodeUtf8,
   encodeUtf8,
   GuestClaimProfileError,
+  verifyRawProfileBytes,
   verifyProfileBytesSnapshot,
 } from './profile-bytes';
 
@@ -115,8 +118,20 @@ export class GuestClaimService {
       if (snapshot === undefined) {
         return undefined;
       }
-      if (snapshot.manifest.status === 'cleanupPending') {
+      if (
+        snapshot.manifest.status === 'cleanupPending' ||
+        snapshot.manifest.status === 'committed'
+      ) {
         return this.cleanup(snapshot);
+      }
+      if (
+        snapshot.manifest.status === 'failed' &&
+        isTransientClaimError(snapshot.errorCode)
+      ) {
+        snapshot.manifest.status = 'running';
+        delete snapshot.errorCode;
+        await this.persist(snapshot);
+        return this.run(snapshot);
       }
       if (
         snapshot.manifest.status !== 'running' &&
@@ -145,9 +160,35 @@ export class GuestClaimService {
   }
 
   async defer(): Promise<GuestClaimSnapshot | undefined> {
-    const snapshot = await this.prepare();
+    if (this.operation !== undefined) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    const existing = await this.readOwned();
+    if (
+      existing !== undefined &&
+      (existing.manifest.status === 'running' ||
+        existing.manifest.status === 'finalizing' ||
+        existing.manifest.status === 'cleanupPending' ||
+        existing.manifest.status === 'committed')
+    ) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    const snapshot = existing ?? (await this.prepare());
     if (snapshot === undefined) {
       return undefined;
+    }
+    if (snapshot.manifest.status === 'deferred') {
+      return snapshot;
+    }
+    if (
+      snapshot.manifest.status !== 'prepared' &&
+      !(
+        snapshot.manifest.status === 'failed' &&
+        snapshot.manifest.remoteBatchId === undefined &&
+        snapshot.manifest.items.every(item => item.completedAt === undefined)
+      )
+    ) {
+      throw new GuestClaimServiceError('claim_validation_failed');
     }
     snapshot.manifest.status = 'deferred';
     delete snapshot.errorCode;
@@ -166,8 +207,25 @@ export class GuestClaimService {
       snapshot?.manifest.status === 'committed' ||
       snapshot?.manifest.status === 'cleanupPending'
     ) {
-      for (const item of snapshot.manifest.items) {
-        (item.entityKind === 'log' ? logIds : planIds).add(item.clientRecordId);
+      for (const [index, item] of snapshot.manifest.items.entries()) {
+        const repository =
+          item.entityKind === 'log'
+            ? this.options.guestRepositories.logbook
+            : this.options.guestRepositories.planbook;
+        const current = await repository.get(item.clientRecordId);
+        if (
+          current !== undefined &&
+          (await guestRecordMatchesClaimSnapshot({
+            item,
+            sidecar: snapshot.snapshots[index]!,
+            record: current,
+            profileStorage: this.options.profileStorage,
+          }))
+        ) {
+          (item.entityKind === 'log' ? logIds : planIds).add(
+            item.clientRecordId,
+          );
+        }
       }
     }
     return { logIds, planIds };
@@ -302,7 +360,10 @@ export class GuestClaimService {
       this.assertCanContinue();
       let downloadedString: string;
       try {
-        downloadedString = decodeUtf8(downloaded);
+        downloadedString = verifyRawProfileBytes(downloaded, {
+          byteCount: verified.byteCount,
+          sha256: item.profile.sha256,
+        });
       } catch {
         throw new GuestClaimServiceError('profile_corrupt');
       }
@@ -372,6 +433,8 @@ export class GuestClaimService {
 
     snapshot.manifest.status = 'committed';
     delete snapshot.errorCode;
+    await this.persist(snapshot);
+    snapshot.manifest.status = 'cleanupPending';
     await this.persist(snapshot);
     this.emitProgress(snapshot, 'cleanup');
     return this.cleanup(snapshot);
@@ -486,9 +549,29 @@ export class GuestClaimService {
   private async cleanup(
     snapshot: GuestClaimSnapshot,
   ): Promise<GuestClaimSnapshot> {
+    snapshot.manifest.status = 'cleanupPending';
+    delete snapshot.errorCode;
+    await this.persist(snapshot);
     try {
-      for (const item of snapshot.manifest.items) {
+      for (const [index, item] of snapshot.manifest.items.entries()) {
         this.assertCanContinue();
+        const repository =
+          item.entityKind === 'plan'
+            ? this.options.guestRepositories.planbook
+            : this.options.guestRepositories.logbook;
+        const current = await repository.get(item.clientRecordId);
+        if (current === undefined) {
+          continue;
+        }
+        const matches = await guestRecordMatchesClaimSnapshot({
+          item,
+          sidecar: snapshot.snapshots[index]!,
+          record: current,
+          profileStorage: this.options.profileStorage,
+        });
+        if (!matches) {
+          continue;
+        }
         if (item.entityKind === 'plan') {
           await this.options.guestRepositories.planbook.delete(
             item.clientRecordId,
@@ -496,40 +579,30 @@ export class GuestClaimService {
         } else {
           await this.options.guestRepositories.logbook.delete(
             item.clientRecordId,
+            { retainProfileAfterDelete: true },
           );
         }
+        this.assertCanContinue();
+        if ((await repository.get(item.clientRecordId)) !== undefined) {
+          throw new GuestClaimServiceError('claim_validation_failed');
+        }
       }
-      for (const item of snapshot.manifest.items) {
-        if (item.profile !== undefined) {
+      for (const [index, item] of snapshot.manifest.items.entries()) {
+        if (
+          item.profile !== undefined &&
+          (await claimProfileStillMatches(
+            item,
+            snapshot.snapshots[index]!,
+            this.options.profileStorage,
+          ))
+        ) {
           await this.options.guestRepositories.logbook.removeWatchProfileIfUnreferenced(
             item.profile.storageKey,
           );
         }
       }
-      const [remainingLogs, remainingPlans] = await Promise.all([
-        this.options.guestRepositories.logbook.list(),
-        this.options.guestRepositories.planbook.list(),
-      ]);
-      const claimedLogs = new Set(
-        snapshot.manifest.items
-          .filter(item => item.entityKind === 'log')
-          .map(item => item.clientRecordId),
-      );
-      const claimedPlans = new Set(
-        snapshot.manifest.items
-          .filter(item => item.entityKind === 'plan')
-          .map(item => item.clientRecordId),
-      );
-      if (
-        remainingLogs.some(value => claimedLogs.has(value.localId)) ||
-        remainingPlans.some(value => claimedPlans.has(value.localId))
-      ) {
-        throw new GuestClaimServiceError('claim_validation_failed');
-      }
-      if (snapshot.manifest.status === 'cleanupPending') {
-        snapshot.manifest.status = 'committed';
-        await this.persist(snapshot);
-      }
+      snapshot.manifest.status = 'committed';
+      await this.persist(snapshot);
     } catch {
       snapshot.manifest.status = 'cleanupPending';
       await this.persist(snapshot);
@@ -590,6 +663,9 @@ export class GuestClaimService {
     if (error instanceof GuestClaimProfileError) {
       return new GuestClaimServiceError(error.code);
     }
+    if (error instanceof GuestClaimRepositoryError) {
+      return new GuestClaimServiceError(error.kind);
+    }
     if (error instanceof GuestClaimStorageError) {
       return new GuestClaimServiceError('claim_validation_failed');
     }
@@ -622,6 +698,14 @@ export class GuestClaimService {
     );
     return running;
   }
+}
+
+function isTransientClaimError(
+  errorCode: GuestClaimErrorCode | undefined,
+): boolean {
+  return (
+    errorCode === 'network_unavailable' || errorCode === 'session_expired'
+  );
 }
 
 function verifyCommittedBatch(

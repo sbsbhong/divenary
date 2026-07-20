@@ -147,6 +147,61 @@ describe('GuestClaimRemoteRepository', () => {
     ]});
   });
 
+  test('classifies network, expired-session, and local validation failures without leaking details', async () => {
+    const cases = [
+      {
+        name: 'network',
+        response: {data: null, error: {message: 'private upstream detail', status: 503}},
+        expectedKind: 'network_unavailable',
+      },
+      {
+        name: 'session',
+        response: {data: null, error: {message: 'private auth detail', status: 401}},
+        expectedKind: 'session_expired',
+      },
+      {
+        name: 'remote constraint',
+        response: {data: null, error: {message: 'private constraint detail', code: '23514'}},
+        expectedKind: 'remote_conflict',
+      },
+    ];
+
+    for (const item of cases) {
+      const {client} = createClient([item.response]);
+      const repository = createGuestClaimRemoteRepository(client as never, {userId: USER_ID});
+      await assert.rejects(
+        () => repository.createOrLoadBatch({
+          clientBatchId: 'batch-1',
+          manifestSha256: DIGEST,
+          expectedPlanCount: 1,
+          expectedLogCount: 1,
+        }),
+        error => {
+          assert.ok(error instanceof GuestClaimRepositoryError, item.name);
+          assert.equal(Reflect.get(error, 'kind'), item.expectedKind);
+          assert.equal(error.message, 'Guest claim operation failed');
+          return true;
+        },
+      );
+    }
+
+    const {client} = createClient([]);
+    const repository = createGuestClaimRemoteRepository(client as never, {userId: USER_ID});
+    await assert.rejects(
+      () => repository.createOrLoadBatch({
+        clientBatchId: '',
+        manifestSha256: DIGEST,
+        expectedPlanCount: 1,
+        expectedLogCount: 1,
+      }),
+      error => {
+        assert.ok(error instanceof GuestClaimRepositoryError);
+        assert.equal(Reflect.get(error, 'kind'), 'claim_validation_failed');
+        return true;
+      },
+    );
+  });
+
   test('stages a log idempotently and bounds profile previews before upsert', async () => {
     const preview = Array.from({length: 161}, (_, index) => ({index}));
     const payload = {...stagingRow().payload, profile_preview: preview};
@@ -190,6 +245,7 @@ describe('GuestClaimRemoteRepository', () => {
     await assert.rejects(() => repository.finalize(BATCH_ID), error => {
       assert.ok(error instanceof GuestClaimRepositoryError);
       assert.equal(error.message, 'Guest claim operation failed');
+      assert.equal(Reflect.get(error, 'kind'), 'network_unavailable');
       assert.notEqual(error.message, secret);
       return true;
     });
@@ -228,6 +284,7 @@ describe('GuestClaimRemoteRepository', () => {
     await assert.rejects(() => repository.uploadProfile(path, new Uint8Array([1, 2])), error => {
       assert.ok(error instanceof GuestClaimRepositoryError);
       assert.equal(error.operation, 'profile');
+      assert.equal(Reflect.get(error, 'kind'), 'remote_conflict');
       assert.equal(error.message, 'Guest claim operation failed');
       return true;
     });
@@ -242,6 +299,7 @@ describe('GuestClaimRemoteRepository', () => {
     await assert.rejects(() => repository.uploadProfile(path, new Uint8Array([1, 2])), error => {
       assert.ok(error instanceof GuestClaimRepositoryError);
       assert.equal(error.operation, 'profile');
+      assert.equal(Reflect.get(error, 'kind'), 'network_unavailable');
       assert.equal(error.message, 'Guest claim operation failed');
       return true;
     });
@@ -301,6 +359,7 @@ describe('GuestClaimRemoteRepository', () => {
       await assert.rejects(() => repository.listCommittedBatch(BATCH_ID), error => {
         assert.ok(error instanceof GuestClaimRepositoryError, item.name);
         assert.equal(error.operation, 'list');
+        assert.equal(Reflect.get(error, 'kind'), 'remote_conflict');
         return true;
       });
     }

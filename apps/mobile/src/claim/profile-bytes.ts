@@ -61,7 +61,7 @@ export function createProfileBytesSnapshot(
 
   const bytes = JSON.stringify(verifiedSamples);
   const encoded = encodeUtf8(bytes);
-  const digest = bytesToHex(sha256(encoded));
+  const digest = sha256BytesHex(encoded);
   if (expectation.sha256 !== undefined && expectation.sha256 !== digest) {
     throw new GuestClaimProfileError('profile_corrupt');
   }
@@ -108,6 +108,23 @@ export function verifyProfileBytesSnapshot(
 
 export function encodeUtf8(value: string): Uint8Array {
   return new TextEncoder().encode(value);
+}
+
+export function sha256BytesHex(value: Uint8Array): string {
+  return bytesToHex(sha256(value));
+}
+
+export function verifyRawProfileBytes(
+  value: Uint8Array,
+  expectation: { byteCount: number; sha256: string },
+): string {
+  if (
+    value.length !== expectation.byteCount ||
+    sha256BytesHex(value) !== expectation.sha256
+  ) {
+    throw new GuestClaimProfileError('profile_corrupt');
+  }
+  return decodeUtf8(value);
 }
 
 export function decodeUtf8(value: Uint8Array): string {

@@ -23,6 +23,7 @@ import {
 import { AccountOutbox } from '../src/sync/account-outbox';
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import { dataProfileKeyPrefix } from '../src/storage/data-principal';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { DivePlan } from '../src/types/dive-plan';
@@ -1139,7 +1140,9 @@ describe('account data state', () => {
         measuredValues: { startedAt: 100 },
         samples: [],
         profile: {
-          storageKey: 'missing-profile',
+          storageKey: `${dataProfileKeyPrefix({
+            kind: 'guest',
+          })}session-profile-log:revision-1`,
           contentRevision: 'revision-1',
           sampleCount: 1,
         },
@@ -1222,7 +1225,7 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
-  it('composes deferred guest rows with account rows and gives the account copy precedence', async () => {
+  it('keeps deferred guest rows ahead of same-id account copies', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const guestLogbook = new LocalDiveLogRepository([
       entry,
@@ -1317,12 +1320,417 @@ describe('account data state', () => {
       'local-log-1',
       'guest-only-log',
     ]);
-    expect(result.rows[0]?.manual.title).toBe('account copy');
+    expect(result.rows[0]?.manual.title).toBeUndefined();
+    expect(result.rows[0]?.ownerUserId).toBeUndefined();
     expect(result.rows[1]?.ownerUserId).toBeUndefined();
     expect(result.eligible).toEqual({ logCount: 2, planCount: 1 });
 
     await ReactTestRenderer.act(async () => renderer.unmount());
     queryClient.clear();
+  });
+
+  it('keeps guest rows ahead of partial account copies until the claim is published', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestEntry = {
+      ...entry,
+      manual: { ...entry.manual, title: 'guest snapshot' },
+    };
+    const guestLogbook = new LocalDiveLogRepository([guestEntry]);
+    const store = new GuestClaimStore({ storage: metadataStorage, userId });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      completedAt: 101,
+    };
+    snapshot.manifest.updatedAt = 101;
+    snapshot.errorCode = 'claim_validation_failed';
+    await store.write(snapshot);
+    const accountCopy = {
+      ...guestEntry,
+      ownerUserId: userId,
+      remoteId: '30000000-0000-4000-8000-000000000001',
+      remoteRevision: 1,
+      cloudSyncStatus: 'synced' as const,
+      manual: { ...guestEntry.manual, title: 'partial account copy' },
+    };
+    let rows: DiveLogEntry[] = [];
+    const Capture = () => {
+      const data = useAccountData();
+      React.useEffect(() => {
+        data.logbookRepository.list().then(value => {
+          rows = value;
+        });
+      }, [data]);
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{ state: { status: 'authenticatedOffline', userId } }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository([accountCopy]),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(rows).toHaveLength(1));
+
+    expect(rows[0]?.manual.title).toBe('guest snapshot');
+    expect(rows[0]?.ownerUserId).toBeUndefined();
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('shows a changed same-id guest after commit while an unchanged claim keeps account precedence', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const snapshotGuest = {
+      ...entry,
+      manual: { ...entry.manual, title: 'snapshot guest' },
+    };
+    const changedGuest = {
+      ...snapshotGuest,
+      updatedAt: snapshotGuest.updatedAt + 1,
+      manual: { ...snapshotGuest.manual, title: 'changed after snapshot' },
+    };
+    const guestLogbook = new LocalDiveLogRepository([changedGuest]);
+    const store = new GuestClaimStore({ storage: metadataStorage, userId });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([snapshotGuest]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'cleanupPending';
+    snapshot.manifest.remoteBatchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      completedAt: 101,
+    };
+    snapshot.manifest.updatedAt = 101;
+    await store.write(snapshot);
+    const accountCopy = {
+      ...snapshotGuest,
+      ownerUserId: userId,
+      remoteId: '30000000-0000-4000-8000-000000000001',
+      remoteRevision: 1,
+      cloudSyncStatus: 'synced' as const,
+      manual: { ...snapshotGuest.manual, title: 'account snapshot copy' },
+    };
+    let capture:
+      | {
+          rows: DiveLogEntry[];
+          eligible: { logCount: number; planCount: number };
+        }
+      | undefined;
+    const Capture = () => {
+      const data = useAccountData();
+      React.useEffect(() => {
+        data.logbookRepository.list().then(rows => {
+          capture = { rows, eligible: data.claim.eligible };
+        });
+      }, [data]);
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{ state: { status: 'authenticatedOffline', userId } }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository([accountCopy]),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.rows).toHaveLength(1));
+
+    expect(capture?.rows[0]?.manual.title).toBe('changed after snapshot');
+    expect(capture?.rows[0]?.ownerUserId).toBeUndefined();
+    expect(capture?.eligible).toEqual({ logCount: 1, planCount: 0 });
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('ignores a stale same-user claim callback after repository generation changes', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const stalledStage = deferred<{
+      stagingRecordId: string;
+      targetRecordId: string;
+    }>();
+    const oldRemote = guestClaimRepository();
+    oldRemote.stageRecord.mockImplementation(() => stalledStage.promise);
+    const newRemote = guestClaimRepository();
+    const captures: ReturnType<typeof useAccountData>['claim'][] = [];
+    const Capture = () => {
+      captures.push(useAccountData().claim);
+      return null;
+    };
+    const dependencies = {
+      metadataStorage,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook:
+          principal.kind === 'guest'
+            ? guestLogbook
+            : new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      })),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    let oldStart: Promise<void>;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: oldRemote,
+          }}
+          dependencies={dependencies}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(captures.at(-1)?.state.status).toBe('choice'));
+    await ReactTestRenderer.act(async () => {
+      oldStart = captures.at(-1)!.start();
+      await waitFor(() => expect(oldRemote.stageRecord).toHaveBeenCalled());
+    });
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady={false}
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: newRemote,
+          }}
+          dependencies={dependencies}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(captures.at(-1)?.state.status).toBe('hidden'));
+
+    stalledStage.reject(new Error('stale repository failed'));
+    await ReactTestRenderer.act(async () => {
+      await oldStart!;
+      await flushPromises();
+    });
+
+    expect(captures.at(-1)?.state.status).toBe('hidden');
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+  });
+
+  it('automatically resumes a transient failure with the same durable batch', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const accountLogbook = new LocalDiveLogRepository();
+    const store = new GuestClaimStore({ storage: metadataStorage, userId });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    const batchId = '10000000-0000-4000-8000-000000000001';
+    const targetRecordId = '30000000-0000-4000-8000-000000000001';
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    snapshot.manifest.updatedAt = 101;
+    await store.write(snapshot);
+
+    const remote = guestClaimRepository();
+    remote.finalize.mockResolvedValue({
+      status: 'committed',
+      planCount: 0,
+      logCount: 1,
+    });
+    remote.listCommittedBatch.mockResolvedValue({
+      plans: [],
+      logs: [
+        {
+          id: targetRecordId,
+          localId: entry.localId,
+          revision: 1,
+          payloadSha256: snapshot.manifest.items[0]!.payloadSha256,
+          payload: JSON.parse(snapshot.snapshots[0]!.payloadBytes),
+        },
+      ],
+    });
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: { status: 'authenticated', userId },
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest' ? guestLogbook : accountLogbook,
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => batchId,
+            now: () => 102,
+            jitter: () => 0,
+          }}
+        />,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(remote.finalize).toHaveBeenCalledWith(batchId));
+    await flushPromises();
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: { status: 'committed' },
+    });
+
+    expect(remote.createOrLoadBatch).toHaveBeenCalledWith(
+      expect.objectContaining({ clientBatchId: snapshot.manifest.clientBatchId }),
+    );
+    await expect(accountLogbook.get(entry.localId)).resolves.toMatchObject({
+      ownerUserId: userId,
+      remoteId: targetRecordId,
+      cloudSyncStatus: 'synced',
+    });
+    await expect(guestLogbook.get(entry.localId)).resolves.toBeUndefined();
+
+    await ReactTestRenderer.act(async () => renderer.unmount());
+    queryClient.clear();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
   });
 
   it('hides cleanup-pending guest ids before physical cleanup and does not resume offline', async () => {
@@ -1368,13 +1776,14 @@ describe('account data state', () => {
       | {
           rows: DiveLogEntry[];
           eligible: { logCount: number; planCount: number };
+          claim: ReturnType<typeof useAccountData>['claim'];
         }
       | undefined;
     const Capture = () => {
       const data = useAccountData();
       React.useEffect(() => {
         data.logbookRepository.list().then(rows => {
-          capture = { rows, eligible: data.claim.eligible };
+          capture = { rows, eligible: data.claim.eligible, claim: data.claim };
         });
       }, [data]);
       return null;
@@ -1436,6 +1845,14 @@ describe('account data state', () => {
     expect(result.eligible).toEqual({ logCount: 1, planCount: 0 });
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
     expect(remote.finalize).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await result.claim.keepOnDevice();
+    });
+    expect(capture?.claim.state).toEqual({ status: 'complete', imported: 1 });
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: { status: 'cleanupPending' },
+    });
 
     await ReactTestRenderer.act(async () => renderer.unmount());
     queryClient.clear();
@@ -1716,13 +2133,17 @@ class FailOnceOutboxStorage implements PersistentKeyValueStore {
 function deferred<T>(): {
   promise: Promise<Awaited<T>>;
   resolve(value: Awaited<T>): void;
+  reject(error: unknown): void;
 } {
   let resolve!: (value: Awaited<T>) => void;
+  let reject!: (error: unknown) => void;
   return {
-    promise: new Promise<Awaited<T>>(nextResolve => {
+    promise: new Promise<Awaited<T>>((nextResolve, nextReject) => {
       resolve = nextResolve;
+      reject = nextReject;
     }),
     resolve,
+    reject,
   };
 }
 

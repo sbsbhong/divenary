@@ -15,6 +15,7 @@ import {
   GuestClaimServiceError,
 } from '../claim/guest-claim-service';
 import {
+  guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
   type GuestClaimSnapshot,
 } from '../claim/guest-claim-store';
@@ -114,6 +115,7 @@ type PublishedAccountData = PrincipalRepositories & {
   guestRepositories?: PrincipalRepositories;
   claimStore?: GuestClaimStore;
   claimService?: GuestClaimService;
+  claimGeneration?: number;
   hiddenGuestIds?: HiddenGuestIds;
   outbox?: AccountOutbox;
   coordinator?: AccountSyncCoordinator;
@@ -124,6 +126,8 @@ type PublishedAccountData = PrincipalRepositories & {
 type HiddenGuestIds = {
   logIds: Set<string>;
   planIds: Set<string>;
+  guestPriorityLogIds: Set<string>;
+  guestPriorityPlanIds: Set<string>;
 };
 
 type AccountClaimPresentation = {
@@ -265,6 +269,8 @@ export function AccountDataProviderCore({
           const hiddenGuestIds: HiddenGuestIds = {
             logIds: new Set(),
             planIds: new Set(),
+            guestPriorityLogIds: new Set(),
+            guestPriorityPlanIds: new Set(),
           };
           nextPublication = {
             ...createComposedAccountRepositories({
@@ -286,6 +292,9 @@ export function AccountDataProviderCore({
           };
         }
         publications.set(desiredScope, nextPublication);
+      } else {
+        nextPublication = { ...nextPublication };
+        publications.set(desiredScope, nextPublication);
       }
 
       if (
@@ -296,6 +305,9 @@ export function AccountDataProviderCore({
         auth.guestClaimRemoteRepository
       ) {
         const publication = nextPublication;
+        publication.claimGeneration = generation;
+        const isClaimCurrent = () =>
+          isCurrent() && publication.claimGeneration === generation;
         const claimStore = nextPublication.claimStore;
         const guestRepositories = nextPublication.guestRepositories;
         publication.claimService = new GuestClaimService({
@@ -315,17 +327,25 @@ export function AccountDataProviderCore({
             }
           },
           onProgress: progress => {
-            if (isCurrent()) {
+            if (isClaimCurrent()) {
               setClaimPresentation(
                 runningClaimPresentation(desiredScope, progress),
               );
             }
           },
           onSnapshot: async snapshot => {
-            if (!isCurrent()) {
+            if (!isClaimCurrent()) {
               return;
             }
-            applyHiddenGuestIds(publication, snapshot);
+            await applyHiddenGuestIds(
+              publication,
+              snapshot,
+              dependencies.profileStorage,
+              isClaimCurrent,
+            );
+            if (!isClaimCurrent()) {
+              return;
+            }
             setClaimPresentation(
               presentationForSnapshot(desiredScope, snapshot),
             );
@@ -338,6 +358,7 @@ export function AccountDataProviderCore({
           },
         });
       } else if (desiredPrincipal.kind === 'user') {
+        nextPublication.claimGeneration = generation;
         nextPublication.claimService = undefined;
       }
 
@@ -438,6 +459,11 @@ export function AccountDataProviderCore({
       publication: PublishedAccountData,
       options: { resumeActive: boolean },
     ) => {
+      const claimGeneration = publication.claimGeneration;
+      const isClaimCurrent = () =>
+        generationRef.current === claimGeneration &&
+        publishedRef.current === publication &&
+        publication.claimGeneration === claimGeneration;
       if (
         publication.queryScope !== desiredScope ||
         publication.principal.kind !== 'user' ||
@@ -453,28 +479,35 @@ export function AccountDataProviderCore({
       try {
         snapshot = await publication.claimStore.read();
       } catch {
-        setClaimPresentation({
-          queryScope: desiredScope,
-          eligible: { logCount: 0, planCount: 0 },
-          state: {
-            status: 'failed',
-            completed: 0,
-            total: 0,
-            errorCode: 'claim_validation_failed',
-          },
-        });
+        if (isClaimCurrent()) {
+          setClaimPresentation({
+            queryScope: desiredScope,
+            eligible: { logCount: 0, planCount: 0 },
+            state: {
+              status: 'failed',
+              completed: 0,
+              total: 0,
+              errorCode: 'claim_validation_failed',
+            },
+          });
+        }
         return;
       }
       if (
-        publishedRef.current !== publication ||
+        !isClaimCurrent() ||
         (snapshot?.userId !== undefined &&
           snapshot.userId !== publication.principal.userId)
       ) {
         return;
       }
-      applyHiddenGuestIds(publication, snapshot);
+      await applyHiddenGuestIds(
+        publication,
+        snapshot,
+        dependencies.profileStorage,
+        isClaimCurrent,
+      );
       const eligible = await eligibleGuestCounts(publication);
-      if (publishedRef.current !== publication) {
+      if (!isClaimCurrent()) {
         return;
       }
       setClaimPresentation(
@@ -486,17 +519,27 @@ export function AccountDataProviderCore({
         isOnline &&
         AppState.currentState === 'active' &&
         publication.claimService &&
-        snapshot !== undefined &&
-        (snapshot.manifest.status === 'running' ||
-          snapshot.manifest.status === 'finalizing' ||
-          snapshot.manifest.status === 'cleanupPending')
+          snapshot !== undefined &&
+          (snapshot.manifest.status === 'running' ||
+            snapshot.manifest.status === 'finalizing' ||
+            snapshot.manifest.status === 'cleanupPending' ||
+            (snapshot.manifest.status === 'committed' &&
+              hasHiddenGuestIds(publication)) ||
+            (snapshot.manifest.status === 'failed' &&
+              (snapshot.errorCode === 'network_unavailable' ||
+                snapshot.errorCode === 'session_expired')))
       ) {
         await publication.claimService.resume();
-        if (publishedRef.current === publication) {
+        if (isClaimCurrent()) {
           const refreshedSnapshot = await publication.claimStore.read();
-          applyHiddenGuestIds(publication, refreshedSnapshot);
+          await applyHiddenGuestIds(
+            publication,
+            refreshedSnapshot,
+            dependencies.profileStorage,
+            isClaimCurrent,
+          );
           const refreshedEligible = await eligibleGuestCounts(publication);
-          if (publishedRef.current === publication) {
+          if (isClaimCurrent()) {
             setClaimPresentation(
               presentationForSnapshot(
                 desiredScope,
@@ -509,7 +552,7 @@ export function AccountDataProviderCore({
         }
       }
     },
-    [desiredScope, isOnline, navigationReady],
+    [dependencies.profileStorage, desiredScope, isOnline, navigationReady],
   );
 
   React.useEffect(() => {
@@ -542,29 +585,52 @@ export function AccountDataProviderCore({
   const runClaim = React.useCallback(
     async (operation: 'start' | 'retry' | 'defer') => {
       const publication = publishedRef.current;
+      const claimGeneration = publication?.claimGeneration;
+      const claimService = publication?.claimService;
+      const isClaimCurrent = () =>
+        generationRef.current === claimGeneration &&
+        publishedRef.current === publication &&
+        publication?.claimGeneration === claimGeneration &&
+        publication?.claimService === claimService;
       if (
         publication?.principal.kind !== 'user' ||
         publication.queryScope !== desiredScope ||
         !navigationReady ||
         (operation !== 'defer' && !isOnline) ||
-        !publication.claimService
+        !claimService
       ) {
         return;
       }
       try {
         if (operation === 'start') {
-          await publication.claimService.start();
+          await claimService.start();
         } else if (operation === 'retry') {
-          await publication.claimService.retry();
+          await claimService.retry();
         } else {
-          await publication.claimService.defer();
+          await claimService.defer();
         }
       } catch (error) {
-        if (publishedRef.current !== publication) {
+        if (!isClaimCurrent()) {
           return;
         }
         const eligible = await eligibleGuestCounts(publication);
+        if (!isClaimCurrent()) {
+          return;
+        }
         if (operation === 'defer') {
+          let snapshot: GuestClaimSnapshot | undefined;
+          try {
+            snapshot = await publication.claimStore?.read();
+          } catch {
+            snapshot = undefined;
+          }
+          if (!isClaimCurrent()) {
+            return;
+          }
+          if (snapshot !== undefined) {
+            await refreshClaim(publication, { resumeActive: false });
+            return;
+          }
           setClaimPresentation({
             queryScope: desiredScope,
             eligible,
@@ -581,6 +647,9 @@ export function AccountDataProviderCore({
         } catch {
           completed = 0;
         }
+        if (!isClaimCurrent()) {
+          return;
+        }
         setClaimPresentation({
           queryScope: desiredScope,
           eligible,
@@ -596,7 +665,7 @@ export function AccountDataProviderCore({
         });
         return;
       }
-      if (publishedRef.current === publication) {
+      if (isClaimCurrent()) {
         await refreshClaim(publication, { resumeActive: false });
       }
     },
@@ -714,14 +783,28 @@ function createComposedAccountRepositories(options: {
         options.accountRepositories.logbook.list(),
         options.guestRepositories.logbook.list(),
       ]);
+      const visibleGuestRows = guestRows.filter(
+        row => !options.hiddenGuestIds.logIds.has(row.localId),
+      );
+      const guestPriorityIds = new Set(
+        visibleGuestRows
+          .filter(row =>
+            options.hiddenGuestIds.guestPriorityLogIds.has(row.localId),
+          )
+          .map(row => row.localId),
+      );
       return composeAccountAndDeferredGuestRows(
-        accountRows,
-        guestRows.filter(
-          row => !options.hiddenGuestIds.logIds.has(row.localId),
-        ),
+        accountRows.filter(row => !guestPriorityIds.has(row.localId)),
+        visibleGuestRows,
       );
     },
     async get(localId) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        const guest = await options.guestRepositories.logbook.get(localId);
+        if (guest !== undefined) {
+          return guest;
+        }
+      }
       const account = await options.accountRepositories.logbook.get(localId);
       if (account || options.hiddenGuestIds.logIds.has(localId)) {
         return account;
@@ -739,6 +822,9 @@ function createComposedAccountRepositories(options: {
       return options.accountRepositories.logbook.save(value);
     },
     async delete(localId, deleteOptions) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        return options.guestRepositories.logbook.delete(localId, deleteOptions);
+      }
       if (await options.accountRepositories.logbook.get(localId)) {
         return options.accountRepositories.logbook.delete(
           localId,
@@ -748,6 +834,9 @@ function createComposedAccountRepositories(options: {
       return options.guestRepositories.logbook.delete(localId, deleteOptions);
     },
     async getWatchProfile(localId) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        return options.guestRepositories.logbook.getWatchProfile(localId);
+      }
       return (await options.accountRepositories.logbook.get(localId))
         ? options.accountRepositories.logbook.getWatchProfile(localId)
         : options.guestRepositories.logbook.getWatchProfile(localId);
@@ -785,14 +874,28 @@ function createComposedAccountRepositories(options: {
         options.accountRepositories.planbook.list(),
         options.guestRepositories.planbook.list(),
       ]);
+      const visibleGuestRows = guestRows.filter(
+        row => !options.hiddenGuestIds.planIds.has(row.localId),
+      );
+      const guestPriorityIds = new Set(
+        visibleGuestRows
+          .filter(row =>
+            options.hiddenGuestIds.guestPriorityPlanIds.has(row.localId),
+          )
+          .map(row => row.localId),
+      );
       return composeAccountAndDeferredGuestRows(
-        accountRows,
-        guestRows.filter(
-          row => !options.hiddenGuestIds.planIds.has(row.localId),
-        ),
+        accountRows.filter(row => !guestPriorityIds.has(row.localId)),
+        visibleGuestRows,
       );
     },
     async get(localId) {
+      if (options.hiddenGuestIds.guestPriorityPlanIds.has(localId)) {
+        const guest = await options.guestRepositories.planbook.get(localId);
+        if (guest !== undefined) {
+          return guest;
+        }
+      }
       const account = await options.accountRepositories.planbook.get(localId);
       if (account || options.hiddenGuestIds.planIds.has(localId)) {
         return account;
@@ -810,6 +913,9 @@ function createComposedAccountRepositories(options: {
       return options.accountRepositories.planbook.save(value);
     },
     async delete(localId) {
+      if (options.hiddenGuestIds.guestPriorityPlanIds.has(localId)) {
+        return options.guestRepositories.planbook.delete(localId);
+      }
       if (await options.accountRepositories.planbook.get(localId)) {
         return options.accountRepositories.planbook.delete(localId);
       }
@@ -858,27 +964,85 @@ async function eligibleGuestCounts(
   };
 }
 
-function applyHiddenGuestIds(
+async function applyHiddenGuestIds(
   publication: PublishedAccountData,
   snapshot: GuestClaimSnapshot | undefined,
-): void {
+  profileStorage: AccountDataDependencies['profileStorage'],
+  shouldApply: () => boolean = () => true,
+): Promise<void> {
   const hidden = publication.hiddenGuestIds;
-  if (!hidden) {
+  if (!hidden || !publication.guestRepositories) {
     return;
   }
-  hidden.logIds.clear();
-  hidden.planIds.clear();
-  if (
-    snapshot?.manifest.status !== 'committed' &&
-    snapshot?.manifest.status !== 'cleanupPending'
-  ) {
+  const next: HiddenGuestIds = {
+    logIds: new Set(),
+    planIds: new Set(),
+    guestPriorityLogIds: new Set(),
+    guestPriorityPlanIds: new Set(),
+  };
+  if (snapshot === undefined) {
+    if (shouldApply()) {
+      replaceHiddenGuestIds(hidden, next);
+    }
     return;
   }
-  for (const item of snapshot.manifest.items) {
-    (item.entityKind === 'log' ? hidden.logIds : hidden.planIds).add(
-      item.clientRecordId,
-    );
+  const published =
+    snapshot.manifest.status === 'committed' ||
+    snapshot.manifest.status === 'cleanupPending';
+  for (const [index, item] of snapshot.manifest.items.entries()) {
+    const repository =
+      item.entityKind === 'log'
+        ? publication.guestRepositories.logbook
+        : publication.guestRepositories.planbook;
+    const current = await repository.get(item.clientRecordId);
+    if (current === undefined) {
+      continue;
+    }
+    const matches = await guestRecordMatchesClaimSnapshot({
+      item,
+      sidecar: snapshot.snapshots[index]!,
+      record: current,
+      profileStorage,
+    });
+    if (published && matches) {
+      (item.entityKind === 'log' ? next.logIds : next.planIds).add(
+        item.clientRecordId,
+      );
+    } else {
+      (item.entityKind === 'log'
+        ? next.guestPriorityLogIds
+        : next.guestPriorityPlanIds
+      ).add(item.clientRecordId);
+    }
   }
+  if (shouldApply()) {
+    replaceHiddenGuestIds(hidden, next);
+  }
+}
+
+function replaceHiddenGuestIds(
+  target: HiddenGuestIds,
+  source: HiddenGuestIds,
+): void {
+  for (const key of [
+    'logIds',
+    'planIds',
+    'guestPriorityLogIds',
+    'guestPriorityPlanIds',
+  ] as const) {
+    target[key].clear();
+    for (const value of source[key]) {
+      target[key].add(value);
+    }
+  }
+}
+
+function hasHiddenGuestIds(publication: PublishedAccountData): boolean {
+  return Boolean(
+    publication.hiddenGuestIds &&
+      (publication.hiddenGuestIds.logIds.size > 0 ||
+        publication.hiddenGuestIds.planIds.size > 0),
+  );
 }
 
 function hiddenClaimPresentation(queryScope: string): AccountClaimPresentation {

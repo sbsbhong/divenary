@@ -4,7 +4,10 @@ import {
   GuestClaimStore,
 } from '../src/claim/guest-claim-store';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
-import { dataStorageKeys } from '../src/storage/data-principal';
+import {
+  dataProfileKeyPrefix,
+  dataStorageKeys,
+} from '../src/storage/data-principal';
 import type { DiveLogRepository } from '../src/repositories/dive-log-repository';
 import type { DivePlanRepository } from '../src/repositories/dive-plan-repository';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
@@ -14,20 +17,23 @@ import type { WatchDepthSample } from '../src/types/dive-session';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
+const guestProfileKey = `${dataProfileKeyPrefix({
+  kind: 'guest',
+})}session-log-a:revision-1`;
 
 describe('guest claim store', () => {
   it('snapshots plans first with canonical payload and complete local/profile bytes', async () => {
     const storage = new InMemoryKeyValueStore();
     const profiles = profileStorage();
     const samples = depthSamples(200);
-    await profiles.write('guest-profile', samples);
+    await profiles.write(guestProfileKey, samples);
     const logs = [
       diveLog({ localId: 'log-b' }),
       diveLog({
         localId: 'log-a',
         samples: samples.slice(0, 160),
         profile: {
-          storageKey: 'guest-profile',
+          storageKey: guestProfileKey,
           contentRevision: 'revision-1',
           sampleCount: samples.length,
         },
@@ -69,7 +75,7 @@ describe('guest claim store', () => {
     expect(snapshot.manifest.items[2]).toMatchObject({
       sourcePlanClientRecordId: 'plan-a',
       profile: {
-        storageKey: 'guest-profile',
+        storageKey: guestProfileKey,
         contentRevision: 'revision-1',
         sampleCount: 200,
       },
@@ -90,8 +96,15 @@ describe('guest claim store', () => {
     expect(JSON.parse(logSnapshot.profileBytes ?? '[]')).toHaveLength(200);
     expect(JSON.parse(logSnapshot.localRecordBytes)).toMatchObject({
       localId: 'log-a',
-      watchCapture: { profile: { storageKey: 'guest-profile' } },
+      watchCapture: { profile: { storageKey: guestProfileKey } },
     });
+    expect(
+      (
+        logSnapshot as typeof logSnapshot & {
+          localRecordSha256?: string;
+        }
+      ).localRecordSha256,
+    ).toMatch(/^[0-9a-f]{64}$/);
 
     logs[1] = diveLog({ localId: 'log-a', title: 'changed after snapshot' });
     plans[0] = divePlan({ localId: 'plan-z' });
@@ -142,6 +155,17 @@ describe('guest claim store', () => {
     tampered.snapshots[0]!.payloadBytes = '{}';
     await expect(store.write(tampered)).rejects.toThrow('guest claim');
 
+    const localRecordTampered = structuredClone(snapshot);
+    const localRecord = JSON.parse(
+      localRecordTampered.snapshots[0]!.localRecordBytes,
+    ) as DiveLogEntry;
+    localRecord.manual.title = 'single field changed';
+    localRecordTampered.snapshots[0]!.localRecordBytes =
+      JSON.stringify(localRecord);
+    await expect(store.write(localRecordTampered)).rejects.toThrow(
+      'guest claim',
+    );
+
     const strayError = structuredClone(snapshot);
     strayError.errorCode = 'network_unavailable';
     await expect(store.write(strayError)).rejects.toThrow('guest claim');
@@ -182,7 +206,7 @@ describe('guest claim store', () => {
     const storage = new InMemoryKeyValueStore();
     const profiles = profileStorage();
     const samples = depthSamples(1);
-    await profiles.write('guest-profile', samples);
+    await profiles.write(guestProfileKey, samples);
     const snapshot = await createGuestClaimSnapshot({
       userId,
       logbookRepository: repository([
@@ -190,7 +214,7 @@ describe('guest claim store', () => {
           localId: 'log-a',
           samples,
           profile: {
-            storageKey: 'guest-profile',
+            storageKey: guestProfileKey,
             contentRevision: 'revision-1',
             sampleCount: 1,
           },
@@ -220,6 +244,36 @@ describe('guest claim store', () => {
     await expect(
       new GuestClaimStore({ storage, userId }).write(snapshot),
     ).rejects.toThrow('guest claim');
+  });
+
+  it('rejects foreign-principal profile keys before reading or persisting them', async () => {
+    const profiles = profileStorage();
+    const foreignProfileKey = `${dataProfileKeyPrefix({
+      kind: 'user',
+      userId: otherUserId,
+    })}session-log-a:revision-1`;
+    await profiles.write(foreignProfileKey, depthSamples(1));
+
+    await expect(
+      createGuestClaimSnapshot({
+        userId,
+        logbookRepository: repository([
+          diveLog({
+            localId: 'log-a',
+            samples: depthSamples(1),
+            profile: {
+              storageKey: foreignProfileKey,
+              contentRevision: 'revision-1',
+              sampleCount: 1,
+            },
+          }),
+        ]),
+        planRepository: repository([]),
+        profileStorage: profiles,
+        now: () => 100,
+      }),
+    ).rejects.toMatchObject({ code: 'claim_validation_failed' });
+    expect(profiles.read).not.toHaveBeenCalledWith(foreignProfileKey);
   });
 
   it.each([

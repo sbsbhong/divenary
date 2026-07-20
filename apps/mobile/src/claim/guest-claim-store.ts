@@ -10,7 +10,10 @@ import {
   DIVE_PLANBOOK_SCHEMA_VERSION,
   parseDivePlanbookEnvelope,
 } from '../repositories/persistent-dive-plan-repository';
-import { dataStorageKeys } from '../storage/data-principal';
+import {
+  dataProfileKeyPrefix,
+  dataStorageKeys,
+} from '../storage/data-principal';
 import type { PersistentKeyValueStore } from '../storage/persistent-key-value-store';
 import type { WatchProfileStorage } from '../storage/watch-profile-storage';
 import {
@@ -22,6 +25,8 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import {
   createProfileBytesSnapshot,
+  encodeUtf8,
+  sha256BytesHex,
   verifyProfileBytesSnapshot,
 } from './profile-bytes';
 import type {
@@ -57,6 +62,7 @@ export type GuestClaimSnapshotItem = {
   entityKind: 'plan' | 'log';
   payloadBytes: string;
   localRecordBytes: string;
+  localRecordSha256: string;
   label?: string;
   profileBytes?: string;
   profileReadback?: GuestClaimProfileReadback;
@@ -152,6 +158,7 @@ export async function createGuestClaimSnapshot(options: {
   for (const plan of plans) {
     const remote = mapPlanPayload(plan);
     const key = `plan:${plan.localId}`;
+    const localRecordBytes = canonicalJson(plan);
     items.push({
       key,
       entityKind: 'plan',
@@ -165,7 +172,8 @@ export async function createGuestClaimSnapshot(options: {
       key,
       entityKind: 'plan',
       payloadBytes: canonicalJson(remote.payload),
-      localRecordBytes: JSON.stringify(plan),
+      localRecordBytes,
+      localRecordSha256: digestUtf8(localRecordBytes),
       ...(claimLabel(plan) === undefined ? {} : { label: claimLabel(plan) }),
     });
   }
@@ -181,6 +189,7 @@ export async function createGuestClaimSnapshot(options: {
       prepared.byteCount,
     );
     const key = `log:${prepared.log.localId}`;
+    const localRecordBytes = canonicalJson(sourceLog);
     const sourcePlanClientRecordId = relationships.get(prepared.log.localId);
     items.push({
       key,
@@ -206,7 +215,8 @@ export async function createGuestClaimSnapshot(options: {
       key,
       entityKind: 'log',
       payloadBytes: canonicalJson(remote.payload),
-      localRecordBytes: JSON.stringify(prepared.log),
+      localRecordBytes,
+      localRecordSha256: digestUtf8(localRecordBytes),
       ...(claimLabel(prepared.log) === undefined
         ? {}
         : { label: claimLabel(prepared.log) }),
@@ -223,6 +233,7 @@ export async function createGuestClaimSnapshot(options: {
     planCount: plans.length,
     logCount: logs.length,
     items,
+    snapshots,
     createdAt,
   });
   return {
@@ -265,6 +276,58 @@ export function parseSnapshotPayload(
     throw new GuestClaimStorageError();
   }
   return parsed;
+}
+
+export async function guestRecordMatchesClaimSnapshot(options: {
+  item: GuestClaimItem;
+  sidecar: GuestClaimSnapshotItem;
+  record: DiveLogEntry | DivePlan;
+  profileStorage: WatchProfileStorage;
+}): Promise<boolean> {
+  if (
+    options.item.key !== options.sidecar.key ||
+    options.item.entityKind !== options.sidecar.entityKind ||
+    options.record.localId !== options.item.clientRecordId ||
+    digestUtf8(canonicalJson(options.record)) !==
+      options.sidecar.localRecordSha256
+  ) {
+    return false;
+  }
+  if (options.item.profile === undefined) {
+    return true;
+  }
+  return claimProfileStillMatches(
+    options.item,
+    options.sidecar,
+    options.profileStorage,
+  );
+}
+
+export async function claimProfileStillMatches(
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem,
+  profileStorage: WatchProfileStorage,
+): Promise<boolean> {
+  if (item.profile === undefined || sidecar.profileBytes === undefined) {
+    return item.profile === undefined && sidecar.profileBytes === undefined;
+  }
+  if (!isGuestProfileStorageKey(item.profile.storageKey)) {
+    throw new GuestClaimStorageError();
+  }
+  try {
+    const snapshot = createProfileBytesSnapshot(
+      await profileStorage.read(item.profile.storageKey),
+      {
+        localSessionId: (parseSnapshotLocalRecord(sidecar) as DiveLogEntry)
+          .watchCapture!.session.localSessionId,
+        sampleCount: item.profile.sampleCount,
+        sha256: item.profile.sha256,
+      },
+    );
+    return snapshot.bytes === sidecar.profileBytes;
+  } catch {
+    return false;
+  }
 }
 
 function mapPlanPayload(plan: DivePlan): RemoteDivePlan {
@@ -310,6 +373,9 @@ async function prepareLogSnapshot(
   if (profileReference === undefined || log.watchCapture === undefined) {
     return { log };
   }
+  if (!isGuestProfileStorageKey(profileReference.storageKey)) {
+    throw new GuestClaimPreparationError('claim_validation_failed');
+  }
   const profile = createProfileBytesSnapshot(
     await profileStorage.read(profileReference.storageKey),
     {
@@ -326,6 +392,29 @@ async function prepareLogSnapshot(
     },
   };
   return { log, profile, byteCount: profile.byteCount };
+}
+
+function boundedLogForPayload(log: DiveLogEntry, profileSha256?: string) {
+  if (log.watchCapture === undefined) {
+    return log;
+  }
+  return {
+    ...log,
+    watchCapture: {
+      ...log.watchCapture,
+      samples: log.watchCapture.samples.slice(0, 160),
+      ...(log.watchCapture.profile === undefined
+        ? {}
+        : {
+            profile: {
+              ...log.watchCapture.profile,
+              ...(profileSha256 === undefined
+                ? {}
+                : { sha256: profileSha256 }),
+            },
+          }),
+    },
+  };
 }
 
 function validateRelationships(
@@ -386,11 +475,11 @@ function parseStoredSnapshot(
   ) {
     throw new GuestClaimStorageError();
   }
-  const manifest = parseManifest(value.manifest, expectedUserId);
+  const snapshots = value.snapshots.map(parseSidecar);
+  const manifest = parseManifest(value.manifest, expectedUserId, snapshots);
   if ((manifest.status === 'failed') !== (value.errorCode !== undefined)) {
     throw new GuestClaimStorageError();
   }
-  const snapshots = value.snapshots.map(parseSidecar);
   validateSnapshotSet(manifest, snapshots);
   return {
     schemaVersion: 1,
@@ -406,6 +495,7 @@ function parseStoredSnapshot(
 function parseManifest(
   value: Record<string, unknown>,
   userId: string,
+  snapshots: GuestClaimSnapshotItem[],
 ): GuestClaimManifest {
   if (
     !hasOnlyKeys(value, [
@@ -454,7 +544,7 @@ function parseManifest(
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
   };
-  const digest = manifestDigest(manifest);
+  const digest = manifestDigest({ ...manifest, snapshots });
   if (
     digest !== manifest.manifestSha256 ||
     manifest.clientBatchId !==
@@ -572,6 +662,7 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
       'entityKind',
       'payloadBytes',
       'localRecordBytes',
+      'localRecordSha256',
       'label',
       'profileBytes',
       'profileReadback',
@@ -581,6 +672,7 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     value.key.split(':', 1)[0] !== value.entityKind ||
     !isNonEmptyString(value.payloadBytes) ||
     !isNonEmptyString(value.localRecordBytes) ||
+    !SHA256_PATTERN.test(String(value.localRecordSha256)) ||
     !isOptionalNonEmptyString(value.label) ||
     !isOptionalString(value.profileBytes)
   ) {
@@ -595,6 +687,7 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     entityKind: value.entityKind,
     payloadBytes: value.payloadBytes,
     localRecordBytes: value.localRecordBytes,
+    localRecordSha256: value.localRecordSha256 as string,
     ...(value.label === undefined ? {} : { label: value.label }),
     ...(value.profileBytes === undefined
       ? {}
@@ -647,7 +740,12 @@ function validateSnapshotSet(
       throw new GuestClaimStorageError();
     }
     const payload = parseSnapshotPayload(sidecar);
-    if (canonicalAccountPayloadSha256(payload) !== item.payloadSha256) {
+    if (
+      canonicalAccountPayloadSha256(payload) !== item.payloadSha256 ||
+      digestUtf8(sidecar.localRecordBytes) !== sidecar.localRecordSha256 ||
+      canonicalJson(parseJson(sidecar.localRecordBytes)) !==
+        sidecar.localRecordBytes
+    ) {
       throw new GuestClaimStorageError();
     }
     const local = parseSnapshotLocalRecord(sidecar);
@@ -658,6 +756,7 @@ function validateSnapshotSet(
       const plan = local as DivePlan;
       if (
         plan.convertedLogLocalId !== item.convertedLogClientRecordId ||
+        canonicalJson(mapPlanPayload(plan).payload) !== sidecar.payloadBytes ||
         sidecar.profileBytes !== undefined ||
         sidecar.profileReadback !== undefined
       ) {
@@ -673,7 +772,9 @@ function validateSnapshotSet(
     if (item.profile === undefined) {
       if (
         sidecar.profileBytes !== undefined ||
-        sidecar.profileReadback !== undefined
+        sidecar.profileReadback !== undefined ||
+        canonicalJson(mapLogPayload(boundedLogForPayload(log), manifest.userId).payload) !==
+          sidecar.payloadBytes
       ) {
         throw new GuestClaimStorageError();
       }
@@ -682,10 +783,12 @@ function validateSnapshotSet(
     const reference = log.watchCapture?.profile;
     if (
       sidecar.profileBytes === undefined ||
+      !isGuestProfileStorageKey(item.profile.storageKey) ||
       reference?.storageKey !== item.profile.storageKey ||
       reference.contentRevision !== item.profile.contentRevision ||
       reference.sampleCount !== item.profile.sampleCount ||
-      reference.sha256 !== item.profile.sha256 ||
+      (reference.sha256 !== undefined &&
+        reference.sha256 !== item.profile.sha256) ||
       log.watchCapture === undefined
     ) {
       throw new GuestClaimStorageError();
@@ -696,6 +799,18 @@ function validateSnapshotSet(
       sha256: item.profile.sha256,
       byteCount: sidecar.profileReadback?.byteCount,
     });
+    const payloadLog = boundedLogForPayload(log, item.profile.sha256);
+    if (
+      canonicalJson(
+        mapLogPayload(
+          payloadLog,
+          manifest.userId,
+          encodeUtf8(sidecar.profileBytes).length,
+        ).payload,
+      ) !== sidecar.payloadBytes
+    ) {
+      throw new GuestClaimStorageError();
+    }
     const expectedReadbackPath =
       manifest.remoteBatchId !== undefined && item.targetRecordId !== undefined
         ? `${manifest.userId}/claims/${manifest.remoteBatchId}/${item.targetRecordId}/${encodeURIComponent(item.profile.contentRevision)}.json`
@@ -771,6 +886,7 @@ function manifestDigest(value: {
   planCount: number;
   logCount: number;
   items: GuestClaimItem[];
+  snapshots: GuestClaimSnapshotItem[];
   createdAt: number;
 }): string {
   return canonicalAccountPayloadSha256({
@@ -786,6 +902,10 @@ function manifestDigest(value: {
       sourcePlanClientRecordId: item.sourcePlanClientRecordId ?? null,
       convertedLogClientRecordId: item.convertedLogClientRecordId ?? null,
       profile: item.profile ?? null,
+    })),
+    localRecords: value.snapshots.map(sidecar => ({
+      key: sidecar.key,
+      localRecordSha256: sidecar.localRecordSha256,
     })),
     createdAt: value.createdAt,
   });
@@ -839,6 +959,14 @@ function canonicalJson(value: unknown): string {
       .join(',')}}`;
   }
   return JSON.stringify(value) ?? 'null';
+}
+
+function digestUtf8(value: string): string {
+  return sha256BytesHex(encodeUtf8(value));
+}
+
+function isGuestProfileStorageKey(storageKey: string): boolean {
+  return storageKey.startsWith(dataProfileKeyPrefix({ kind: 'guest' }));
 }
 
 function cloneJson<T>(value: T): T {

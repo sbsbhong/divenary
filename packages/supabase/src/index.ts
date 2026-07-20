@@ -26,6 +26,7 @@ export {
 export {
   createGuestClaimRemoteRepository,
   GuestClaimRepositoryError,
+  type GuestClaimRepositoryErrorKind,
   type GuestClaimRepositoryOperation,
 } from './guest-claim-repository.ts';
 export type {
