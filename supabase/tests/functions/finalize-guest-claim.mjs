@@ -638,15 +638,20 @@ try {
     profile: profileExpectation(sameDigestProfilePath, profileBytes, 2),
   });
   const sameDigest = await invokeFinalizer(owner, sameDigestBatch.id);
-  assertStatus(sameDigest, [200], 'same digest idempotency');
-  assert.deepEqual(sameDigest.body, {
-    batchId: sameDigestBatch.id,
-    status: 'committed',
-    planCount: 1,
-    logCount: 1,
-  });
+  assertFailure(
+    sameDigest,
+    409,
+    'claim_validation_failed',
+    'same digest with different target ids',
+  );
   await assertFinalCounts(owner, 1, 1, 'same digest idempotency');
-  logCheck('existing owner and local id with same digest is idempotent');
+  const [sameDigestBatchReadback] = await readRows(
+    owner,
+    'guest_claim_batches',
+    `select=status&id=eq.${sameDigestBatch.id}`,
+  );
+  assert.equal(sameDigestBatchReadback.status, 'uploading');
+  logCheck('new batch cannot commit against different existing target ids');
 
   await deleteProfiles(status.API_URL, status.SECRET_KEY, [
     successProfilePath,

@@ -83,6 +83,8 @@ function createStagingApi({
   failOnFirstClaimRecord = false,
   loseFirstCreateResponseId = false,
   paginateCleanupLookup = false,
+  corruptPublishedDigest = false,
+  allowTargetReuseCommit = false,
 } = {}) {
   const users = [];
   const memberships = new Set();
@@ -386,12 +388,32 @@ function createStagingApi({
 
       const planRecord = staged.find(row => row.entity_kind === 'plan');
       const logRecord = staged.find(row => row.entity_kind === 'log');
+      const reusesExistingTarget =
+        rows.dive_plans.some(row =>
+          row.user_id === currentUser.id &&
+          row.local_id === planRecord.client_record_id &&
+          row.id !== planRecord.target_record_id
+        ) ||
+        rows.dive_logs.some(row =>
+          row.user_id === currentUser.id &&
+          row.local_id === logRecord.client_record_id &&
+          row.id !== logRecord.target_record_id
+        );
+      if (reusesExistingTarget && !allowTargetReuseCommit) {
+        return jsonResponse(
+          409,
+          {code: 'claim_validation_failed'},
+          {'cache-control': 'no-store'},
+        );
+      }
       rows.dive_plans.push({
         id: planRecord.target_record_id,
         user_id: currentUser.id,
         local_id: planRecord.client_record_id,
         converted_log_id: logRecord.target_record_id,
-        payload_sha256: planRecord.payload_sha256,
+        payload_sha256: corruptPublishedDigest
+          ? 'b'.repeat(64)
+          : planRecord.payload_sha256,
       });
       rows.dive_logs.push({
         id: logRecord.target_record_id,
@@ -563,7 +585,7 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
   assert.equal(api.finalizerCalls, 2);
   assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
-  assert.equal(api.cleanup.profiles.length, 1);
+  assert.equal(api.cleanup.profiles.length, 2);
   assert.ok(
     api.calls
       .filter(call => call.pathname.startsWith('/rest/v1/'))
@@ -687,6 +709,26 @@ test('fails when repeated finalization is not idempotent', async () => {
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
     /repeated finalization/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when finalization publishes a different payload digest', async () => {
+  const api = createStagingApi({corruptPublishedDigest: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /published metadata is invalid/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when a new batch reuses local rows under different target ids', async () => {
+  const api = createStagingApi({allowTargetReuseCommit: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /target id reuse denial/i,
   );
   assert.equal(api.cleanup.users.length, 2);
 });

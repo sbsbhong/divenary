@@ -924,13 +924,15 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     provenance: {source: 'watch'},
     profile_preview: [{elapsedSeconds: 0, depthMeters: 0}],
   };
+  const planPayloadSha256 = payloadDigest(cryptoImpl, planPayload);
+  const logPayloadSha256 = payloadDigest(cryptoImpl, logPayload);
   const planRecord = await insertRow(context, 'guest_claim_records', {
     batch_id: batch.id,
     user_id: context.userId,
     entity_kind: 'plan',
     client_record_id: planLocalId,
     converted_log_client_record_id: logLocalId,
-    payload_sha256: payloadDigest(cryptoImpl, planPayload),
+    payload_sha256: planPayloadSha256,
     payload: planPayload,
   });
   const logRecord = await insertRow(context, 'guest_claim_records', {
@@ -939,7 +941,7 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     entity_kind: 'log',
     client_record_id: logLocalId,
     source_plan_client_record_id: planLocalId,
-    payload_sha256: payloadDigest(cryptoImpl, logPayload),
+    payload_sha256: logPayloadSha256,
     payload: logPayload,
   });
   const profileBytes = new TextEncoder().encode(JSON.stringify([
@@ -1013,6 +1015,8 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     logs.length !== 1 ||
     plans[0].id !== planRecord.target_record_id ||
     logs[0].id !== logRecord.target_record_id ||
+    plans[0].payload_sha256 !== planPayloadSha256 ||
+    logs[0].payload_sha256 !== logPayloadSha256 ||
     plans[0].converted_log_id !== logs[0].id ||
     logs[0].source_plan_id !== plans[0].id ||
     logs[0].profile_path !== profilePath ||
@@ -1041,6 +1045,87 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
   );
   if (repeatedPlans.length !== 1 || repeatedLogs.length !== 1) {
     throw new Error('repeated finalization must not create duplicates.');
+  }
+
+  const targetReuseBatch = await createBatch(
+    context,
+    cryptoImpl,
+    'target-reuse',
+    1,
+    1,
+  );
+  await insertRow(context, 'guest_claim_records', {
+    batch_id: targetReuseBatch.id,
+    user_id: context.userId,
+    entity_kind: 'plan',
+    client_record_id: planLocalId,
+    converted_log_client_record_id: logLocalId,
+    payload_sha256: planPayloadSha256,
+    payload: planPayload,
+  });
+  const targetReuseLogRecord = await insertRow(
+    context,
+    'guest_claim_records',
+    {
+      batch_id: targetReuseBatch.id,
+      user_id: context.userId,
+      entity_kind: 'log',
+      client_record_id: logLocalId,
+      source_plan_client_record_id: planLocalId,
+      payload_sha256: logPayloadSha256,
+      payload: logPayload,
+    },
+  );
+  const targetReuseProfilePath =
+    `${context.userId}/claims/${targetReuseBatch.id}/${targetReuseLogRecord.id}/profile-v1.json`;
+  objectPaths.push(targetReuseProfilePath);
+  await uploadProfile(context, targetReuseProfilePath, profileBytes);
+  await updateRow(context, 'guest_claim_records', targetReuseLogRecord.id, {
+    profile_path: targetReuseProfilePath,
+    profile_content_revision: 'profile-v1',
+    profile_sha256: profileSha256,
+    profile_byte_count: profileBytes.byteLength,
+    profile_sample_count: 2,
+  }, 'attach target reuse profile metadata');
+
+  const targetReuse = await invokeFinalizer(context, targetReuseBatch.id);
+  assertFinalizerFailure(
+    targetReuse,
+    409,
+    'claim_validation_failed',
+    'target id reuse denial',
+  );
+  const targetReuseBatches = await readRows(
+    context,
+    'guest_claim_batches',
+    `select=status&id=eq.${targetReuseBatch.id}`,
+    'target id reuse batch status',
+  );
+  if (
+    targetReuseBatches.length !== 1 ||
+    targetReuseBatches[0].status !== 'uploading'
+  ) {
+    throw new Error('target id reuse denial must leave the batch resumable.');
+  }
+  const plansAfterTargetReuse = await readRows(
+    context,
+    'dive_plans',
+    `select=id&local_id=eq.${encodeURIComponent(planLocalId)}`,
+    'target id reuse plan count',
+  );
+  const logsAfterTargetReuse = await readRows(
+    context,
+    'dive_logs',
+    `select=id&local_id=eq.${encodeURIComponent(logLocalId)}`,
+    'target id reuse log count',
+  );
+  if (
+    plansAfterTargetReuse.length !== 1 ||
+    logsAfterTargetReuse.length !== 1 ||
+    plansAfterTargetReuse[0].id !== planRecord.target_record_id ||
+    logsAfterTargetReuse[0].id !== logRecord.target_record_id
+  ) {
+    throw new Error('target id reuse denial must preserve existing account rows.');
   }
 }
 
