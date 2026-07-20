@@ -1849,7 +1849,12 @@ describe('account data state', () => {
     await ReactTestRenderer.act(async () => {
       await result.claim.keepOnDevice();
     });
-    expect(capture?.claim.state).toEqual({ status: 'complete', imported: 1 });
+    expect(capture?.claim.state).toEqual({
+      status: 'running',
+      completed: 1,
+      total: 1,
+      phase: 'cleanup',
+    });
     await expect(store.read()).resolves.toMatchObject({
       manifest: { status: 'cleanupPending' },
     });

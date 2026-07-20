@@ -1076,6 +1076,7 @@ function runningClaimPresentation(
       status: 'running',
       completed: progress.completed,
       total: progress.total,
+      phase: progress.phase,
       ...(progress.currentLabel === undefined
         ? {}
         : { currentLabel: progress.currentLabel }),
@@ -1107,11 +1108,17 @@ function presentationForSnapshot(
   ).length;
   const total = snapshot.manifest.items.length;
   let state: GuestClaimViewState;
-  if (
-    snapshot.manifest.status === 'running' ||
-    snapshot.manifest.status === 'finalizing'
-  ) {
-    state = { status: 'running', completed, total };
+  if (snapshot.manifest.status === 'running') {
+    state = { status: 'running', completed, total, phase: 'uploading' };
+  } else if (snapshot.manifest.status === 'finalizing') {
+    state = { status: 'running', completed, total, phase: 'finalizing' };
+  } else if (snapshot.manifest.status === 'cleanupPending') {
+    state = {
+      status: 'running',
+      completed: total,
+      total,
+      phase: 'cleanup',
+    };
   } else if (snapshot.manifest.status === 'failed') {
     state = {
       status: 'failed',
@@ -1119,10 +1126,7 @@ function presentationForSnapshot(
       total,
       errorCode: snapshot.errorCode ?? 'claim_validation_failed',
     };
-  } else if (
-    snapshot.manifest.status === 'committed' ||
-    snapshot.manifest.status === 'cleanupPending'
-  ) {
+  } else if (snapshot.manifest.status === 'committed') {
     state = { status: 'complete', imported: total };
   } else if (snapshot.manifest.status === 'prepared' && isOnline) {
     state = { status: 'choice', ...eligible };

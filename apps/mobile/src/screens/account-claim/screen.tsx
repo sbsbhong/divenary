@@ -21,7 +21,10 @@ export default function AccountClaimScreen(): React.JSX.Element {
   const { claim } = useAccountData();
   const [busyAction, setBusyAction] = React.useState<ClaimAction>();
   const announcedCompletion = React.useRef(false);
-  const isRunning = claim.state.status === 'running';
+  const isRunning =
+    claim.state.status === 'running' ||
+    busyAction === 'start' ||
+    busyAction === 'retry';
 
   usePreventRemove(isRunning, () => undefined);
 

@@ -61,6 +61,7 @@ export type GuestClaimViewState =
       completed: number;
       total: number;
       currentLabel?: string;
+      phase?: GuestClaimProgress['phase'];
     }
   | {
       status: 'failed';

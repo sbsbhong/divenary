@@ -27,6 +27,16 @@ import type { AccountClaimController } from '../src/states/account-data';
 
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, reject, resolve };
+}
+
 function claimFixture(
   state: AccountClaimController['state'],
   eligible = { logCount: 24, planCount: 8 },
@@ -146,6 +156,77 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findAllByProps({ testID: 'account-claim-close' }),
     ).toHaveLength(0);
+    expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
+  });
+
+  test.each([
+    [
+      'start',
+      { status: 'choice', logCount: 24, planCount: 8 } as const,
+      'account-claim-import',
+    ],
+    [
+      'retry',
+      {
+        status: 'failed',
+        completed: 3,
+        total: 32,
+        errorCode: 'network_unavailable',
+      } as const,
+      'account-claim-retry',
+    ],
+  ])(
+    'prevents removal while %s waits and releases it when the action rejects',
+    async (action, state, testID) => {
+      const pending = deferred<void>();
+      const claimAction = action as 'start' | 'retry';
+      mockClaim = claimFixture(state);
+      mockClaim[claimAction] = jest.fn(() => pending.promise);
+      const renderer = await renderScreen();
+      let settled: Promise<void> | undefined;
+
+      await ReactTestRenderer.act(async () => {
+        const actionPromise = renderer.root.findByProps({ testID }).props
+          .onPress() as Promise<void>;
+        settled = actionPromise.catch(() => undefined);
+        await Promise.resolve();
+      });
+
+      expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
+
+      await ReactTestRenderer.act(async () => {
+        pending.reject(new Error('claim action failed'));
+        await settled;
+      });
+
+      expect(mockPreventRemove).toHaveBeenLastCalledWith(false);
+    },
+  );
+
+  test('keeps removal prevention active when Start settles into running state', async () => {
+    const pending = deferred<void>();
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.start = jest.fn(() => pending.promise);
+    const renderer = await renderScreen();
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({
+        testID: 'account-claim-import',
+      }).props.onPress();
+      await Promise.resolve();
+    });
+
+    mockClaim = claimFixture({ status: 'running', completed: 0, total: 32 });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<AccountClaimScreen />);
+      pending.resolve();
+      await pending.promise;
+    });
+
     expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
   });
 
