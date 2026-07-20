@@ -1406,12 +1406,6 @@ function createAccountPlanRepository(options: {
     const convertedLog = current.convertedLogLocalId
       ? await options.logbook.get(current.convertedLogLocalId)
       : undefined;
-    if (
-      current.convertedLogLocalId !== undefined &&
-      convertedLog?.remoteId === undefined
-    ) {
-      throw new Error('Account plan converted log is not durable locally');
-    }
     const remote = toRemotePlan(current, convertedLog?.remoteId);
     const operationIdentity = {
       userId: options.userId,
@@ -1588,9 +1582,6 @@ async function prepareLogMutation(
   const sourcePlan = sourcePlanLocalId
     ? await options.planbook.get(sourcePlanLocalId)
     : undefined;
-  if (sourcePlanLocalId !== undefined && sourcePlan?.remoteId === undefined) {
-    throw new Error('Account log source plan is not durable locally');
-  }
   if (!saved.watchCapture?.profile) {
     return {
       local: saved,

@@ -568,7 +568,12 @@ describe('guest claim service', () => {
     );
   });
 
-  it('deletes an exact changed guest after synced account readback without another upsert', async () => {
+  it.each([
+    ['deterministic reconciled profile alias', true],
+    ['arbitrary reconciled profile alias', false],
+  ])(
+    '%s is handled with strict semantic equality',
+    async (_label, isDeterministicAlias) => {
     const metadataStorage = new InMemoryKeyValueStore();
     const profile = profileStorage();
     const originalSamples = depthSamples(200);
@@ -578,10 +583,6 @@ describe('guest claim service', () => {
     }));
     const guestProfileKey2 = `${dataProfileKeyPrefix({
       kind: 'guest',
-    })}session-log-a:revision-2`;
-    const accountProfileKey = `${dataProfileKeyPrefix({
-      kind: 'user',
-      userId,
     })}session-log-a:revision-2`;
     await profile.write(guestProfileKey, originalSamples);
     const original = watchLog('log-a', originalSamples.slice(0, 160));
@@ -637,6 +638,13 @@ describe('guest claim service', () => {
       localSessionId: changed.watchCapture!.session.localSessionId,
       sampleCount: changedSamples.length,
     });
+    const reconciledRevision = isDeterministicAlias
+      ? `revision-2:reconciled:${profileSnapshot.sha256.slice(0, 16)}`
+      : 'revision-2:reconciled:0000000000000000';
+    const accountProfileKey = `${dataProfileKeyPrefix({
+      kind: 'user',
+      userId,
+    })}session-log-a:${encodeURIComponent(reconciledRevision)}`;
     await profile.write(accountProfileKey, changedSamples);
     const accountValue: DiveLogEntry = {
       ...changed,
@@ -649,6 +657,7 @@ describe('guest claim service', () => {
         profile: {
           ...changed.watchCapture!.profile!,
           storageKey: accountProfileKey,
+          contentRevision: reconciledRevision,
           sha256: profileSnapshot.sha256,
         },
       },
@@ -680,17 +689,24 @@ describe('guest claim service', () => {
 
     expect(result?.manifest.status).toBe('committed');
     await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
-    await expect(outbox.list(userId)).resolves.toEqual([]);
-    expect(account.logbook.save).not.toHaveBeenCalled();
+    await expect(outbox.list(userId)).resolves.toHaveLength(
+      isDeterministicAlias ? 0 : 1,
+    );
+    if (isDeterministicAlias) {
+      expect(account.logbook.save).not.toHaveBeenCalled();
+    } else {
+      expect(account.logbook.save).toHaveBeenCalled();
+    }
     await expect(account.logbook.get('log-a')).resolves.toMatchObject({
       remoteRevision: 2,
-      cloudSyncStatus: 'synced',
+      cloudSyncStatus: isDeterministicAlias ? 'synced' : 'pending',
       manual: {title: 'synced before cleanup'},
     });
     await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
       changedSamples,
     );
-  });
+    },
+  );
 
   it('promotes a changed plan as a pending account update before guest deletion', async () => {
     const order: string[] = [];
@@ -777,6 +793,103 @@ describe('guest claim service', () => {
     expect(order.indexOf('outbox:enqueued:plan-a')).toBeLessThan(
       order.indexOf('guest:delete:plan:plan-a'),
     );
+  });
+
+  it('repairs a pending Watch log relationship when its deferred plan is claimed', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const originalPlan = divePlan('plan-a');
+    const guest = repositories([], [originalPlan]);
+    const account = repositories([], [], [], 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile: profileStorage(),
+      remote,
+    });
+    await service.prepare();
+    await service.defer();
+
+    const pendingWatchLog: DiveLogEntry = {
+      ...diveLog('watch-log-after-defer'),
+      source: 'watch',
+      updatedAt: 12,
+      watchCapture: {
+        importKey: 'watch-log-after-defer:12',
+        importedAt: 12,
+        session: {
+          localSessionId: 'session-watch-log-after-defer',
+          sourcePlanLocalId: originalPlan.localId,
+          startedAt: 10,
+          samples: [],
+        },
+        measuredValues: {startedAt: 10},
+        samples: [],
+      },
+    };
+    await accountMutations.logbook.save(pendingWatchLog);
+    await guest.planbook.save({
+      ...originalPlan,
+      status: 'completed',
+      completedAt: 12,
+      convertedLogLocalId: pendingWatchLog.localId,
+      updatedAt: 12,
+    });
+
+    const result = await service.retry();
+
+    expect(result?.manifest.status).toBe('committed');
+    const operations = await outbox.list(userId);
+    expect(
+      operations.map(operation => [operation.entityKind, operation.entityLocalId]),
+    ).toEqual([
+      ['log', pendingWatchLog.localId],
+      ['plan', originalPlan.localId],
+      ['log', pendingWatchLog.localId],
+    ]);
+    expect((operations[0]!.payload.remote as RemoteDiveLog).payload).toMatchObject({
+      source_plan_id: null,
+    });
+    expect((operations[1]!.payload.remote as RemoteDivePlan).payload).toMatchObject({
+      converted_log_id: uuid('9', 1),
+    });
+    expect((operations[2]!.payload.remote as RemoteDiveLog).payload).toMatchObject({
+      source_plan_id: uuid('3', 1),
+    });
+    await expect(account.logbook.get(pendingWatchLog.localId)).resolves.toMatchObject({
+      remoteId: uuid('9', 1),
+      cloudSyncStatus: 'pending',
+      watchCapture: {
+        session: {sourcePlanLocalId: originalPlan.localId},
+      },
+    });
+    await expect(account.planbook.get(originalPlan.localId)).resolves.toMatchObject({
+      convertedLogLocalId: pendingWatchLog.localId,
+      remoteId: uuid('3', 1),
+      cloudSyncStatus: 'pending',
+    });
+    await expect(guest.planbook.get(originalPlan.localId)).resolves.toBeUndefined();
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
   });
 
   it('promotes a post-snapshot converted log before its changed source plan', async () => {

@@ -806,10 +806,63 @@ export class GuestClaimService {
         supersededProfileKeys,
         promotedProfileKey,
       );
+      await this.repairPublishedRelationship(entityKind, saved);
       context.published.set(key, {entityKind, localId, capture});
     } finally {
       context.visiting.delete(key);
     }
+  }
+
+  private async repairPublishedRelationship(
+    entityKind: GuestEntityKind,
+    saved: DiveLogEntry | DivePlan,
+  ): Promise<void> {
+    if (entityKind === 'plan') {
+      const plan = saved as DivePlan;
+      if (plan.convertedLogLocalId === undefined) {
+        return;
+      }
+      const log = await this.options.accountRepositories.logbook.get(
+        plan.convertedLogLocalId,
+      );
+      const sourcePlanLocalId = log?.watchCapture
+        ? getWatchSessionSourcePlanLocalId(log.watchCapture.session)
+        : undefined;
+      if (log === undefined || sourcePlanLocalId !== plan.localId) {
+        return;
+      }
+      const repaired =
+        await this.options.accountMutationRepositories.logbook.save(log);
+      this.assertCanContinue();
+      assertLocalReadback(
+        repaired,
+        await this.options.accountRepositories.logbook.get(log.localId),
+      );
+      assertDurableAccountIdentity(repaired, this.options.userId);
+      return;
+    }
+
+    const log = saved as DiveLogEntry;
+    const sourcePlanLocalId = log.watchCapture
+      ? getWatchSessionSourcePlanLocalId(log.watchCapture.session)
+      : undefined;
+    if (sourcePlanLocalId === undefined) {
+      return;
+    }
+    const plan = await this.options.accountRepositories.planbook.get(
+      sourcePlanLocalId,
+    );
+    if (plan?.convertedLogLocalId !== log.localId) {
+      return;
+    }
+    const repaired =
+      await this.options.accountMutationRepositories.planbook.save(plan);
+    this.assertCanContinue();
+    assertLocalReadback(
+      repaired,
+      await this.options.accountRepositories.planbook.get(plan.localId),
+    );
+    assertDurableAccountIdentity(repaired, this.options.userId);
   }
 
   private async promoteRelationshipDependencies(
@@ -991,12 +1044,19 @@ export class GuestClaimService {
         return false;
       }
       if (capture.profile !== undefined) {
+        const reconciledRevision = `${capture.profile.contentRevision}:reconciled:${capture.profile.snapshot.sha256.slice(0, 16)}`;
         if (
           accountProfile === undefined ||
-          accountProfile.contentRevision !== capture.profile.contentRevision ||
+          (accountProfile.contentRevision !== capture.profile.contentRevision &&
+            accountProfile.contentRevision !== reconciledRevision) ||
           accountProfile.sampleCount !== capture.profile.snapshot.sampleCount ||
-          (accountProfile.sha256 !== undefined &&
-            accountProfile.sha256 !== capture.profile.snapshot.sha256)
+          accountProfile.sha256 !== capture.profile.snapshot.sha256 ||
+          accountProfile.storageKey !==
+            accountProfileStorageKey(
+              this.options.userId,
+              capture.profile.localSessionId,
+              accountProfile.contentRevision,
+            )
         ) {
           return false;
         }
@@ -1302,13 +1362,7 @@ function canonicalClaimContent(value: DiveLogEntry | DivePlan): string {
   if ('manual' in content && content.watchCapture?.profile !== undefined) {
     return canonicalJson({
       ...content,
-      watchCapture: {
-        ...content.watchCapture,
-        profile: {
-          contentRevision: content.watchCapture.profile.contentRevision,
-          sampleCount: content.watchCapture.profile.sampleCount,
-        },
-      },
+      watchCapture: {...content.watchCapture, profile: undefined},
     });
   }
   return canonicalJson(content);

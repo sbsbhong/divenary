@@ -6,10 +6,17 @@ import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repos
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
 import type { WatchConnectivityPayload } from '../src/native/watch-connectivity';
+import {
+  createGuestClaimSnapshot,
+  GuestClaimStore,
+} from '../src/claim/guest-claim-store';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
 import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
 import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
-import { AccountDataProviderCore } from '../src/states/account-data';
+import {
+  AccountDataProviderCore,
+  useAccountData,
+} from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import { dataStorageKeys } from '../src/storage/data-principal';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
@@ -170,6 +177,199 @@ describe('WatchConnectivitySyncProvider', () => {
           query.queryKey.includes(queryScope),
       }),
     ).toHaveLength(1);
+  });
+
+  it('keeps an authenticated Watch import recoverable when its deferred source plan is guest-only', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const queryScope = `user:${userId}`;
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const deferredPlan = {
+      localId: 'deferred-watch-plan',
+      status: 'planned' as const,
+      cloudSyncStatus: 'notConfigured' as const,
+      createdAt: 1781350000,
+      updatedAt: 1781351000,
+      plannedAt: 1781352000,
+      title: 'Deferred Watch plan',
+      site: {name: 'Deferred Reef'},
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      plannedValues: {},
+      checklistItems: [],
+    };
+    const guestLogbook = new LocalDiveLogRepository();
+    const guestPlanbook = new LocalDivePlanRepository([deferredPlan]);
+    const claimStore = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 1781353000,
+    });
+    snapshot.manifest.status = 'deferred';
+    await claimStore.write(snapshot);
+
+    const accountLogbook = new LocalDiveLogRepository([], {
+      now: () => 1781355000,
+    });
+    const accountPlanbook = new LocalDivePlanRepository();
+    jest
+      .spyOn(accountPlanbook, 'save')
+      .mockRejectedValue(new Error('simulated account plan save failure'));
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+    });
+    const queryClient = createQueryClient();
+    let accountData: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      accountData = useAccountData();
+      return null;
+    };
+    let identifier = 0;
+    const createId = () => {
+      identifier += 1;
+      return `90000000-0000-4000-8000-${String(identifier).padStart(12, '0')}`;
+    };
+    const dependencies = {
+      metadataStorage,
+      profileStorage,
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook:
+          principal.kind === 'guest' ? guestLogbook : accountLogbook,
+        planbook:
+          principal.kind === 'guest' ? guestPlanbook : accountPlanbook,
+      })),
+      createId,
+      now: () => 1781355000,
+      jitter: () => 0,
+    };
+    let firstRenderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      firstRenderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            navigationReady
+            auth={{state: {status: 'authenticatedOffline', userId}}}
+            dependencies={dependencies}
+          >
+            <Capture />
+          </AccountDataProviderCore>
+        </QueryClientProvider>,
+      );
+      renderers.push(firstRenderer);
+      await flushPromises();
+    });
+
+    expect(accountData?.isHydrated).toBe(true);
+    const fixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        localSessionId: 'deferred-plan-watch-session',
+        sourcePlanLocalId: deferredPlan.localId,
+        endedAt: 1781357600,
+        samples: metadataRichFixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'deferred-plan-watch-session',
+        })),
+      },
+    };
+    const acknowledgeImportedPayloads = jest.fn(async () => undefined);
+    const onLocalWritesCommitted = jest.fn(async () => undefined);
+    let drained = false;
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository: accountData!.logbookRepository,
+        planRepository: accountData!.planRepository,
+        queryClient,
+        queryScope,
+        coordinator: new WatchConnectivityImportCoordinator(),
+        drainPendingPayloads: async () => {
+          if (drained) {
+            return [];
+          }
+          drained = true;
+          return [
+            {
+              payloadId: 'deferred-plan-watch-payload',
+              payloadJson: JSON.stringify(fixture),
+              localSessionId: 'deferred-plan-watch-session',
+              receivedAt: 1781357600,
+            },
+          ];
+        },
+        acknowledgeImportedPayloads,
+        onLocalWritesCommitted,
+      }),
+    ).resolves.toEqual({receivedCount: 1, importedCount: 1});
+
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      'deferred-plan-watch-payload',
+    ]);
+    expect(onLocalWritesCommitted).toHaveBeenCalledTimes(1);
+    const accountLogs = await accountLogbook.list();
+    expect(accountLogs).toHaveLength(1);
+    expect(accountLogs[0]).toMatchObject({
+      cloudSyncStatus: 'pending',
+      watchCapture: {
+        session: {sourcePlanLocalId: deferredPlan.localId},
+      },
+    });
+    const operations = await outbox.list(userId);
+    expect(operations).toHaveLength(1);
+    expect(operations[0]).toMatchObject({
+      entityKind: 'log',
+      entityLocalId: accountLogs[0]!.localId,
+    });
+    expect(
+      (operations[0]!.payload.remote as {payload: {source_plan_id: unknown}})
+        .payload.source_plan_id,
+    ).toBeNull();
+    await expect(guestPlanbook.get(deferredPlan.localId)).resolves.toMatchObject({
+      status: 'planned',
+      cloudSyncStatus: 'notConfigured',
+    });
+
+    await ReactTestRenderer.act(async () => {
+      firstRenderer.unmount();
+      accountData = undefined;
+      const resumedRenderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            navigationReady
+            auth={{state: {status: 'authenticatedOffline', userId}}}
+            dependencies={dependencies}
+          >
+            <Capture />
+          </AccountDataProviderCore>
+        </QueryClientProvider>,
+      );
+      renderers.push(resumedRenderer);
+      await flushPromises();
+    });
+
+    expect(accountData).toMatchObject({
+      isHydrated: true,
+      principal: {kind: 'user', userId},
+    });
+    await expect(outbox.list(userId)).resolves.toHaveLength(1);
   });
 
   it('drains pending native payloads and imports valid watch sync JSON', async () => {

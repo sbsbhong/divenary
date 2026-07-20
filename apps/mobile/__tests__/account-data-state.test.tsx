@@ -227,6 +227,49 @@ describe('account data state', () => {
     await expect(outbox.list()).resolves.toEqual([]);
   });
 
+  it('queues a safe null relation when an account plan references a guest-only log', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const localPlanbook = new LocalDivePlanRepository();
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: {kind: 'user', userId},
+        queryScope: `user:${userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: localPlanbook,
+      },
+      outbox,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+    const relatedPlan: DivePlan = {
+      ...plan,
+      localId: 'account-plan-with-guest-log',
+      status: 'completed',
+      convertedLogLocalId: 'guest-only-log',
+    };
+
+    await expect(repositories.planbook.save(relatedPlan)).resolves.toMatchObject({
+      convertedLogLocalId: 'guest-only-log',
+      cloudSyncStatus: 'pending',
+    });
+
+    await expect(localPlanbook.get(relatedPlan.localId)).resolves.toMatchObject({
+      convertedLogLocalId: 'guest-only-log',
+    });
+    const [operation] = await outbox.list(userId);
+    expect(operation).toMatchObject({
+      entityKind: 'plan',
+      entityLocalId: relatedPlan.localId,
+    });
+    expect((operation.payload.remote as RemoteDivePlan).payload).toMatchObject({
+      converted_log_id: null,
+    });
+  });
+
   it('keeps the device profile key out of the remote watch metadata', async () => {
     const outbox = new AccountOutbox({
       storage: new InMemoryKeyValueStore(),
