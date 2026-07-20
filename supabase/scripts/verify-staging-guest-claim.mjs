@@ -53,6 +53,22 @@ function collectApiKeyEntries(value, entries = []) {
   return entries;
 }
 
+function jwtRole(value) {
+  const segments = value.split('.');
+  if (segments.length !== 3 || segments.some(segment => segment.length === 0)) {
+    return undefined;
+  }
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(segments[1], 'base64url').toString('utf8'),
+    );
+    return typeof payload?.role === 'string' ? payload.role : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function parseStagingApiKeys(value) {
   let publishableKey;
   let secretKey;
@@ -63,16 +79,20 @@ export function parseStagingApiKeys(value) {
     const label = `${entry.name ?? ''} ${entry.type ?? ''}`.toLowerCase();
     const value = keyValue(entry);
 
-    if (!publishableKey && (label.includes('publishable') || value.startsWith('sb_publishable_'))) {
+    if (!publishableKey && value.startsWith('sb_publishable_')) {
       publishableKey = value;
     }
-    if (!secretKey && (label.includes('secret') || value.startsWith('sb_secret_'))) {
+    if (!secretKey && value.startsWith('sb_secret_')) {
       secretKey = value;
     }
-    if (!anonJwt && label.includes('anon')) {
+    if (!anonJwt && label.includes('anon') && jwtRole(value) === 'anon') {
       anonJwt = value;
     }
-    if (!serviceRoleJwt && label.includes('service_role')) {
+    if (
+      !serviceRoleJwt &&
+      label.includes('service_role') &&
+      jwtRole(value) === 'service_role'
+    ) {
       serviceRoleJwt = value;
     }
   }
@@ -135,7 +155,10 @@ function requestHeaders(apiKey, bearer, extra = {}) {
 }
 
 function adminHeaders(adminApiKey, extra = {}) {
-  return requestHeaders(adminApiKey, undefined, extra);
+  const bearer = jwtRole(adminApiKey) === 'service_role'
+    ? adminApiKey
+    : undefined;
+  return requestHeaders(adminApiKey, bearer, extra);
 }
 
 async function request(fetchImpl, pathname, options, label) {
@@ -386,6 +409,15 @@ async function expectDeniedInsert(
     [200, 201, 204, 400, 401, 403, 404, 409, 422],
     label,
   );
+  const attackerVisible = await readRows(
+    attacker,
+    table,
+    `select=id&${uniqueColumn}=eq.${encodeURIComponent(uniqueValue)}`,
+    `${label} attacker re-query`,
+  );
+  if (attackerVisible.length !== 0) {
+    throw new Error(`${label}: attacker re-query found a visible row.`);
+  }
   const persisted = await readRows(
     targetOwner,
     table,
@@ -424,6 +456,15 @@ async function expectDeniedUpdate(
     [200, 204, 400, 401, 403, 404, 409, 422],
     label,
   );
+  const attackerVisible = await readRows(
+    attacker,
+    table,
+    `select=id&id=eq.${encodeURIComponent(row.id)}`,
+    `${label} attacker re-query`,
+  );
+  if (attackerVisible.length !== 0) {
+    throw new Error(`${label}: attacker re-query found a visible row.`);
+  }
   const persisted = await readRows(
     targetOwner,
     table,

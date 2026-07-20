@@ -70,6 +70,9 @@ function eqFilter(url, name) {
 }
 
 function createStagingApi({
+  expectedPublicApiKey = publicKey,
+  expectedAdminApiKey = secretKey,
+  expectedAdminBearer,
   allowCrossOwnerWrite = false,
   crossOwnerDenialStatus = 403,
   persistDeniedCrossOwnerWrite = false,
@@ -108,7 +111,8 @@ function createStagingApi({
   }
 
   function isService(options) {
-    return options?.headers?.apikey === secretKey && bearer(options) === undefined;
+    return options?.headers?.apikey === expectedAdminApiKey &&
+      bearer(options) === expectedAdminBearer;
   }
 
   function visibleRows(table, url, currentUser) {
@@ -198,7 +202,7 @@ function createStagingApi({
     }
 
     if (url.pathname === '/auth/v1/token' && method === 'POST') {
-      assert.equal(options.headers.apikey, publicKey);
+      assert.equal(options.headers.apikey, expectedPublicApiKey);
       assert.equal(bearer(options), undefined);
       const user = users.find(candidate => candidate.email === requestBody.email);
       return jsonResponse(user ? 200 : 400, user ? {access_token: user.token} : {});
@@ -493,6 +497,16 @@ test('accepts new opaque keys without requiring legacy JWT keys', () => {
   );
 });
 
+test('rejects a mislabeled non-JWT legacy service-role credential', () => {
+  assert.throws(
+    () => parseStagingApiKeys([
+      {name: 'default', type: 'publishable', api_key: publicKey},
+      {name: 'service_role', type: 'legacy', api_key: 'not-a-jwt'},
+    ]),
+    /required staging API credential is unavailable/i,
+  );
+});
+
 test('refuses a project mismatch before reading keys or making requests', async () => {
   let cliCalls = 0;
   let fetchCalls = 0;
@@ -566,6 +580,38 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
   );
 });
 
+test('uses a legacy service-role JWT only for admin requests', async () => {
+  const api = createStagingApi({
+    expectedPublicApiKey: anonJwt,
+    expectedAdminApiKey: serviceRoleJwt,
+    expectedAdminBearer: serviceRoleJwt,
+  });
+  const options = verificationOptions(api);
+  options.spawnSyncImpl = () => ({
+    status: 0,
+    stdout: JSON.stringify([
+      {name: 'anon', type: 'legacy', api_key: anonJwt},
+      {name: 'service_role', type: 'legacy', api_key: serviceRoleJwt},
+    ]),
+    stderr: '',
+  });
+
+  assert.deepEqual(
+    await verifyStagingGuestClaim(options),
+    {status: 'passed'},
+  );
+  assert.ok(
+    api.calls
+      .filter(call => call.pathname.startsWith('/auth/v1/admin/users'))
+      .every(call => call.bearer === serviceRoleJwt),
+  );
+  assert.ok(
+    api.calls
+      .filter(call => call.pathname.startsWith('/rest/v1/'))
+      .every(call => /^access-token-/.test(call.bearer)),
+  );
+});
+
 test('fails when a cross-owner table write is accepted', async () => {
   const api = createStagingApi({allowCrossOwnerWrite: true});
 
@@ -586,7 +632,7 @@ test('fails when a denial response still leaves a cross-owner row', async () => 
   assert.equal(api.cleanup.users.length, 2);
 });
 
-test('accepts a PostgREST denial response variation only after owner re-query', async () => {
+test('accepts denial variations only after attacker and owner re-query', async () => {
   const api = createStagingApi({
     crossOwnerDenialStatus: 200,
     crossOwnerUpdateDenialStatus: 200,
@@ -595,6 +641,14 @@ test('accepts a PostgREST denial response variation only after owner re-query', 
   assert.deepEqual(
     await verifyStagingGuestClaim(verificationOptions(api)),
     {status: 'passed'},
+  );
+  assert.ok(
+    api.calls.some(call =>
+      call.method === 'GET' &&
+      call.pathname === '/rest/v1/dive_plans' &&
+      call.search.includes('local_id=eq.cross-plan-') &&
+      call.bearer === 'access-token-1'
+    ),
   );
   assert.ok(
     api.calls.some(call =>
