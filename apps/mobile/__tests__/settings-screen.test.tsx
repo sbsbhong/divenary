@@ -233,6 +233,7 @@ describe('SettingsScreen', () => {
   test.each([
     { status: 'failed', completed: 1, total: 2, errorCode: 'network_unavailable' } as const,
     { status: 'hidden' } as const,
+    { status: 'deferred', logCount: 1, planCount: 0 } as const,
   ])('keeps device-data import available for an eligible non-running claim', async claimState => {
     mockUseAuth.mockReturnValue(
       createAuthContext({ isConfigured: true, state: { status: 'authenticated', userId: 'user-id' } }),

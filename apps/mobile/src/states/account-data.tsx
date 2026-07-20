@@ -55,6 +55,7 @@ import {
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
+import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import { useAuth, type AuthContextValue, type AuthState } from './auth';
 
 export type AccountDataContextValue = {
@@ -1128,6 +1129,8 @@ function presentationForSnapshot(
     };
   } else if (snapshot.manifest.status === 'committed') {
     state = { status: 'complete', imported: total };
+  } else if (snapshot.manifest.status === 'deferred') {
+    state = { status: 'deferred', ...eligible };
   } else if (snapshot.manifest.status === 'prepared' && isOnline) {
     state = { status: 'choice', ...eligible };
   } else {
@@ -1146,6 +1149,7 @@ export function createAccountLocalFirstRepositories({
   const logbook = createAccountLogbookRepository({
     userId,
     local: repositories.logbook,
+    planbook: repositories.planbook,
     outbox,
     createId,
     now,
@@ -1170,6 +1174,7 @@ export function createAccountLocalFirstRepositories({
 function createAccountLogbookRepository(options: {
   userId: string;
   local: DiveLogRepository;
+  planbook: DivePlanRepository;
   outbox: AccountOutbox;
   createId: () => string;
   now: () => number;
@@ -1228,14 +1233,24 @@ function createAccountLogbookRepository(options: {
           prepared.serializedProfile,
         )
       : undefined;
-    await options.outbox.enqueue({
-      operationId,
-      ...operationIdentity,
-      ...(profileStorageKey === undefined ? {} : { profileStorageKey }),
-      attemptCount: 0,
-      nextAttemptAt: options.now(),
-      createdAt: prepared.local.updatedAt,
-    });
+    try {
+      await options.outbox.enqueue({
+        operationId,
+        ...operationIdentity,
+        ...(profileStorageKey === undefined ? {} : { profileStorageKey }),
+        attemptCount: 0,
+        nextAttemptAt: options.now(),
+        createdAt: prepared.local.updatedAt,
+      });
+    } catch (error) {
+      if (profileStorageKey !== undefined) {
+        await options.outbox.removeUnreferencedProfileSnapshot(
+          options.userId,
+          operationId,
+        );
+      }
+      throw error;
+    }
   };
   const saveLocalOnly = (entry: DiveLogEntry): Promise<DiveLogEntry> =>
     withAccountEntityMutationLock(options.userId, 'log', entry.localId, () =>
@@ -1391,6 +1406,12 @@ function createAccountPlanRepository(options: {
     const convertedLog = current.convertedLogLocalId
       ? await options.logbook.get(current.convertedLogLocalId)
       : undefined;
+    if (
+      current.convertedLogLocalId !== undefined &&
+      convertedLog?.remoteId === undefined
+    ) {
+      throw new Error('Account plan converted log is not durable locally');
+    }
     const remote = toRemotePlan(current, convertedLog?.remoteId);
     const operationIdentity = {
       userId: options.userId,
@@ -1554,16 +1575,31 @@ async function prepareLogMutation(
   options: {
     userId: string;
     local: DiveLogRepository;
+    planbook: DivePlanRepository;
   },
 ): Promise<{
   local: DiveLogEntry;
   remote: RemoteDiveLog;
   serializedProfile?: string;
 }> {
+  const sourcePlanLocalId = saved.watchCapture
+    ? getWatchSessionSourcePlanLocalId(saved.watchCapture.session)
+    : undefined;
+  const sourcePlan = sourcePlanLocalId
+    ? await options.planbook.get(sourcePlanLocalId)
+    : undefined;
+  if (sourcePlanLocalId !== undefined && sourcePlan?.remoteId === undefined) {
+    throw new Error('Account log source plan is not durable locally');
+  }
   if (!saved.watchCapture?.profile) {
     return {
       local: saved,
-      remote: toRemoteLog(saved, options.userId),
+      remote: toRemoteLog(
+        saved,
+        options.userId,
+        undefined,
+        sourcePlan?.remoteId,
+      ),
     };
   }
 
@@ -1609,7 +1645,12 @@ async function prepareLogMutation(
   }
   return {
     local,
-    remote: toRemoteLog(local, options.userId, profileBytes.length),
+    remote: toRemoteLog(
+      local,
+      options.userId,
+      profileBytes.length,
+      sourcePlan?.remoteId,
+    ),
     serializedProfile,
   };
 }
@@ -1674,8 +1715,14 @@ function toRemoteLog(
   entry: DiveLogEntry,
   userId: string,
   profileByteCount?: number,
+  sourcePlanId?: string,
 ): RemoteDiveLog {
-  return createAccountRemoteLog(entry, userId, profileByteCount);
+  return createAccountRemoteLog(
+    entry,
+    userId,
+    profileByteCount,
+    sourcePlanId,
+  );
 }
 
 function toRemotePlan(plan: DivePlan, convertedLogId?: string): RemoteDivePlan {

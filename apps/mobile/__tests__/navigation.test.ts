@@ -75,4 +75,17 @@ describe('account claim automatic navigation', () => {
       }),
     ).toBeUndefined();
   });
+
+  test('does not automatically route a deferred manual choice', () => {
+    expect(
+      resolveAccountClaimAutoRoute({
+        authStatus: 'authenticated',
+        userId: 'user-1',
+        isOnline: true,
+        eligibleCount: 32,
+        claimStatus: 'deferred',
+        currentRoute: 'tabs',
+      }),
+    ).toBeUndefined();
+  });
 });

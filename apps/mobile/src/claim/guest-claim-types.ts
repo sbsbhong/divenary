@@ -56,6 +56,7 @@ export type GuestClaimErrorCode =
 export type GuestClaimViewState =
   | { status: 'hidden' }
   | { status: 'choice'; logCount: number; planCount: number }
+  | { status: 'deferred'; logCount: number; planCount: number }
   | {
       status: 'running';
       completed: number;

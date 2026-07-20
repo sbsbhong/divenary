@@ -11,6 +11,7 @@ import type { WatchProfileStorage } from '../storage/watch-profile-storage';
 import { canonicalAccountPayloadSha256 } from '../sync/account-payload';
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
+import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import {
   createGuestClaimSnapshot,
   claimProfileStillMatches,
@@ -67,6 +68,25 @@ type ChangedGuestCapture = {
     localSessionId: string;
     snapshot: ProfileBytesSnapshot;
   };
+};
+
+type GuestEntityKind = GuestClaimItem['entityKind'];
+
+type PromotionContext = {
+  visiting: Set<string>;
+  published: Map<
+    string,
+    {
+      entityKind: GuestEntityKind;
+      localId: string;
+      capture: ChangedGuestCapture;
+    }
+  >;
+};
+
+type PromotionRoot = {
+  item: GuestClaimItem;
+  sidecar: GuestClaimSnapshotItem;
 };
 
 export class GuestClaimService {
@@ -628,109 +648,245 @@ export class GuestClaimService {
   ): Promise<void> {
     const item = snapshot.manifest.items[index]!;
     const sidecar = snapshot.snapshots[index]!;
-    const capture = await this.captureChangedGuest(item, current);
-    const accountRepository =
-      item.entityKind === 'log'
-        ? this.options.accountRepositories.logbook
-        : this.options.accountRepositories.planbook;
-    const committed = await accountRepository.get(item.clientRecordId);
-    if (
-      committed === undefined ||
-      committed.remoteId !== item.targetRecordId ||
-      committed.ownerUserId !== this.options.userId ||
-      committed.remoteRevision === undefined ||
-      !Number.isSafeInteger(committed.remoteRevision) ||
-      committed.remoteRevision < 1
-    ) {
-      throw new GuestClaimServiceError('claim_validation_failed');
-    }
+    const context: PromotionContext = {
+      visiting: new Set(),
+      published: new Map(),
+    };
+    await this.promoteGuestEntity(
+      item.entityKind,
+      item.clientRecordId,
+      current,
+      context,
+      {item, sidecar},
+    );
 
-    if (item.entityKind === 'plan') {
-      const promoted: DivePlan = {
-        ...(capture.record as DivePlan),
-        remoteId: committed.remoteId,
-        remoteRevision: committed.remoteRevision,
+    for (const published of context.published.values()) {
+      await this.deleteCapturedGuest(
+        published.entityKind,
+        published.localId,
+        published.capture,
+      );
+    }
+  }
+
+  private async promoteGuestEntity(
+    entityKind: GuestEntityKind,
+    localId: string,
+    current: DiveLogEntry | DivePlan,
+    context: PromotionContext,
+    root?: PromotionRoot,
+  ): Promise<void> {
+    const key = `${entityKind}:${localId}`;
+    if (context.published.has(key)) {
+      return;
+    }
+    if (context.visiting.has(key)) {
+      throw new GuestClaimServiceError('relationship_invalid');
+    }
+    context.visiting.add(key);
+    try {
+      const capture = await this.captureChangedGuest(
+        entityKind,
+        localId,
+        current,
+      );
+      const accountRepository =
+        entityKind === 'log'
+          ? this.options.accountRepositories.logbook
+          : this.options.accountRepositories.planbook;
+      let accountValue = await accountRepository.get(localId);
+      if (root !== undefined) {
+        if (
+          accountValue === undefined ||
+          accountValue.remoteId !== root.item.targetRecordId ||
+          accountValue.ownerUserId !== this.options.userId ||
+          accountValue.remoteRevision === undefined ||
+          !Number.isSafeInteger(accountValue.remoteRevision) ||
+          accountValue.remoteRevision < 1
+        ) {
+          throw new GuestClaimServiceError('claim_validation_failed');
+        }
+      } else if (accountValue !== undefined) {
+        assertDurableAccountIdentity(accountValue, this.options.userId);
+      }
+
+      await this.promoteRelationshipDependencies(
+        entityKind,
+        capture.record,
+        context,
+      );
+      accountValue = await accountRepository.get(localId);
+
+      if (
+        accountValue !== undefined &&
+        (await this.isSyncedCapture(accountValue, capture, entityKind))
+      ) {
+        context.published.set(key, {entityKind, localId, capture});
+        return;
+      }
+
+      const supersededProfileKeys = new Set<string>();
+      if (entityKind === 'log') {
+        const currentProfileKey = (accountValue as DiveLogEntry | undefined)
+          ?.watchCapture?.profile?.storageKey;
+        if (currentProfileKey !== undefined) {
+          assertAccountProfileKey(currentProfileKey, this.options.userId);
+          supersededProfileKeys.add(currentProfileKey);
+        }
+        const originalProfileKey = root
+          ? originalAccountProfileKey(
+              root.item,
+              root.sidecar,
+              this.options.userId,
+            )
+          : undefined;
+        if (originalProfileKey !== undefined) {
+          supersededProfileKeys.add(originalProfileKey);
+        }
+      }
+
+      let promotedProfileKey: string | undefined;
+      let promoted: DiveLogEntry | DivePlan = {
+        ...capture.record,
+        ...(accountValue?.remoteId === undefined
+          ? {}
+          : {remoteId: accountValue.remoteId}),
+        ...(accountValue?.remoteRevision === undefined
+          ? {}
+          : {remoteRevision: accountValue.remoteRevision}),
         ownerUserId: this.options.userId,
         cloudSyncStatus: 'pending',
       };
-      await this.options.accountMutationRepositories.planbook.save(promoted);
+      if (
+        entityKind === 'log' &&
+        capture.profile !== undefined &&
+        (promoted as DiveLogEntry).watchCapture !== undefined
+      ) {
+        const accountProfile = await this.publishAccountProfile(capture.profile);
+        promotedProfileKey = accountProfile.storageKey;
+        const promotedLog = promoted as DiveLogEntry;
+        promoted = {
+          ...promotedLog,
+          watchCapture: {
+            ...promotedLog.watchCapture!,
+            profile: {
+              ...promotedLog.watchCapture!.profile!,
+              storageKey: accountProfile.storageKey,
+              contentRevision: accountProfile.contentRevision,
+              sha256: capture.profile.snapshot.sha256,
+              sampleCount: capture.profile.snapshot.sampleCount,
+            },
+          },
+        };
+      }
+
+      const saved =
+        entityKind === 'log'
+          ? await this.options.accountMutationRepositories.logbook.save(
+              promoted as DiveLogEntry,
+            )
+          : await this.options.accountMutationRepositories.planbook.save(
+              promoted as DivePlan,
+            );
       this.assertCanContinue();
-      assertLocalReadback(
-        promoted,
-        await this.options.accountRepositories.planbook.get(
-          item.clientRecordId,
-        ),
+      const readback = await accountRepository.get(localId);
+      assertLocalReadback(saved, readback);
+      assertDurableAccountIdentity(saved, this.options.userId);
+      if (
+        root !== undefined &&
+        (saved.remoteId !== root.item.targetRecordId ||
+          saved.remoteRevision !== accountValue?.remoteRevision)
+      ) {
+        throw new GuestClaimServiceError('claim_validation_failed');
+      }
+      if (capture.profile !== undefined) {
+        await this.verifyAccountProfile(localId, capture);
+      }
+      await this.removeSupersededAccountProfiles(
+        supersededProfileKeys,
+        promotedProfileKey,
       );
-      await this.deleteCapturedGuest(item, capture);
+      context.published.set(key, {entityKind, localId, capture});
+    } finally {
+      context.visiting.delete(key);
+    }
+  }
+
+  private async promoteRelationshipDependencies(
+    entityKind: GuestEntityKind,
+    record: DiveLogEntry | DivePlan,
+    context: PromotionContext,
+  ): Promise<void> {
+    if (entityKind === 'plan') {
+      const convertedLogLocalId = (record as DivePlan).convertedLogLocalId;
+      if (convertedLogLocalId !== undefined) {
+        await this.ensurePromotedDependency(
+          'log',
+          convertedLogLocalId,
+          context,
+        );
+      }
       return;
     }
-
-    let promoted: DiveLogEntry = {
-      ...(capture.record as DiveLogEntry),
-      remoteId: committed.remoteId,
-      remoteRevision: committed.remoteRevision,
-      ownerUserId: this.options.userId,
-      cloudSyncStatus: 'pending',
-    };
-    let promotedProfileKey: string | undefined;
-    if (capture.profile !== undefined && promoted.watchCapture !== undefined) {
-      const accountProfile = await this.publishAccountProfile(capture.profile);
-      promotedProfileKey = accountProfile.storageKey;
-      promoted = {
-        ...promoted,
-        watchCapture: {
-          ...promoted.watchCapture,
-          profile: {
-            ...promoted.watchCapture.profile!,
-            storageKey: accountProfile.storageKey,
-            contentRevision: accountProfile.contentRevision,
-            sha256: capture.profile.snapshot.sha256,
-            sampleCount: capture.profile.snapshot.sampleCount,
-          },
-        },
-      };
+    const log = record as DiveLogEntry;
+    const sourcePlanLocalId = log.watchCapture
+      ? getWatchSessionSourcePlanLocalId(log.watchCapture.session)
+      : undefined;
+    if (sourcePlanLocalId !== undefined) {
+      await this.ensurePromotedDependency('plan', sourcePlanLocalId, context);
     }
+  }
 
-    await this.options.accountMutationRepositories.logbook.save(promoted);
-    this.assertCanContinue();
-    assertLocalReadback(
-      promoted,
-      await this.options.accountRepositories.logbook.get(item.clientRecordId),
-    );
-    if (capture.profile !== undefined) {
-      const profileReadback =
-        await this.options.accountRepositories.logbook.getWatchProfile(
-          item.clientRecordId,
-        );
-      const verified = createProfileBytesSnapshot(profileReadback, {
-        localSessionId: capture.profile.localSessionId,
-        sampleCount: capture.profile.snapshot.sampleCount,
-        sha256: capture.profile.snapshot.sha256,
-      });
-      if (verified.bytes !== capture.profile.snapshot.bytes) {
-        throw new GuestClaimServiceError('profile_corrupt');
-      }
+  private async ensurePromotedDependency(
+    entityKind: GuestEntityKind,
+    localId: string,
+    context: PromotionContext,
+  ): Promise<void> {
+    const accountRepository =
+      entityKind === 'log'
+        ? this.options.accountRepositories.logbook
+        : this.options.accountRepositories.planbook;
+    const accountValue = await accountRepository.get(localId);
+    const key = `${entityKind}:${localId}`;
+    if (accountValue !== undefined && context.visiting.has(key)) {
+      assertDurableAccountIdentity(accountValue, this.options.userId);
+      return;
     }
-    await this.removeSupersededAccountProfile(
-      item,
-      sidecar,
-      promotedProfileKey,
-    );
-    await this.deleteCapturedGuest(item, capture);
+    const guestRepository =
+      entityKind === 'log'
+        ? this.options.guestRepositories.logbook
+        : this.options.guestRepositories.planbook;
+    const guestValue = await guestRepository.get(localId);
+    if (guestValue !== undefined) {
+      await this.promoteGuestEntity(
+        entityKind,
+        localId,
+        guestValue,
+        context,
+      );
+    } else if (accountValue === undefined) {
+      throw new GuestClaimServiceError('relationship_invalid');
+    }
+    const readback = await accountRepository.get(localId);
+    if (readback === undefined) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    assertDurableAccountIdentity(readback, this.options.userId);
   }
 
   private async captureChangedGuest(
-    item: GuestClaimItem,
+    entityKind: GuestEntityKind,
+    localId: string,
     current: DiveLogEntry | DivePlan,
   ): Promise<ChangedGuestCapture> {
-    if (current.localId !== item.clientRecordId) {
+    if (current.localId !== localId) {
       throw new GuestClaimServiceError('claim_validation_failed');
     }
     const capture: ChangedGuestCapture = {
       record: current,
       recordBytes: canonicalLocal(current),
     };
-    if (item.entityKind !== 'log') {
+    if (entityKind !== 'log') {
       return capture;
     }
     const log = current as DiveLogEntry;
@@ -813,37 +969,98 @@ export class GuestClaimService {
     throw new GuestClaimServiceError('profile_corrupt');
   }
 
-  private async removeSupersededAccountProfile(
-    item: GuestClaimItem,
-    sidecar: GuestClaimSnapshotItem,
-    promotedProfileKey: string | undefined,
+  private async isSyncedCapture(
+    accountValue: DiveLogEntry | DivePlan,
+    capture: ChangedGuestCapture,
+    entityKind: GuestEntityKind,
+  ): Promise<boolean> {
+    if (
+      accountValue.cloudSyncStatus !== 'synced' ||
+      accountValue.ownerUserId !== this.options.userId ||
+      accountValue.remoteId === undefined ||
+      accountValue.remoteRevision === undefined ||
+      canonicalClaimContent(accountValue) !==
+        canonicalClaimContent(capture.record)
+    ) {
+      return false;
+    }
+    if (entityKind === 'log') {
+      const accountProfile = (accountValue as DiveLogEntry).watchCapture
+        ?.profile;
+      if ((accountProfile === undefined) !== (capture.profile === undefined)) {
+        return false;
+      }
+      if (capture.profile !== undefined) {
+        if (
+          accountProfile === undefined ||
+          accountProfile.contentRevision !== capture.profile.contentRevision ||
+          accountProfile.sampleCount !== capture.profile.snapshot.sampleCount ||
+          (accountProfile.sha256 !== undefined &&
+            accountProfile.sha256 !== capture.profile.snapshot.sha256)
+        ) {
+          return false;
+        }
+        assertAccountProfileKey(accountProfile.storageKey, this.options.userId);
+        await this.verifyAccountProfile(accountValue.localId, capture);
+      }
+    }
+    const repository =
+      entityKind === 'log'
+        ? this.options.accountRepositories.logbook
+        : this.options.accountRepositories.planbook;
+    const readback = await repository.get(accountValue.localId);
+    assertLocalReadback(accountValue, readback);
+    if (capture.profile !== undefined) {
+      await this.verifyAccountProfile(accountValue.localId, capture);
+    }
+    return true;
+  }
+
+  private async verifyAccountProfile(
+    localId: string,
+    capture: ChangedGuestCapture,
   ): Promise<void> {
-    if (item.profile === undefined) {
+    if (capture.profile === undefined) {
       return;
     }
-    const original = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
-    const originalKey = accountProfileStorageKey(
-      this.options.userId,
-      original.watchCapture!.session.localSessionId,
-      item.profile.contentRevision,
-    );
-    if (originalKey !== promotedProfileKey) {
+    const profileReadback =
+      await this.options.accountRepositories.logbook.getWatchProfile(localId);
+    const verified = createProfileBytesSnapshot(profileReadback, {
+      localSessionId: capture.profile.localSessionId,
+      sampleCount: capture.profile.snapshot.sampleCount,
+      sha256: capture.profile.snapshot.sha256,
+    });
+    if (verified.bytes !== capture.profile.snapshot.bytes) {
+      throw new GuestClaimServiceError('profile_corrupt');
+    }
+  }
+
+  private async removeSupersededAccountProfiles(
+    storageKeys: Set<string>,
+    promotedProfileKey: string | undefined,
+  ): Promise<void> {
+    for (const storageKey of storageKeys) {
+      assertAccountProfileKey(storageKey, this.options.userId);
+      if (storageKey === promotedProfileKey) {
+        continue;
+      }
       await this.options.accountRepositories.logbook.removeWatchProfileIfUnreferenced(
-        originalKey,
+        storageKey,
       );
       this.assertCanContinue();
     }
   }
 
   private async deleteCapturedGuest(
-    item: GuestClaimItem,
+    entityKind: GuestEntityKind,
+    localId: string,
     capture: ChangedGuestCapture,
   ): Promise<void> {
     const repository =
-      item.entityKind === 'log'
+      entityKind === 'log'
         ? this.options.guestRepositories.logbook
         : this.options.guestRepositories.planbook;
-    const current = await repository.get(item.clientRecordId);
+    const current = await repository.get(localId);
     if (current === undefined) {
       return;
     }
@@ -869,13 +1086,13 @@ export class GuestClaimService {
         throw new GuestClaimServiceError('profile_corrupt');
       }
     }
-    if (item.entityKind === 'log') {
-      await this.options.guestRepositories.logbook.delete(item.clientRecordId);
+    if (entityKind === 'log') {
+      await this.options.guestRepositories.logbook.delete(localId);
     } else {
-      await this.options.guestRepositories.planbook.delete(item.clientRecordId);
+      await this.options.guestRepositories.planbook.delete(localId);
     }
     this.assertCanContinue();
-    if ((await repository.get(item.clientRecordId)) !== undefined) {
+    if ((await repository.get(localId)) !== undefined) {
       throw new GuestClaimServiceError('claim_validation_failed');
     }
   }
@@ -1076,8 +1293,73 @@ function canonicalLocal(value: DiveLogEntry | DivePlan): string {
   return canonicalJson(value);
 }
 
+function canonicalClaimContent(value: DiveLogEntry | DivePlan): string {
+  const content = {...value};
+  delete content.remoteId;
+  delete content.remoteRevision;
+  delete content.ownerUserId;
+  delete content.cloudSyncStatus;
+  if ('manual' in content && content.watchCapture?.profile !== undefined) {
+    return canonicalJson({
+      ...content,
+      watchCapture: {
+        ...content.watchCapture,
+        profile: {
+          contentRevision: content.watchCapture.profile.contentRevision,
+          sampleCount: content.watchCapture.profile.sampleCount,
+        },
+      },
+    });
+  }
+  return canonicalJson(content);
+}
+
+function assertDurableAccountIdentity(
+  value: DiveLogEntry | DivePlan,
+  userId: string,
+): void {
+  if (
+    value.ownerUserId !== userId ||
+    value.remoteId === undefined ||
+    value.remoteId.length === 0 ||
+    (value.remoteRevision !== undefined &&
+      (!Number.isSafeInteger(value.remoteRevision) ||
+        value.remoteRevision < 1))
+  ) {
+    throw new GuestClaimServiceError('claim_validation_failed');
+  }
+}
+
+function originalAccountProfileKey(
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem,
+  userId: string,
+): string | undefined {
+  if (item.entityKind !== 'log' || item.profile === undefined) {
+    return undefined;
+  }
+  const original = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+  const localSessionId = original.watchCapture?.session.localSessionId;
+  if (localSessionId === undefined) {
+    throw new GuestClaimServiceError('claim_validation_failed');
+  }
+  const storageKey = accountProfileStorageKey(
+    userId,
+    localSessionId,
+    item.profile.contentRevision,
+  );
+  assertAccountProfileKey(storageKey, userId);
+  return storageKey;
+}
+
 function assertGuestProfileKey(storageKey: string): void {
   if (!storageKey.startsWith(dataProfileKeyPrefix({kind: 'guest'}))) {
+    throw new GuestClaimServiceError('claim_validation_failed');
+  }
+}
+
+function assertAccountProfileKey(storageKey: string, userId: string): void {
+  if (!storageKey.startsWith(dataProfileKeyPrefix({kind: 'user', userId}))) {
     throw new GuestClaimServiceError('claim_validation_failed');
   }
 }

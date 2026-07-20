@@ -72,12 +72,14 @@ export default function AccountClaimScreen(): React.JSX.Element {
         space="xl"
         className="px-6 pb-5 pt-5"
       >
-        {claim.state.status === 'choice' ? (
+        {claim.state.status === 'choice' || claim.state.status === 'deferred' ? (
           <ChoiceContent
             logCount={claim.state.logCount}
             planCount={claim.state.planCount}
             busyAction={busyAction}
-            onImport={() => runAction('start')}
+            onImport={() =>
+              runAction(claim.state.status === 'deferred' ? 'retry' : 'start')
+            }
             onKeep={() => runAction('keep')}
           />
         ) : null}

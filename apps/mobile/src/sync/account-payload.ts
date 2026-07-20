@@ -45,6 +45,7 @@ export function createAccountRemoteLog(
   entry: DiveLogEntry,
   userId: string,
   profileByteCount?: number,
+  sourcePlanId?: string,
 ): RemoteDiveLog {
   if (!entry.remoteId) {
     throw new Error('Account log is missing a remote id');
@@ -95,7 +96,7 @@ export function createAccountRemoteLog(
     profile_sha256: entry.watchCapture?.profile?.sha256 ?? null,
     profile_byte_count: profileByteCount ?? null,
     profile_sample_count: entry.watchCapture?.profile?.sampleCount ?? null,
-    source_plan_id: null,
+    source_plan_id: sourcePlanId ?? null,
   };
   return {
     id: entry.remoteId,

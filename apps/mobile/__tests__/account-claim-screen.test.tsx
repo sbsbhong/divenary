@@ -124,6 +124,39 @@ describe('AccountClaimScreen', () => {
     expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
   });
 
+  test('renders deferred choice content and retries its existing snapshot', async () => {
+    mockClaim = claimFixture({
+      status: 'deferred',
+      logCount: 24,
+      planCount: 8,
+    });
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
+    ).toBe('기기 데이터를 계정으로 가져올까요?');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-log-count'}).props
+        .children,
+    ).toEqual(['24', ' ', '다이빙 로그']);
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({testID: 'account-claim-import'}).props
+        .onPress();
+    });
+
+    expect(mockClaim.retry).toHaveBeenCalledTimes(1);
+    expect(mockClaim.start).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({testID: 'account-claim-keep'}).props
+        .onPress();
+    });
+
+    expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+  });
+
   test('renders exact active progress and prevents navigation without a close control', async () => {
     mockClaim = claimFixture({
       status: 'running',

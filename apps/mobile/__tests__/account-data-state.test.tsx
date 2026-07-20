@@ -335,6 +335,64 @@ describe('account data state', () => {
     });
   });
 
+  it('removes an operation-owned profile snapshot when enqueue fails', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
+    const fullSamples = [
+      {localSessionId: 'watch-1', timestamp: 100, depthMeters: 2},
+      {localSessionId: 'watch-1', timestamp: 101, depthMeters: 8},
+    ];
+    const serialized = JSON.stringify(fullSamples);
+    const digest = bytesToHex(sha256(utf8ToBytes(serialized)));
+    const localLogbook = new LocalDiveLogRepository();
+    jest.spyOn(localLogbook, 'getWatchProfile').mockResolvedValue(fullSamples);
+    let rejectedOperationId: string | undefined;
+    jest.spyOn(outbox, 'enqueue').mockImplementationOnce(async operation => {
+      rejectedOperationId = operation.operationId;
+      throw new Error('simulated enqueue failure');
+    });
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: {kind: 'user', userId},
+        queryScope: `user:${userId}`,
+        logbook: localLogbook,
+        planbook: new LocalDivePlanRepository(),
+      },
+      outbox,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+
+    await expect(
+      repositories.logbook.save({
+        ...entry,
+        source: 'watch',
+        watchCapture: {
+          importKey: 'watch-1:100',
+          importedAt: 100,
+          session: {localSessionId: 'watch-1', startedAt: 100, samples: []},
+          measuredValues: {startedAt: 100},
+          samples: fullSamples.slice(0, 1),
+          profile: {
+            storageKey: 'device-profile-key',
+            contentRevision: 'revision-1',
+            sampleCount: 2,
+            sha256: digest,
+          },
+        },
+      }),
+    ).rejects.toThrow('simulated enqueue failure');
+
+    expect(rejectedOperationId).toBeDefined();
+    await expect(
+      storage.getString(
+        outbox.profileSnapshotKey(userId, rejectedOperationId!),
+      ),
+    ).resolves.toBeUndefined();
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+  });
+
   it('fails closed before enqueueing a profile whose immutable digest is wrong', async () => {
     const outbox = new AccountOutbox({
       storage: new InMemoryKeyValueStore(),
@@ -1216,7 +1274,7 @@ describe('account data state', () => {
       await captures.at(-1)!.keepOnDevice();
     });
     await waitFor(() =>
-      expect(captures.at(-1)?.state).toEqual({ status: 'hidden' }),
+      expect(captures.at(-1)?.state).toEqual({status: 'hidden'}),
     );
     expect(captures.at(-1)?.eligible).toEqual({ logCount: 1, planCount: 0 });
     await expect(guestLogbook.get('profile-log')).resolves.toBeDefined();
@@ -1258,13 +1316,18 @@ describe('account data state', () => {
       | {
           rows: DiveLogEntry[];
           eligible: { logCount: number; planCount: number };
+          state: ReturnType<typeof useAccountData>['claim']['state'];
         }
       | undefined;
     const Capture = () => {
       const data = useAccountData();
       React.useEffect(() => {
         data.logbookRepository.list().then(rows => {
-          capture = { rows, eligible: data.claim.eligible };
+          capture = {
+            rows,
+            eligible: data.claim.eligible,
+            state: data.claim.state,
+          };
         });
       }, [data]);
       return null;
@@ -1324,6 +1387,11 @@ describe('account data state', () => {
     expect(result.rows[0]?.ownerUserId).toBeUndefined();
     expect(result.rows[1]?.ownerUserId).toBeUndefined();
     expect(result.eligible).toEqual({ logCount: 2, planCount: 1 });
+    expect(result.state).toEqual({
+      status: 'deferred',
+      logCount: 2,
+      planCount: 1,
+    });
 
     await ReactTestRenderer.act(async () => renderer.unmount());
     queryClient.clear();

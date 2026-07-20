@@ -14,6 +14,7 @@ import {
   GuestClaimService,
   GuestClaimServiceError,
 } from '../src/claim/guest-claim-service';
+import {createProfileBytesSnapshot} from '../src/claim/profile-bytes';
 import {createAccountLocalFirstRepositories} from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
@@ -307,13 +308,20 @@ describe('guest claim service', () => {
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
     expect(guest.logbook.delete).not.toHaveBeenCalled();
 
-    await claimService({
+    const result = await claimService({
       store,
       guest,
       account: repositories([], []),
       profile: profileStorage(),
       remote,
     }).retry();
+    expect(result?.manifest.clientBatchId).toBe(
+      deferredSnapshot?.manifest.clientBatchId,
+    );
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+    expect(remote.createOrLoadBatch.mock.calls[0]?.[0]).toMatchObject({
+      clientBatchId: deferredSnapshot?.manifest.clientBatchId,
+    });
     expect(remote.stageRecord.mock.calls[0]?.[0].payload).toMatchObject({
       title: 'original',
     });
@@ -374,7 +382,7 @@ describe('guest claim service', () => {
     expect(remote.finalize).not.toHaveBeenCalled();
   });
 
-  it('promotes a changed log through account local-first and resumes after outbox failure', async () => {
+  it('removes superseded account profiles when changed promotion resumes after outbox failure', async () => {
     const order: string[] = [];
     const metadataStorage = new InMemoryKeyValueStore();
     const profile = profileStorage();
@@ -386,6 +394,9 @@ describe('guest claim service', () => {
     const changedProfileKey = `${dataProfileKeyPrefix({
       kind: 'guest',
     })}session-log-a:revision-2`;
+    const newestProfileKey = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-log-a:revision-3`;
     await profile.write(guestProfileKey, originalSamples);
     const original = watchLog('log-a', originalSamples.slice(0, 160));
     const guest = repositories([original], [], order);
@@ -404,9 +415,11 @@ describe('guest claim service', () => {
       now: clock(),
     });
     const enqueue = outbox.enqueue.bind(outbox);
+    let failedOperationId: string | undefined;
     jest
       .spyOn(outbox, 'enqueue')
       .mockImplementationOnce(async item => {
+        failedOperationId = item.operationId;
         order.push(`outbox:failed:${item.entityLocalId}`);
         throw new Error('simulated outbox interruption');
       })
@@ -477,24 +490,50 @@ describe('guest claim service', () => {
     await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
       changedSamples,
     );
+    expect(failedOperationId).toBeDefined();
+    await expect(
+      metadataStorage.getString(
+        outbox.profileSnapshotKey(userId, failedOperationId!),
+      ),
+    ).resolves.toBeUndefined();
     expect(guest.logbook.delete).not.toHaveBeenCalled();
+
+    const newestSamples = changedSamples.map(sample => ({
+      ...sample,
+      depthMeters: sample.depthMeters + 1,
+    }));
+    await profile.write(newestProfileKey, newestSamples);
+    await guest.logbook.save({
+      ...(await guest.logbook.get('log-a'))!,
+      updatedAt: 14,
+      manual: {...original.manual, title: 'newest guest row'},
+      watchCapture: {
+        ...(await guest.logbook.get('log-a'))!.watchCapture!,
+        samples: newestSamples.slice(0, 160),
+        profile: {
+          storageKey: newestProfileKey,
+          contentRevision: 'revision-3',
+          sampleCount: newestSamples.length,
+        },
+      },
+    });
 
     const resumed = await service.resume();
 
     expect(resumed?.manifest.status).toBe('committed');
     await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
-    await expect(profile.read(changedProfileKey)).resolves.toBeUndefined();
+    await expect(profile.read(newestProfileKey)).resolves.toBeUndefined();
     await expect(account.logbook.get('log-a')).resolves.toMatchObject({
-      manual: { title: 'changed guest row' },
+      manual: { title: 'newest guest row' },
       remoteId: uuid('3', 2),
       remoteRevision: 1,
       cloudSyncStatus: 'pending',
       watchCapture: {
-        profile: { contentRevision: 'revision-2', sampleCount: 200 },
+        profile: { contentRevision: 'revision-3', sampleCount: 200 },
       },
     });
     await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
-      changedSamples,
+      newestSamples,
     );
     const operations = await outbox.list(userId);
     expect(operations).toHaveLength(1);
@@ -505,7 +544,7 @@ describe('guest claim service', () => {
       expectedRevision: 1,
       payload: {
         local: {
-          manual: { title: 'changed guest row' },
+          manual: { title: 'newest guest row' },
           remoteId: uuid('3', 2),
           remoteRevision: 1,
           cloudSyncStatus: 'pending',
@@ -513,12 +552,143 @@ describe('guest claim service', () => {
       },
     });
     await expect(outbox.readProfileSnapshot(operations[0]!)).resolves.toBe(
-      JSON.stringify(changedSamples),
+      JSON.stringify(newestSamples),
     );
+    const accountPrefix = dataProfileKeyPrefix({kind: 'user', userId});
+    await expect(
+      profile.read(`${accountPrefix}session-log-a:revision-1`),
+    ).resolves.toBeUndefined();
+    await expect(
+      profile.read(`${accountPrefix}session-log-a:revision-2`),
+    ).resolves.toBeUndefined();
     expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
     expect(remote.stageRecord).toHaveBeenCalledTimes(1);
     expect(order.indexOf('outbox:enqueued:log-a')).toBeLessThan(
       order.indexOf('guest:delete:log:log-a'),
+    );
+  });
+
+  it('deletes an exact changed guest after synced account readback without another upsert', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const originalSamples = depthSamples(200);
+    const changedSamples = originalSamples.map(sample => ({
+      ...sample,
+      depthMeters: sample.depthMeters + 2,
+    }));
+    const guestProfileKey2 = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-log-a:revision-2`;
+    const accountProfileKey = `${dataProfileKeyPrefix({
+      kind: 'user',
+      userId,
+    })}session-log-a:revision-2`;
+    await profile.write(guestProfileKey, originalSamples);
+    const original = watchLog('log-a', originalSamples.slice(0, 160));
+    const guest = repositories([original], []);
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profile,
+      now: clock(),
+    });
+    snapshot.manifest.status = 'cleanupPending';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: uuid('2', 2),
+      targetRecordId: uuid('3', 2),
+      completedAt: 101,
+    };
+    snapshot.snapshots[0]!.profileReadback = {
+      path: `${userId}/claims/${batchId}/${uuid('3', 2)}/revision-1.json`,
+      byteCount: new TextEncoder().encode(
+        snapshot.snapshots[0]!.profileBytes!,
+      ).length,
+      sha256: snapshot.manifest.items[0]!.profile!.sha256,
+      sampleCount: snapshot.manifest.items[0]!.profile!.sampleCount,
+      verifiedAt: 102,
+    };
+    await store.write(snapshot);
+
+    await profile.write(guestProfileKey2, changedSamples);
+    const changed: DiveLogEntry = {
+      ...original,
+      updatedAt: 13,
+      manual: {...original.manual, title: 'synced before cleanup'},
+      watchCapture: {
+        ...original.watchCapture!,
+        samples: changedSamples.slice(0, 160),
+        profile: {
+          storageKey: guestProfileKey2,
+          contentRevision: 'revision-2',
+          sampleCount: changedSamples.length,
+        },
+      },
+    };
+    await guest.logbook.save(changed);
+    const profileSnapshot = createProfileBytesSnapshot(changedSamples, {
+      localSessionId: changed.watchCapture!.session.localSessionId,
+      sampleCount: changedSamples.length,
+    });
+    await profile.write(accountProfileKey, changedSamples);
+    const accountValue: DiveLogEntry = {
+      ...changed,
+      ownerUserId: userId,
+      remoteId: uuid('3', 2),
+      remoteRevision: 2,
+      cloudSyncStatus: 'synced',
+      watchCapture: {
+        ...changed.watchCapture!,
+        profile: {
+          ...changed.watchCapture!.profile!,
+          storageKey: accountProfileKey,
+          sha256: profileSnapshot.sha256,
+        },
+      },
+    };
+    const account = repositories([accountValue], [], [], 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile,
+      remote: remoteRepository(store),
+    });
+
+    const result = await service.resume();
+
+    expect(result?.manifest.status).toBe('committed');
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+    expect(account.logbook.save).not.toHaveBeenCalled();
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      remoteRevision: 2,
+      cloudSyncStatus: 'synced',
+      manual: {title: 'synced before cleanup'},
+    });
+    await expect(account.logbook.getWatchProfile('log-a')).resolves.toEqual(
+      changedSamples,
     );
   });
 
@@ -607,6 +777,225 @@ describe('guest claim service', () => {
     expect(order.indexOf('outbox:enqueued:plan-a')).toBeLessThan(
       order.indexOf('guest:delete:plan:plan-a'),
     );
+  });
+
+  it('promotes a post-snapshot converted log before its changed source plan', async () => {
+    const order: string[] = [];
+    const deletionQueueSizes: number[] = [];
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const originalPlan = divePlan('plan-a');
+    const guest = repositories([], [originalPlan], order);
+    const account = repositories([], [], order, 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const enqueue = outbox.enqueue.bind(outbox);
+    let interruptedPlan = false;
+    jest.spyOn(outbox, 'enqueue').mockImplementation(async operation => {
+      if (operation.entityKind === 'plan' && !interruptedPlan) {
+        interruptedPlan = true;
+        throw new Error('forced exit before root plan outbox publication');
+      }
+      return enqueue(operation);
+    });
+    const deleteLog = guest.logbook.delete.getMockImplementation()!;
+    guest.logbook.delete.mockImplementation(async (localId, options) => {
+      deletionQueueSizes.push((await outbox.list(userId)).length);
+      return deleteLog(localId, options);
+    });
+    const deletePlan = guest.planbook.delete.getMockImplementation()!;
+    guest.planbook.delete.mockImplementation(async localId => {
+      deletionQueueSizes.push((await outbox.list(userId)).length);
+      return deletePlan(localId);
+    });
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile,
+      remote,
+    });
+    await service.prepare();
+    await service.defer();
+
+    const samples = depthSamples(200).map(sample => ({
+      ...sample,
+      localSessionId: 'session-log-new',
+    }));
+    const profileKey = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-log-new:revision-1`;
+    await profile.write(profileKey, samples);
+    const postSnapshotLog: DiveLogEntry = {
+      ...watchLog('log-new', samples.slice(0, 160)),
+      updatedAt: 12,
+      watchCapture: {
+        ...watchLog('log-new', []).watchCapture!,
+        session: {
+          ...watchLog('log-new', []).watchCapture!.session,
+          sourcePlanLocalId: 'plan-a',
+        },
+        samples: samples.slice(0, 160),
+        profile: {
+          storageKey: profileKey,
+          contentRevision: 'revision-1',
+          sampleCount: samples.length,
+        },
+      },
+    };
+    await guest.logbook.save(postSnapshotLog);
+    await guest.planbook.save({
+      ...originalPlan,
+      status: 'completed',
+      updatedAt: 13,
+      convertedLogLocalId: postSnapshotLog.localId,
+    });
+
+    const interrupted = await service.retry();
+
+    expect(interrupted?.manifest.status).toBe('cleanupPending');
+    await expect(outbox.list(userId)).resolves.toEqual([
+      expect.objectContaining({entityKind: 'log', entityLocalId: 'log-new'}),
+    ]);
+    expect(deletionQueueSizes).toEqual([]);
+    await expect(guest.logbook.get('log-new')).resolves.toBeDefined();
+    await expect(guest.planbook.get('plan-a')).resolves.toBeDefined();
+
+    const result = await service.resume();
+
+    expect(result?.manifest.status).toBe('committed');
+    const operations = await outbox.list(userId);
+    expect(
+      operations.map(operation => [operation.entityKind, operation.entityLocalId]),
+    ).toEqual([
+      ['log', 'log-new'],
+      ['plan', 'plan-a'],
+    ]);
+    expect((operations[0]!.payload.remote as RemoteDiveLog).payload).toMatchObject({
+      source_plan_id: uuid('3', 1),
+    });
+    expect((operations[1]!.payload.remote as RemoteDivePlan).payload).toMatchObject({
+      converted_log_id: uuid('9', 1),
+    });
+    await expect(outbox.readProfileSnapshot(operations[0]!)).resolves.toBe(
+      JSON.stringify(samples),
+    );
+    expect(deletionQueueSizes).toEqual([2, 2]);
+    await expect(guest.logbook.get('log-new')).resolves.toBeUndefined();
+    await expect(guest.planbook.get('plan-a')).resolves.toBeUndefined();
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('promotes a post-snapshot source plan before its changed log', async () => {
+    const deletionQueueSizes: number[] = [];
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const originalLog = diveLog('log-a');
+    const guest = repositories([originalLog], []);
+    const account = repositories([], [], [], 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const deleteLog = guest.logbook.delete.getMockImplementation()!;
+    guest.logbook.delete.mockImplementation(async (localId, options) => {
+      deletionQueueSizes.push((await outbox.list(userId)).length);
+      return deleteLog(localId, options);
+    });
+    const deletePlan = guest.planbook.delete.getMockImplementation()!;
+    guest.planbook.delete.mockImplementation(async localId => {
+      deletionQueueSizes.push((await outbox.list(userId)).length);
+      return deletePlan(localId);
+    });
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      accountMutations,
+      profile,
+      remote: remoteRepository(store),
+    });
+    await service.prepare();
+    await service.defer();
+
+    const samples = depthSamples(200);
+    const profileKey = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-log-a:revision-2`;
+    await profile.write(profileKey, samples);
+    const changedLog: DiveLogEntry = {
+      ...watchLog('log-a', samples.slice(0, 160)),
+      updatedAt: 13,
+      watchCapture: {
+        ...watchLog('log-a', samples.slice(0, 160)).watchCapture!,
+        session: {
+          ...watchLog('log-a', []).watchCapture!.session,
+          sourcePlanLocalId: 'plan-new',
+        },
+        profile: {
+          storageKey: profileKey,
+          contentRevision: 'revision-2',
+          sampleCount: samples.length,
+        },
+      },
+    };
+    await guest.planbook.save({
+      ...divePlan('plan-new', changedLog.localId),
+      updatedAt: 12,
+    });
+    await guest.logbook.save(changedLog);
+
+    const result = await service.retry();
+
+    expect(result?.manifest.status).toBe('committed');
+    const operations = await outbox.list(userId);
+    expect(
+      operations.map(operation => [operation.entityKind, operation.entityLocalId]),
+    ).toEqual([
+      ['plan', 'plan-new'],
+      ['log', 'log-a'],
+    ]);
+    expect((operations[0]!.payload.remote as RemoteDivePlan).payload).toMatchObject({
+      converted_log_id: uuid('3', 2),
+    });
+    expect((operations[1]!.payload.remote as RemoteDiveLog).payload).toMatchObject({
+      source_plan_id: uuid('9', 1),
+    });
+    expect(deletionQueueSizes).toEqual([2, 2]);
+    await expect(guest.planbook.get('plan-new')).resolves.toBeUndefined();
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
   });
 
   it('rejects non-identical downloaded profile bytes before progress increments', async () => {

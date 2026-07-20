@@ -36,6 +36,37 @@ describe('AccountOutbox', () => {
     ).resolves.toEqual([item()]);
   });
 
+  it('removes only an unqueued operation-owned profile snapshot', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const outbox = new AccountOutbox({storage, storageKey: 'account-outbox'});
+    const orphanKey = await outbox.writeProfileSnapshot(
+      userId,
+      'orphan-operation',
+      '[{"depthMeters":3}]',
+    );
+
+    await expect(
+      outbox.removeUnreferencedProfileSnapshot(userId, 'orphan-operation'),
+    ).resolves.toBe(true);
+    await expect(storage.getString(orphanKey)).resolves.toBeUndefined();
+
+    const retainedKey = await outbox.writeProfileSnapshot(
+      userId,
+      'retained-operation',
+      '[{"depthMeters":4}]',
+    );
+    await outbox.enqueue(
+      item({operationId: 'retained-operation', profileStorageKey: retainedKey}),
+    );
+
+    await expect(
+      outbox.removeUnreferencedProfileSnapshot(userId, 'retained-operation'),
+    ).resolves.toBe(false);
+    await expect(storage.getString(retainedKey)).resolves.toBe(
+      '[{"depthMeters":4}]',
+    );
+  });
+
   it('allows the same operation id for different users and binds mutations to the user', async () => {
     const storage = new InMemoryKeyValueStore();
     const outbox = new AccountOutbox({storage, storageKey: 'account-outbox'});

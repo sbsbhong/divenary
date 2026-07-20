@@ -304,6 +304,26 @@ export class AccountOutbox {
     return this.storage.getString(item.profileStorageKey);
   }
 
+  async removeUnreferencedProfileSnapshot(
+    userId: string,
+    operationId: string,
+  ): Promise<boolean> {
+    return withStorageMutationLock(this.storageKey, async () => {
+      const key = this.profileSnapshotKey(userId, operationId);
+      const state = await this.readState();
+      if (
+        state.items.some(
+          item =>
+            item.userId === userId && item.profileStorageKey === key,
+        )
+      ) {
+        return false;
+      }
+      await this.storage.remove(key);
+      return true;
+    });
+  }
+
   private mutate<T>(
     operation: (state: AccountOutboxState) => Promise<T>,
     options?: AccountOutboxMutationOptions,
