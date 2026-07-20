@@ -6,7 +6,7 @@ Updated: 2026-07-20
 
 ## 요약
 
-현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote readback과 atomic commit을 마친 뒤에만 guest cleanup을 시작한다.
+현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote finalize/readback과 account local publication/readback을 마친 뒤 `cleanupPending`을 저장하고 guest reconciliation을 시작한다.
 
 ## 현재 상태
 
@@ -64,7 +64,7 @@ Mobile import 동작은 다음과 같다.
 WatchConnectivity PoC 동작은 다음과 같다.
 
 - Watch app의 `WatchSyncTransport`는 `WCSession`을 activate하고 session 크기와 관계없이 finalized artifact 하나를 `transferFile`로 enqueue한다. `transferUserInfo`와 `sendMessage`는 session body 전송에 쓰지 않고 acknowledgement와 planned-dive control path에만 남긴다. Activation 완료와 reachability 변경 시 아직 `synced`가 아닌 저장 세션을 다시 enqueue한다. WatchConnectivity file transfer 오류가 나면 watch local `DiveSessionStore`의 저장 세션 `syncStatus`를 `failed`로 갱신하되, 이미 `synced`인 세션을 뒤늦은 failed 결과로 내리지 않는다. 전송 완료 자체는 모바일 import 완료가 아니므로 `synced`로 바꾸지 않는다.
-- Watch app의 `DiveSessionStore`는 session save, persisted load, retry, sync status update 전에 `DiveSessionRecord.sanitizedForPersistence()`를 거친다. 이 단계는 raw sample guard를 통과했더라도 derived payload field나 location metadata에 남을 수 있는 JSON-unsafe `NaN`/`Infinity` 값을 제거하거나 finite fallback으로 바꾼다. Session record array는 CFPreferences/NSUserDefaults 1MB data 제한을 피하기 위해 `Application Support/DiveWatchApp/savedDiveSessionRecords.json` 파일에 저장하며, 기존 `savedDiveSessionRecords` UserDefaults data는 처음 load 때 file storage로 migrate하고 old key를 제거한다. Companion phone이나 WatchConnectivity transport가 없어도 local save는 유지되어야 하며, transport failure는 local persistence 실패가 아니라 watch local `syncStatus` 결과로만 남는다.
+- Watch app의 `DiveSessionStore`는 session save, persisted load, retry, sync status update 전에 `DiveSessionRecord.sanitizedForPersistence()`를 거친다. 이 단계는 raw sample guard를 통과했더라도 derived payload field나 location metadata에 남을 수 있는 JSON-unsafe `NaN`/`Infinity` 값을 제거하거나 finite fallback으로 바꾼다. Session record array는 CFPreferences/NSUserDefaults 1MB data 제한을 피하기 위해 `Application Support/DivenaryWatchApp/savedDiveSessionRecords.json` 파일에 저장하며, 기존 `savedDiveSessionRecords` UserDefaults data는 처음 load 때 file storage로 migrate하고 old key를 제거한다. Companion phone이나 WatchConnectivity transport가 없어도 local save는 유지되어야 하며, transport failure는 local persistence 실패가 아니라 watch local `syncStatus` 결과로만 남는다.
 - iOS app의 `WatchConnectivityInbox`는 `AppDelegate` launch와 React Native module init 양쪽에서 `WCSession`을 activate한다. 현재 file-only sender의 `didReceive file`에서는 callback 동안만 유효한 URL을 즉시 읽어 durable pending artifact로 복사하고 revision/digest/byte/sample identity를 검증한다. `didReceiveUserInfo`와 `didReceiveMessage`의 `kind: watchSyncMessage`/`payloadBase64` decoder는 이전 watch build의 queued payload를 잃지 않기 위한 legacy inbound compatibility path다.
 - Native inbox는 pending payload를 `UserDefaults`에 저장하고 payload별 `payloadId`를 붙인다. `WatchConnectivityModule`은 `drainPendingPayloads`, `DiveWatchSyncPayloadReceived` event, `acknowledgePayloads`, `acknowledgeImportedPayloads` method로 JS에 전달한다.
 - JS provider는 repository import 성공 시 `acknowledgeImportedPayloads`를 호출해 mobile inbox에서 payload를 제거하고 watch에 `watchSyncAcknowledgement`를 보낸다. Live event payload가 `payloadId` 없이 들어온 경우에는 repository import를 시도하되 native acknowledgement 대상에는 넣지 않는다. iOS native acknowledgement도 `transferUserInfo`를 기본으로 쓰고, watch가 reachable이면 `sendMessage`로도 보낸다. Watch transport는 acknowledgement를 `didReceiveUserInfo`와 `didReceiveMessage` 양쪽에서 처리한다. 이 acknowledgement는 payload가 모바일 local repository에 저장됐다는 의미이며, Supabase upload나 cloud backup 완료가 아니다. Contract validation 실패처럼 재시도해도 의미가 없는 payload는 mobile inbox에서만 acknowledge한다. Repository save/import 실패는 acknowledge하지 않아 앱 재시작 뒤 다시 drain될 수 있다.
@@ -91,10 +91,11 @@ Guest data claim 동작은 다음과 같다.
 
 - Remote 작업 전에 guest logs/plans와 profile full bytes를 immutable snapshot/manifest로 저장한다. Manifest는 user, item kind/local ID, target ID, payload digest, 관계와 profile metadata를 고정한다.
 - Plan staging 뒤 log staging 순서를 사용하고, 각 record/profile의 remote write와 exact readback이 끝난 뒤에만 completed progress를 증가시킨다. Profile은 parsing 결과뿐 아니라 downloaded raw bytes의 digest와 byte count도 검증한다.
-- Edge Function과 privileged database finalizer는 complete batch를 한 transaction에서 account rows로 publish한다. 이미 committed 된 같은 batch는 같은 결과를 반환하지만 같은 owner/local ID의 다른 digest는 덮어쓰지 않는다.
-- Remote commit을 persistent manifest에 기록한 뒤 account local publication과 guest source cleanup을 수행한다. `cleanupPending`은 앱 중단 뒤 cleanup 재개 지점이다. Guest record가 snapshot과 달라졌으면 exact-match delete 대상이 아니다.
+- Edge Function과 privileged database finalizer는 complete batch를 한 transaction에서 account rows로 publish한다. 이미 committed 된 같은 batch는 같은 결과를 반환하지만 같은 owner/local ID의 다른 digest는 덮어쓰지 않는다. Finalizer는 committed batch/records와 claim profile objects를 idempotent readback/audit용으로 유지하며 post-commit lifecycle cleanup은 아직 없다.
+- 실제 service 순서는 remote finalize와 committed-batch readback 검증, 이미 commit된 snapshot의 account local 직접 publication/readback, persistent `cleanupPending`, guest reconciliation이다. 이 과정에서 transient local `committed` 상태를 먼저 저장하지 않는다.
+- Snapshot과 같은 guest row는 exact delete한다. Snapshot 뒤 변경된 row는 normal account local-first repository와 durable outbox에 `pending` mutation으로 저장·readback한 뒤 guest copy를 삭제한다. 모든 row와 unreferenced local profile cleanup이 끝난 뒤에만 manifest를 `committed`로 저장하며, 실패나 중단은 `cleanupPending`으로 남아 재개된다.
 - 사용자는 eligible data를 기기에 유지하도록 defer할 수 있다. Deferred claim은 자동 재개하지 않으며 guest row는 account row와 함께 합성된다. 기본 합성은 같은 local ID에서 account-copy-wins지만 snapshot 뒤 변경된 guest row는 삭제하지 않고 임시 guest 우선순위로 보존한다.
-- Claim 선택/진행 UI는 commit `47e8cb6` 이후 구현 중이며, hosted staging 배포와 iPhone/Android physical claim 검증은 아직 통과로 기록하지 않는다.
+- Claim 선택/진행 UI는 별도 branch에서 구현 중이며, 현재 문서 branch는 integration, screenshot, hosted staging 배포 또는 iPhone/Android physical claim 검증을 통과로 기록하지 않는다.
 
 현재 비어 있는 부분은 다음과 같다.
 

@@ -82,7 +82,7 @@ Mobile model은 `WatchSession`과 모바일 최종 로그 항목을 분리한다
 
 Guest 수동/watch 항목은 `notConfigured`를 유지한다. Account mutation은 durable outbox에 따라 `pending`, remote revision 반영 뒤 `synced`, 재시도 실패 때 `failed`, revision mismatch를 보존할 때 `conflict`를 사용할 수 있다. Raw Watch `session.syncStatus`는 local WatchConnectivity 전송 provenance이며 account cloud 상태와 독립적이다.
 
-Guest claim은 기존 row를 in-place account row로 바꾸지 않는다. Claim 시작 시 log/plan payload와 전체 profile bytes를 immutable snapshot으로 고정하고, owner-scoped staging과 exact readback 뒤 batch 전체를 atomic publish한다. Remote commit을 확인한 뒤에만 account local copy를 publish하고 snapshot과 정확히 같은 guest source를 정리한다. 중단된 cleanup은 persistent manifest에서 재개하며, 기기에 유지한 guest row는 account row와 합성된다. 기본 합성은 같은 `localId`에서 account copy가 우선하지만 snapshot 뒤 변경된 guest row는 이전 snapshot처럼 삭제하지 않고 계속 보존한다.
+Guest claim은 기존 row를 in-place account row로 바꾸지 않는다. Claim 시작 시 log/plan payload와 전체 profile bytes를 immutable snapshot으로 고정하고, owner-scoped staging과 exact readback 뒤 batch 전체를 atomic publish한다. Remote finalize/readback 뒤 이미 commit된 snapshot을 account local repository에 직접 publish/readback하고 `cleanupPending`을 저장한다. Snapshot과 같은 guest source는 exact delete하며, snapshot 뒤 바뀐 source는 account local-first/outbox에 `pending` update로 저장·readback한 뒤 guest copy를 삭제한다. 모든 local cleanup이 끝나야 manifest를 `committed`로 저장한다. 기기에 유지한 guest row는 account row와 합성되며 같은 `localId`에서는 account copy가 우선한다.
 
 Watch-captured 측정값은 원본 출처를 보존하고 모바일 편집 화면에서 잠금 값으로 다룬다. Manual field와 mobile-assisted field는 사용자가 수정할 수 있다.
 

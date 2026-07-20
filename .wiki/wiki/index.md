@@ -10,7 +10,7 @@
 | [Diving App / Product Roadmap](project/diving-app-product-roadmap.md) | 추천 제품 범위는 v1 Apple Watch 기반 40m 이하 Gauge + Freedive + Air-only safety stop + Log에서 시작하고, 40m 초과 값은 보존하되 unsupported warning 없이 정상 지원처럼 표시하지 않는다.                                                               | 2026-07-09 |
 | [Diving App / QA and Test Plan](project/diving-app-qa-test-plan.md)   | 자동 검증과 signed-device/얕은 물 underwater runtime gate를 분리하고, 15cm manual sampling이 `When Submerged` pass가 아님을 포함한 물리 QA 기준을 정리한다.                                                                                                                | 2026-07-18 |
 | [Diving App / References](project/diving-app-references.md)           | 알고리즘과 제품 요구사항을 검증할 때 먼저 확인할 Apple, Oceanic+, NOAA, PADI, DAN, DecoTengu, Shearwater, Subsurface reference를 used-for, confidence, notes 기준으로 정리한다.                                                                  | 2026-06-28 |
-| [프로젝트 개요](project/overview.md)                                        | React Native/iPhone-watch companion, 공유 contract, Wave 3A local Supabase/Auth foundation을 함께 관리하며 remote data와 physical Auth 승격 gate를 분리한다. | 2026-07-15 |
+| [프로젝트 개요](project/overview.md)                                        | React Native/iPhone-watch companion, 공유 contract, account data/guest claim 구현과 hosted·physical·production 승격 gate를 분리한다. | 2026-07-20 |
 | [위키 운영 방식](project/wiki-workflow.md)                                  | 이 저장소의 장기 지식 저장소는 Karpathy LLM Wiki 방식으로 관리한다. 이 저장소에서는 project root 대신 `.wiki/`를 wiki root로 보고, immutable source는 `.wiki/raw/`, compiled article은 `.wiki/wiki/`에 둔다.                                              | 2026-06-28 |
 
 ## algorithms
@@ -28,13 +28,13 @@
 | Article                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                | Updated    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Wave 3A automated, Divenary signed provisioning과 Google iOS callback 뒤 hosted physical Auth/re-consent와 post-Auth Watch regression을 3B 전 승격 gate로 둔다. | 2026-07-16 |
-| [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Local-first guest 로그북 위에 3A Auth를 추가했고 remote pagination, principal sync와 account lifecycle은 3B-3D로 분리한다. | 2026-07-15 |
-| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 principal-partitioned local data, account outbox/sync와 resumable guest data claim을 Auth·Watch local import 경계와 함께 소유한다. | 2026-07-20 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch의 bounded 1Hz local profile과 file transport를 유지하며 remote profile table/Storage는 3B 후속으로 분리한다. | 2026-07-15 |
-| [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 workspace 앱·공유 package와 root local Supabase/Auth migration/test 경계를 함께 관리한다. | 2026-07-15 |
-| [Supabase 구조](architecture/supabase.md)                                      | Staging-targeted account schema, owner RLS, private profile Storage, immutable claim staging/finalizer와 production·account deletion gate를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox sync와 resumable guest claim의 commit/cleanup 경계를 서로 독립적으로 유지한다. | 2026-07-20 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Account data/claim core 이후 hosted staging, Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
+| [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim core의 코드 완료와 hosted·physical·lifecycle 후속을 단계별로 분리한다. | 2026-07-20 |
+| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 principal local data, account outbox와 remote-committed snapshot 직접 publication, changed-guest reconciliation을 구분한다. | 2026-07-20 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile과 private remote profile object를 분리하고 committed claim object retention과 future lifecycle cleanup을 기록한다. | 2026-07-20 |
+| [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local Auth/account-data migration, owner RLS, private Storage, claim Function 책임을 관리하며 hosted 배포는 별도 gate다. | 2026-07-20 |
+| [Supabase 구조](architecture/supabase.md)                                      | Staging-targeted account schema, owner RLS, private profile Storage, retained claim evidence/finalizer와 future lifecycle·production gate를 정리한다. | 2026-07-20 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox와 remote finalize부터 cleanup 완료까지의 resumable claim 상태 순서를 분리한다. | 2026-07-20 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
@@ -47,7 +47,7 @@
 | [Diving App / Non-Negotiable Safety Rules](domains/diving-app-non-negotiable-safety-rules.md) | 제품 구현에서 절대 위반하면 안 되는 safety-critical 규칙을 정리하고, Apple Watch 기반 v1 40m 지원 범위, 40m 초과 값 보존+unsupported 표시, v1 Air-only safety stop을 감압 의무처럼 표현하지 않는 규칙을 포함한다. | 2026-07-09 |
 | [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 안전 copy, warning hierarchy, 책임 관련 UX 원칙을 정리하고, v1 Air-only safety stop 권장을 mandatory/decompression stop과 다른 색상과 문구로 제한한다. | 2026-07-08 |
 | [Diving App / Scuba Mode](domains/diving-app-scuba-mode.md) | Scuba mode v1은 Apple Watch 기반 40m 이하 Air-only gauge/log와 rule-based safety stop reminder를 포함하고, 40m 초과 값은 지원 범위 밖 warning과 함께 보존하지만 NDL, ceiling, TTS, CNS, gas remaining, decompression stop은 고위험 검증 범위로 분리한다. | 2026-07-09 |
-| [다이브 로그 도메인](domains/dive-log.md) | Guest/account ownership, account cloud 상태와 Watch transfer provenance를 분리하고 claim 후에도 원본 기록 의미를 보존한다. | 2026-07-20 |
+| [다이브 로그 도메인](domains/dive-log.md) | Guest/account ownership과 Watch provenance를 분리하고 exact snapshot delete와 changed-guest outbox reconciliation로 원본 의미를 보존한다. | 2026-07-20 |
 | [다이브 계획 도메인](domains/dive-planning.md) | 모바일 Planbook은 비중요 계획 알림이며, optional planned pressure는 준비 맥락 metadata일 뿐 실제 측정값이나 안전 계산 결과가 아니다. | 2026-06-28 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
 | [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, debug sample과 미수신 수온을 실측값처럼 표시하지 않는다. | 2026-07-12 |
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google physical Auth, hosted staging guest claim, claim UI 접근성, production과 account deletion gate를 기록한다. | 2026-07-20 |
+| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google physical Auth, hosted claim/UI 접근성, retained claim evidence lifecycle, production과 account deletion gate를 기록한다. | 2026-07-20 |

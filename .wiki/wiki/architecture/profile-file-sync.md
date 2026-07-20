@@ -1,8 +1,8 @@
 # 1Hz 프로파일 파일 저장과 동기화
 
-Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15
-Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md)
-Updated: 2026-07-15
+Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20
+Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Updated: 2026-07-20
 
 ## 요약
 
@@ -24,7 +24,7 @@ Watch 기록은 원시 센서 콜백과 영구 프로파일의 cadence를 분리
 Watch Application Support의 논리 구조는 다음과 같다.
 
 ```text
-DiveWatchApp/
+DivenaryWatchApp/
   session-manifest.json
   Sessions/<localSessionId>/
     active-recording.json
@@ -54,7 +54,7 @@ iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 
 
 1. 파일 bytes를 읽고 metadata의 byte count와 SHA-256을 검증한다.
 2. JSON 구조가 읽히는지 확인한다.
-3. Application Support의 `DiveMobile/WatchConnectivityInbox/<payloadId>.json`으로 atomic write한다.
+3. Application Support의 `Divenary/WatchConnectivityInbox/<payloadId>.json`으로 atomic write한다.
 4. UserDefaults pending index에는 path와 identity만 저장한다.
 5. JS에는 drain 시 한 payload만 문자열로 materialize한다.
 
@@ -62,9 +62,11 @@ JS validator와 mobile repository 저장이 모두 성공하면 native layer는 
 
 ## 모바일 metadata와 profile 분리
 
-`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `DiveMobile/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 profile file도 같이 삭제한다.
+`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `Divenary/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 local profile file도 같이 삭제한다.
 
-현재 profile store는 iOS local file storage 경계다. Wave 3A Supabase/Auth foundation은 구현됐지만 remote profile table/Storage는 3B 후속이다. Remote data를 도입할 때 권장 경계는 session metadata table과 immutable profile object(Storage 또는 별도 blob)의 분리다. sample을 한 row씩 10,800개 저장하는 방식이나 metadata JSON에 중복 삽입하는 방식은 기본안이 아니다.
+Remote account profile 경계도 코드와 migration에 구현됐다. Private `dive-profiles` bucket은 owner path만 허용하며 normal account object는 `<user_id>/logs/<dive_log_id>/<content_revision>.json`, claim object는 `<user_id>/claims/<batch_id>/<target_record_id>/<content_revision>.json`을 사용한다. List row에는 최대 160개 preview만 두고 full bytes는 detail 또는 claim 검증 때 읽는다. Account-data migration과 claim Edge Function이 hosted staging에 배포됐다는 증거는 아직 없다.
+
+Claim finalizer는 exact profile bytes를 검증한 뒤 account log row가 claim object path를 참조하게 하며, remote commit 뒤 claim object를 account path로 옮기거나 삭제하지 않는다. Committed claim batch/record와 profile object는 현재 idempotent readback/audit 근거로 남는다. Auth user deletion cleanup 외의 post-commit retention 기간과 lifecycle cleanup은 future work다. 이는 exact-match guest cleanup 중 unreferenced local profile을 제거하는 mobile 동작과 다른 경계다.
 
 ## 알림 생명주기와 한계
 

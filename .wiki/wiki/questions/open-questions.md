@@ -24,12 +24,13 @@ Last reviewed: 2026-07-20
 - Watch sync notification은 preference hydration, AppState 재-drain, Notifee background handler, denied-permission Settings 복구 경로를 갖지만 background/force-quit 상태에서 실제 WatchConnectivity wake와 local notification 표시가 어떻게 동작하는지는 paired 실기기에서 검증되지 않았다.
 - Settings의 기기 관리는 공개 `WCSession` 상태를 표시하지만, 사용자가 설정한 Apple Watch 이름을 읽는 공개 API는 아직 확인되지 않았다. 현재 native fallback 이름은 `Apple Watch`다.
 - Local Supabase/Auth와 staging Auth foundation에 더해 owner remote data schema, private profile Storage 경계, principal partition, account outbox/revision conflict와 resumable guest claim service가 구현됐다. Hosted project `mclvhwzsuvsxjerdouka`는 staging 전용이지만 account-data migration과 `finalize-guest-claim`의 hosted deployment는 아직 증거가 없다. Physical iPhone/Android claim, offline retry, force-quit cleanup resume와 second-account isolation을 실행해야 한다.
+- Finalizer는 committed `guest_claim_batches`/`guest_claim_records`와 `<user_id>/claims/...` profile object를 idempotent readback/audit용으로 보존한다. User deletion cleanup 외에 post-commit retention 기간, lifecycle cleanup job, audit 보존 정책은 아직 설계·구현되지 않았다.
 - 사용자는 physical iPhone에서 Apple login 성공을 확인했다. Google physical login, cancellation/repeat, session restore, re-consent와 post-Auth Watch regression은 아직 검증되지 않았다.
 - Guest row는 `notConfigured`, account outbox는 `pending`/`synced`/`failed`/`conflict` 전이를 사용할 수 있다. Claim UI는 구현 중이며 screenshot, 320pt/large phone, light/dark, Dynamic Type/font scale 2.0과 Reduce Motion 증거는 아직 없다.
 - 모바일 Logbook, Planbook, 설정 선호는 AsyncStorage 기반 versioned JSON store에 저장된다. Existing unscoped data를 한 번만 `guest` namespace로 옮기는 migration은 구현됐지만 production upgrade fixture와 long-lived legacy local v1 retention은 별도 검증이 필요하다.
 - `scuba`/`freedive` 두 모드 축소는 contract, generated type, validator, 모바일 UI, watch mode model에 구현됐고 Logbook/Planbook은 v2 storage key reset을 사용한다. Legacy local v1 데이터 retention/마이그레이션 정책은 future production 전환 전에는 여전히 별도 결정이 필요하다.
 - Home 조건은 실제 Open-Meteo adapter와 위치 권한 경계를 갖지만 platform geocoder와 네트워크 실패 품질은 실기기 확인이 필요하다.
-- Generated Swift contract는 존재하지만 현재 `DiveWatchApp` target에서 참조되지 않는다.
+- Generated Swift contract는 존재하지만 현재 `DivenaryWatchApp` target에서 참조되지 않는다.
 - v1 Air-only safety stop trigger/countdown/copy의 watch implementation은 rule-based reminder 범위로 들어갔다. 현재 값은 10m arm, 5m target, 3-6m displayed zone, 2.7-6.3m counting zone, 180초 duration, counting zone 밖 연속 30초 reset이다. 다만 이 값들이 실제 underwater sensor에서 충분히 안정적인지, haptic/젖은 화면/시야 조건에서 사용자에게 적절한지는 지원 hardware 수동 검증이 필요하다.
 - Safety stop 권장 상태와 mandatory/decompression 상태는 색상과 severity를 분리해야 한다. 현재 contract/Swift/mobile model의 `safetyStop.required` field는 compatibility field로 유지하고, optional `recommendationType: "recommended"`를 추가해 v1 권장 리마인더 의미를 기록한다. 장기적으로 field rename이나 mandatory/decompression migration이 필요한지는 future high-risk 설계에서 다시 결정한다.
 - Decompression stop 또는 감압 정지는 safety stop과 같은 의미로 쓰지 않는다. 감압 정지를 추가하려면 직접 계산할지, 외부 dive computer에서 온 사실 기록만 보존할지, mandatory 상태의 source provenance를 어떻게 표시할지 먼저 설계해야 한다.

@@ -1,21 +1,21 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md)
-Updated: 2026-07-16
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16; Guest data account claim implementation evidence, 2026-07-20
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Updated: 2026-07-20
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Wave 3A 자동 구현, Divenary signed provisioning과 Google iOS callback 구성은 완료됐고 hosted provider/legal, physical Auth/re-consent와 post-Auth Watch regression 승격 gate가 현재 우선순위다. 이 증거 전에는 3B를 시작하지 않으며 Wave 1의 나머지 물리 항목과 Wave 2도 유지한다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Auth, owner account schema, principal partition, outbox/sync와 guest claim core의 코드·자동 검증은 구현됐다. 현재 우선순위는 hosted staging 배포, Google/claim 실기기 검증, post-Auth Watch regression, committed claim evidence lifecycle과 account deletion gate다.
 
 ## 현재 상태
 
-즉시 hardening과 Wave 3A의 코드 구현·자동 검증은 완료됐다. 사용자는 실기기에서 약 4분의 foreground pairing, Watch session 자동 import, 모바일 local save 뒤 Watch `synced` 전환을 확인했다. 이 보고는 Auth 도입 전 핵심 foreground 경로의 기준선이며 build identifier, 기기/OS, post-Auth regression, reconnect, background, killed-app, large transfer 완료 증거는 아니다. 현재 활성 gate는 3A hosted physical 승격이고 남은 Wave 1/2 항목은 삭제하지 않는다.
+즉시 hardening과 Wave 3 account-data/claim core의 코드 구현·자동 검증은 완료됐다. 사용자는 physical iPhone Apple login과 Auth 도입 전 약 4분 Watch foreground import/local ACK 기준선을 확인했다. Google login, hosted account-data/claim deployment, physical claim, post-Auth Watch regression, reconnect, background, killed-app과 large transfer는 완료 증거가 아니다. 남은 Wave 1/2 항목도 삭제하지 않는다.
 
 - 자동 event와 수동 drain은 process-wide `WatchConnectivityImportCoordinator`를 공유한다. 같은 `payloadId`는 합쳐지고 서로 다른 payload는 직렬 처리되며 실패 뒤에도 queue가 계속된다.
 - Watch 수온은 optional이다. 첫 수온 update 전 값을 `0°C`로 만들지 않고, 수온이 없는 sample도 깊이·압력 기록으로 보존한다.
 - 모바일 `DiveLogEntry.cloudSyncStatus`와 raw Watch `session.syncStatus`를 분리했다. Logbook schema 2의 모든 기존 모바일 상태는 schema 3에서 `notConfigured`로 migration한다. Cloud backend가 없을 때는 cloud filter와 status pill을 표시하지 않는다.
-- `DiveWatchAppDebug`에서 deterministic 8,000-sample `Test Large Sync`를 일반 저장·전송 경로로 실행할 수 있다.
+- `DivenaryWatchAppDebug`에서 deterministic 8,000-sample `Test Large Sync`를 일반 저장·전송 경로로 실행할 수 있다.
 
 자동 검증과 foreground 핵심 실기기 경로는 확인됐지만 reconnect crash 부재, background delivery, killed-app recovery, large file transfer는 완료로 판정하지 않는다. Simulator나 mock 결과를 실기기 또는 수중 동작의 증거로 쓰지 않는다.
 
@@ -39,12 +39,12 @@ Updated: 2026-07-16
 
 ## P0 Wave 3: Supabase와 인증
 
-- 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Explicit Data API grant, RLS, current re-consent, active Auth session 검증을 포함한다. Logbook/Planbook은 계속 local-only이고 `notConfigured`다. Divenary iPhone/Watch signed provisioning, Apple entitlement와 Google iOS callback 구성은 통과했지만 hosted provider/legal, physical Auth/re-consent와 post-Auth Watch regression은 pending이다.
-- 3B: user-owned Logbook/Planbook schema와 RLS, keyset cursor infinite pagination, private immutable 1Hz profile Storage와 detail-only fetch를 만든다.
-- 3C: `guest`/`user:<uuid>` local partition, persistent manifest와 bounded batch를 쓰는 explicit guest claim, idempotent outbox, retry/backoff, revision conflict와 `cloudSyncStatus` 전이를 활성화한다.
+- 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Apple physical login은 사용자 확인을 받았지만 Google physical login, re-consent와 post-Auth Watch regression은 pending이다.
+- 3B code/automated: user-owned Logbook/Planbook schema와 owner RLS, keyset cursor, private immutable 1Hz profile Storage와 typed repository가 구현됐다. Hosted staging account-data migration과 physical account sync는 pending이다.
+- 3C core/automated: `guest`/`user:<uuid>` local partition, durable account outbox/revision conflict, immutable manifest와 bounded batch를 쓰는 explicit guest claim이 구현됐다. Claim UI integration, hosted Edge Function, physical retry/resume/cleanup/isolation과 committed claim evidence lifecycle은 pending이다.
 - 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.
 - Email/password, magic link, SMS, Android native Auth, profile/nickname/friends, app-provided manual identity management, marketing consent는 Wave 3 범위 밖이다. 같은 verified email은 Supabase Auth automatic linking을 따른다.
-- 3A 자동 구현 완료와 hosted provider/legal/signing/physical iPhone 승격 gate를 분리한다. 3B는 물리 Auth와 재동의 증거 전에는 시작하지 않으며, 3A build는 3D 앱 내 계정 삭제 전에는 release하지 않는다.
+- 코드 구현과 hosted/physical 승격 gate를 분리한다. Production Supabase, production legal documents, post-commit claim evidence lifecycle과 3D 앱 내 계정 삭제 전에는 release하지 않는다.
 - 7일 유예 soft deletion/recovery는 즉시 영구 삭제 뒤의 명시적 후속 기능이다.
 
 ## P0 Wave 4: 제품 완성

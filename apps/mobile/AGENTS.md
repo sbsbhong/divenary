@@ -88,7 +88,10 @@
 - watch sync contract type은 `packages/contracts/generated/typescript`에서 가져온다. generated output은 직접 수정하지 않는다.
 - Supabase나 auth를 변경할 때 mobile 코드에 직접 SQL을 넣지 말고 `packages/supabase`의 typed package/repository boundary를 사용한다.
 - Guest repository는 `guest`, account repository는 `user:<uuid>` namespace를 사용한다. 로그인 시 guest data는 명시적 claim 또는 기기에 유지 선택 전까지 보존한다.
-- Account write는 local save와 durable outbox를 먼저 완료하고 revision-aware remote sync를 수행한다. Guest claim은 immutable snapshot/manifest, profile byte digest, remote write/readback, atomic finalization, account local publication, exact-match guest cleanup 순서를 유지한다.
+- 일반 authenticated mutation은 account local save와 durable outbox enqueue를 먼저 완료하고 revision-aware remote sync를 수행한다.
+- Guest claim의 이미 원격 commit된 immutable snapshot을 처음 account local partition에 publish할 때는 base account local repository에 `synced` copy를 직접 저장하고 readback한다. 이 단계는 이미 검증된 원격 commit을 다시 outbox mutation으로 만들지 않는다.
+- Claim snapshot 이후 변경된 guest row를 reconcile할 때는 account local-first mutation repository와 durable outbox에 `pending` update를 먼저 저장하고 readback한 뒤 해당 guest row를 삭제한다.
+- Guest claim은 immutable snapshot/manifest, profile byte digest, remote write/readback, atomic finalization/readback, account local publication/readback, persistent `cleanupPending`, exact-match delete 또는 changed-row reconciliation 순서를 유지한다. Local cleanup이 모두 끝난 뒤에만 manifest를 `committed`로 저장한다.
 - Watch import 완료 ACK는 mobile local repository 저장을 뜻한다. Supabase upload 또는 account claim 완료로 재해석하지 않는다.
 - 안전 관련 copy는 항상 non-certified assistant, reminder, review wording으로 제한한다.
 

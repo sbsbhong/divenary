@@ -13,7 +13,8 @@
 - Apple Watch에서 다이빙 세션을 가볍게 기록하고 로컬에서 확인할 수 있는 watchOS 앱 PoC를 유지한다.
 - 모바일 앱에서 워치에서 온 세션을 리뷰하고, 로그북/계획/메모리 화면을 확장할 기반을 만든다.
 - `packages/contracts`의 JSON Schema를 watch-mobile sync contract의 기준으로 유지한다.
-- 구현된 Wave 3A Supabase/Auth foundation을 유지하되, guest Logbook/Planbook은 remote data 단계 전까지 local-only로 보존하고 WatchConnectivity PoC와 모바일 영구 저장소의 경계를 섞지 않는다.
+- 구현된 Supabase/Auth foundation과 account Logbook/Planbook schema, principal-partitioned local repository, account outbox/sync, explicit guest claim 경계를 유지한다. 이 코드는 local migration/test 기준으로 구현됐으며 hosted staging account-data migration과 claim Edge Function 배포는 아직 검증되지 않았다.
+- WatchConnectivity import acknowledgement는 모바일 local repository 저장만 뜻하며 account cloud sync나 guest claim 완료와 섞지 않는다.
 - 안전-critical 기능으로 오해될 수 있는 감압, 조직 포화도, 가스 전환 안전, 비상 지시 기능은 구현하거나 암시하지 않는다.
 
 ## 저장소 구조
@@ -22,18 +23,18 @@
 - 이 저장소는 모노레포다. `apps/` 아래 workspace 변경도 루트 저장소 기준으로 추적한다.
 - `apps/mobile`: Bare React Native 모바일 앱 workspace. React Native `0.85.3`을 사용한다. iOS native project는 `apps/mobile/ios/Divenary.xcodeproj`이며, iPhone app target `Divenary`과 companion watchOS target `DivenaryWatchApp`를 함께 소유한다. Watch source는 `apps/mobile/ios/DivenaryWatchApp` 아래에 둔다. 앱별 상세 지침은 `apps/mobile/AGENTS.md`를 따른다.
 - `packages/contracts`: watch sync contract의 JSON Schema 원본과 generated TypeScript/Swift 출력물을 관리한다.
-- `packages/supabase`: generated database type, typed client factory, onboarding parser와 provider-independent Auth repository를 관리한다. React Native UI나 native provider SDK를 넣지 않는다.
+- `packages/supabase`: generated database type, typed client factory, onboarding parser, provider-independent Auth repository와 typed account Logbook/Planbook/profile/guest claim repository를 관리한다. React Native UI나 native provider SDK를 넣지 않는다.
 - `packages/shared-utils`: 예약된 공유 package다. 실제 source 구현은 아직 없다.
-- `supabase`: local configuration, Auth foundation migration/seed, pgTAP, REST smoke harness와 hosted 환경에서 격리된 local CLI wrapper를 관리한다. Remote Logbook/Planbook schema와 Storage는 아직 없다.
+- `supabase`: local configuration, Auth/account-data migration과 seed, owner RLS, private profile Storage, guest claim finalizer/Edge Function, pgTAP/REST harness와 hosted 환경에서 격리된 CLI wrapper를 관리한다. Account-data와 claim 코드는 staging 대상이지만 hosted staging 배포는 아직 검증되지 않았다.
 - `.wiki/`: Karpathy LLM Wiki 방식의 장기 프로젝트 지식 저장소다. `.wiki/raw/`는 원본 source material, `.wiki/wiki/`는 compiled knowledge article이며, `.wiki/wiki/index.md`와 `.wiki/wiki/log.md`를 기준으로 탐색한다.
 
 ## 앱 요약
 
 ### `apps/mobile`
 
-모바일 앱은 React Native 기반의 다이빙 로그 리뷰 surface이자 iPhone/watch companion bundle의 소유자다. 현재는 React Navigation 기반 bottom-tab navigation, AsyncStorage 기반 Logbook/Planbook/설정 저장소, 수동 로그 작성, 계획 알림, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, Settings 기기 관리, companion watch target embed 구조를 갖는다. 또한 Keychain-compatible session, iOS native Google/Apple credential adapter, Auth state/UI와 versioned mandatory consent를 갖는다. Hosted provider/signing/physical Auth, cloud data/backup, account deletion, background delivery 검증은 아직 없다.
+모바일 앱은 React Native 기반의 다이빙 로그 리뷰 surface이자 iPhone/watch companion bundle의 소유자다. 현재는 React Navigation 기반 bottom-tab navigation, principal-partitioned AsyncStorage Logbook/Planbook, 수동 로그 작성, 계획 알림, iOS WatchConnectivity receiver/import acknowledgement PoC, mobile-to-watch planned dive 전달 PoC, Settings 기기 관리와 companion watch target embed 구조를 갖는다. 또한 Keychain-compatible session, iOS native Google/Apple credential adapter, Auth state/UI, versioned mandatory consent, account local-first outbox/sync와 resumable guest claim service를 갖는다. Apple physical login은 사용자 확인을 거쳤지만 Google physical login, hosted staging account-data/claim 배포, physical claim, production cloud와 account deletion은 아직 검증되지 않았다.
 
-모바일 앱은 인증, 로그북, 수동 로그 작성, 미래 사용자 프로필/Supabase data sync, 통계/검색/리뷰/공유 흐름의 중심이 된다. Wave 3A에서는 로그인해도 guest Logbook/Planbook을 claim, upload, delete, partition하거나 영구히 숨기지 않는다. 직접 SQL, 중복 Supabase schema type, watch-only sensor capture logic, imported watch sample을 손실시키는 raw rewrite는 넣지 않는다.
+모바일 앱은 인증, 로그북, 수동 로그 작성, 사용자 프로필/Supabase data sync, 통계/검색/리뷰/공유 흐름의 중심이다. Guest Logbook/Planbook은 로그인만으로 삭제하지 않고 사용자가 claim 또는 기기에 유지를 선택한다. Claim은 immutable snapshot과 원격 commit/readback, account local publication/readback 뒤 exact snapshot만 정리하며, claim 중 변경된 guest row는 account local-first/outbox로 승격한 뒤 삭제한다. 직접 SQL, 중복 Supabase schema type, watch-only sensor capture logic, imported watch sample을 손실시키는 raw rewrite는 넣지 않는다.
 
 ### watchOS companion
 

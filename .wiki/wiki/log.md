@@ -860,3 +860,19 @@
 - Updated: Knowledge Base Index
 
 ## [2026-07-20] lint | 1 issues found, 0 auto-fixed
+
+## [2026-07-20] ingest | Guest claim lifecycle boundary correction
+- Updated: 프로젝트 개요
+- Updated: 구현 우선순위 기록
+- Updated: 모바일 로그북 로드맵
+- Updated: 모바일 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: Monorepo 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 다이브 로그 도메인
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Corrected: finalizer는 committed claim rows/profile objects를 보존하고, local manifest는 account publication/readback과 `cleanupPending` cleanup 완료 뒤에만 `committed`가 된다.
+
+## [2026-07-20] lint | 0 issues found, 0 auto-fixed
