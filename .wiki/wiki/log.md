@@ -876,3 +876,10 @@
 - Corrected: finalizer는 committed claim rows/profile objects를 보존하고, local manifest는 account publication/readback과 `cleanupPending` cleanup 완료 뒤에만 `committed`가 된다.
 
 ## [2026-07-20] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-20] ingest | Claim profile retention correction
+- Updated: Supabase 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Corrected: auth user deletion은 database claim row만 cascade하며 remote Storage profile object cleanup은 account deletion/privileged cleanup 구현 전까지 future release gate다.

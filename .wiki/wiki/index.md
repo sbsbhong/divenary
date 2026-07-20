@@ -31,7 +31,7 @@
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Account data/claim core 이후 hosted staging, Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim core의 코드 완료와 hosted·physical·lifecycle 후속을 단계별로 분리한다. | 2026-07-20 |
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 principal local data, account outbox와 remote-committed snapshot 직접 publication, changed-guest reconciliation을 구분한다. | 2026-07-20 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile과 private remote profile object를 분리하고 committed claim object retention과 future lifecycle cleanup을 기록한다. | 2026-07-20 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile과 remote object를 분리하고 auth user deletion 뒤에도 남는 Storage object의 privileged cleanup gate를 기록한다. | 2026-07-20 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local Auth/account-data migration, owner RLS, private Storage, claim Function 책임을 관리하며 hosted 배포는 별도 gate다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | Staging-targeted account schema, owner RLS, private profile Storage, retained claim evidence/finalizer와 future lifecycle·production gate를 정리한다. | 2026-07-20 |
 | [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox와 remote finalize부터 cleanup 완료까지의 resumable claim 상태 순서를 분리한다. | 2026-07-20 |
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google physical Auth, hosted claim/UI 접근성, retained claim evidence lifecycle, production과 account deletion gate를 기록한다. | 2026-07-20 |
+| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google physical Auth, hosted claim/UI 접근성, retained Storage object cleanup, production과 account deletion gate를 기록한다. | 2026-07-20 |

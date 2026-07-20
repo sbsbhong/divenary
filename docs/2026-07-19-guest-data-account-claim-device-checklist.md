@@ -9,7 +9,7 @@
 ## 검증 경계
 
 - Finalizer는 remote account rows를 publish하고 batch를 `committed`로 바꾸지만 `guest_claim_batches`, `guest_claim_records`, `<user_id>/claims/...` profile objects를 삭제하지 않는다.
-- 이 remote claim evidence는 idempotent readback/audit용으로 유지된다. Auth user deletion은 claim rows를 cascade하고 소유 profile objects를 정리하지만, 별도 post-commit retention/lifecycle cleanup은 아직 없다.
+- 이 remote claim evidence는 idempotent readback/audit용으로 유지된다. Auth user deletion은 database claim rows를 cascade하지만 remote Storage profile objects는 자동 삭제하지 않는다. Account deletion과 privileged object cleanup이 아직 구현되지 않아 object는 계속 보존되며, 해당 cleanup은 future release gate다.
 - Completion cleanup은 exact snapshot과 같은 **local guest rows**, 더 이상 참조하지 않는 **local guest profiles**, changed-during-claim reconciliation과 local manifest의 최종 `committed` 전이를 뜻한다. Remote claim staging 삭제를 뜻하지 않는다.
 - Exact `3 / 32` 중단, 강제 종료 시점, snapshot 직전 profile 손상은 현재 debug pause/fault injector가 없어 physical device에서 결정적으로 만들 수 없다. 해당 수동 항목은 best-effort 관찰이며 아래 자동 테스트가 durability invariant의 결정적 gate다.
 
