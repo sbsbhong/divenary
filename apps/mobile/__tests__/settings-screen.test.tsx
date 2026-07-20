@@ -8,6 +8,7 @@ import { AppPreferencesProvider } from '../src/states/app-preferences';
 import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/screen';
 import type { LinkedWatchInfo } from '../src/native/watch-connectivity';
 import type { AuthContextValue } from '../src/states/auth';
+import type { GuestClaimViewState } from '../src/claim/guest-claim-types';
 
 const mockUseAuth = jest.fn<AuthContextValue, []>();
 
@@ -46,6 +47,12 @@ const renderSettings = async (options?: {
   hasWatchSyncNotificationPermission?: () => Promise<boolean>;
   openNotificationSettings?: () => Promise<void>;
   route?: SettingsRoute;
+  accountClaim?: {
+    isOnline: boolean;
+    eligible: { logCount: number; planCount: number };
+    state: GuestClaimViewState;
+  };
+  onOpenAccountClaim?: () => void;
 }) => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
@@ -61,6 +68,8 @@ const renderSettings = async (options?: {
           onBack={options?.onBack}
           onOpenLogin={options?.onOpenLogin}
           onOpenRoute={options?.onOpenRoute}
+          accountClaim={options?.accountClaim}
+          onOpenAccountClaim={options?.onOpenAccountClaim}
         />
       </AppPreferencesProvider>,
     );
@@ -177,6 +186,63 @@ describe('SettingsScreen', () => {
     });
 
     expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows the eligible device-data count and opens the claim sheet', async () => {
+    const onOpenAccountClaim = jest.fn();
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: { status: 'authenticated', userId: 'user-id' },
+      }),
+    );
+    const renderer = await renderSettings({
+      accountClaim: {
+        isOnline: true,
+        eligible: { logCount: 3, planCount: 2 },
+        state: { status: 'choice', logCount: 3, planCount: 2 },
+      },
+      onOpenAccountClaim,
+    });
+
+    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim' })).toBeTruthy();
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('5');
+    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim-icon' })).toBeTruthy();
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({ testID: 'settings-row-account-claim' }).props.onPress();
+    });
+    expect(onOpenAccountClaim).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
+    ['guest', { status: 'guest' } as const, true, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
+    ['offline account', { status: 'authenticatedOffline', userId: 'user-id' } as const, false, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
+    ['zero eligible rows', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
+    ['running claim', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 1, planCount: 1 }, { status: 'running', completed: 1, total: 2 } as const],
+    ['isolated foreign manifest', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
+  ])('hides device-data import for %s', async (_label, authState, isOnline, eligible, claimState) => {
+    mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, state: authState }));
+    const renderer = await renderSettings({
+      accountClaim: { isOnline, eligible, state: claimState },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(renderer.root.findAllByProps({ testID: 'settings-row-account-claim' })).toHaveLength(0);
+  });
+
+  test.each([
+    { status: 'failed', completed: 1, total: 2, errorCode: 'network_unavailable' } as const,
+    { status: 'hidden' } as const,
+  ])('keeps device-data import available for an eligible non-running claim', async claimState => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({ isConfigured: true, state: { status: 'authenticated', userId: 'user-id' } }),
+    );
+    const renderer = await renderSettings({
+      accountClaim: { isOnline: true, eligible: { logCount: 1, planCount: 0 }, state: claimState },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim' })).toBeTruthy();
   });
 
   test('labels offline membership as local-only and still allows logout', async () => {

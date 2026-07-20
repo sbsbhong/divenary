@@ -421,6 +421,10 @@ export default function RootNavigation(): React.JSX.Element {
     openStackScreen('authLogin');
   }, [openStackScreen]);
 
+  const openAccountClaim = React.useCallback(() => {
+    openStackScreen('accountClaim');
+  }, [openStackScreen]);
+
   React.useEffect(() => {
     if (!navigationReady || !rootStackNavigationRef.isReady()) {
       return;
@@ -563,6 +567,7 @@ export default function RootNavigation(): React.JSX.Element {
                         isSaving={logbook.isSaving}
                         onOpenEntry={openLogEntryDetail}
                         onCreateEntry={openLogEntryCreate}
+                        isAuthenticated={state.status === 'authenticated' || state.status === 'authenticatedOffline'}
                       />
                     )}
                   </AppTabs.Screen>
@@ -584,6 +589,7 @@ export default function RootNavigation(): React.JSX.Element {
                         onCreateLogFromPlan={createLogFromPlan}
                         logEntryIds={logbook.entries.map(entry => entry.localId)}
                         onOpenLogbook={openLogbook}
+                        isAuthenticated={state.status === 'authenticated' || state.status === 'authenticatedOffline'}
                         completedPromptPlan={completedPromptPlan}
                         onCompletedPromptLater={() => setCompletedPromptPlan(undefined)}
                         onCreateLogFromCompletedPlan={plan => {
@@ -594,7 +600,19 @@ export default function RootNavigation(): React.JSX.Element {
                     )}
                   </AppTabs.Screen>
                   <AppTabs.Screen name="settings">
-                    {() => <SettingsScreen route="index" onOpenLogin={openAuthLogin} onOpenRoute={openSettingsDetail} />}
+                    {() => (
+                      <SettingsScreen
+                        route="index"
+                        onOpenLogin={openAuthLogin}
+                        onOpenRoute={openSettingsDetail}
+                        accountClaim={{
+                          isOnline: accountData.isOnline,
+                          eligible: accountData.claim.eligible,
+                          state: accountData.claim.state,
+                        }}
+                        onOpenAccountClaim={openAccountClaim}
+                      />
+                    )}
                   </AppTabs.Screen>
                 </AppTabs.Navigator>
               )}

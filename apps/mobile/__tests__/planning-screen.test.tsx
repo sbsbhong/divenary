@@ -27,6 +27,7 @@ const plan = (overrides: Partial<DivePlan>): DivePlan => ({
 
 type HarnessProps = {
   repository: LocalDivePlanRepository;
+  isAuthenticated?: boolean;
   onCreatePlan?: () => void;
   onOpenPlan?: (plan: DivePlan) => void;
   onCreateLogFromPlan?: (plan: DivePlan) => void;
@@ -36,7 +37,7 @@ type HarnessProps = {
 const queryClients: QueryClient[] = [];
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
-function Harness({ repository, onCreateLogFromPlan = jest.fn(), onCreatePlan, onOpenPlan, logEntryIds }: HarnessProps): React.JSX.Element {
+function Harness({ repository, isAuthenticated, onCreateLogFromPlan = jest.fn(), onCreatePlan, onOpenPlan, logEntryIds }: HarnessProps): React.JSX.Element {
   const plans = useDivePlans({ repository, queryScope: 'planning-screen-test' });
 
   return (
@@ -54,6 +55,7 @@ function Harness({ repository, onCreateLogFromPlan = jest.fn(), onCreatePlan, on
       onCreateLogFromPlan={onCreateLogFromPlan}
       logEntryIds={logEntryIds}
       onOpenLogbook={jest.fn()}
+      isAuthenticated={isAuthenticated}
     />
   );
 }
@@ -67,6 +69,7 @@ const renderPlanning = async (
         onCreatePlan?: () => void;
         onOpenPlan?: (plan: DivePlan) => void;
         logEntryIds?: string[];
+        isAuthenticated?: boolean;
       } = {},
 ) => {
   const props = typeof options === 'function' ? { onCreateLogFromPlan: options } : options;
@@ -89,6 +92,7 @@ const renderPlanning = async (
           onCreatePlan={props.onCreatePlan}
           onOpenPlan={props.onOpenPlan}
           logEntryIds={props.logEntryIds}
+          isAuthenticated={props.isAuthenticated}
         />
       </QueryClientProvider>,
     );
@@ -587,6 +591,28 @@ describe('Planning screen planbook flow', () => {
     expect(root.findByProps({ testID: 'planning-create-action' })).toBeTruthy();
     expect(root.findAllByProps({ testID: 'planning-active-create-action' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'planning-empty-create-action' })).toHaveLength(0);
+  });
+
+  it('labels only retained guest plans for an authenticated account', async () => {
+    const renderer = await renderPlanning(
+      new LocalDivePlanRepository([
+        plan({ localId: 'account-plan', ownerUserId: 'user-1', site: { name: 'Account Plan Reef' } }),
+        plan({ localId: 'device-plan', ownerUserId: undefined, site: { name: 'Device Plan Reef' } }),
+      ]),
+      { isAuthenticated: true },
+    );
+
+    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.children).toBe('On device');
+    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Account Plan Reef' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.accessibilityLabel).toContain('Device Plan Reef');
+  });
+
+  it('does not label guest plans before authentication', async () => {
+    const renderer = await renderPlanning(
+      new LocalDivePlanRepository([plan({ localId: 'guest-plan', site: { name: 'Guest Plan Reef' } })]),
+    );
+
+    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Guest Plan Reef' })).toHaveLength(0);
   });
 
   it('states the empty active-plan condition once', async () => {

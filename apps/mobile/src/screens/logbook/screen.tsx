@@ -42,6 +42,7 @@ type LogbookScreenProps = {
   onPendingDraftSave?: (entry: DiveLogEntry, sourcePlanLocalId?: string) => void;
   saveError?: Error | null;
   isSaving?: boolean;
+  isAuthenticated?: boolean;
 };
 
 type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
@@ -284,6 +285,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
                 <SessionListItem
                   key={entry.localId}
                   entry={entry}
+                  showsDeviceOnlyBadge={Boolean(props.isAuthenticated && entry.ownerUserId === undefined)}
                   onPress={() => openDetail(entry)}
                 />
               ))}
@@ -350,6 +352,7 @@ function LogbookLoadingState(): React.JSX.Element {
 
 function SessionListItem(props: {
   entry: DiveLogEntry;
+  showsDeviceOnlyBadge: boolean;
   onPress: () => void;
 }): React.JSX.Element {
   const session = diveLogEntryToMobileSession(props.entry);
@@ -379,9 +382,21 @@ function SessionListItem(props: {
             </Box>
             <VStack space="xs" className="flex-1">
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <Text className="text-sm leading-5 text-muted-foreground">
-                {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
-              </Text>
+              <HStack space="xs" className="flex-wrap items-center">
+                <Text className="text-sm leading-5 text-muted-foreground">
+                  {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
+                </Text>
+                {props.showsDeviceOnlyBadge ? (
+                  <Text
+                    testID={`logbook-device-badge-${siteName}`}
+                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
+                    size="xs"
+                    bold
+                    className="text-muted-foreground">
+                    {t('accountClaim.deviceBadge')}
+                  </Text>
+                ) : null}
+              </HStack>
             </VStack>
           </HStack>
           <VStack space="xs" className="items-end">

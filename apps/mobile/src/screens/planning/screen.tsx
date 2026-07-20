@@ -38,6 +38,7 @@ type PlanningScreenProps = {
   onCreateLogFromCompletedPlan?: (plan: DivePlan) => void;
   saveError?: Error | null;
   isSaving?: boolean;
+  isAuthenticated?: boolean;
 };
 
 type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
@@ -46,7 +47,7 @@ type PlanFilter = 'all' | DivePlanStatus;
 export default function PlanningScreen(props: PlanningScreenProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const plans = props.plans ?? [];
+  const plans = React.useMemo(() => props.plans ?? [], [props.plans]);
   const [route, setRoute] = React.useState<LocalRoute>('list');
   const [filter, setFilter] = React.useState<PlanFilter>('all');
   const [selectedId, setSelectedId] = React.useState(plans[0]?.localId);
@@ -300,7 +301,13 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
               ) : visiblePlans.length ? (
                 <VStack space="md">
                   {visiblePlans.map(plan => (
-                    <PlanRow key={plan.localId} plan={plan} locale={locale} onPress={() => openDetail(plan)} />
+                    <PlanRow
+                      key={plan.localId}
+                      plan={plan}
+                      locale={locale}
+                      showsDeviceOnlyBadge={Boolean(props.isAuthenticated && plan.ownerUserId === undefined)}
+                      onPress={() => openDetail(plan)}
+                    />
                   ))}
                 </VStack>
               ) : (
@@ -397,7 +404,12 @@ function ActivePlanPanel(props: {
   );
 }
 
-function PlanRow(props: { plan: DivePlan; locale: string; onPress: () => void }): React.JSX.Element {
+function PlanRow(props: {
+  plan: DivePlan;
+  locale: string;
+  showsDeviceOnlyBadge: boolean;
+  onPress: () => void;
+}): React.JSX.Element {
   const { t } = useTranslation();
   const siteName = props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
   const title = props.plan.title ?? siteName;
@@ -418,9 +430,21 @@ function PlanRow(props: { plan: DivePlan; locale: string; onPress: () => void })
             </Box>
             <VStack space="xs" className="flex-1">
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <Text className="text-sm leading-5 text-muted-foreground">
-                {siteName} · {formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
-              </Text>
+              <HStack space="xs" className="flex-wrap items-center">
+                <Text className="text-sm leading-5 text-muted-foreground">
+                  {siteName} · {formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
+                </Text>
+                {props.showsDeviceOnlyBadge ? (
+                  <Text
+                    testID={`planning-device-badge-${siteName}`}
+                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
+                    size="xs"
+                    bold
+                    className="text-muted-foreground">
+                    {t('accountClaim.deviceBadge')}
+                  </Text>
+                ) : null}
+              </HStack>
             </VStack>
           </HStack>
           <StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />

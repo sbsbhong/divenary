@@ -7,6 +7,7 @@ import { ButtonIcon } from '../src/components/ui/button';
 import { EditIcon } from '../src/components/ui/icon';
 import i18n from '../src/i18n';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
+import { composeAccountAndDeferredGuestRows } from '../src/repositories/principal-repositories';
 import { LogEntryEditor } from '../src/screens/logbook/log-entry-editor';
 import { logEntryFormSchema } from '../src/screens/logbook/log-entry-form-schema';
 import LogbookScreen from '../src/screens/logbook/screen';
@@ -261,6 +262,7 @@ const unsupportedDepthWatchEntry = watchSessionToDiveLogEntry({
 
 type HarnessProps = {
   repository: LocalDiveLogRepository;
+  isAuthenticated?: boolean;
   pendingDraft?: {
     entry: DiveLogEntry;
     sourcePlanLocalId?: string;
@@ -273,7 +275,7 @@ type HarnessProps = {
 const queryClients: QueryClient[] = [];
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
-function Harness({ repository, pendingDraft, onPendingDraftSave, onOpenEntry, onCreateEntry }: HarnessProps): React.JSX.Element {
+function Harness({ repository, isAuthenticated, pendingDraft, onPendingDraftSave, onOpenEntry, onCreateEntry }: HarnessProps): React.JSX.Element {
   const logbook = useDiveLogbook({ repository, queryScope: 'manual-entry-test' });
 
   return (
@@ -292,6 +294,7 @@ function Harness({ repository, pendingDraft, onPendingDraftSave, onOpenEntry, on
       onPendingDraftSave={onPendingDraftSave}
       onOpenEntry={onOpenEntry}
       onCreateEntry={onCreateEntry}
+      isAuthenticated={isAuthenticated}
     />
   );
 }
@@ -308,6 +311,7 @@ const renderLogbook = async (
     onCreateEntry?: () => void;
     reselectToken?: number;
     onRefresh?: () => void | Promise<void>;
+    isAuthenticated?: boolean;
   } = {},
 ) => {
   const queryClient = new QueryClient({
@@ -329,6 +333,7 @@ const renderLogbook = async (
           onPendingDraftSave={options.onPendingDraftSave}
           onOpenEntry={options.onOpenEntry}
           onCreateEntry={options.onCreateEntry}
+          isAuthenticated={options.isAuthenticated}
         />
       </QueryClientProvider>,
     );
@@ -1080,6 +1085,64 @@ describe('Logbook manual entry flow', () => {
 
     expect(onOpenEntry).toHaveBeenCalledWith(expect.objectContaining({ localId: 'manual-entry-1' }));
     expect(root.findAllByProps({ testID: 'log-entry-detail-provenance-max-depth-manual' })).toHaveLength(0);
+  });
+
+  test('labels only retained guest rows for an authenticated account', async () => {
+    const accountEntry = {
+      ...manualEntry,
+      localId: 'account-entry',
+      ownerUserId: 'user-1',
+      manual: { ...manualEntry.manual, site: { name: 'Account Reef' } },
+    };
+    const guestEntry = {
+      ...manualEntry,
+      localId: 'guest-entry',
+      ownerUserId: undefined,
+      manual: { ...manualEntry.manual, site: { name: 'Device Reef' } },
+    };
+    const renderer = await renderLogbook(
+      new LocalDiveLogRepository([accountEntry, guestEntry]),
+      { isAuthenticated: true },
+    );
+
+    expect(renderer.root.findByProps({ testID: 'logbook-device-badge-Device Reef' }).props.children).toBe('On device');
+    expect(renderer.root.findAllByProps({ testID: 'logbook-device-badge-Account Reef' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'logbook-device-badge-Device Reef' }).props.accessibilityLabel).toContain('Device Reef');
+  });
+
+  test('does not label guest rows before authentication', async () => {
+    const renderer = await renderLogbook(
+      new LocalDiveLogRepository([
+        {
+          ...manualEntry,
+          localId: 'guest-entry',
+          manual: { ...manualEntry.manual, site: { name: 'Guest Reef' } },
+        },
+      ]),
+    );
+
+    expect(renderer.root.findAllByProps({ testID: 'logbook-device-badge-Guest Reef' })).toHaveLength(0);
+  });
+
+  test('renders the account copy once when composed rows share a local id', async () => {
+    const guestEntry = {
+      ...manualEntry,
+      ownerUserId: undefined,
+      manual: { ...manualEntry.manual, site: { name: 'Guest Duplicate Reef' } },
+    };
+    const accountEntry = {
+      ...guestEntry,
+      ownerUserId: 'user-1',
+      manual: { ...guestEntry.manual, site: { name: 'Account Duplicate Reef' } },
+    };
+    const composed = composeAccountAndDeferredGuestRows<DiveLogEntry>([accountEntry], [guestEntry]);
+    const renderer = await renderLogbook(new LocalDiveLogRepository(composed), { isAuthenticated: true });
+
+    expect(composed).toHaveLength(1);
+    expect(composed[0]).toEqual(expect.objectContaining({ ownerUserId: 'user-1' }));
+    expect(renderer.root.findAllByProps({ testID: 'logbook-list-item-Account Duplicate Reef' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ testID: 'logbook-list-item-Guest Duplicate Reef' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'logbook-device-badge-Account Duplicate Reef' })).toHaveLength(0);
   });
 
   test('delegates log creation to the app route when provided', async () => {

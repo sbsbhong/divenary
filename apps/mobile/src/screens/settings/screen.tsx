@@ -5,7 +5,7 @@ import { Box } from '../../components/ui/box';
 import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
 import { HStack } from '../../components/ui/hstack';
 import { InstrumentButton } from '../../components/ui/instrument';
-import { BellIcon, ChevronLeftIcon, ChevronRightIcon, CircleIcon, GlobeIcon, Icon, SunIcon, WatchIcon } from '../../components/ui/icon';
+import { ArrowUpIcon, BellIcon, ChevronLeftIcon, ChevronRightIcon, CircleIcon, GlobeIcon, Icon, SunIcon, WatchIcon } from '../../components/ui/icon';
 import { Pressable } from '../../components/ui/pressable';
 import { Radio, RadioGroup, RadioIcon, RadioIndicator, RadioLabel } from '../../components/ui/radio';
 import { ScrollView } from '../../components/ui/scroll-view';
@@ -20,6 +20,7 @@ import {
 } from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences, type ThemePreference } from '../../states/app-preferences';
 import { useAuth, type AuthState } from '../../states/auth';
+import type { GuestClaimViewState } from '../../claim/guest-claim-types';
 
 export type SettingsRoute = 'index' | 'theme' | 'language' | 'notifications' | 'devices';
 
@@ -49,6 +50,12 @@ type SettingsScreenProps = {
   requestWatchSyncNotificationPermission?: () => Promise<boolean>;
   hasWatchSyncNotificationPermission?: () => Promise<boolean>;
   openNotificationSettings?: () => Promise<void>;
+  accountClaim?: {
+    isOnline: boolean;
+    eligible: { logCount: number; planCount: number };
+    state: GuestClaimViewState;
+  };
+  onOpenAccountClaim?: () => void;
 };
 
 const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
@@ -62,6 +69,8 @@ export default function SettingsScreen({
   requestWatchSyncNotificationPermission = requestDefaultWatchSyncNotificationPermission,
   hasWatchSyncNotificationPermission = hasDefaultWatchSyncNotificationPermission,
   openNotificationSettings = Linking.openSettings,
+  accountClaim,
+  onOpenAccountClaim,
   route: controlledRoute,
 }: SettingsScreenProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -106,6 +115,16 @@ export default function SettingsScreen({
   const themeLabel = getThemeLabel(themePreference, t);
   const languageLabel = getLanguageLabel(language, t);
   const watchSyncNotificationLabel = watchSyncNotificationsEnabled ? t('settings.notifications.on') : t('settings.notifications.off');
+  const eligibleAccountClaimCount =
+    (accountClaim?.eligible.logCount ?? 0) + (accountClaim?.eligible.planCount ?? 0);
+  const showsAccountClaimRow = Boolean(
+    auth.state.status === 'authenticated' &&
+      accountClaim?.isOnline &&
+      eligibleAccountClaimCount > 0 &&
+      accountClaim.state.status !== 'running' &&
+      accountClaim.state.status !== 'complete' &&
+      onOpenAccountClaim,
+  );
   const openRoute = React.useCallback(
     (nextRoute: Exclude<SettingsRoute, 'index'>) => {
       if (onOpenRoute) {
@@ -289,6 +308,18 @@ export default function SettingsScreen({
             }
           }}
         />
+        {showsAccountClaimRow ? (
+          <VStack className="overflow-hidden rounded-2xl bg-card">
+            <SettingRow
+              rowTestID="settings-row-account-claim"
+              icon={ArrowUpIcon}
+              label={t('accountClaim.settingsAction')}
+              value={`${eligibleAccountClaimCount}`}
+              valueTestID="settings-account-claim-count"
+              onPress={onOpenAccountClaim!}
+            />
+          </VStack>
+        ) : null}
       </VStack>
 
       <VStack space="sm">
