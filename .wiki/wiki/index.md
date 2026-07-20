@@ -33,8 +33,8 @@
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 exact claim progress UI, principal local data, account outbox와 changed-guest reconciliation을 구분한다. | 2026-07-20 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile, staging-verified remote object와 auth user deletion 뒤에도 남는 Storage cleanup gate를 기록한다. | 2026-07-20 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
-| [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage, retained claim evidence/finalizer와 future lifecycle·production gate를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox, staging-verified remote finalize와 cleanup 완료까지의 resumable claim 상태 순서를 분리한다. | 2026-07-20 |
+| [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage와 target ID 재사용을 rollback하는 claim finalizer를 정리한다. | 2026-07-20 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox, digest·target ID를 검증하는 remote finalize와 cleanup 완료까지의 resumable claim 순서를 분리한다. | 2026-07-20 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google·claim physical UX, retained Storage object cleanup, production과 account deletion gate를 기록한다. | 2026-07-20 |
+| [열린 질문](questions/open-questions.md) | 자동 검증이 완료된 claim 무결성과 별개로 Watch·센서, Google·claim physical UX, Storage cleanup, production/account deletion gate를 기록한다. | 2026-07-20 |

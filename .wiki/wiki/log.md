@@ -898,3 +898,12 @@
 - Verified: staging `mclvhwzsuvsxjerdouka`에 account-data migrations와 `finalize-guest-claim`을 배포하고 Auth/guest-claim automated verifier를 통과했다. Physical claim과 production 승격은 별도 gate로 남는다.
 
 ## [2026-07-20] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-20] ingest | Guest claim target ID and verifier correction
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Verified: staging finalizer는 같은 local row를 다른 target ID로 확정하지 않으며 verifier는 published payload digest와 해당 rollback을 확인한다.
+
+## [2026-07-20] lint | 0 issues found, 0 auto-fixed

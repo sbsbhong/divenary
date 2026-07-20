@@ -28,6 +28,7 @@ yarn workspace @repo/mobile test guest-claim-store.test.ts --runInBand
 ```
 
 - [x] `PASS 2026-07-20` candidate `278ddfc`: focused mobile 16 suites, 326 tests; Supabase package 53 tests; staging verifier unit 49 tests; local pgTAP 109 tests. 모든 command exit code 0.
+- [x] `PASS 2026-07-20` target ID 보정 candidate `8b630a3`: Supabase script 68 tests; Supabase package 53 tests; local finalizer 15 checks; pgTAP 109 tests; guest REST smoke 10 checks; database lint. 재리뷰 `APPROVE`.
 - [x] `PASS 2026-07-20` 실패한 feature 자동 gate 없음. 전체 mobile suite의 기존 native Watch source assertion 12건과 repository-wide lint 28건은 base에서도 재현되는 별도 잔여 항목이다.
 
 ## Staging 사전 조건
@@ -44,6 +45,7 @@ yarn supabase:staging:verify:guest-claim
 
 - [x] `PASS 2026-07-20` linked project ref가 정확히 `mclvhwzsuvsxjerdouka`다.
 - [x] `PASS 2026-07-20` dry-run이 migrations `20260719130604`, `20260719134648`만 제시했고 push 뒤 migration history가 일치했다. `finalize-guest-claim` Edge Function도 같은 staging ref에 배포했다.
+- [x] `PASS 2026-07-20` 보정 dry-run은 `20260720230000`만 제시했고 push 뒤 네 migration의 local/remote history가 일치했다. Verifier는 published payload digest와 다른 target ID를 쓰는 새 batch의 409 rollback까지 확인했다.
 - [x] `PASS 2026-07-20` Auth verifier와 guest-claim verifier가 모두 PASS로 종료했으며 추적 문서에 email, token, key, profile body를 남기지 않았다.
 - [x] `PASS 2026-07-20` verifier는 disposable user 2명을 사용하고 test profile object와 user cleanup을 수행한다. 이 cleanup은 finalizer post-commit lifecycle cleanup과 별개다.
 - [ ] `PENDING` signed iPhone build와 Android development build가 staging endpoint만 사용하는지 확인한다.

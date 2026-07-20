@@ -132,7 +132,7 @@ yarn mobile:start:local
 
 `yarn mobile:auth:local:prepare`는 실제 local Auth 사용자를 만들고 `apps/mobile/.env.local`을 생성합니다. 이 파일은 ignored, mode `0600`, local-only 파일이며 생성된 password, session, key를 문서나 추적 파일에 기록하지 않습니다. Local password fixture를 hosted 환경에 사용하거나 hosted 설정과 섞지 않습니다.
 
-Hosted 프로젝트 `mclvhwzsuvsxjerdouka`는 production이 아닌 staging 전용입니다. 이 환경에는 migrations `20260713135707`, `20260719130604`, `20260719134648`과 `finalize-guest-claim` Edge Function이 배포되어 있습니다. 현재 법률 문서 version은 `2026-07-18-staging.1`이며 terms/privacy URL은 promotion 당시의 immutable commit URL을 가리킵니다. staging 명령은 이 project ref만 허용합니다.
+Hosted 프로젝트 `mclvhwzsuvsxjerdouka`는 production이 아닌 staging 전용입니다. 이 환경에는 migrations `20260713135707`, `20260719130604`, `20260719134648`, `20260720230000`과 `finalize-guest-claim` Edge Function이 배포되어 있습니다. 마지막 migration은 같은 local row를 다른 target ID로 확정하는 새 claim batch를 transaction에서 거부합니다. 현재 법률 문서 version은 `2026-07-18-staging.1`이며 terms/privacy URL은 promotion 당시의 immutable commit URL을 가리킵니다. staging 명령은 이 project ref만 허용합니다.
 
 ```bash
 yarn supabase:staging:link
@@ -144,7 +144,7 @@ yarn supabase:staging:verify:auth
 yarn supabase:staging:verify:guest-claim
 ```
 
-Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. verifier는 deployed legal URL에서 promotion SHA를 추론합니다. 같은 promotion commit의 seed 재실행은 idempotent하며, 이후 commit을 새로 promotion하려면 seed 전에 새 legal version과 그 version의 immutable URL을 정의해야 합니다.
+Hosted staging에서는 실제 provider callback을 쓰는 `apps/mobile/.env.development`를 사용합니다. Auth verifier는 exact legal row/effective time/immutable URL, `get_onboarding_status() -> jsonb` metadata, anonymous `42501` denial, Google/Apple enabled flag를 확인했습니다. Guest-claim verifier는 owner RLS, private profile, atomic rollback/idempotency, published payload digest와 target ID 재사용 거부를 확인합니다. Auth verifier는 deployed legal URL에서 promotion SHA를 추론합니다. 같은 promotion commit의 seed 재실행은 idempotent하며, 이후 commit을 새로 promotion하려면 seed 전에 새 legal version과 그 version의 immutable URL을 정의해야 합니다.
 
 사용자는 physical iPhone에서 Apple 로그인을 성공했다고 확인했습니다. Google physical login, cancellation/repeat, session restore와 re-consent는 아직 검증되지 않았습니다. Account Logbook/Planbook migrations와 `finalize-guest-claim` Edge Function은 staging에 배포됐고 disposable user 기반 Auth/guest-claim verifier를 통과했습니다. 이는 physical guest claim 완료를 뜻하지 않습니다.
 
