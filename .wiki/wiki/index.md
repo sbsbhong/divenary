@@ -10,7 +10,7 @@
 | [Diving App / Product Roadmap](project/diving-app-product-roadmap.md) | 추천 제품 범위는 v1 Apple Watch 기반 40m 이하 Gauge + Freedive + Air-only safety stop + Log에서 시작하고, 40m 초과 값은 보존하되 unsupported warning 없이 정상 지원처럼 표시하지 않는다.                                                               | 2026-07-09 |
 | [Diving App / QA and Test Plan](project/diving-app-qa-test-plan.md)   | 자동 검증과 signed-device/얕은 물 underwater runtime gate를 분리하고, 15cm manual sampling이 `When Submerged` pass가 아님을 포함한 물리 QA 기준을 정리한다.                                                                                                                | 2026-07-18 |
 | [Diving App / References](project/diving-app-references.md)           | 알고리즘과 제품 요구사항을 검증할 때 먼저 확인할 Apple, Oceanic+, NOAA, PADI, DAN, DecoTengu, Shearwater, Subsurface reference를 used-for, confidence, notes 기준으로 정리한다.                                                                  | 2026-06-28 |
-| [프로젝트 개요](project/overview.md)                                        | React Native/iPhone-watch companion, 공유 contract, account data/guest claim 구현과 hosted·physical·production 승격 gate를 분리한다. | 2026-07-20 |
+| [프로젝트 개요](project/overview.md)                                        | React Native/iPhone-watch companion, 공유 contract, staging-verified account data/guest claim과 physical·production 승격 gate를 분리한다. | 2026-07-20 |
 | [위키 운영 방식](project/wiki-workflow.md)                                  | 이 저장소의 장기 지식 저장소는 Karpathy LLM Wiki 방식으로 관리한다. 이 저장소에서는 project root 대신 `.wiki/`를 wiki root로 보고, immutable source는 `.wiki/raw/`, compiled article은 `.wiki/wiki/`에 둔다.                                              | 2026-06-28 |
 
 ## algorithms
@@ -28,13 +28,13 @@
 | Article                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                | Updated    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Account data/claim core 이후 hosted staging, Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
-| [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim core의 코드 완료와 hosted·physical·lifecycle 후속을 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 principal local data, account outbox와 remote-committed snapshot 직접 publication, changed-guest reconciliation을 구분한다. | 2026-07-20 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile과 remote object를 분리하고 auth user deletion 뒤에도 남는 Storage object의 privileged cleanup gate를 기록한다. | 2026-07-20 |
-| [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local Auth/account-data migration, owner RLS, private Storage, claim Function 책임을 관리하며 hosted 배포는 별도 gate다. | 2026-07-20 |
-| [Supabase 구조](architecture/supabase.md)                                      | Staging-targeted account schema, owner RLS, private profile Storage, retained claim evidence/finalizer와 future lifecycle·production gate를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox와 remote finalize부터 cleanup 완료까지의 resumable claim 상태 순서를 분리한다. | 2026-07-20 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Hosted staging 승격 뒤 Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
+| [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
+| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 exact claim progress UI, principal local data, account outbox와 changed-guest reconciliation을 구분한다. | 2026-07-20 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile, staging-verified remote object와 auth user deletion 뒤에도 남는 Storage cleanup gate를 기록한다. | 2026-07-20 |
+| [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
+| [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage, retained claim evidence/finalizer와 future lifecycle·production gate를 정리한다. | 2026-07-20 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox, staging-verified remote finalize와 cleanup 완료까지의 resumable claim 상태 순서를 분리한다. | 2026-07-20 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
@@ -77,4 +77,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google physical Auth, hosted claim/UI 접근성, retained Storage object cleanup, production과 account deletion gate를 기록한다. | 2026-07-20 |
+| [열린 질문](questions/open-questions.md) | Watch·센서 물리 검증, Google·claim physical UX, retained Storage object cleanup, production과 account deletion gate를 기록한다. | 2026-07-20 |

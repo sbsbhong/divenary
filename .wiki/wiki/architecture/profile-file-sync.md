@@ -1,7 +1,7 @@
 # 1Hz 프로파일 파일 저장과 동기화
 
-Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20
-Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
+Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
 Updated: 2026-07-20
 
 ## 요약
@@ -64,7 +64,7 @@ JS validator와 mobile repository 저장이 모두 성공하면 native layer는 
 
 `PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `Divenary/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 local profile file도 같이 삭제한다.
 
-Remote account profile 경계도 코드와 migration에 구현됐다. Private `dive-profiles` bucket은 owner path만 허용하며 normal account object는 `<user_id>/logs/<dive_log_id>/<content_revision>.json`, claim object는 `<user_id>/claims/<batch_id>/<target_record_id>/<content_revision>.json`을 사용한다. List row에는 최대 160개 preview만 두고 full bytes는 detail 또는 claim 검증 때 읽는다. Account-data migration과 claim Edge Function이 hosted staging에 배포됐다는 증거는 아직 없다.
+Remote account profile 경계도 코드와 migration에 구현됐다. Private `dive-profiles` bucket은 owner path만 허용하며 normal account object는 `<user_id>/logs/<dive_log_id>/<content_revision>.json`, claim object는 `<user_id>/claims/<batch_id>/<target_record_id>/<content_revision>.json`을 사용한다. List row에는 최대 160개 preview만 두고 full bytes는 detail 또는 claim 검증 때 읽는다. Account-data migrations와 claim Edge Function은 hosted staging에 배포됐고 verifier가 private owner path와 exact profile bytes 경계를 확인했다.
 
 Claim finalizer는 exact profile bytes를 검증한 뒤 account log row가 claim object path를 참조하게 하며, remote commit 뒤 claim object를 account path로 옮기거나 삭제하지 않는다. Committed claim batch/record와 profile object는 현재 idempotent readback/audit 근거로 남는다. Auth user deletion 시 database claim row는 cascade되지만 remote Storage profile object는 자동 삭제되지 않는다. Account deletion과 privileged object cleanup이 아직 구현되지 않아 object는 계속 보존되며, 이 cleanup은 future release gate다. 이는 exact-match guest cleanup 중 unreferenced local profile을 제거하는 mobile 동작과 다른 경계다.
 

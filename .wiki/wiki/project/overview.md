@@ -1,7 +1,7 @@
 # 프로젝트 개요
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20
-Raw: [Pre-Karpathy: 프로젝트 개요](../../raw/project/overview.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
+Raw: [Pre-Karpathy: 프로젝트 개요](../../raw/project/overview.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
 Updated: 2026-07-20
 
 ## 요약
@@ -20,7 +20,7 @@ Updated: 2026-07-20
 - `packages/shared-utils`: 현재 source implementation이 없는 예약된 공유 workspace다.
 - `supabase`: local Auth/account-data schema, owner RLS, private profile Storage, guest claim finalizer/Edge Function, migration/seed, database/REST tests와 isolated CLI wrapper를 관리한다.
 
-현재 코드에는 Supabase/Auth foundation, owner Logbook/Planbook schema, principal partition, account outbox/revision conflict와 resumable guest claim service가 있다. 사용자는 physical iPhone Apple login 성공을 확인했지만 Google physical login은 아직 확인하지 않았다. Account-data migration/claim Edge Function의 hosted staging 배포, physical claim, production Supabase, 앱 내 계정 삭제와 paired-device background WatchConnectivity는 별도 승격 gate다.
+현재 코드에는 Supabase/Auth foundation, owner Logbook/Planbook schema, principal partition, account outbox/revision conflict와 resumable guest claim service가 있다. Account-data migrations와 claim Edge Function은 hosted staging에 배포되어 automated verifier를 통과했다. 사용자는 physical iPhone Apple login 성공을 확인했지만 Google physical login은 아직 확인하지 않았다. Physical claim, production Supabase, 앱 내 계정 삭제와 paired-device background WatchConnectivity는 별도 승격 gate다.
 
 모바일 로그북은 `DiveLogEntry`와 `DiveLogRepository` 경계를 사용한다. 현재는 로그인 없이 수동 로그를 만들고 watch fixture와 WatchConnectivity 수신 로그를 같은 목록에서 볼 수 있으며, 앱 기본 저장소는 AsyncStorage 기반 persistent repository다.
 
@@ -28,7 +28,7 @@ Updated: 2026-07-20
 
 watch 앱의 일반 기록 흐름은 `RealDepthSensorProvider`를 통해 `CMWaterSubmersionManager` 기반 depth/pressure sample을 받도록 구현됐다. Fake sample은 명시적 demo mode의 `DemoDepthSensorProvider`에서만 사용한다. 실제 underwater sensor behavior, auto-launch, Store/TestFlight 수준 Ultra-only filtering은 공개 배포 전 지원되는 Apple Watch Ultra hardware와 배포 채널에서 수동 검증이 필요하다.
 
-모바일 앱은 generated TypeScript watch contract type과 로컬 watch fixture message를 import한다. 가져온 watch session은 raw `WatchSession`을 보존한 `DiveLogEntry`가 되며 현재 principal의 AsyncStorage 기반 `PersistentDiveLogRepository`에 저장된다. Login 자체는 guest data를 변경하지 않으며, 사용자가 claim을 선택하면 immutable snapshot을 owner-scoped remote staging/finalizer와 account local partition에 검증된 순서로 publish한다. 이 server 경계는 local code와 tests에 구현됐지만 hosted staging 배포 증거는 아직 없다.
+모바일 앱은 generated TypeScript watch contract type과 로컬 watch fixture message를 import한다. 가져온 watch session은 raw `WatchSession`을 보존한 `DiveLogEntry`가 되며 현재 principal의 AsyncStorage 기반 `PersistentDiveLogRepository`에 저장된다. Login 자체는 guest data를 변경하지 않으며, 사용자가 claim을 선택하면 immutable snapshot을 owner-scoped remote staging/finalizer와 account local partition에 검증된 순서로 publish한다. 이 server 경계는 local tests와 hosted staging automated verifier를 통과했으며 physical device claim은 아직 검증하지 않았다.
 
 모바일 설정은 테마 선호와 언어 선호를 AsyncStorage 기반 versioned JSON store에 저장한다. 테마는 `system`, `light`, `dark` 선호를 지원하고, 언어는 `ko`, `en`을 지원한다.
 

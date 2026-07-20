@@ -1,16 +1,16 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16; Guest data account claim implementation evidence, 2026-07-20
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
 Updated: 2026-07-20
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Auth, owner account schema, principal partition, outbox/sync와 guest claim core의 코드·자동 검증은 구현됐다. 현재 우선순위는 hosted staging 배포, Google/claim 실기기 검증, post-Auth Watch regression, committed claim evidence lifecycle과 account deletion gate다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Auth, owner account schema, principal partition, outbox/sync, guest claim core와 hosted staging automated verification은 완료됐다. 현재 우선순위는 Google/claim 실기기 검증, post-Auth Watch regression, committed claim evidence lifecycle과 account deletion gate다.
 
 ## 현재 상태
 
-즉시 hardening과 Wave 3 account-data/claim core의 코드 구현·자동 검증은 완료됐다. 사용자는 physical iPhone Apple login과 Auth 도입 전 약 4분 Watch foreground import/local ACK 기준선을 확인했다. Google login, hosted account-data/claim deployment, physical claim, post-Auth Watch regression, reconnect, background, killed-app과 large transfer는 완료 증거가 아니다. 남은 Wave 1/2 항목도 삭제하지 않는다.
+즉시 hardening, Wave 3 account-data/claim core의 코드 구현·자동 검증과 hosted staging deployment/verifier는 완료됐다. 사용자는 physical iPhone Apple login과 Auth 도입 전 약 4분 Watch foreground import/local ACK 기준선을 확인했다. Google login, physical claim, post-Auth Watch regression, reconnect, background, killed-app과 large transfer는 완료 증거가 아니다. 남은 Wave 1/2 항목도 삭제하지 않는다.
 
 - 자동 event와 수동 drain은 process-wide `WatchConnectivityImportCoordinator`를 공유한다. 같은 `payloadId`는 합쳐지고 서로 다른 payload는 직렬 처리되며 실패 뒤에도 queue가 계속된다.
 - Watch 수온은 optional이다. 첫 수온 update 전 값을 `0°C`로 만들지 않고, 수온이 없는 sample도 깊이·압력 기록으로 보존한다.
@@ -40,8 +40,8 @@ Updated: 2026-07-20
 ## P0 Wave 3: Supabase와 인증
 
 - 3A automated: root `supabase/`, `packages/supabase`, generated type, Keychain-compatible session, iOS native Google/Apple Auth, immutable legal version/current pointer 기반 mandatory consent가 구현됐다. Apple physical login은 사용자 확인을 받았지만 Google physical login, re-consent와 post-Auth Watch regression은 pending이다.
-- 3B code/automated: user-owned Logbook/Planbook schema와 owner RLS, keyset cursor, private immutable 1Hz profile Storage와 typed repository가 구현됐다. Hosted staging account-data migration과 physical account sync는 pending이다.
-- 3C core/automated: `guest`/`user:<uuid>` local partition, durable account outbox/revision conflict, immutable manifest와 bounded batch를 쓰는 explicit guest claim이 구현됐다. Claim UI integration, hosted Edge Function, physical retry/resume/cleanup/isolation과 committed claim evidence lifecycle은 pending이다.
+- 3B hosted/automated: user-owned Logbook/Planbook schema와 owner RLS, keyset cursor, private immutable 1Hz profile Storage와 typed repository를 staging에 배포하고 verifier로 검증했다. Physical account sync는 pending이다.
+- 3C hosted/automated: `guest`/`user:<uuid>` local partition, durable account outbox/revision conflict, immutable manifest와 bounded batch를 쓰는 explicit guest claim, claim UI와 hosted Edge Function verifier를 통합했다. Physical retry/resume/cleanup/isolation과 committed claim evidence lifecycle은 pending이다.
 - 3D: logout 때 account local cache/profile을 기기에서 제거하고 guest를 보존한다. 앱 안에서 즉시 영구 계정 삭제와 통합 회귀를 검증한다.
 - Email/password, magic link, SMS, Android native Auth, profile/nickname/friends, app-provided manual identity management, marketing consent는 Wave 3 범위 밖이다. 같은 verified email은 Supabase Auth automatic linking을 따른다.
 - 코드 구현과 hosted/physical 승격 gate를 분리한다. Production Supabase, production legal documents, post-commit claim evidence lifecycle과 3D 앱 내 계정 삭제 전에는 release하지 않는다.

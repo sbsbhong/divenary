@@ -883,3 +883,18 @@
 - Updated: 열린 질문
 - Updated: Knowledge Base Index
 - Corrected: auth user deletion은 database claim row만 cascade하며 remote Storage profile object cleanup은 account deletion/privileged cleanup 구현 전까지 future release gate다.
+
+## [2026-07-20] ingest | Guest data account claim staging promotion
+- Updated: 프로젝트 개요
+- Updated: 구현 우선순위 기록
+- Updated: 모바일 로그북 로드맵
+- Updated: 모바일 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: Monorepo 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Verified: staging `mclvhwzsuvsxjerdouka`에 account-data migrations와 `finalize-guest-claim`을 배포하고 Auth/guest-claim automated verifier를 통과했다. Physical claim과 production 승격은 별도 gate로 남는다.
+
+## [2026-07-20] lint | 0 issues found, 0 auto-fixed

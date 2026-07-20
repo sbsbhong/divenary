@@ -1,7 +1,7 @@
 # 모바일 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-19
-Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-19; Guest data account claim staging promotion evidence, 2026-07-20
+Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
 Updated: 2026-07-20
 
 ## 요약
@@ -87,7 +87,7 @@ Guest 수동 로그는 `source: 'manual'`, `cloudSyncStatus: 'notConfigured'`로
 
 Guest data claim은 현재 guest Logbook/Planbook과 전체 profile bytes를 immutable snapshot/manifest로 먼저 보존한다. 각 항목의 원격 write/readback과 profile digest·byte count·sample count 검증이 끝난 뒤에만 진행 수를 올린다. 전체 batch의 remote finalize와 committed readback을 검증한 뒤 이미 commit된 snapshot을 base account local repository에 `synced` copy로 직접 publish/readback하고, 그 다음 `cleanupPending`을 저장한다. Snapshot과 같은 guest row는 exact delete하고, snapshot 뒤 바뀐 row는 normal account local-first/outbox에 `pending` update로 저장·readback한 뒤 guest copy를 삭제한다. 이 local cleanup이 모두 끝나야 manifest를 `committed`로 저장하며 중단되면 `cleanupPending`에서 재개한다. Deferred guest data의 기본 합성은 account-copy-wins다. User generation과 principal-scoped cache key는 이전 account callback이 새 account 상태를 publish하지 못하게 한다.
 
-Claim 선택/진행 화면은 별도 implementation branch에서 작업 중이다. 이 문서의 evidence는 UI integration, screenshot, iPhone/Android physical claim, background/force-quit resume 또는 hosted staging 배포를 검증했다고 기록하지 않는다.
+Claim 선택/진행 화면은 로그인 뒤 native form sheet로 통합됐다. 항목별 remote write/readback 뒤 정확한 `3 / 32` 형태의 count와 progress bar를 갱신하고, Reduce Motion과 screen reader progress value를 지원한다. Hosted staging automated verifier는 통과했지만 screenshot, iPhone/Android physical claim과 background/force-quit resume는 아직 검증하지 않았다.
 
 앱 기본 Planbook 저장소는 `PersistentDivePlanRepository`다. 이 저장소는 `DivePlan[]`를 `dive-app:planbook:v2` key에 저장하고, `LocalDivePlanRepository`와 같은 계획 정렬 helper를 사용한다. v2 key는 two-mode reset을 위해 기존 local v1 Planbook data와 분리한다. 계획 화면은 `draft`, `planned`, `completed` 상태만 사용하고, 새로 선택 가능한 `diveMode`는 scuba와 freedive 두 가지다. 완료로 전환할 때 Logbook 초안을 만들지 나중에 할지 선택하게 한다. 계획에서 로그를 만들 때는 navigation 계층이 임시 `pendingDraft`를 Logbook editor로 넘기며, 자동으로 완료 로그를 저장하지 않는다. `planned` 상태이고 아직 로그로 전환되지 않은 계획은 `watchPlannedDives` envelope로 watch companion에 전달되어 watch Home에서 선택한 뒤 시작할 수 있다.
 
@@ -98,7 +98,7 @@ Home/Memory 같은 preview surface와 summary helper도 알 수 없는 duration/
 현재 제한은 다음과 같다.
 
 - Stable App ID, staging provider/legal verifier와 signed entitlement 기반은 준비됐다. 사용자는 physical iPhone에서 Apple login 성공을 확인했지만 Google physical login, re-consent와 session restore는 아직 검증되지 않았다. Local `.invalid` legal URL은 fixture다.
-- Supabase remote Logbook/Planbook schema, private profile Storage 경계, principal partition, outbox/conflict와 guest claim service는 구현됐다. Hosted staging migration/Edge Function 배포와 physical claim은 아직 검증되지 않았다.
+- Supabase remote Logbook/Planbook schema, private profile Storage 경계, principal partition, outbox/conflict와 guest claim service는 구현됐고 hosted staging migration/Edge Function automated verifier를 통과했다. Physical claim은 아직 검증되지 않았다.
 - Production Supabase, production legal documents와 앱 내 즉시 영구 account deletion은 후속이다. 이 gate 전에는 release하지 않는다.
 - Direct SQL 없음.
 - WatchConnectivity code boundary, companion embed 구조, durable native inbox, JS acknowledge 경로, Logbook import action의 pending inbox drain, mobile-to-watch planned dive 전달, linked watch status 표시, Notifee notification opt-in 경계가 있지만 paired-device delivery, entitlement, background delivery, retry/backoff policy, background/killed notification 표시 검증은 아직 없음.
