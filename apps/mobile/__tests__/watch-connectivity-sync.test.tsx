@@ -1,4 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type {
+  GuestClaimRemoteRepository,
+  GuestClaimStageInput,
+  RemoteDivePlan,
+} from '@repo/supabase';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
@@ -9,12 +14,15 @@ import type { WatchConnectivityPayload } from '../src/native/watch-connectivity'
 import {
   createGuestClaimSnapshot,
   GuestClaimStore,
+  type GuestClaimSnapshot,
 } from '../src/claim/guest-claim-store';
+import {GuestClaimService} from '../src/claim/guest-claim-service';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
 import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
 import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
 import {
   AccountDataProviderCore,
+  createAccountLocalFirstRepositories,
   useAccountData,
 } from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
@@ -33,6 +41,66 @@ const createDeferred = () => {
 };
 const queryClients: QueryClient[] = [];
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
+
+function planOnlyClaimRemoteRepository(
+  store: GuestClaimStore,
+): jest.Mocked<GuestClaimRemoteRepository> {
+  const targets = new Map<string, string>();
+  let ordinal = 0;
+  const implementation: GuestClaimRemoteRepository = {
+    async createOrLoadBatch() {
+      return {id: '10000000-0000-4000-8000-000000000001', status: 'uploading'};
+    },
+    async stageRecord(input: GuestClaimStageInput) {
+      ordinal += 1;
+      const suffix = String(ordinal).padStart(12, '0');
+      const targetRecordId = `30000000-0000-4000-8000-${suffix}`;
+      targets.set(`${input.entityKind}:${input.clientRecordId}`, targetRecordId);
+      return {
+        stagingRecordId: `20000000-0000-4000-8000-${suffix}`,
+        targetRecordId,
+      };
+    },
+    async attachProfile() {},
+    async uploadProfile() {},
+    async downloadProfile() {
+      throw new Error('unexpected profile download');
+    },
+    async finalize() {
+      const snapshot = await store.read();
+      return {
+        status: 'committed',
+        planCount: snapshot?.manifest.planCount ?? 0,
+        logCount: snapshot?.manifest.logCount ?? 0,
+      };
+    },
+    async listCommittedBatch() {
+      const snapshot = (await store.read()) as GuestClaimSnapshot;
+      return {
+        plans: snapshot.snapshots.map((sidecar, index) => {
+          const item = snapshot.manifest.items[index]!;
+          return {
+            id: targets.get(item.key)!,
+            localId: item.clientRecordId,
+            revision: 1,
+            payloadSha256: item.payloadSha256,
+            payload: JSON.parse(sidecar.payloadBytes) as Record<string, unknown>,
+          };
+        }),
+        logs: [],
+      };
+    },
+  };
+  return {
+    createOrLoadBatch: jest.fn(implementation.createOrLoadBatch),
+    stageRecord: jest.fn(implementation.stageRecord),
+    attachProfile: jest.fn(implementation.attachProfile),
+    uploadProfile: jest.fn(implementation.uploadProfile),
+    downloadProfile: jest.fn(implementation.downloadProfile),
+    finalize: jest.fn(implementation.finalize),
+    listCommittedBatch: jest.fn(implementation.listCommittedBatch),
+  };
+}
 
 const createQueryClient = () => {
   const queryClient = new QueryClient({
@@ -95,6 +163,8 @@ describe('WatchConnectivitySyncProvider', () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
     const planRepository = new LocalDivePlanRepository();
+    const guestRepository = new LocalDiveLogRepository();
+    const guestPlanRepository = new LocalDivePlanRepository();
     const queryClient = createQueryClient();
     const userId = '00000000-0000-4000-8000-000000000001';
     const queryScope = `user:${userId}`;
@@ -125,12 +195,11 @@ describe('WatchConnectivitySyncProvider', () => {
                 remove: jest.fn(async () => undefined),
               },
               migrateLegacyData: jest.fn(async () => undefined),
-              createRepositories: jest.fn(principal => ({
-                principal,
-                queryScope,
-                logbook: repository,
-                planbook: planRepository,
-              })),
+              createRepositories: jest.fn(principal =>
+                principal.kind === 'guest'
+                  ? {principal, queryScope: 'guest', logbook: guestRepository, planbook: guestPlanRepository}
+                  : {principal, queryScope, logbook: repository, planbook: planRepository},
+              ),
               createId: nextId,
               now: () => 1781355000,
               jitter: () => 0,
@@ -179,7 +248,7 @@ describe('WatchConnectivitySyncProvider', () => {
     ).toHaveLength(1);
   });
 
-  it('keeps an authenticated Watch import recoverable when its deferred source plan is guest-only', async () => {
+  it('routes deferred guest plans and repairs a swallowed Watch completion during claim', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const userId = '00000000-0000-4000-8000-000000000001';
     const queryScope = `user:${userId}`;
@@ -203,8 +272,19 @@ describe('WatchConnectivitySyncProvider', () => {
       plannedValues: {},
       checklistItems: [],
     };
+    const failedDeferredPlan = {
+      ...deferredPlan,
+      localId: 'failed-deferred-watch-plan',
+      title: 'Failed deferred Watch plan',
+      createdAt: 1781350100,
+      updatedAt: 1781351100,
+      plannedAt: 1781352100,
+    };
     const guestLogbook = new LocalDiveLogRepository();
-    const guestPlanbook = new LocalDivePlanRepository([deferredPlan]);
+    const guestPlanbook = new LocalDivePlanRepository([
+      deferredPlan,
+      failedDeferredPlan,
+    ]);
     const claimStore = new GuestClaimStore({storage: metadataStorage, userId});
     const snapshot = await createGuestClaimSnapshot({
       userId,
@@ -220,10 +300,6 @@ describe('WatchConnectivitySyncProvider', () => {
       now: () => 1781355000,
     });
     const accountPlanbook = new LocalDivePlanRepository();
-    jest
-      .spyOn(accountPlanbook, 'save')
-      .mockRejectedValue(new Error('simulated account plan save failure'));
-    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const outbox = new AccountOutbox({
       storage: metadataStorage,
       storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
@@ -342,9 +418,12 @@ describe('WatchConnectivitySyncProvider', () => {
         .payload.source_plan_id,
     ).toBeNull();
     await expect(guestPlanbook.get(deferredPlan.localId)).resolves.toMatchObject({
-      status: 'planned',
+      status: 'completed',
+      completedAt: fixture.session.endedAt,
+      convertedLogLocalId: accountLogs[0]!.localId,
       cloudSyncStatus: 'notConfigured',
     });
+    await expect(accountPlanbook.get(deferredPlan.localId)).resolves.toBeUndefined();
 
     await ReactTestRenderer.act(async () => {
       firstRenderer.unmount();
@@ -370,6 +449,138 @@ describe('WatchConnectivitySyncProvider', () => {
       principal: {kind: 'user', userId},
     });
     await expect(outbox.list(userId)).resolves.toHaveLength(1);
+
+    jest
+      .spyOn(guestPlanbook, 'save')
+      .mockRejectedValueOnce(new Error('simulated guest plan save failure'));
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const failedFixture = {
+      ...fixture,
+      session: {
+        ...fixture.session,
+        localSessionId: 'failed-deferred-plan-watch-session',
+        sourcePlanLocalId: failedDeferredPlan.localId,
+        endedAt: 1781358600,
+        samples: fixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'failed-deferred-plan-watch-session',
+        })),
+      },
+    };
+    await expect(importPendingWatchConnectivityPayloads({
+      repository: accountData!.logbookRepository,
+      planRepository: accountData!.planRepository,
+      queryClient,
+      queryScope,
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [{
+        payloadId: 'failed-deferred-plan-watch-payload',
+        payloadJson: JSON.stringify(failedFixture),
+        localSessionId: failedFixture.session.localSessionId,
+        receivedAt: failedFixture.session.endedAt,
+      }],
+      acknowledgeImportedPayloads,
+      onLocalWritesCommitted,
+    })).resolves.toEqual({receivedCount: 1, importedCount: 1});
+
+    const failedAccountLog = (await accountLogbook.list()).find(
+      log => log.watchCapture?.session.sourcePlanLocalId === failedDeferredPlan.localId,
+    )!;
+    expect(failedAccountLog).toBeDefined();
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      'failed-deferred-plan-watch-payload',
+    ]);
+    const initialFailedLogOperation = (await outbox.list(userId)).find(
+      operation => operation.entityKind === 'log' && operation.entityLocalId === failedAccountLog.localId,
+    )!;
+    expect(
+      (initialFailedLogOperation.payload.remote as {payload: {source_plan_id: unknown}}).payload.source_plan_id,
+    ).toBeNull();
+    await expect(guestPlanbook.get(failedDeferredPlan.localId)).resolves.toMatchObject({
+      status: 'planned',
+    });
+    await expect(accountPlanbook.get(failedDeferredPlan.localId)).resolves.toBeUndefined();
+
+    const claimOrder: string[] = [];
+    const enqueue = outbox.enqueue.bind(outbox);
+    jest.spyOn(outbox, 'enqueue').mockImplementation(async operation => {
+      claimOrder.push(`enqueue:${operation.entityKind}:${operation.entityLocalId}`);
+      return enqueue(operation);
+    });
+    const deletePlan = guestPlanbook.delete.bind(guestPlanbook);
+    jest.spyOn(guestPlanbook, 'delete').mockImplementation(async localId => {
+      claimOrder.push(`delete:plan:${localId}`);
+      return deletePlan(localId);
+    });
+    const guestRepositories = {
+      principal: {kind: 'guest' as const},
+      queryScope: 'guest',
+      logbook: guestLogbook,
+      planbook: guestPlanbook,
+    };
+    const accountRepositories = {
+      principal: {kind: 'user' as const, userId},
+      queryScope,
+      logbook: accountLogbook,
+      planbook: accountPlanbook,
+    };
+    const remote = planOnlyClaimRemoteRepository(claimStore);
+    const service = new GuestClaimService({
+      userId,
+      store: claimStore,
+      guestRepositories,
+      accountRepositories,
+      accountMutationRepositories: createAccountLocalFirstRepositories({
+        userId,
+        repositories: accountRepositories,
+        outbox,
+        createId,
+        now: () => 1781359000,
+      }),
+      profileStorage,
+      remoteRepository: remote,
+      now: () => 1781359000,
+    });
+    await expect(service.retry()).resolves.toMatchObject({
+      manifest: {status: 'committed'},
+    });
+
+    await expect(guestPlanbook.get(deferredPlan.localId)).resolves.toBeUndefined();
+    await expect(accountPlanbook.get(deferredPlan.localId)).resolves.toMatchObject({
+      status: 'completed',
+      convertedLogLocalId: accountLogs[0]!.localId,
+      ownerUserId: userId,
+      cloudSyncStatus: 'pending',
+    });
+    await expect(guestPlanbook.get(failedDeferredPlan.localId)).resolves.toBeUndefined();
+    const claimedPlan = await accountPlanbook.get(failedDeferredPlan.localId);
+    expect(claimedPlan).toMatchObject({
+      status: 'completed',
+      completedAt: failedFixture.session.endedAt,
+      convertedLogLocalId: failedAccountLog.localId,
+      ownerUserId: userId,
+      cloudSyncStatus: 'pending',
+    });
+    const claimedOperations = await outbox.list(userId);
+    const planOperation = claimedOperations.find(
+      operation => operation.entityKind === 'plan' && operation.entityLocalId === failedDeferredPlan.localId,
+    )!;
+    const repairedLogOperation = claimedOperations.filter(
+      operation => operation.entityKind === 'log' && operation.entityLocalId === failedAccountLog.localId,
+    ).at(-1)!;
+    expect((planOperation.payload.remote as RemoteDivePlan).payload.converted_log_id).toBe(
+      failedAccountLog.remoteId,
+    );
+    expect(
+      (repairedLogOperation.payload.remote as {payload: {source_plan_id: unknown}}).payload.source_plan_id,
+    ).toBe(claimedPlan!.remoteId);
+    expect(claimOrder.indexOf(`enqueue:plan:${failedDeferredPlan.localId}`)).toBeLessThan(
+      claimOrder.indexOf(`delete:plan:${failedDeferredPlan.localId}`),
+    );
+    expect(claimOrder.lastIndexOf(`enqueue:log:${failedAccountLog.localId}`)).toBeLessThan(
+      claimOrder.indexOf(`delete:plan:${failedDeferredPlan.localId}`),
+    );
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
   });
 
   it('drains pending native payloads and imports valid watch sync JSON', async () => {

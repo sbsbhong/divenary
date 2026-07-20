@@ -604,6 +604,15 @@ export class GuestClaimService {
           continue;
         }
         if (item.entityKind === 'plan') {
+          if (
+            await this.repairExactGuestPlanFromAccountLog(
+              snapshot,
+              index,
+              current as DivePlan,
+            )
+          ) {
+            continue;
+          }
           await this.options.guestRepositories.planbook.delete(
             item.clientRecordId,
           );
@@ -639,6 +648,77 @@ export class GuestClaimService {
       await this.persist(snapshot);
     }
     return snapshot;
+  }
+
+  private async repairExactGuestPlanFromAccountLog(
+    snapshot: GuestClaimSnapshot,
+    index: number,
+    current: DivePlan,
+  ): Promise<boolean> {
+    const matchingLogs = (
+      await this.options.accountRepositories.logbook.list()
+    ).filter(
+      log =>
+        log.watchCapture !== undefined &&
+        getWatchSessionSourcePlanLocalId(log.watchCapture.session) ===
+          current.localId,
+    );
+    if (matchingLogs.length === 0) {
+      return false;
+    }
+    if (matchingLogs.length !== 1) {
+      throw new GuestClaimServiceError('relationship_invalid');
+    }
+    const log = matchingLogs[0]!;
+    const completedAt =
+      log.watchCapture?.measuredValues.endedAt ??
+      log.watchCapture?.session.endedAt ??
+      log.manual.measuredValues.endedAt;
+    if (completedAt === undefined) {
+      throw new GuestClaimServiceError('relationship_invalid');
+    }
+
+    const originalCapture = await this.captureChangedGuest(
+      'plan',
+      current.localId,
+      current,
+    );
+    const context: PromotionContext = {
+      visiting: new Set(),
+      published: new Map(),
+    };
+    await this.promoteGuestEntity(
+      'plan',
+      current.localId,
+      {
+        ...current,
+        status: 'completed',
+        completedAt,
+        convertedLogLocalId: log.localId,
+        updatedAt: completedAt,
+      },
+      context,
+      {
+        item: snapshot.manifest.items[index]!,
+        sidecar: snapshot.snapshots[index]!,
+      },
+    );
+
+    for (const published of context.published.values()) {
+      if (
+        published.entityKind === 'plan' &&
+        published.localId === current.localId
+      ) {
+        continue;
+      }
+      await this.deleteCapturedGuest(
+        published.entityKind,
+        published.localId,
+        published.capture,
+      );
+    }
+    await this.deleteCapturedGuest('plan', current.localId, originalCapture);
+    return true;
   }
 
   private async promoteChangedGuest(

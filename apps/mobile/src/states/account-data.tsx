@@ -859,15 +859,35 @@ function createComposedAccountRepositories(options: {
   const composedLogbook = logbook as DiveLogRepository &
     Partial<AccountQueueRepository<DiveLogEntry>>;
   if (accountLogbook.saveLocalOnly) {
-    composedLogbook.saveLocalOnly = value =>
-      accountLogbook.saveLocalOnly!(value);
+    composedLogbook.saveLocalOnly = async value =>
+      value.ownerUserId === undefined &&
+      (await options.guestRepositories.logbook.get(value.localId)) !== undefined
+        ? options.guestRepositories.logbook.save(value)
+        : accountLogbook.saveLocalOnly!(value);
   }
   if (accountLogbook.enqueueSaved) {
-    composedLogbook.enqueueSaved = value => accountLogbook.enqueueSaved!(value);
+    composedLogbook.enqueueSaved = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.logbook.get(value.localId)) !==
+          undefined
+      ) {
+        return;
+      }
+      await accountLogbook.enqueueSaved!(value);
+    };
   }
   if (accountLogbook.reconcileSaved) {
-    composedLogbook.reconcileSaved = value =>
-      accountLogbook.reconcileSaved!(value);
+    composedLogbook.reconcileSaved = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.logbook.get(value.localId)) !==
+          undefined
+      ) {
+        return;
+      }
+      await accountLogbook.reconcileSaved!(value);
+    };
   }
   const accountPlanbook = options.accountRepositories
     .planbook as DivePlanRepository & Partial<AccountQueueRepository<DivePlan>>;
@@ -928,16 +948,36 @@ function createComposedAccountRepositories(options: {
   const composedPlanbook = planbook as DivePlanRepository &
     Partial<AccountQueueRepository<DivePlan>>;
   if (accountPlanbook.saveLocalOnly) {
-    composedPlanbook.saveLocalOnly = value =>
-      accountPlanbook.saveLocalOnly!(value);
+    composedPlanbook.saveLocalOnly = async value =>
+      value.ownerUserId === undefined &&
+      (await options.guestRepositories.planbook.get(value.localId)) !==
+        undefined
+        ? options.guestRepositories.planbook.save(value)
+        : accountPlanbook.saveLocalOnly!(value);
   }
   if (accountPlanbook.enqueueSaved) {
-    composedPlanbook.enqueueSaved = value =>
-      accountPlanbook.enqueueSaved!(value);
+    composedPlanbook.enqueueSaved = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.planbook.get(value.localId)) !==
+          undefined
+      ) {
+        return;
+      }
+      await accountPlanbook.enqueueSaved!(value);
+    };
   }
   if (accountPlanbook.reconcileSaved) {
-    composedPlanbook.reconcileSaved = value =>
-      accountPlanbook.reconcileSaved!(value);
+    composedPlanbook.reconcileSaved = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.planbook.get(value.localId)) !==
+          undefined
+      ) {
+        return;
+      }
+      await accountPlanbook.reconcileSaved!(value);
+    };
   }
   return {
     principal: { kind: 'user', userId: options.userId },
