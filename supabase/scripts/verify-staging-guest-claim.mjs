@@ -54,26 +54,36 @@ function collectApiKeyEntries(value, entries = []) {
 }
 
 export function parseStagingApiKeys(value) {
-  let publicKey;
+  let publishableKey;
   let secretKey;
+  let anonJwt;
+  let serviceRoleJwt;
 
   for (const entry of collectApiKeyEntries(value)) {
     const label = `${entry.name ?? ''} ${entry.type ?? ''}`.toLowerCase();
     const value = keyValue(entry);
 
-    if (!publicKey && (label.includes('publishable') || label.includes('anon'))) {
-      publicKey = value;
+    if (!publishableKey && (label.includes('publishable') || value.startsWith('sb_publishable_'))) {
+      publishableKey = value;
     }
-    if (!secretKey && (label.includes('secret') || label.includes('service_role'))) {
+    if (!secretKey && (label.includes('secret') || value.startsWith('sb_secret_'))) {
       secretKey = value;
     }
+    if (!anonJwt && label.includes('anon')) {
+      anonJwt = value;
+    }
+    if (!serviceRoleJwt && label.includes('service_role')) {
+      serviceRoleJwt = value;
+    }
   }
 
-  if (!publicKey || !secretKey) {
-    throw new Error('Staging API key response is incomplete.');
+  const publicApiKey = publishableKey ?? anonJwt;
+  const adminApiKey = secretKey ?? serviceRoleJwt;
+  if (!publicApiKey || !adminApiKey) {
+    throw new Error('Required staging API credential is unavailable.');
   }
 
-  return {publicKey, secretKey};
+  return {publicApiKey, adminApiKey};
 }
 
 function readStagingApiKeys({spawnSyncImpl, environment}) {
@@ -122,6 +132,10 @@ function requestHeaders(apiKey, bearer, extra = {}) {
     'Content-Type': 'application/json',
     ...extra,
   };
+}
+
+function adminHeaders(adminApiKey, extra = {}) {
+  return requestHeaders(adminApiKey, undefined, extra);
 }
 
 async function request(fetchImpl, pathname, options, label) {
@@ -214,13 +228,17 @@ function createCredentials(cryptoImpl) {
   };
 }
 
-async function createVerifiedUser(fetchImpl, secretKey, credentials) {
+async function createVerifiedUser(
+  fetchImpl,
+  adminApiKey,
+  credentials,
+) {
   const result = await request(
     fetchImpl,
     '/auth/v1/admin/users',
     {
       method: 'POST',
-      headers: requestHeaders(secretKey, secretKey),
+      headers: adminHeaders(adminApiKey),
       body: JSON.stringify({
         email: credentials.email,
         password: credentials.password,
@@ -242,7 +260,7 @@ async function signIn(fetchImpl, publicKey, credentials) {
     '/auth/v1/token?grant_type=password',
     {
       method: 'POST',
-      headers: requestHeaders(publicKey, publicKey),
+      headers: requestHeaders(publicKey, undefined),
       body: JSON.stringify(credentials),
     },
     'sign in disposable user',
@@ -342,21 +360,82 @@ async function updateRow(context, table, id, values, label) {
   return assertSingleRow(result, label);
 }
 
-async function expectDeniedInsert(context, table, row) {
+async function expectDeniedInsert(
+  attacker,
+  targetOwner,
+  table,
+  row,
+  uniqueColumn,
+  uniqueValue,
+) {
   const label = `cross-owner table write denial (${table})`;
   const result = await request(
-    context.fetchImpl,
+    attacker.fetchImpl,
     `/rest/v1/${table}`,
     {
       method: 'POST',
-      headers: requestHeaders(context.publicKey, context.accessToken, {
+      headers: requestHeaders(attacker.publicKey, attacker.accessToken, {
         Prefer: 'return=representation',
       }),
       body: JSON.stringify(row),
     },
     label,
   );
-  assertStatus(result, [401, 403], label);
+  assertStatus(
+    result,
+    [200, 201, 204, 400, 401, 403, 404, 409, 422],
+    label,
+  );
+  const persisted = await readRows(
+    targetOwner,
+    table,
+    `select=id&${uniqueColumn}=eq.${encodeURIComponent(uniqueValue)}`,
+    `${label} owner re-query`,
+  );
+  if (persisted.length !== 0) {
+    throw new Error(`${label}: owner re-query found a persisted row.`);
+  }
+}
+
+async function expectDeniedUpdate(
+  attacker,
+  targetOwner,
+  table,
+  row,
+  column,
+  attemptedValue,
+) {
+  const label = `cross-owner table update denial (${table})`;
+  const originalValue = JSON.stringify(row[column]);
+  const result = await request(
+    attacker.fetchImpl,
+    `/rest/v1/${table}?id=eq.${encodeURIComponent(row.id)}`,
+    {
+      method: 'PATCH',
+      headers: requestHeaders(attacker.publicKey, attacker.accessToken, {
+        Prefer: 'return=representation',
+      }),
+      body: JSON.stringify({[column]: attemptedValue}),
+    },
+    label,
+  );
+  assertStatus(
+    result,
+    [200, 204, 400, 401, 403, 404, 409, 422],
+    label,
+  );
+  const persisted = await readRows(
+    targetOwner,
+    table,
+    `select=id,${column}&id=eq.${encodeURIComponent(row.id)}`,
+    `${label} owner re-query`,
+  );
+  if (
+    persisted.length !== 1 ||
+    JSON.stringify(persisted[0][column]) !== originalValue
+  ) {
+    throw new Error(`${label}: owner re-query found a changed row.`);
+  }
 }
 
 async function createOwnerFixture(context, cryptoImpl, index) {
@@ -460,7 +539,11 @@ async function downloadProfile(context, objectPath) {
   );
 }
 
-async function deleteProfiles(fetchImpl, secretKey, objectPaths) {
+async function deleteProfiles(
+  fetchImpl,
+  adminApiKey,
+  objectPaths,
+) {
   if (objectPaths.length === 0) {
     return;
   }
@@ -469,7 +552,7 @@ async function deleteProfiles(fetchImpl, secretKey, objectPaths) {
     `/storage/v1/object/${profileBucket}`,
     {
       method: 'DELETE',
-      headers: requestHeaders(secretKey, secretKey),
+      headers: adminHeaders(adminApiKey),
       body: JSON.stringify({prefixes: objectPaths}),
     },
     'delete disposable profiles',
@@ -477,17 +560,68 @@ async function deleteProfiles(fetchImpl, secretKey, objectPaths) {
   assertStatus(result, [200], 'delete disposable profiles');
 }
 
-async function deleteUser(fetchImpl, secretKey, userId) {
+async function deleteUser(fetchImpl, adminApiKey, userId) {
   const result = await request(
     fetchImpl,
     `/auth/v1/admin/users/${userId}`,
     {
       method: 'DELETE',
-      headers: requestHeaders(secretKey, secretKey),
+      headers: adminHeaders(adminApiKey),
     },
     'delete disposable user',
   );
   assertStatus(result, [200, 204], 'delete disposable user');
+}
+
+async function findUserIdByEmail(
+  fetchImpl,
+  adminApiKey,
+  email,
+) {
+  const perPage = 100;
+  for (let page = 1; page <= 100; page += 1) {
+    const result = await request(
+      fetchImpl,
+      `/auth/v1/admin/users?page=${page}&per_page=${perPage}`,
+      {headers: adminHeaders(adminApiKey)},
+      'list disposable users for cleanup',
+    );
+    assertStatus(result, [200], 'list disposable users for cleanup');
+    const users = result.body?.users;
+    if (!Array.isArray(users)) {
+      throw new Error('list disposable users for cleanup: invalid response.');
+    }
+
+    const match = users.find(user =>
+      user !== null &&
+      typeof user === 'object' &&
+      user.email === email &&
+      typeof user.id === 'string'
+    );
+    if (match) {
+      return match.id;
+    }
+    if (users.length < perPage) {
+      return undefined;
+    }
+  }
+
+  throw new Error('list disposable users for cleanup: pagination limit exceeded.');
+}
+
+async function cleanupUser(
+  fetchImpl,
+  adminApiKey,
+  target,
+) {
+  const userId = target.userId ?? await findUserIdByEmail(
+    fetchImpl,
+    adminApiKey,
+    target.email,
+  );
+  if (userId) {
+    await deleteUser(fetchImpl, adminApiKey, userId);
+  }
 }
 
 async function verifyMemberships(contexts) {
@@ -549,61 +683,154 @@ async function verifyOwnerIsolation(contexts, fixtures, cryptoImpl) {
 
   const crossPlanId = `cross-plan-${cryptoImpl.randomUUID()}`;
   const crossLogId = `cross-log-${cryptoImpl.randomUUID()}`;
-  await expectDeniedInsert(owner, 'dive_plans', {
-    user_id: other.userId,
-    local_id: crossPlanId,
-    status: 'planned',
-    plan_data: {cross: true},
-    payload_sha256: payloadDigest(cryptoImpl, {crossPlanId}),
-  });
-  await expectDeniedInsert(owner, 'dive_logs', {
-    user_id: other.userId,
-    local_id: crossLogId,
-    source_plan_id: otherFixture.plan.id,
-    source: 'manual',
-    started_at: '2026-07-20T02:00:00.000Z',
-    manual_data: {},
-    mobile_data: {},
-    provenance: {source: 'manual'},
-    payload_sha256: payloadDigest(cryptoImpl, {crossLogId}),
-  });
-  await expectDeniedInsert(owner, 'guest_claim_batches', {
-    user_id: other.userId,
-    client_batch_id: `cross-batch-${cryptoImpl.randomUUID()}`,
-    manifest_sha256: payloadDigest(cryptoImpl, {crossBatch: true}),
-    expected_plan_count: 0,
-    expected_log_count: 0,
-  });
-  await expectDeniedInsert(owner, 'guest_claim_records', {
-    batch_id: otherFixture.batch.id,
-    user_id: other.userId,
-    entity_kind: 'plan',
-    client_record_id: `cross-staged-${cryptoImpl.randomUUID()}`,
-    payload_sha256: payloadDigest(cryptoImpl, {crossStaged: true}),
-    payload: {status: 'planned', plan_data: {}},
-  });
+  const crossBatchId = `cross-batch-${cryptoImpl.randomUUID()}`;
+  const crossStagedId = `cross-staged-${cryptoImpl.randomUUID()}`;
+  await expectDeniedInsert(
+    owner,
+    other,
+    'dive_plans',
+    {
+      user_id: other.userId,
+      local_id: crossPlanId,
+      status: 'planned',
+      plan_data: {cross: true},
+      payload_sha256: payloadDigest(cryptoImpl, {crossPlanId}),
+    },
+    'local_id',
+    crossPlanId,
+  );
+  await expectDeniedInsert(
+    owner,
+    other,
+    'dive_logs',
+    {
+      user_id: other.userId,
+      local_id: crossLogId,
+      source_plan_id: otherFixture.plan.id,
+      source: 'manual',
+      started_at: '2026-07-20T02:00:00.000Z',
+      manual_data: {},
+      mobile_data: {},
+      provenance: {source: 'manual'},
+      payload_sha256: payloadDigest(cryptoImpl, {crossLogId}),
+    },
+    'local_id',
+    crossLogId,
+  );
+  await expectDeniedInsert(
+    owner,
+    other,
+    'guest_claim_batches',
+    {
+      user_id: other.userId,
+      client_batch_id: crossBatchId,
+      manifest_sha256: payloadDigest(cryptoImpl, {crossBatch: true}),
+      expected_plan_count: 0,
+      expected_log_count: 0,
+    },
+    'client_batch_id',
+    crossBatchId,
+  );
+  await expectDeniedInsert(
+    owner,
+    other,
+    'guest_claim_records',
+    {
+      batch_id: otherFixture.batch.id,
+      user_id: other.userId,
+      entity_kind: 'plan',
+      client_record_id: crossStagedId,
+      payload_sha256: payloadDigest(cryptoImpl, {crossStaged: true}),
+      payload: {status: 'planned', plan_data: {}},
+    },
+    'client_record_id',
+    crossStagedId,
+  );
+
+  for (const [table, row, column, attemptedValue] of [
+    ['dive_plans', otherFixture.plan, 'site_name', 'cross-owner change'],
+    [
+      'dive_logs',
+      otherFixture.log,
+      'started_at',
+      '2026-07-21T02:00:00.000Z',
+    ],
+    [
+      'guest_claim_batches',
+      otherFixture.batch,
+      'manifest_sha256',
+      payloadDigest(cryptoImpl, {crossUpdate: 'batch'}),
+    ],
+    [
+      'guest_claim_records',
+      otherFixture.staged,
+      'payload_sha256',
+      payloadDigest(cryptoImpl, {crossUpdate: 'record'}),
+    ],
+  ]) {
+    await expectDeniedUpdate(
+      owner,
+      other,
+      table,
+      row,
+      column,
+      attemptedValue,
+    );
+  }
 }
 
-async function verifyInvalidClaim(context, cryptoImpl) {
-  const batch = await createBatch(context, cryptoImpl, 'invalid-claim', 1, 0);
-  const localId = `invalid-plan-${cryptoImpl.randomUUID()}`;
+async function verifyAtomicRollback(context, cryptoImpl) {
+  const batch = await createBatch(
+    context,
+    cryptoImpl,
+    'rollback-after-plan',
+    1,
+    1,
+  );
+  const planLocalId = `rollback-plan-${cryptoImpl.randomUUID()}`;
+  const logLocalId = `rollback-log-${cryptoImpl.randomUUID()}`;
+  const planPayload = {
+    status: 'planned',
+    planned_at: '2026-07-20T01:00:00.000Z',
+    plan_data: {schemaVersion: 1},
+  };
+  const logPayload = {
+    source: 'manual',
+    started_at: 'not-a-timestamp',
+    manual_data: {schemaVersion: 1},
+    mobile_data: {schemaVersion: 1},
+    provenance: {source: 'manual'},
+  };
   await insertRow(context, 'guest_claim_records', {
     batch_id: batch.id,
     user_id: context.userId,
     entity_kind: 'plan',
-    client_record_id: localId,
-    payload_sha256: payloadDigest(cryptoImpl, {invalid: true}),
-    payload: {status: 'planned'},
+    client_record_id: planLocalId,
+    payload_sha256: payloadDigest(cryptoImpl, planPayload),
+    payload: planPayload,
+  });
+  await insertRow(context, 'guest_claim_records', {
+    batch_id: batch.id,
+    user_id: context.userId,
+    entity_kind: 'log',
+    client_record_id: logLocalId,
+    payload_sha256: payloadDigest(cryptoImpl, logPayload),
+    payload: logPayload,
   });
 
-  const before = await readRows(
-    context,
-    'dive_plans',
-    `select=id&local_id=eq.${encodeURIComponent(localId)}`,
-    'invalid claim pre-finalization isolation',
-  );
-  if (before.length !== 0) {
-    throw new Error('invalid claim must not publish account rows before finalization.');
+  for (const [table, localId] of [
+    ['dive_plans', planLocalId],
+    ['dive_logs', logLocalId],
+  ]) {
+    const before = await readRows(
+      context,
+      table,
+      `select=id&local_id=eq.${encodeURIComponent(localId)}`,
+      'atomic rollback pre-finalization isolation',
+    );
+    if (before.length !== 0) {
+      throw new Error('atomic rollback rows must be hidden before finalization.');
+    }
   }
 
   const finalized = await invokeFinalizer(context, batch.id);
@@ -611,16 +838,21 @@ async function verifyInvalidClaim(context, cryptoImpl) {
     finalized,
     409,
     'claim_validation_failed',
-    'invalid claim rejection',
+    'later log cast rejection',
   );
-  const after = await readRows(
-    context,
-    'dive_plans',
-    `select=id&local_id=eq.${encodeURIComponent(localId)}`,
-    'invalid claim rollback',
-  );
-  if (after.length !== 0) {
-    throw new Error('invalid claim must not publish account rows.');
+  for (const [table, localId] of [
+    ['dive_plans', planLocalId],
+    ['dive_logs', logLocalId],
+  ]) {
+    const after = await readRows(
+      context,
+      table,
+      `select=id&local_id=eq.${encodeURIComponent(localId)}`,
+      'atomic rollback verification',
+    );
+    if (after.length !== 0) {
+      throw new Error('atomic rollback must not publish account rows.');
+    }
   }
 }
 
@@ -779,22 +1011,33 @@ export async function verifyStagingGuestClaim({
   cryptoImpl = {createHash, randomBytes, randomUUID},
 } = {}) {
   await assertProjectRef();
-  const {publicKey, secretKey} = readStagingApiKeys({
+  const {publicApiKey, adminApiKey} = readStagingApiKeys({
     spawnSyncImpl,
     environment,
   });
   const credentials = [createCredentials(cryptoImpl), createCredentials(cryptoImpl)];
   const contexts = [];
-  const userIds = [];
+  const cleanupTargets = [];
   const objectPaths = [];
   let verificationError;
 
   try {
     for (const credential of credentials) {
-      const userId = await createVerifiedUser(fetchImpl, secretKey, credential);
-      userIds.push(userId);
-      const accessToken = await signIn(fetchImpl, publicKey, credential);
-      contexts.push({fetchImpl, publicKey, accessToken, userId});
+      const cleanupTarget = {email: credential.email, userId: undefined};
+      cleanupTargets.push(cleanupTarget);
+      const userId = await createVerifiedUser(
+        fetchImpl,
+        adminApiKey,
+        credential,
+      );
+      cleanupTarget.userId = userId;
+      const accessToken = await signIn(fetchImpl, publicApiKey, credential);
+      contexts.push({
+        fetchImpl,
+        publicKey: publicApiKey,
+        accessToken,
+        userId,
+      });
     }
 
     const preOnboarding = await request(
@@ -802,7 +1045,7 @@ export async function verifyStagingGuestClaim({
       '/rest/v1/dive_plans',
       {
         method: 'POST',
-        headers: requestHeaders(publicKey, contexts[0].accessToken, {
+        headers: requestHeaders(publicApiKey, contexts[0].accessToken, {
           Prefer: 'return=representation',
         }),
         body: JSON.stringify({
@@ -839,7 +1082,7 @@ export async function verifyStagingGuestClaim({
     );
     assertJwtRejected(invalidJwt, 'invalid finalizer JWT rejection');
 
-    await verifyInvalidClaim(contexts[0], cryptoImpl);
+    await verifyAtomicRollback(contexts[0], cryptoImpl);
     await verifyCompleteClaim(
       contexts[0],
       contexts[1],
@@ -850,8 +1093,18 @@ export async function verifyStagingGuestClaim({
     verificationError = error;
   } finally {
     const cleanupResults = await Promise.allSettled([
-      deleteProfiles(fetchImpl, secretKey, objectPaths),
-      ...userIds.map(userId => deleteUser(fetchImpl, secretKey, userId)),
+      deleteProfiles(
+        fetchImpl,
+        adminApiKey,
+        objectPaths,
+      ),
+      ...cleanupTargets.map(target =>
+        cleanupUser(
+          fetchImpl,
+          adminApiKey,
+          target,
+        )
+      ),
     ]);
     if (cleanupResults.some(result => result.status === 'rejected')) {
       throw new Error('Staging cleanup failed.');

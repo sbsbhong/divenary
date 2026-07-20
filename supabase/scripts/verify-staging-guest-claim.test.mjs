@@ -9,6 +9,9 @@ import {
 
 const publicKey = 'sb_publishable_public-test-value';
 const secretKey = 'sb_secret_private-test-value';
+const anonJwt = 'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.anon-signature';
+const serviceRoleJwt =
+  'eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoic2VydmljZV9yb2xlIn0.service-signature';
 const stagingApiUrl = 'https://mclvhwzsuvsxjerdouka.supabase.co';
 
 function jsonResponse(status, body, headers = {}) {
@@ -68,9 +71,15 @@ function eqFilter(url, name) {
 
 function createStagingApi({
   allowCrossOwnerWrite = false,
-  publishInvalidClaim = false,
+  crossOwnerDenialStatus = 403,
+  persistDeniedCrossOwnerWrite = false,
+  crossOwnerUpdateDenialStatus = 403,
+  persistDeniedCrossOwnerUpdate = false,
+  leakRollbackPlan = false,
   changeRepeatedFinalizer = false,
   failOnFirstClaimRecord = false,
+  loseFirstCreateResponseId = false,
+  paginateCleanupLookup = false,
 } = {}) {
   const users = [];
   const memberships = new Set();
@@ -81,11 +90,12 @@ function createStagingApi({
     guest_claim_records: [],
   };
   const objects = new Map();
-  const cleanup = {users: [], profiles: []};
+  const cleanup = {users: [], profiles: [], listCalls: 0};
   const calls = [];
   let databaseId = 1;
   let finalizerCalls = 0;
   let failedClaimRecord = false;
+  let rollbackPlanInsertAttempts = 0;
 
   function nextDatabaseId() {
     const suffix = `${databaseId++}`.padStart(12, '0');
@@ -98,7 +108,7 @@ function createStagingApi({
   }
 
   function isService(options) {
-    return bearer(options) === secretKey;
+    return options?.headers?.apikey === secretKey && bearer(options) === undefined;
   }
 
   function visibleRows(table, url, currentUser) {
@@ -110,7 +120,13 @@ function createStagingApi({
     }
 
     let result = rows[table].filter(row => row.user_id === currentUser?.id);
-    for (const field of ['id', 'user_id', 'local_id', 'client_batch_id']) {
+    for (const field of [
+      'id',
+      'user_id',
+      'local_id',
+      'client_batch_id',
+      'client_record_id',
+    ]) {
       const expected = eqFilter(url, field);
       if (expected !== undefined) {
         result = result.filter(row => String(row[field]) === expected);
@@ -123,7 +139,14 @@ function createStagingApi({
     const url = new URL(input);
     const method = options.method ?? 'GET';
     const requestBody = readJsonBody(options);
-    calls.push({method, pathname: url.pathname, requestBody});
+    calls.push({
+      method,
+      pathname: url.pathname,
+      search: url.search,
+      requestBody,
+      apiKey: options.headers?.apikey,
+      bearer: bearer(options),
+    });
 
     if (url.origin !== stagingApiUrl) {
       throw new Error('unexpected project URL');
@@ -138,7 +161,30 @@ function createStagingApi({
         token: `access-token-${index}`,
       };
       users.push(user);
+      if (loseFirstCreateResponseId && users.length === 1) {
+        return jsonResponse(201, {created: true});
+      }
       return jsonResponse(201, {id: user.id});
+    }
+
+    if (url.pathname === '/auth/v1/admin/users' && method === 'GET') {
+      assert.equal(isService(options), true);
+      cleanup.listCalls += 1;
+      const page = Number(url.searchParams.get('page') ?? 1);
+      const perPage = Number(url.searchParams.get('per_page') ?? 50);
+      if (paginateCleanupLookup && page === 1) {
+        return jsonResponse(200, {
+          users: Array.from({length: perPage}, (_, index) => ({
+            id: `40000000-0000-4000-8000-${`${index}`.padStart(12, '0')}`,
+            email: `unrelated-${index}@example.invalid`,
+          })),
+        });
+      }
+      if (paginateCleanupLookup && page === 2) {
+        return jsonResponse(200, {users});
+      }
+      const start = (page - 1) * perPage;
+      return jsonResponse(200, {users: users.slice(start, start + perPage)});
     }
 
     if (url.pathname.startsWith('/auth/v1/admin/users/') && method === 'DELETE') {
@@ -152,12 +198,15 @@ function createStagingApi({
     }
 
     if (url.pathname === '/auth/v1/token' && method === 'POST') {
+      assert.equal(options.headers.apikey, publicKey);
+      assert.equal(bearer(options), undefined);
       const user = users.find(candidate => candidate.email === requestBody.email);
       return jsonResponse(user ? 200 : 400, user ? {access_token: user.token} : {});
     }
 
     const currentUser = userFor(options);
     if (url.pathname === '/rest/v1/rpc/get_onboarding_status' && method === 'POST') {
+      assert.match(bearer(options), /^access-token-/);
       return jsonResponse(200, {
         isComplete: memberships.has(currentUser?.id),
         requiredDocuments: [
@@ -186,8 +235,17 @@ function createStagingApi({
       if (method === 'PATCH') {
         const id = eqFilter(url, 'id');
         const row = rows[table].find(candidate => candidate.id === id);
-        if (!memberships.has(currentUser?.id) || row?.user_id !== currentUser.id) {
+        if (!memberships.has(currentUser?.id) || !row) {
           return jsonResponse(403, {code: '42501'});
+        }
+        if (row.user_id !== currentUser.id) {
+          if (persistDeniedCrossOwnerUpdate) {
+            Object.assign(row, requestBody);
+          }
+          return jsonResponse(
+            crossOwnerUpdateDenialStatus,
+            crossOwnerUpdateDenialStatus === 200 ? [] : {code: '42501'},
+          );
         }
         Object.assign(row, requestBody);
         return jsonResponse(200, [row]);
@@ -198,7 +256,19 @@ function createStagingApi({
           return jsonResponse(403, {code: '42501'});
         }
         if (requestBody.user_id !== currentUser.id && !allowCrossOwnerWrite) {
-          return jsonResponse(403, {code: '42501'});
+          if (persistDeniedCrossOwnerWrite) {
+            rows[table].push({
+              ...requestBody,
+              id: nextDatabaseId(),
+              ...(table === 'guest_claim_records'
+                ? {target_record_id: nextDatabaseId()}
+                : {}),
+            });
+          }
+          return jsonResponse(
+            crossOwnerDenialStatus,
+            crossOwnerDenialStatus === 200 ? [] : {code: '42501'},
+          );
         }
         if (
           failOnFirstClaimRecord &&
@@ -272,13 +342,19 @@ function createStagingApi({
       }
 
       const staged = rows.guest_claim_records.filter(row => row.batch_id === batch.id);
-      if (batch.client_batch_id.includes('invalid')) {
-        if (publishInvalidClaim) {
-          rows.dive_plans.push({
-            id: nextDatabaseId(),
-            user_id: currentUser.id,
-            local_id: staged[0].client_record_id,
-          });
+      if (batch.client_batch_id.includes('rollback-after-plan')) {
+        const planRecord = staged.find(row => row.entity_kind === 'plan');
+        const logRecord = staged.find(row => row.entity_kind === 'log');
+        assert.equal(logRecord.payload.started_at, 'not-a-timestamp');
+        rows.dive_plans.push({
+          id: planRecord.target_record_id,
+          user_id: currentUser.id,
+          local_id: planRecord.client_record_id,
+          payload_sha256: planRecord.payload_sha256,
+        });
+        rollbackPlanInsertAttempts += 1;
+        if (!leakRollbackPlan) {
+          rows.dive_plans.pop();
         }
         return jsonResponse(
           409,
@@ -330,7 +406,13 @@ function createStagingApi({
     throw new Error(`unexpected request ${method} ${url.pathname}`);
   }
 
-  return {calls, cleanup, fetchImpl, get finalizerCalls() { return finalizerCalls; }};
+  return {
+    calls,
+    cleanup,
+    fetchImpl,
+    get finalizerCalls() { return finalizerCalls; },
+    get rollbackPlanInsertAttempts() { return rollbackPlanInsertAttempts; },
+  };
 }
 
 function successfulCli() {
@@ -339,6 +421,8 @@ function successfulCli() {
     stdout: JSON.stringify([
       {name: 'public client', type: 'publishable', api_key: publicKey},
       {name: 'server cleanup', type: 'secret', api_key: secretKey},
+      {name: 'anon', type: 'legacy', api_key: anonJwt},
+      {name: 'service_role', type: 'legacy', api_key: serviceRoleJwt},
     ]),
     stderr: '',
   };
@@ -362,28 +446,50 @@ test('parses current and legacy API key response shapes without returning metada
     parseStagingApiKeys([
       {name: 'default', type: 'publishable', api_key: publicKey},
       {name: 'server', type: 'secret', api_key: secretKey},
+      {name: 'anon', type: 'legacy', api_key: anonJwt},
+      {name: 'service_role', type: 'legacy', api_key: serviceRoleJwt},
     ]),
-    {publicKey, secretKey},
+    {
+      publicApiKey: publicKey,
+      adminApiKey: secretKey,
+    },
   );
 
   assert.deepEqual(
     parseStagingApiKeys({
       result: {
         keys: [
-          {name: 'anon', key: 'legacy-public-key'},
-          {name: 'service_role', key: 'legacy-service-key'},
+          {name: 'anon', key: anonJwt},
+          {name: 'service_role', key: serviceRoleJwt},
         ],
       },
     }),
-    {publicKey: 'legacy-public-key', secretKey: 'legacy-service-key'},
+    {
+      publicApiKey: anonJwt,
+      adminApiKey: serviceRoleJwt,
+    },
   );
 
   assert.deepEqual(
     parseStagingApiKeys({
       publishable: publicKey,
-      service_role: secretKey,
+      secret: secretKey,
+      service_role: serviceRoleJwt,
     }),
-    {publicKey, secretKey},
+    {
+      publicApiKey: publicKey,
+      adminApiKey: secretKey,
+    },
+  );
+});
+
+test('accepts new opaque keys without requiring legacy JWT keys', () => {
+  assert.deepEqual(
+    parseStagingApiKeys([
+      {name: 'default', type: 'publishable', api_key: publicKey},
+      {name: 'server', type: 'secret', api_key: secretKey},
+    ]),
+    {publicApiKey: publicKey, adminApiKey: secretKey},
   );
 });
 
@@ -441,8 +547,18 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
     'management-token-that-must-not-be-logged',
   );
   assert.equal(api.finalizerCalls, 2);
+  assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
   assert.equal(api.cleanup.profiles.length, 1);
+  assert.ok(
+    api.calls
+      .filter(call => call.pathname.startsWith('/rest/v1/'))
+      .every(call => /^access-token-/.test(call.bearer)),
+  );
+  assert.ok(
+    api.calls
+      .every(call => call.bearer !== serviceRoleJwt && call.bearer !== secretKey),
+  );
   assert.ok(
     api.calls.some(call =>
       call.method === 'POST' && call.pathname === '/rest/v1/guest_claim_records'
@@ -460,13 +576,54 @@ test('fails when a cross-owner table write is accepted', async () => {
   assert.equal(api.cleanup.users.length, 2);
 });
 
-test('fails when an invalid claim exposes a partial account row', async () => {
-  const api = createStagingApi({publishInvalidClaim: true});
+test('fails when a denial response still leaves a cross-owner row', async () => {
+  const api = createStagingApi({persistDeniedCrossOwnerWrite: true});
 
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
-    /invalid claim must not publish account rows/i,
+    /cross-owner table write denial/i,
   );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('accepts a PostgREST denial response variation only after owner re-query', async () => {
+  const api = createStagingApi({
+    crossOwnerDenialStatus: 200,
+    crossOwnerUpdateDenialStatus: 200,
+  });
+
+  assert.deepEqual(
+    await verifyStagingGuestClaim(verificationOptions(api)),
+    {status: 'passed'},
+  );
+  assert.ok(
+    api.calls.some(call =>
+      call.method === 'GET' &&
+      call.pathname === '/rest/v1/dive_plans' &&
+      call.search.includes('local_id=eq.cross-plan-') &&
+      call.bearer === 'access-token-2'
+    ),
+  );
+});
+
+test('fails when a denial response still changes a cross-owner row', async () => {
+  const api = createStagingApi({persistDeniedCrossOwnerUpdate: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /cross-owner table update denial/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when a later log cast error leaves the transaction plan visible', async () => {
+  const api = createStagingApi({leakRollbackPlan: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /atomic rollback must not publish account rows/i,
+  );
+  assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
 });
 
@@ -488,6 +645,27 @@ test('cleans both users after a mid-flow network failure', async () => {
     /staging request failed/i,
   );
   assert.equal(api.cleanup.users.length, 2);
+});
+
+test('finds and deletes a created user when the create response loses its ID', async () => {
+  const api = createStagingApi({
+    loseFirstCreateResponseId: true,
+    paginateCleanupLookup: true,
+  });
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    error => {
+      assert.match(error.message, /missing user identifier/i);
+      assert.doesNotMatch(error.message, /guest-claim-|example\.invalid/i);
+      return true;
+    },
+  );
+
+  assert.equal(api.cleanup.listCalls, 2);
+  assert.deepEqual(api.cleanup.users, [
+    '30000000-0000-4000-8000-000000000001',
+  ]);
 });
 
 test('does not expose CLI stderr or secrets in failures and command output', async () => {
