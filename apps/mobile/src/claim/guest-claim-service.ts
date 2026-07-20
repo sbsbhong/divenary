@@ -603,6 +603,8 @@ export class GuestClaimService {
           await this.promoteChangedGuest(snapshot, index, current);
           continue;
         }
+        const expectedRecordBytes = snapshot.snapshots[index]!.localRecordBytes;
+        let deleteResult: 'deleted' | 'notFound' | 'conditionFailed';
         if (item.entityKind === 'plan') {
           if (
             await this.repairExactGuestPlanFromAccountLog(
@@ -613,14 +615,19 @@ export class GuestClaimService {
           ) {
             continue;
           }
-          await this.options.guestRepositories.planbook.delete(
+          deleteResult = await this.options.guestRepositories.planbook.deleteIf(
             item.clientRecordId,
+            candidate => canonicalLocal(candidate) === expectedRecordBytes,
           );
         } else {
-          await this.options.guestRepositories.logbook.delete(
+          deleteResult = await this.options.guestRepositories.logbook.deleteIf(
             item.clientRecordId,
+            candidate => canonicalLocal(candidate) === expectedRecordBytes,
             { retainProfileAfterDelete: true },
           );
+        }
+        if (deleteResult === 'conditionFailed') {
+          throw new GuestClaimServiceError('claim_validation_failed');
         }
         this.assertCanContinue();
         if ((await repository.get(item.clientRecordId)) !== undefined) {
@@ -1226,10 +1233,17 @@ export class GuestClaimService {
         throw new GuestClaimServiceError('profile_corrupt');
       }
     }
-    if (entityKind === 'log') {
-      await this.options.guestRepositories.logbook.delete(localId);
-    } else {
-      await this.options.guestRepositories.planbook.delete(localId);
+    const deleteResult = entityKind === 'log'
+      ? await this.options.guestRepositories.logbook.deleteIf(
+          localId,
+          candidate => canonicalLocal(candidate) === capture.recordBytes,
+        )
+      : await this.options.guestRepositories.planbook.deleteIf(
+          localId,
+          candidate => canonicalLocal(candidate) === capture.recordBytes,
+        );
+    if (deleteResult === 'conditionFailed') {
+      throw new GuestClaimServiceError('claim_validation_failed');
     }
     this.assertCanContinue();
     if ((await repository.get(localId)) !== undefined) {

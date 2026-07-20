@@ -836,6 +836,27 @@ function createComposedAccountRepositories(options: {
       }
       return options.guestRepositories.logbook.delete(localId, deleteOptions);
     },
+    async deleteIf(localId, predicate, deleteOptions) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        return options.guestRepositories.logbook.deleteIf(
+          localId,
+          predicate,
+          deleteOptions,
+        );
+      }
+      if (await options.accountRepositories.logbook.get(localId)) {
+        return options.accountRepositories.logbook.deleteIf(
+          localId,
+          predicate,
+          deleteOptions,
+        );
+      }
+      return options.guestRepositories.logbook.deleteIf(
+        localId,
+        predicate,
+        deleteOptions,
+      );
+    },
     async getWatchProfile(localId) {
       if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
         return options.guestRepositories.logbook.getWatchProfile(localId);
@@ -943,6 +964,15 @@ function createComposedAccountRepositories(options: {
         return options.accountRepositories.planbook.delete(localId);
       }
       return options.guestRepositories.planbook.delete(localId);
+    },
+    async deleteIf(localId, predicate) {
+      if (options.hiddenGuestIds.guestPriorityPlanIds.has(localId)) {
+        return options.guestRepositories.planbook.deleteIf(localId, predicate);
+      }
+      if (await options.accountRepositories.planbook.get(localId)) {
+        return options.accountRepositories.planbook.deleteIf(localId, predicate);
+      }
+      return options.guestRepositories.planbook.deleteIf(localId, predicate);
     },
   };
   const composedPlanbook = planbook as DivePlanRepository &
@@ -1395,6 +1425,63 @@ function createAccountLogbookRepository(options: {
         },
       );
     },
+    async deleteIf(localId, predicate, deleteOptions) {
+      return withAccountEntityMutationLock(
+        options.userId,
+        'log',
+        localId,
+        async () => {
+          const current = await options.local.get(localId);
+          if (!current) {
+            return 'notFound';
+          }
+          if (!predicate(current)) {
+            return 'conditionFailed';
+          }
+          const operations = await options.outbox.listEntity(
+            options.userId,
+            'log',
+            localId,
+          );
+          if (operations.some(operation => operation.mutation === 'delete')) {
+            return 'deleted';
+          }
+          const hasPendingUpsert = operations.some(
+            operation => operation.mutation === 'upsert',
+          );
+          if (
+            current.remoteId &&
+            (current.remoteRevision || hasPendingUpsert)
+          ) {
+            assertOwnedByUser(current, options.userId);
+            await options.outbox.enqueue(
+              deleteOperation(
+                options.userId,
+                'log',
+                current,
+                toRemoteLog(current, options.userId),
+                current.remoteRevision,
+                options.now,
+              ),
+            );
+            return 'deleted';
+          }
+          const result = await options.local.deleteIf(
+            localId,
+            predicate,
+            deleteOptions,
+          );
+          if (result === 'deleted') {
+            await options.outbox.removePendingEntity(
+              options.userId,
+              'log',
+              localId,
+            );
+          }
+          return result;
+        },
+      );
+    },
     saveLocalOnly,
     enqueueSaved,
     reconcileSaved,
@@ -1559,6 +1646,59 @@ function createAccountPlanRepository(options: {
             'plan',
             localId,
           );
+        },
+      );
+    },
+    async deleteIf(localId, predicate) {
+      return withAccountEntityMutationLock(
+        options.userId,
+        'plan',
+        localId,
+        async () => {
+          const current = await options.local.get(localId);
+          if (!current) {
+            return 'notFound';
+          }
+          if (!predicate(current)) {
+            return 'conditionFailed';
+          }
+          const operations = await options.outbox.listEntity(
+            options.userId,
+            'plan',
+            localId,
+          );
+          if (operations.some(operation => operation.mutation === 'delete')) {
+            return 'deleted';
+          }
+          const hasPendingUpsert = operations.some(
+            operation => operation.mutation === 'upsert',
+          );
+          if (
+            current.remoteId &&
+            (current.remoteRevision || hasPendingUpsert)
+          ) {
+            assertOwnedByUser(current, options.userId);
+            await options.outbox.enqueue(
+              deleteOperation(
+                options.userId,
+                'plan',
+                current,
+                toRemotePlan(current),
+                current.remoteRevision,
+                options.now,
+              ),
+            );
+            return 'deleted';
+          }
+          const result = await options.local.deleteIf(localId, predicate);
+          if (result === 'deleted') {
+            await options.outbox.removePendingEntity(
+              options.userId,
+              'plan',
+              localId,
+            );
+          }
+          return result;
         },
       );
     },

@@ -238,6 +238,46 @@ describe('PersistentDiveLogRepository', () => {
     expect((await repository.list()).map(entry => entry.localId)).toEqual(['accepted']);
   });
 
+  it('serializes conditional delete behind a queued save without removing the changed log profile', async () => {
+    const storage = new PausedFirstWriteStore();
+    const profileStorage = new RecordingProfileStorage();
+    const profileKey = 'conditional-delete-profile';
+    const original = watchEntryWithProfile('racing-log', 'racing-import', profileKey);
+    const changed = {...original, updatedAt: original.updatedAt + 1};
+    await storage.seedString(
+      mobileStorageKeys.logbook,
+      JSON.stringify({
+        schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+        updatedAt: 100,
+        value: [original],
+      }),
+    );
+    await profileStorage.write(profileKey, [{
+      localSessionId: 'session-racing-log',
+      timestamp: 200,
+      depthMeters: 1,
+    }]);
+    const repository = new PersistentDiveLogRepository({storage, profileStorage, now: () => 500});
+
+    const saving = repository.save(changed);
+    await storage.writeStarted;
+    const deleting = (repository as unknown as {
+      deleteIf(
+        localId: string,
+        predicate: (current: DiveLogEntry) => boolean,
+      ): Promise<string>;
+    }).deleteIf('racing-log', current => current.updatedAt === original.updatedAt);
+    storage.releaseWrite();
+
+    await expect(saving).resolves.toMatchObject({updatedAt: changed.updatedAt});
+    await expect(deleting).resolves.toBe('conditionFailed');
+    await expect(repository.get('racing-log')).resolves.toMatchObject({
+      updatedAt: changed.updatedAt,
+    });
+    expect(profileStorage.values.has(profileKey)).toBe(true);
+    expect(profileStorage.removals).toEqual([]);
+  });
+
   it('rejects a queued watch import when its commit guard becomes stale', async () => {
     const storage = new PausedFirstWriteStore();
     const profileStorage = new RecordingProfileStorage();

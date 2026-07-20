@@ -62,4 +62,22 @@ describe('LocalDivePlanRepository', () => {
     expect(await repository.get('plan-1')).toBeUndefined();
     expect(await repository.list()).toEqual([]);
   });
+
+  it('conditionally deletes only the record observed inside its mutation queue', async () => {
+    const original = plan({localId: 'plan-1', updatedAt: 100});
+    const repository = new LocalDivePlanRepository([original]);
+    const changed = {...original, status: 'completed' as const, updatedAt: 200};
+
+    const saving = repository.save(changed);
+    const deleting = (repository as unknown as {
+      deleteIf(
+        localId: string,
+        predicate: (current: DivePlan) => boolean,
+      ): Promise<string>;
+    }).deleteIf('plan-1', current => current.updatedAt === original.updatedAt);
+
+    await saving;
+    await expect(deleting).resolves.toBe('conditionFailed');
+    await expect(repository.get('plan-1')).resolves.toMatchObject({updatedAt: 200});
+  });
 });

@@ -7,6 +7,7 @@ import {
 import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lock';
 import { mobileStorageKeys } from '../storage/storage-keys';
 import type { DivePlan } from '../types/dive-plan';
+import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
 import type { DivePlanRepository } from './dive-plan-repository';
 import { cloneDivePlan, compareDivePlans } from './local-dive-plan-repository';
 
@@ -63,9 +64,24 @@ export class PersistentDivePlanRepository implements DivePlanRepository {
   }
 
   async delete(localId: string): Promise<void> {
+    await this.deleteIf(localId, () => true);
+  }
+
+  async deleteIf(
+    localId: string,
+    predicate: DeletePredicate<DivePlan>,
+  ): Promise<ConditionalDeleteResult> {
     return this.enqueueMutation(async () => {
       const plans = await this.readPlans();
+      const current = plans.find(plan => plan.localId === localId);
+      if (current === undefined) {
+        return 'notFound';
+      }
+      if (!predicate(cloneDivePlan(current))) {
+        return 'conditionFailed';
+      }
       await this.writePlans(plans.filter(plan => plan.localId !== localId));
+      return 'deleted';
     });
   }
 

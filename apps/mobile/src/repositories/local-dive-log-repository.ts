@@ -7,6 +7,7 @@ import type {
   DiveLogRepository,
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
+import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
 
 export type LocalDiveLogRepositoryOptions = {
   now?: () => number;
@@ -43,9 +44,23 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     localId: string,
     options?: DeleteDiveLogOptions,
   ): Promise<void> {
+    await this.deleteIf(localId, () => true, options);
+  }
+
+  async deleteIf(
+    localId: string,
+    predicate: DeletePredicate<DiveLogEntry>,
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteResult> {
     return this.enqueueMutation(async () => {
       options?.assertCanCommit?.();
       const previous = this.entriesByLocalId.get(localId);
+      if (previous === undefined) {
+        return 'notFound';
+      }
+      if (!predicate(cloneDiveLogEntry(previous))) {
+        return 'conditionFailed';
+      }
       this.entriesByLocalId.delete(localId);
       try {
         options?.assertCanCommit?.();
@@ -55,6 +70,7 @@ export class LocalDiveLogRepository implements DiveLogRepository {
         }
         throw error;
       }
+      return 'deleted';
     });
   }
 

@@ -1,5 +1,9 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
+import type {
+  ConditionalDeleteResult,
+  DeletePredicate,
+} from './conditional-delete';
 
 export type ImportWatchMessagesOptions = {
   profileDigests?: Array<string | undefined>;
@@ -16,6 +20,11 @@ export type DiveLogRepository = {
   get(localId: string): Promise<DiveLogEntry | undefined>;
   save(entry: DiveLogEntry): Promise<DiveLogEntry>;
   delete(localId: string, options?: DeleteDiveLogOptions): Promise<void>;
+  deleteIf(
+    localId: string,
+    predicate: DeletePredicate<DiveLogEntry>,
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteResult>;
   removeWatchProfileIfUnreferenced(storageKey: string): Promise<void>;
   importWatchMessages(
     messages: WatchSyncMessage[],

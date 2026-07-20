@@ -1,4 +1,5 @@
 import { createDefaultDiveLogRepository, LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
+import type {DiveLogEntry} from '../src/types/dive-log-entry';
 import type { WatchSyncMessage } from '../src/types/dive-session';
 
 describe('LocalDiveLogRepository', () => {
@@ -62,6 +63,40 @@ describe('LocalDiveLogRepository', () => {
     expect(firstRepository.listSync()[0].watchCapture?.importedAt).toBe(secondRepository.listSync()[0].watchCapture?.importedAt);
 
     dateNow.mockRestore();
+  });
+
+  it('conditionally deletes only the record observed inside its mutation queue', async () => {
+    const original: DiveLogEntry = {
+      localId: 'log-1',
+      source: 'manual',
+      cloudSyncStatus: 'notConfigured',
+      createdAt: 100,
+      updatedAt: 100,
+      manual: {
+        site: {},
+        buddyIds: [],
+        gearIds: [],
+        tags: [],
+        observedMarineLife: [],
+        measuredValues: {},
+      },
+      mobile: {mediaPlaceholders: []},
+      provenance: {},
+    };
+    const repository = new LocalDiveLogRepository([original]);
+    const changed = {...original, updatedAt: 200};
+
+    const saving = repository.save(changed);
+    const deleting = (repository as unknown as {
+      deleteIf(
+        localId: string,
+        predicate: (current: DiveLogEntry) => boolean,
+      ): Promise<string>;
+    }).deleteIf('log-1', current => current.updatedAt === original.updatedAt);
+
+    await saving;
+    await expect(deleting).resolves.toBe('conditionFailed');
+    await expect(repository.get('log-1')).resolves.toMatchObject({updatedAt: 200});
   });
 
   it('preserves manual and mobile edits when re-importing an existing watch entry', async () => {

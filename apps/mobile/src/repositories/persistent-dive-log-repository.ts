@@ -16,6 +16,7 @@ import type {
   DiveLogRepository,
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
+import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
 import {
   cloneDiveLogEntry,
   compareDiveLogEntries,
@@ -89,15 +90,29 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     localId: string,
     options?: DeleteDiveLogOptions,
   ): Promise<void> {
+    await this.deleteIf(localId, () => true, options);
+  }
+
+  async deleteIf(
+    localId: string,
+    predicate: DeletePredicate<DiveLogEntry>,
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteResult> {
     return this.enqueueMutation(async () => {
-      options?.assertCanCommit?.();
-      const metadataSnapshot = await this.metadataStorage.getString(
-        this.storageKey,
-      );
       options?.assertCanCommit?.();
       const entries = await this.readEntries();
       options?.assertCanCommit?.();
       const deletedEntry = entries.find(entry => entry.localId === localId);
+      if (deletedEntry === undefined) {
+        return 'notFound';
+      }
+      if (!predicate(cloneDiveLogEntry(deletedEntry))) {
+        return 'conditionFailed';
+      }
+      const metadataSnapshot = await this.metadataStorage.getString(
+        this.storageKey,
+      );
+      options?.assertCanCommit?.();
       const nextEntries = entries.filter(entry => entry.localId !== localId);
       const deletedProfileKey = deletedEntry?.watchCapture?.profile?.storageKey;
       const profileKeyToRemove =
@@ -149,6 +164,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         }
         throw error;
       }
+      return 'deleted';
     });
   }
 

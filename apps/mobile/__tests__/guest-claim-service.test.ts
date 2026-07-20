@@ -1748,6 +1748,21 @@ function repositories(
         profileRegistry.delete(profileKey);
       }
     }),
+    deleteIf: jest.fn(async (
+      localId,
+      predicate: Parameters<DiveLogRepository['deleteIf']>[1],
+      options?: Parameters<DiveLogRepository['deleteIf']>[2],
+    ) => {
+      const current = logs.get(localId);
+      if (current === undefined) {
+        return 'notFound' as const;
+      }
+      if (!predicate(structuredClone(current))) {
+        return 'conditionFailed' as const;
+      }
+      await logbook.delete(localId, options);
+      return 'deleted' as const;
+    }),
     removeWatchProfileIfUnreferenced: jest.fn(
       async (storageKey: string) => {
         if (
@@ -1782,6 +1797,20 @@ function repositories(
     delete: jest.fn(async localId => {
       order.push(`${label}:delete:plan:${localId}`);
       plans.delete(localId);
+    }),
+    deleteIf: jest.fn(async (
+      localId,
+      predicate: Parameters<DivePlanRepository['deleteIf']>[1],
+    ) => {
+      const current = plans.get(localId);
+      if (current === undefined) {
+        return 'notFound' as const;
+      }
+      if (!predicate(structuredClone(current))) {
+        return 'conditionFailed' as const;
+      }
+      await planbook.delete(localId);
+      return 'deleted' as const;
     }),
   } satisfies jest.Mocked<DivePlanRepository>;
   return {

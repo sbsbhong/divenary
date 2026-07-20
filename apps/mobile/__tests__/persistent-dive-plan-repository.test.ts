@@ -44,6 +44,44 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
   }
 }
 
+class PausedWriteStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  private shouldPause = false;
+  private resolveWriteStarted = () => {};
+  private resolveWrite = () => {};
+  writeStarted = Promise.resolve();
+
+  getString(key: string): Promise<string | undefined> {
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (this.shouldPause) {
+      this.shouldPause = false;
+      this.resolveWriteStarted();
+      await new Promise<void>(resolve => {
+        this.resolveWrite = resolve;
+      });
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+
+  pauseNextWrite(): void {
+    this.shouldPause = true;
+    this.writeStarted = new Promise<void>(resolve => {
+      this.resolveWriteStarted = resolve;
+    });
+  }
+
+  releaseWrite(): void {
+    this.resolveWrite();
+  }
+}
+
 describe('PersistentDivePlanRepository', () => {
   it('persists account revision and conflict state in the current schema', async () => {
     const storage = new InMemoryKeyValueStore();
@@ -98,6 +136,32 @@ describe('PersistentDivePlanRepository', () => {
     await expect(repository.save(plan({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
 
     expect((await repository.list()).map(currentPlan => currentPlan.localId)).toEqual(['accepted']);
+  });
+
+  it('serializes conditional delete behind a queued save and preserves the changed plan', async () => {
+    const storage = new PausedWriteStore();
+    const repository = new PersistentDivePlanRepository({storage, now: () => 350});
+    const original = plan({localId: 'racing-plan', updatedAt: 100});
+    const changed = {...original, status: 'completed' as const, updatedAt: 200};
+    await repository.save(original);
+    storage.pauseNextWrite();
+
+    const saving = repository.save(changed);
+    await storage.writeStarted;
+    const deleting = (repository as unknown as {
+      deleteIf(
+        localId: string,
+        predicate: (current: DivePlan) => boolean,
+      ): Promise<string>;
+    }).deleteIf('racing-plan', current => current.updatedAt === original.updatedAt);
+    storage.releaseWrite();
+
+    await expect(saving).resolves.toMatchObject({updatedAt: 200});
+    await expect(deleting).resolves.toBe('conditionFailed');
+    await expect(repository.get('racing-plan')).resolves.toMatchObject({
+      status: 'completed',
+      updatedAt: 200,
+    });
   });
 
   it('rejects malformed nested plan fields at the unknown migration entry point', () => {

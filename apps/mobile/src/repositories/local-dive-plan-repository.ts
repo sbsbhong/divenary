@@ -1,4 +1,5 @@
 import type { DivePlan } from '../types/dive-plan';
+import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
 import type { DivePlanRepository } from './dive-plan-repository';
 
 export type LocalDivePlanRepositoryOptions = {
@@ -8,6 +9,7 @@ export type LocalDivePlanRepositoryOptions = {
 export class LocalDivePlanRepository implements DivePlanRepository {
   private plansByLocalId = new Map<string, DivePlan>();
   private readonly now: () => number;
+  private mutationQueue: Promise<void> = Promise.resolve();
 
   constructor(initialPlans: DivePlan[] = [], options: LocalDivePlanRepositoryOptions = {}) {
     this.now = options.now ?? getCurrentTimestampSeconds;
@@ -26,12 +28,31 @@ export class LocalDivePlanRepository implements DivePlanRepository {
   }
 
   async save(plan: DivePlan): Promise<DivePlan> {
-    this.plansByLocalId.set(plan.localId, cloneDivePlan(plan));
-    return cloneDivePlan(plan);
+    return this.enqueueMutation(async () => {
+      this.plansByLocalId.set(plan.localId, cloneDivePlan(plan));
+      return cloneDivePlan(plan);
+    });
   }
 
   async delete(localId: string): Promise<void> {
-    this.plansByLocalId.delete(localId);
+    await this.deleteIf(localId, () => true);
+  }
+
+  async deleteIf(
+    localId: string,
+    predicate: DeletePredicate<DivePlan>,
+  ): Promise<ConditionalDeleteResult> {
+    return this.enqueueMutation(async () => {
+      const current = this.plansByLocalId.get(localId);
+      if (current === undefined) {
+        return 'notFound';
+      }
+      if (!predicate(cloneDivePlan(current))) {
+        return 'conditionFailed';
+      }
+      this.plansByLocalId.delete(localId);
+      return 'deleted';
+    });
   }
 
   listSync(): DivePlan[] {
@@ -41,6 +62,12 @@ export class LocalDivePlanRepository implements DivePlanRepository {
   getSync(localId: string): DivePlan | undefined {
     const plan = this.plansByLocalId.get(localId);
     return plan ? cloneDivePlan(plan) : undefined;
+  }
+
+  private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const result = this.mutationQueue.then(operation);
+    this.mutationQueue = result.then(() => undefined, () => undefined);
+    return result;
   }
 }
 

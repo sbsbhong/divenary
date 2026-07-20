@@ -507,10 +507,10 @@ describe('WatchConnectivitySyncProvider', () => {
       claimOrder.push(`enqueue:${operation.entityKind}:${operation.entityLocalId}`);
       return enqueue(operation);
     });
-    const deletePlan = guestPlanbook.delete.bind(guestPlanbook);
-    jest.spyOn(guestPlanbook, 'delete').mockImplementation(async localId => {
+    const deletePlanIf = guestPlanbook.deleteIf.bind(guestPlanbook);
+    jest.spyOn(guestPlanbook, 'deleteIf').mockImplementation(async (localId, predicate) => {
       claimOrder.push(`delete:plan:${localId}`);
-      return deletePlan(localId);
+      return deletePlanIf(localId, predicate);
     });
     const guestRepositories = {
       principal: {kind: 'guest' as const},
@@ -580,6 +580,173 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(claimOrder.lastIndexOf(`enqueue:log:${failedAccountLog.localId}`)).toBeLessThan(
       claimOrder.indexOf(`delete:plan:${failedDeferredPlan.localId}`),
     );
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves a Watch-completed guest plan that changes after claim cleanup scans account logs', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const userId = '00000000-0000-4000-8000-000000000001';
+    const queryScope = `user:${userId}`;
+    const profileStorage: WatchProfileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const guestPlan = {
+      localId: 'racing-watch-plan',
+      status: 'planned' as const,
+      cloudSyncStatus: 'notConfigured' as const,
+      createdAt: 1781350000,
+      updatedAt: 1781351000,
+      plannedAt: 1781352000,
+      title: 'Racing Watch plan',
+      site: {name: 'Race Reef'},
+      buddyIds: [],
+      gearIds: [],
+      tags: [],
+      plannedValues: {},
+      checklistItems: [],
+    };
+    const guestLogbook = new LocalDiveLogRepository();
+    const guestPlanbook = new LocalDivePlanRepository([guestPlan]);
+    const claimStore = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 1781353000,
+    });
+    snapshot.manifest.status = 'deferred';
+    await claimStore.write(snapshot);
+
+    const accountLogbook = new LocalDiveLogRepository([], {
+      now: () => 1781355000,
+    });
+    const accountPlanbook = new LocalDivePlanRepository();
+    const accountRepositories = {
+      principal: {kind: 'user' as const, userId},
+      queryScope,
+      logbook: accountLogbook,
+      planbook: accountPlanbook,
+    };
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+    });
+    let identifier = 0;
+    const createId = () => {
+      identifier += 1;
+      return `90000000-0000-4000-8000-${String(identifier).padStart(12, '0')}`;
+    };
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: accountRepositories,
+      outbox,
+      createId,
+      now: () => 1781359000,
+    });
+    const remote = planOnlyClaimRemoteRepository(claimStore);
+    const service = new GuestClaimService({
+      userId,
+      store: claimStore,
+      guestRepositories: {
+        principal: {kind: 'guest'},
+        queryScope: 'guest',
+        logbook: guestLogbook,
+        planbook: guestPlanbook,
+      },
+      accountRepositories,
+      accountMutationRepositories: accountMutations,
+      profileStorage,
+      remoteRepository: remote,
+      now: () => 1781359000,
+    });
+    const deleteStarted = createDeferred();
+    const releaseDelete = createDeferred();
+    const conditionalPlanbook = guestPlanbook as unknown as {
+      deleteIf: (
+        localId: string,
+        predicate: (current: typeof guestPlan) => boolean,
+      ) => Promise<string>;
+    };
+    const deleteIf = conditionalPlanbook.deleteIf.bind(guestPlanbook);
+    jest.spyOn(conditionalPlanbook, 'deleteIf').mockImplementationOnce(
+      async (localId, predicate) => {
+        deleteStarted.resolve();
+        await releaseDelete.promise;
+        return deleteIf(localId, predicate);
+      },
+    );
+
+    const firstAttempt = service.retry();
+    await deleteStarted.promise;
+
+    const fixture = {
+      ...metadataRichFixture,
+      session: {
+        ...metadataRichFixture.session,
+        localSessionId: 'racing-watch-session',
+        sourcePlanLocalId: guestPlan.localId,
+        endedAt: 1781357600,
+        samples: metadataRichFixture.session.samples.map(sample => ({
+          ...sample,
+          localSessionId: 'racing-watch-session',
+        })),
+      },
+    };
+    await expect(importPendingWatchConnectivityPayloads({
+      repository: accountMutations.logbook,
+      planRepository: guestPlanbook,
+      queryClient: createQueryClient(),
+      queryScope,
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [{
+        payloadId: 'racing-watch-payload',
+        payloadJson: JSON.stringify(fixture),
+        localSessionId: fixture.session.localSessionId,
+        receivedAt: fixture.session.endedAt,
+      }],
+      acknowledgeImportedPayloads: jest.fn(async () => undefined),
+      onLocalWritesCommitted: jest.fn(async () => undefined),
+    })).resolves.toEqual({receivedCount: 1, importedCount: 1});
+    releaseDelete.resolve();
+
+    await expect(firstAttempt).resolves.toMatchObject({
+      manifest: {status: 'cleanupPending'},
+    });
+    const completedGuestPlan = await guestPlanbook.get(guestPlan.localId);
+    expect(completedGuestPlan).toMatchObject({
+      status: 'completed',
+      completedAt: fixture.session.endedAt,
+    });
+    const accountLog = (await accountLogbook.list())[0]!;
+    expect(completedGuestPlan?.convertedLogLocalId).toBe(accountLog.localId);
+
+    await expect(service.resume()).resolves.toMatchObject({
+      manifest: {status: 'committed'},
+    });
+
+    await expect(guestPlanbook.get(guestPlan.localId)).resolves.toBeUndefined();
+    const repairedPlan = await accountPlanbook.get(guestPlan.localId);
+    expect(repairedPlan).toMatchObject({
+      status: 'completed',
+      convertedLogLocalId: accountLog.localId,
+      cloudSyncStatus: 'pending',
+    });
+    const operations = await outbox.list(userId);
+    const planOperation = operations.find(
+      operation => operation.entityKind === 'plan' && operation.entityLocalId === guestPlan.localId,
+    )!;
+    const repairedLogOperation = operations.filter(
+      operation => operation.entityKind === 'log' && operation.entityLocalId === accountLog.localId,
+    ).at(-1)!;
+    expect((planOperation.payload.remote as RemoteDivePlan).payload.converted_log_id).toBe(
+      accountLog.remoteId,
+    );
+    expect(
+      (repairedLogOperation.payload.remote as {payload: {source_plan_id: unknown}}).payload.source_plan_id,
+    ).toBe(repairedPlan?.remoteId);
     expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
   });
 
