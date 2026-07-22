@@ -1556,34 +1556,98 @@ describe('guest claim service', () => {
     expect(guest.logbook.delete).not.toHaveBeenCalled();
   });
 
-  it('reports a missing immutable profile through the claim error contract', async () => {
+  it('claims valid records while preserving a log with a missing immutable profile', async () => {
     const store = new GuestClaimStore({
       storage: new InMemoryKeyValueStore(),
       userId,
       now: clock(),
     });
     const remote = remoteRepository(store);
+    const guest = repositories(
+      [diveLog('manual-a'), watchLog('log-a', [])],
+      [],
+    );
     const service = claimService({
       store,
-      guest: repositories([watchLog('log-a', [])], []),
+      guest,
       account: repositories([], []),
       profile: profileStorage(),
       remote,
     });
 
-    await expect(service.start()).rejects.toBeInstanceOf(
-      GuestClaimServiceError,
-    );
-    await expect(service.start()).rejects.toMatchObject({
-      code: 'profile_missing',
-      failure: {
-        phase: 'checking',
-        entityKind: 'log',
-        clientRecordId: 'log-a',
-        label: 'Local Reef',
-      },
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {status: 'committed', logCount: 1, planCount: 0},
+      retainedItems: [
+        expect.objectContaining({
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          reason: 'profile_missing',
+        }),
+      ],
     });
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+    expect(remote.stageRecord).toHaveBeenCalledTimes(1);
+    await expect(guest.logbook.get('manual-a')).resolves.toBeUndefined();
+    await expect(guest.logbook.get('log-a')).resolves.toBeDefined();
+  });
+
+  it('keeps an all-retained snapshot terminal without any remote request', async () => {
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const profile = profileStorage();
+    const service = claimService({
+      store,
+      guest: repositories([watchLog('log-a', [])], []),
+      account: repositories([], []),
+      profile,
+      remote,
+    });
+
+    const first = await service.start();
+    const readsAfterFirstCheck = jest.mocked(profile.read).mock.calls.length;
+    const second = await service.prepare();
+
+    expect(first?.manifest.status).toBe('retained');
+    expect(second).toEqual(first);
+    expect(profile.read).toHaveBeenCalledTimes(readsAfterFirstCheck);
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+    expect(remote.stageRecord).not.toHaveBeenCalled();
+    expect(remote.finalize).not.toHaveBeenCalled();
+  });
+
+  it('imports a retained log after an explicit recheck finds its restored profile', async () => {
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const profile = profileStorage();
+    const guest = repositories([watchLog('log-a', [])], []);
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile,
+      remote,
+    });
+    await service.start();
+    await profile.write(guestProfileKey, depthSamples(200));
+
+    const result = await service.recheckRetained();
+
+    expect(result).toMatchObject({
+      manifest: {status: 'committed', logCount: 1},
+      retainedItems: [],
+    });
+    expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
   });
 });
 

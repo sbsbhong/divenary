@@ -400,6 +400,27 @@ export async function guestRecordMatchesClaimSnapshot(options: {
   );
 }
 
+export function retainedGuestRecordsMatchClaimSnapshot(options: {
+  snapshot: GuestClaimSnapshot;
+  logs: DiveLogEntry[];
+  plans: DivePlan[];
+}): boolean {
+  const current = new Map<string, DiveLogEntry | DivePlan>([
+    ...options.plans.map(plan => [`plan:${plan.localId}`, plan] as const),
+    ...options.logs.map(log => [`log:${log.localId}`, log] as const),
+  ]);
+  if (current.size !== options.snapshot.retainedItems.length) {
+    return false;
+  }
+  return options.snapshot.retainedItems.every(item => {
+    const record = current.get(`${item.entityKind}:${item.clientRecordId}`);
+    return (
+      record !== undefined &&
+      digestUtf8(canonicalJson(record)) === item.localRecordSha256
+    );
+  });
+}
+
 export async function claimProfileStillMatches(
   item: GuestClaimItem,
   sidecar: GuestClaimSnapshotItem,

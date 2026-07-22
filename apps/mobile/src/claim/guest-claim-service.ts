@@ -20,6 +20,7 @@ import {
   GuestClaimStorageError,
   parseSnapshotLocalRecord,
   parseSnapshotPayload,
+  retainedGuestRecordsMatchClaimSnapshot,
   type GuestClaimSnapshot,
   type GuestClaimSnapshotItem,
   type GuestClaimStoreLike,
@@ -104,14 +105,23 @@ export class GuestClaimService {
   async prepare(): Promise<GuestClaimSnapshot | undefined> {
     const existing = await this.readOwned();
     if (existing !== undefined) {
-      if (existing.manifest.status !== 'committed') {
+      if (
+        existing.manifest.status !== 'committed' &&
+        existing.manifest.status !== 'retained'
+      ) {
         return existing;
       }
       const [logs, plans] = await Promise.all([
         this.options.guestRepositories.logbook.list(),
         this.options.guestRepositories.planbook.list(),
       ]);
-      if (logs.length === 0 && plans.length === 0) {
+      if (
+        retainedGuestRecordsMatchClaimSnapshot({
+          snapshot: existing,
+          logs,
+          plans,
+        })
+      ) {
         return existing;
       }
       if (!this.options.store.remove) {
@@ -132,7 +142,10 @@ export class GuestClaimService {
     } catch (error) {
       throw this.serviceError(error);
     }
-    if (snapshot.manifest.items.length === 0) {
+    if (
+      snapshot.manifest.items.length === 0 &&
+      snapshot.retainedItems.length === 0
+    ) {
       return undefined;
     }
     this.assertCanContinue();
@@ -145,6 +158,9 @@ export class GuestClaimService {
       const snapshot = await this.prepare();
       if (snapshot === undefined) {
         return undefined;
+      }
+      if (snapshot.manifest.status === 'retained') {
+        return snapshot;
       }
       return this.run(snapshot);
     });
@@ -188,6 +204,9 @@ export class GuestClaimService {
       if (snapshot === undefined) {
         return undefined;
       }
+      if (snapshot.manifest.status === 'retained') {
+        return snapshot;
+      }
       if (snapshot.manifest.status === 'cleanupPending') {
         return this.cleanup(snapshot);
       }
@@ -195,6 +214,31 @@ export class GuestClaimService {
       delete snapshot.errorCode;
       delete snapshot.failure;
       await this.persist(snapshot);
+      return this.run(snapshot);
+    });
+  }
+
+  recheckRetained(): Promise<GuestClaimSnapshot | undefined> {
+    return this.singleFlight(async () => {
+      const existing = await this.readOwned();
+      if (
+        existing === undefined ||
+        (existing.manifest.status !== 'committed' &&
+          existing.manifest.status !== 'retained') ||
+        existing.retainedItems.length === 0 ||
+        !this.options.store.remove
+      ) {
+        throw new GuestClaimServiceError('claim_validation_failed');
+      }
+      this.assertCanContinue();
+      await this.options.store.remove();
+      const snapshot = await this.prepare();
+      if (
+        snapshot === undefined ||
+        snapshot.manifest.status === 'retained'
+      ) {
+        return snapshot;
+      }
       return this.run(snapshot);
     });
   }
