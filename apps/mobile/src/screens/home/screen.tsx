@@ -165,7 +165,7 @@ function HomeRecoveryCard(
       testID="home-recovery-banner"
       accessibilityRole="button"
       accessibilityLabel={`${props.title}. ${props.actionLabel}`}
-      className="rounded-2xl border border-border bg-card px-4 py-4 active:bg-muted"
+      className="rounded-2xl bg-card px-4 py-4 active:bg-muted"
       onPress={props.onPress}>
       <HStack space="md" className="items-start">
         <Box className="mt-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
