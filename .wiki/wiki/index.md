@@ -30,11 +30,11 @@
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Hosted staging 승격 뒤 Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 exact claim progress UI, principal local data, account outbox와 changed-guest reconciliation을 구분한다. | 2026-07-20 |
+| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 principal local publication을 optional remote bootstrap보다 먼저 수행하고, claim·render 실패를 비파괴 recovery UI로 격리한다. | 2026-07-22 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile, staging-verified remote object와 auth user deletion 뒤에도 남는 Storage cleanup gate를 기록한다. | 2026-07-20 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage와 target ID 재사용을 rollback하는 claim finalizer를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox, digest·target ID를 검증하는 remote finalize와 cleanup 완료까지의 resumable claim 순서를 분리한다. | 2026-07-20 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch local ACK, account outbox, claim preflight·failure context와 remote finalize/cleanup 경계를 분리한다. | 2026-07-22 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
@@ -58,7 +58,7 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 실제 backend 상태가 없으면 cloud badge를 숨기고, safety reminder와 future mandatory/decompression 상태의 severity를 분리한다. | 2026-07-12 |
+| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | system appearance와 native sheet background를 일관되게 적용하고, 복구는 compact banner와 비파괴 retry 화면으로 표시한다. | 2026-07-22 |
 
 ## decisions
 
