@@ -117,11 +117,21 @@ export default function SettingsScreen({
   const watchSyncNotificationLabel = watchSyncNotificationsEnabled ? t('settings.notifications.on') : t('settings.notifications.off');
   const eligibleAccountClaimCount =
     (accountClaim?.eligible.logCount ?? 0) + (accountClaim?.eligible.planCount ?? 0);
+  const activeAccountClaimCount =
+    accountClaim?.state.status === 'running' ||
+    accountClaim?.state.status === 'failed'
+      ? accountClaim.state.total
+      : eligibleAccountClaimCount;
+  const hasActionableClaimState =
+    accountClaim?.state.status === 'choice' ||
+    accountClaim?.state.status === 'deferred' ||
+    accountClaim?.state.status === 'failed' ||
+    accountClaim?.state.status === 'running';
   const showsAccountClaimRow = Boolean(
-    auth.state.status === 'authenticated' &&
-      accountClaim?.isOnline &&
-      eligibleAccountClaimCount > 0 &&
-      accountClaim.state.status !== 'running' &&
+    (auth.state.status === 'authenticated' ||
+      auth.state.status === 'authenticatedOffline') &&
+      accountClaim &&
+      (eligibleAccountClaimCount > 0 || hasActionableClaimState) &&
       accountClaim.state.status !== 'complete' &&
       onOpenAccountClaim,
   );
@@ -314,7 +324,7 @@ export default function SettingsScreen({
               rowTestID="settings-row-account-claim"
               icon={ArrowUpIcon}
               label={t('accountClaim.settingsAction')}
-              value={`${eligibleAccountClaimCount}`}
+              value={`${activeAccountClaimCount}`}
               valueTestID="settings-account-claim-count"
               onPress={onOpenAccountClaim!}
             />

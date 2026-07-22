@@ -459,6 +459,35 @@ export default function RootNavigation(): React.JSX.Element {
     openStackScreen('accountClaim');
   }, [openStackScreen]);
 
+  const homeRecovery = React.useMemo(() => {
+    if (accountData.bootstrap.status === 'degraded') {
+      return {
+        title: t('home.recovery.bootstrapTitle'),
+        description: t('home.recovery.bootstrapDescription'),
+        actionLabel: t('common.retry'),
+        onPress: accountData.retryBootstrap,
+      };
+    }
+    if (
+      accountData.claim.state.status === 'failed' ||
+      accountData.claim.state.status === 'deferred'
+    ) {
+      return {
+        title: t('home.recovery.claimTitle'),
+        description: t('home.recovery.claimDescription'),
+        actionLabel: t('home.recovery.reviewAction'),
+        onPress: openAccountClaim,
+      };
+    }
+    return undefined;
+  }, [
+    accountData.bootstrap.status,
+    accountData.claim.state.status,
+    accountData.retryBootstrap,
+    openAccountClaim,
+    t,
+  ]);
+
   React.useEffect(() => {
     if (!navigationReady || !rootStackNavigationRef.isReady()) {
       return;
@@ -586,6 +615,7 @@ export default function RootNavigation(): React.JSX.Element {
                         isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
                         reselectToken={reselectTokens.home}
+                        recovery={homeRecovery}
                       />
                     )}
                   </AppTabs.Screen>

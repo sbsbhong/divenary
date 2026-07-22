@@ -6,6 +6,7 @@ import { GluestackUIProvider } from './components/ui/gluestack-ui-provider';
 import { AppPreferencesProvider, useAppPreferences } from './states/app-preferences';
 import { AuthProvider } from './states/auth';
 import { AccountDataProvider } from './states/account-data';
+import { AppErrorBoundary } from './components/app-error-boundary';
 
 type ProvidersProps = {
   children?: React.ReactNode;
@@ -27,11 +28,15 @@ export default function Providers(props: ProvidersProps): React.JSX.Element {
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <AppPreferencesProvider>
-          <AuthProvider>
-            <AccountDataProvider queryClient={queryClient}>
-              <ThemedProviders>{props.children}</ThemedProviders>
-            </AccountDataProvider>
-          </AuthProvider>
+          <ThemedProviders>
+            <AppErrorBoundary>
+              <AuthProvider>
+                <AccountDataProvider queryClient={queryClient}>
+                  {props.children}
+                </AccountDataProvider>
+              </AuthProvider>
+            </AppErrorBoundary>
+          </ThemedProviders>
         </AppPreferencesProvider>
       </SafeAreaProvider>
     </QueryClientProvider>

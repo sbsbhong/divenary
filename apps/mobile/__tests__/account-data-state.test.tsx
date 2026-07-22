@@ -67,6 +67,192 @@ const plan: DivePlan = {
 };
 
 describe('account data state', () => {
+  it('publishes the selected principal when legacy migration is degraded', async () => {
+    const queryClient = new QueryClient();
+    const captures: ReturnType<typeof useAccountData>[] = [];
+    const Capture = () => {
+      captures.push(useAccountData());
+      return React.createElement('account-data-child', {testID: 'account-data-child'});
+    };
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => {
+              throw new Error('legacy migration failed');
+            }),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook: new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}
+        >
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    expect(captures.at(-1)).toMatchObject({
+      principal: {kind: 'user', userId},
+      bootstrap: {
+        status: 'degraded',
+        issue: {stage: 'legacyMigration', retryable: true},
+      },
+    });
+    expect(renderer!.root.findByProps({testID: 'account-data-child'})).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    warn.mockRestore();
+  });
+
+  it('renders retryable recovery instead of a blank screen when repository creation fails', async () => {
+    const queryClient = new QueryClient();
+    const createRepositories = jest
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error('local repository unavailable');
+      })
+      .mockImplementation(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      }));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{state: {status: 'guest'}}}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories,
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          {React.createElement('account-data-child', {
+            testID: 'account-data-child',
+          })}
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    const recovery = renderer!.root.findByProps({
+      testID: 'account-data-recovery-screen',
+    });
+    expect(recovery).toBeTruthy();
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain('로그아웃');
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain('삭제');
+
+    await ReactTestRenderer.act(async () => {
+      recovery.findByProps({testID: 'recovery-retry'}).props.onPress();
+      await flushPromises();
+    });
+    expect(
+      renderer!.root.findByProps({testID: 'account-data-child'}),
+    ).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    warn.mockRestore();
+  });
+
+  it('keeps local account data published when remote hydration fails', async () => {
+    jest
+      .spyOn(AccountSyncCoordinator.prototype, 'hydrate')
+      .mockRejectedValueOnce(new Error('remote unavailable'));
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const captures: ReturnType<typeof useAccountData>[] = [];
+    const Capture = () => {
+      captures.push(useAccountData());
+      return React.createElement('account-data-child', {testID: 'account-data-child'});
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{
+            state: {status: 'authenticated', userId},
+            accountDataRepository: {} as AccountDataRepository,
+          }}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook: new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    await waitFor(() =>
+      expect(captures.at(-1)?.bootstrap).toEqual({
+        status: 'degraded',
+        issue: {stage: 'remoteHydration', retryable: true},
+      }),
+    );
+    expect(
+      renderer!.root.findByProps({testID: 'account-data-child'}),
+    ).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    warn.mockRestore();
+    jest.restoreAllMocks();
+  });
+
   it('cancels and removes every previous-principal query before publication', async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(['diveLogbook', 'user:old-user', 'list'], ['old']);
@@ -1309,6 +1495,12 @@ describe('account data state', () => {
         completed: 0,
         total: 1,
         errorCode: 'profile_missing',
+        failure: {
+          phase: 'checking',
+          entityKind: 'log',
+          clientRecordId: 'profile-log',
+          label: 'Local Reef',
+        },
       }),
     );
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
@@ -2054,7 +2246,8 @@ describe('account data state', () => {
     firstLogs.resolve({ items: [remoteLog({ localId: 'stale-user-a-log' })] });
     await ReactTestRenderer.act(flushPromises);
 
-    expect(new Set(publishedUsers)).toEqual(new Set(['user-b']));
+    expect(new Set(publishedUsers)).toEqual(new Set(['user-a', 'user-b']));
+    expect(publishedUsers.at(-1)).toBe('user-b');
     await expect(localByScope.get('user:user-a')?.list()).resolves.toEqual([]);
 
     await ReactTestRenderer.act(async () => {

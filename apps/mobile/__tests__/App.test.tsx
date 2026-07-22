@@ -9,6 +9,8 @@ import { AppState } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
 import { resolveAuthLoginSheetAllowedDetents } from '../src/components/navigation';
+import {AppErrorBoundary} from '../src/components/app-error-boundary';
+import {GluestackUIProvider} from '../src/components/ui/gluestack-ui-provider';
 import i18n from '../src/i18n';
 
 type MockAuthState =
@@ -296,6 +298,44 @@ describe('App navigation', () => {
     });
 
     expect(renderer!.root.findAllByProps({ children: '대기 중' })).toHaveLength(0);
+  });
+
+  test('replaces an unexpected render failure with a preserve-data recovery screen', async () => {
+    let shouldThrow = true;
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    const ThrowOnce = () => {
+      if (shouldThrow) {
+        throw new Error('render failed');
+      }
+      return React.createElement('recovered-app', {testID: 'recovered-app'});
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <GluestackUIProvider mode="light">
+          <AppErrorBoundary>
+            <ThrowOnce />
+          </AppErrorBoundary>
+        </GluestackUIProvider>,
+      );
+    });
+
+    expect(
+      renderer!.root.findByProps({testID: 'app-error-recovery-screen'}),
+    ).toBeTruthy();
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain('로그아웃');
+    expect(JSON.stringify(renderer!.toJSON())).not.toContain('삭제');
+
+    shouldThrow = false;
+    await ReactTestRenderer.act(async () => {
+      renderer!.root.findByProps({testID: 'recovery-retry'}).props.onPress();
+    });
+    expect(renderer!.root.findByProps({testID: 'recovered-app'})).toBeTruthy();
+    renderer!.unmount();
+    consoleError.mockRestore();
   });
 
   test('keeps four top-level tabs and opens Settings', async () => {

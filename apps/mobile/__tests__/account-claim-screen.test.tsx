@@ -47,6 +47,7 @@ function claimFixture(
     start: jest.fn(async () => undefined),
     retry: jest.fn(async () => undefined),
     keepOnDevice: jest.fn(async () => undefined),
+    refresh: jest.fn(async () => undefined),
   };
 }
 
@@ -192,6 +193,19 @@ describe('AccountClaimScreen', () => {
     expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
   });
 
+  test('renders a nonempty preparing state and refreshes a hidden eligible claim', async () => {
+    mockClaim = claimFixture(
+      {status: 'hidden'},
+      {logCount: 3, planCount: 2},
+    );
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-preparing'}),
+    ).toBeTruthy();
+    expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+  });
+
   test.each([
     [
       'start',
@@ -321,6 +335,30 @@ describe('AccountClaimScreen', () => {
     expect(mockClaim.retry).toHaveBeenCalledTimes(1);
     expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
     expect(mockPreventRemove).toHaveBeenLastCalledWith(false);
+  });
+
+  test('shows the failed item and phase without exposing the internal error code', async () => {
+    mockClaim = claimFixture({
+      status: 'failed',
+      completed: 0,
+      total: 2,
+      errorCode: 'profile_missing',
+      failure: {
+        phase: 'checking',
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        label: 'Moon Island',
+      },
+    });
+    const renderer = await renderScreen();
+    const serialized = JSON.stringify(renderer.toJSON());
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-failure-detail'}).props
+        .children,
+    ).toContain('Moon Island');
+    expect(serialized).not.toContain('profile_missing');
+    expect(serialized).not.toContain('log-a');
   });
 
   test('announces completion once and closes the sheet', async () => {

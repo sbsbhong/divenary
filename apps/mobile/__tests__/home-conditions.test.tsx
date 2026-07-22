@@ -57,6 +57,7 @@ const renderHome = async (
     preferencesStorage?: AppPreferencesStorage;
     sessions?: React.ComponentProps<typeof HomeScreen>['sessions'];
     isLoading?: boolean;
+    recovery?: React.ComponentProps<typeof HomeScreen>['recovery'];
   } = {},
 ) => {
   const provider: HomeConditionsProvider = {
@@ -77,6 +78,7 @@ const renderHome = async (
           onOpenLogbook={options.onOpenLogbook ?? jest.fn()}
           onOpenPlanning={options.onOpenPlanning ?? jest.fn()}
           onRefresh={jest.fn()}
+          recovery={options.recovery}
         />
       </AppPreferencesProvider>,
     );
@@ -111,6 +113,26 @@ describe('Home conditions interface', () => {
     await ReactTestRenderer.act(async () => {
       await i18n.changeLanguage('ko');
     });
+  });
+
+  it('shows one compact recovery banner and runs its action', async () => {
+    const onPress = jest.fn();
+    const {renderer} = await renderHome(
+      {status: 'unavailable'},
+      {
+        recovery: {
+          title: '일부 데이터를 확인하지 못했습니다',
+          description: '저장된 기록은 계속 사용할 수 있습니다.',
+          actionLabel: '다시 시도',
+          onPress,
+        },
+      },
+    );
+
+    const banner = renderer.root.findByProps({testID: 'home-recovery-banner'});
+    expect(banner).toBeTruthy();
+    await ReactTestRenderer.act(async () => banner.props.onPress());
+    expect(onPress).toHaveBeenCalledTimes(1);
   });
 
   it('renders a ready coastal snapshot with city, local time, air temperature, and water temperature', async () => {

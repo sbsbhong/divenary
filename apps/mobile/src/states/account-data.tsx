@@ -57,6 +57,7 @@ import type { DivePlan } from '../types/dive-plan';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import { useAuth, type AuthContextValue, type AuthState } from './auth';
+import RecoveryScreen from '../screens/recovery/screen';
 
 export type AccountDataContextValue = {
   principal: DataPrincipal;
@@ -68,6 +69,8 @@ export type AccountDataContextValue = {
   outbox?: AccountOutbox;
   accountRepository?: AccountDataRepository;
   guestClaimRemoteRepository?: GuestClaimRemoteRepository;
+  bootstrap: AccountDataBootstrapState;
+  retryBootstrap(): void;
   claim: AccountClaimController;
   requestSync(): Promise<AccountSyncDrainResult>;
 };
@@ -78,7 +81,30 @@ export type AccountClaimController = {
   start(): Promise<void>;
   retry(): Promise<void>;
   keepOnDevice(): Promise<void>;
+  refresh(): Promise<void>;
 };
+
+export type AccountDataBootstrapStage =
+  | 'legacyMigration'
+  | 'localRepository'
+  | 'claimInspection'
+  | 'outboxReconciliation'
+  | 'remoteHydration';
+
+export type AccountDataBootstrapState =
+  | {status: 'loading'}
+  | {status: 'ready'}
+  | {
+      status: 'degraded';
+      issue: {
+        stage: Exclude<AccountDataBootstrapStage, 'localRepository'>;
+        retryable: true;
+      };
+    }
+  | {
+      status: 'recoveryRequired';
+      issue: {stage: 'localRepository'; retryable: true};
+    };
 
 type AccountDataProviderProps = {
   children?: React.ReactNode;
@@ -135,6 +161,11 @@ type AccountClaimPresentation = {
   queryScope: string;
   eligible: { logCount: number; planCount: number };
   state: GuestClaimViewState;
+};
+
+type AccountBootstrapPresentation = {
+  queryScope: string;
+  state: AccountDataBootstrapState;
 };
 
 const AccountDataContext = React.createContext<
@@ -194,6 +225,12 @@ export function AccountDataProviderCore({
   const desiredScope = principalScope(desiredPrincipal);
   const isOnline = auth.state.status === 'authenticated';
   const [published, setPublished] = React.useState<PublishedAccountData>();
+  const [bootstrapAttempt, setBootstrapAttempt] = React.useState(0);
+  const [bootstrapPresentation, setBootstrapPresentation] =
+    React.useState<AccountBootstrapPresentation>({
+      queryScope: desiredScope,
+      state: {status: 'loading'},
+    });
   const publishedRef = React.useRef<PublishedAccountData | undefined>(
     undefined,
   );
@@ -216,13 +253,21 @@ export function AccountDataProviderCore({
     const publications = publicationsRef.current;
 
     const isCurrent = () => generationRef.current === generation;
+    let localPublished = false;
     const publish = async () => {
+      let migrationDegraded = false;
       migrationPromiseRef.current ??= dependencies.migrateLegacyData({
         metadataStorage: dependencies.metadataStorage,
         profileStorage: dependencies.profileStorage,
         now: dependencies.now,
       });
-      await migrationPromiseRef.current;
+      try {
+        await migrationPromiseRef.current;
+      } catch (error) {
+        migrationPromiseRef.current = undefined;
+        migrationDegraded = true;
+        console.warn('Failed to migrate legacy principal data', error);
+      }
       if (!isCurrent()) {
         return;
       }
@@ -366,13 +411,43 @@ export function AccountDataProviderCore({
         nextPublication.claimService = undefined;
       }
 
+      if (!isCurrent()) {
+        return;
+      }
+      publishedRef.current = nextPublication;
+      setPublished(nextPublication);
+      localPublished = true;
+      setBootstrapPresentation({
+        queryScope: desiredScope,
+        state: migrationDegraded
+          ? {
+              status: 'degraded',
+              issue: {stage: 'legacyMigration', retryable: true},
+            }
+          : {status: 'ready'},
+      });
+
       if (desiredPrincipal.kind === 'user' && nextPublication.outbox) {
-        await reconcilePendingAccountOperations({
-          userId: desiredPrincipal.userId,
-          repositories: nextPublication.localRepositories,
-          accountRepositories:
-            nextPublication.accountRepositories ?? nextPublication,
-        });
+        try {
+          await reconcilePendingAccountOperations({
+            userId: desiredPrincipal.userId,
+            repositories: nextPublication.localRepositories,
+            accountRepositories:
+              nextPublication.accountRepositories ?? nextPublication,
+          });
+        } catch (error) {
+          if (isCurrent()) {
+            setBootstrapPresentation({
+              queryScope: desiredScope,
+              state: {
+                status: 'degraded',
+                issue: {stage: 'outboxReconciliation', retryable: true},
+              },
+            });
+            console.warn('Failed to reconcile local account operations', error);
+          }
+          return;
+        }
         if (!isCurrent()) {
           return;
         }
@@ -413,12 +488,27 @@ export function AccountDataProviderCore({
         });
 
         if (isOnline && nextPublication.coordinator) {
-          const hydrated =
-            (await nextPublication.coordinator.hydrate({ online: true })) ?? 0;
-          if (!isCurrent()) {
+          let hydrated = 0;
+          try {
+            hydrated =
+              (await nextPublication.coordinator.hydrate({online: true})) ?? 0;
+            if (!isCurrent()) {
+              return;
+            }
+            await nextPublication.coordinator.drain({online: true});
+          } catch (error) {
+            if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
+              setBootstrapPresentation({
+                queryScope: desiredScope,
+                state: {
+                  status: 'degraded',
+                  issue: {stage: 'remoteHydration', retryable: true},
+                },
+              });
+              console.warn('Failed to hydrate remote account data', error);
+            }
             return;
           }
-          await nextPublication.coordinator.drain({ online: true });
           if (!isCurrent()) {
             return;
           }
@@ -429,15 +519,29 @@ export function AccountDataProviderCore({
           nextPublication.coordinator?.pause();
         }
       }
-      if (!isCurrent()) {
-        return;
-      }
-      publishedRef.current = nextPublication;
-      setPublished(nextPublication);
     };
 
     void publish().catch(error => {
-      if (!isStaleAccountSyncCommitError(error)) {
+      if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
+        if (localPublished) {
+          setBootstrapPresentation({
+            queryScope: desiredScope,
+            state: {
+              status: 'degraded',
+              issue: {stage: 'remoteHydration', retryable: true},
+            },
+          });
+        } else {
+          publishedRef.current = undefined;
+          setPublished(undefined);
+          setBootstrapPresentation({
+            queryScope: desiredScope,
+            state: {
+              status: 'recoveryRequired',
+              issue: {stage: 'localRepository', retryable: true},
+            },
+          });
+        }
         console.warn('Failed to prepare principal data repositories', error);
       }
     });
@@ -451,6 +555,7 @@ export function AccountDataProviderCore({
   }, [
     auth.accountDataRepository,
     auth.guestClaimRemoteRepository,
+    bootstrapAttempt,
     dependencies,
     desiredPrincipal,
     desiredScope,
@@ -563,8 +668,27 @@ export function AccountDataProviderCore({
       setClaimPresentation(hiddenClaimPresentation(desiredScope));
       return;
     }
-    refreshClaim(published, { resumeActive: true }).catch(() => undefined);
+    refreshClaim(published, {resumeActive: true}).catch(error => {
+      if (publishedRef.current === published) {
+        setBootstrapPresentation({
+          queryScope: desiredScope,
+          state: {
+            status: 'degraded',
+            issue: {stage: 'claimInspection', retryable: true},
+          },
+        });
+        console.warn('Failed to inspect guest claim state', error);
+      }
+    });
   }, [desiredScope, published, refreshClaim]);
+
+  const retryBootstrap = React.useCallback(() => {
+    setBootstrapPresentation({
+      queryScope: desiredScope,
+      state: {status: 'loading'},
+    });
+    setBootstrapAttempt(attempt => attempt + 1);
+  }, [desiredScope]);
 
   const requestSync = React.useCallback(async () => {
     if (!published?.coordinator) {
@@ -664,6 +788,10 @@ export function AccountDataProviderCore({
               error instanceof GuestClaimServiceError
                 ? error.code
                 : 'claim_validation_failed',
+            ...(error instanceof GuestClaimServiceError &&
+            error.failure !== undefined
+              ? {failure: error.failure}
+              : {}),
           },
         });
         return;
@@ -700,8 +828,17 @@ export function AccountDataProviderCore({
     return () => subscription.remove();
   }, [isOnline, requestSync, resumeClaim]);
 
+  const bootstrap =
+    bootstrapPresentation.queryScope === desiredScope
+      ? bootstrapPresentation.state
+      : ({status: 'loading'} as const);
+
   if (!published || published.queryScope !== desiredScope) {
-    return <></>;
+    return bootstrap.status === 'recoveryRequired' ? (
+      <RecoveryScreen kind="accountData" onRetry={retryBootstrap} />
+    ) : (
+      <RecoveryScreen kind="loading" />
+    );
   }
 
   const contextValue: AccountDataContextValue = {
@@ -714,6 +851,8 @@ export function AccountDataProviderCore({
     outbox: published.outbox,
     accountRepository: auth.accountDataRepository,
     guestClaimRemoteRepository: auth.guestClaimRemoteRepository,
+    bootstrap,
+    retryBootstrap,
     claim:
       claimPresentation.queryScope === desiredScope
         ? {
@@ -722,6 +861,9 @@ export function AccountDataProviderCore({
             start: () => runClaim('start'),
             retry: () => runClaim('retry'),
             keepOnDevice: () => runClaim('defer'),
+            refresh: async () => {
+              await refreshClaim(published, {resumeActive: false});
+            },
           }
         : hiddenClaimController(),
     requestSync,
@@ -1133,6 +1275,7 @@ function hiddenClaimController(): AccountClaimController {
     start: async () => undefined,
     retry: async () => undefined,
     keepOnDevice: async () => undefined,
+    refresh: async () => undefined,
   };
 }
 
@@ -1196,6 +1339,9 @@ function presentationForSnapshot(
       completed,
       total,
       errorCode: snapshot.errorCode ?? 'claim_validation_failed',
+      ...(snapshot.failure === undefined
+        ? {}
+        : {failure: snapshot.failure}),
     };
   } else if (snapshot.manifest.status === 'committed') {
     state = { status: 'complete', imported: total };

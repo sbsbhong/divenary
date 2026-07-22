@@ -13,6 +13,20 @@ const resources = {
         cancel: '취소',
         retry: '다시 시도',
       },
+      recovery: {
+        loading: {
+          title: '기록을 준비하는 중',
+          description: '이 기기에 저장된 데이터를 안전하게 불러오고 있습니다.',
+        },
+        accountData: {
+          title: '기록을 열지 못했습니다',
+          description: '저장된 데이터는 삭제되지 않았습니다. 잠시 후 다시 시도해 주세요.',
+        },
+        unexpected: {
+          title: '화면을 표시하지 못했습니다',
+          description: '저장된 데이터는 그대로 유지됩니다. 화면을 다시 불러와 주세요.',
+        },
+      },
       settings: {
         title: '설정',
         appearance: '표시',
@@ -99,8 +113,14 @@ const resources = {
         importAction: '계정으로 가져오기',
         keepAction: '기기에 유지',
         progressTitle: '계정으로 가져오는 중',
+        finalizingTitle: '계정 데이터를 확인하는 중',
+        cleanupTitle: '기기 데이터를 정리하는 중',
+        preparingTitle: '가져올 데이터를 확인하는 중',
+        preparingDescription: '기기에 저장된 기록을 안전하게 확인하고 있습니다.',
         progressCount: '{{completed}} / {{total}}',
         failureTitle: '가져오기를 완료하지 못했습니다',
+        failureDescription: '기기 데이터는 그대로 보존되어 있습니다. 문제를 확인한 뒤 다시 시도할 수 있습니다.',
+        failureItemDescription: '{{label}} 항목을 확인하지 못했습니다. 기기 데이터는 그대로 보존되어 있습니다.',
         retryAction: '다시 시도',
         deviceBadge: '기기 저장',
         settingsAction: '기기 데이터 가져오기',
@@ -145,6 +165,13 @@ const resources = {
         planNextDive: '다음 다이브 계획',
         previewMemory: '메모리 미리보기',
         safetyText: '레크리에이션 기록 전용. 인증된 장비가 아닌 보조 도구.',
+        recovery: {
+          bootstrapTitle: '일부 데이터를 확인하지 못했습니다',
+          bootstrapDescription: '저장된 기록은 계속 사용할 수 있습니다. 연결 상태를 확인한 뒤 다시 시도해 주세요.',
+          claimTitle: '기기 데이터 가져오기를 확인해 주세요',
+          claimDescription: '기기 데이터는 그대로 보존되어 있습니다.',
+          reviewAction: '상태 확인',
+        },
         conditions: {
           loading: '위치 조건 확인 중',
           unavailable: '위치 조건을 사용할 수 없습니다.',
@@ -426,6 +453,20 @@ const resources = {
         cancel: 'Cancel',
         retry: 'Try again',
       },
+      recovery: {
+        loading: {
+          title: 'Preparing your records',
+          description: 'Safely loading the data stored on this device.',
+        },
+        accountData: {
+          title: "Couldn't open your records",
+          description: 'Your saved data was not deleted. Please try again.',
+        },
+        unexpected: {
+          title: "Couldn't display this screen",
+          description: 'Your saved data is preserved. Reload the screen to continue.',
+        },
+      },
       settings: {
         title: 'Settings',
         appearance: 'Appearance',
@@ -512,8 +553,14 @@ const resources = {
         importAction: 'Import to account',
         keepAction: 'Keep on device',
         progressTitle: 'Importing to your account',
+        finalizingTitle: 'Verifying account data',
+        cleanupTitle: 'Finishing device cleanup',
+        preparingTitle: 'Checking device data',
+        preparingDescription: 'Safely checking the records stored on this device.',
         progressCount: '{{completed}} / {{total}}',
         failureTitle: "Couldn't finish importing",
+        failureDescription: 'Your device data is preserved. You can check the issue and try again.',
+        failureItemDescription: "Couldn't verify {{label}}. Your device data is preserved.",
         retryAction: 'Try again',
         deviceBadge: 'On device',
         settingsAction: 'Import device data',
@@ -558,6 +605,13 @@ const resources = {
         planNextDive: 'Plan Next Dive',
         previewMemory: 'Preview Memory',
         safetyText: 'RECREATIONAL USE ONLY. NON-CERTIFIED ASSISTANT.',
+        recovery: {
+          bootstrapTitle: "Couldn't verify some data",
+          bootstrapDescription: 'Your saved records remain available. Check your connection and try again.',
+          claimTitle: 'Review device data import',
+          claimDescription: 'Your device data is still preserved.',
+          reviewAction: 'Review status',
+        },
         conditions: {
           loading: 'Checking location conditions',
           unavailable: 'Location conditions unavailable',
