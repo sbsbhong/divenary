@@ -93,4 +93,9 @@ export type GuestClaimViewState =
       errorCode: GuestClaimErrorCode;
       failure?: GuestClaimFailureDetail;
     }
-  | { status: 'complete'; imported: number };
+  | {status: 'retained'; retainedItems: GuestClaimRetainedItem[]}
+  | {
+      status: 'complete';
+      imported: number;
+      retainedItems: GuestClaimRetainedItem[];
+    };

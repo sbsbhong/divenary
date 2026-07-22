@@ -46,6 +46,7 @@ function claimFixture(
     state,
     start: jest.fn(async () => undefined),
     retry: jest.fn(async () => undefined),
+    recheckRetained: jest.fn(async () => undefined),
     keepOnDevice: jest.fn(async () => undefined),
     refresh: jest.fn(async () => undefined),
   };
@@ -365,7 +366,7 @@ describe('AccountClaimScreen', () => {
     mockClaim = claimFixture({ status: 'running', completed: 31, total: 32 });
     const renderer = await renderScreen();
 
-    mockClaim = claimFixture({ status: 'complete', imported: 32 });
+    mockClaim = claimFixture({status: 'complete', imported: 32, retainedItems: []});
     await ReactTestRenderer.act(async () => {
       renderer.update(<AccountClaimScreen />);
     });

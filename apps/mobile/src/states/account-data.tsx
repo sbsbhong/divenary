@@ -80,6 +80,7 @@ export type AccountClaimController = {
   state: GuestClaimViewState;
   start(): Promise<void>;
   retry(): Promise<void>;
+  recheckRetained(): Promise<void>;
   keepOnDevice(): Promise<void>;
   refresh(): Promise<void>;
 };
@@ -710,7 +711,7 @@ export function AccountDataProviderCore({
   }, [isOnline, published]);
 
   const runClaim = React.useCallback(
-    async (operation: 'start' | 'retry' | 'defer') => {
+    async (operation: 'start' | 'retry' | 'recheckRetained' | 'defer') => {
       const publication = publishedRef.current;
       const claimGeneration = publication?.claimGeneration;
       const claimService = publication?.claimService;
@@ -733,6 +734,8 @@ export function AccountDataProviderCore({
           await claimService.start();
         } else if (operation === 'retry') {
           await claimService.retry();
+        } else if (operation === 'recheckRetained') {
+          await claimService.recheckRetained();
         } else {
           await claimService.defer();
         }
@@ -860,6 +863,7 @@ export function AccountDataProviderCore({
             state: claimPresentation.state,
             start: () => runClaim('start'),
             retry: () => runClaim('retry'),
+            recheckRetained: () => runClaim('recheckRetained'),
             keepOnDevice: () => runClaim('defer'),
             refresh: async () => {
               await refreshClaim(published, {resumeActive: false});
@@ -1274,6 +1278,7 @@ function hiddenClaimController(): AccountClaimController {
     state: { status: 'hidden' },
     start: async () => undefined,
     retry: async () => undefined,
+    recheckRetained: async () => undefined,
     keepOnDevice: async () => undefined,
     refresh: async () => undefined,
   };
@@ -1344,7 +1349,13 @@ function presentationForSnapshot(
         : {failure: snapshot.failure}),
     };
   } else if (snapshot.manifest.status === 'committed') {
-    state = { status: 'complete', imported: total };
+    state = {
+      status: 'complete',
+      imported: total,
+      retainedItems: snapshot.retainedItems,
+    };
+  } else if (snapshot.manifest.status === 'retained') {
+    state = {status: 'retained', retainedItems: snapshot.retainedItems};
   } else if (snapshot.manifest.status === 'deferred') {
     state = { status: 'deferred', ...eligible };
   } else if (snapshot.manifest.status === 'prepared' && isOnline) {

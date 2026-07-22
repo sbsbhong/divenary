@@ -1410,7 +1410,7 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
-  it('maps claim preparation failures into controller state without remote work', async () => {
+  it('publishes retained profile items without remote work or an automatic retry loop', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const profileLog: DiveLogEntry = {
       ...entry,
@@ -1490,27 +1490,25 @@ describe('account data state', () => {
       await expect(captures.at(-1)!.start()).resolves.toBeUndefined();
     });
     await waitFor(() =>
-      expect(captures.at(-1)?.state).toEqual({
-        status: 'failed',
-        completed: 0,
-        total: 1,
-        errorCode: 'profile_missing',
-        failure: {
-          phase: 'checking',
+      expect(captures.at(-1)?.state).toMatchObject({
+        status: 'retained',
+        retainedItems: [{
           entityKind: 'log',
           clientRecordId: 'profile-log',
           label: 'Local Reef',
-        },
+          reason: 'profile_missing',
+        }],
       }),
     );
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
 
     await ReactTestRenderer.act(async () => {
-      await captures.at(-1)!.keepOnDevice();
+      await captures.at(-1)!.recheckRetained();
     });
     await waitFor(() =>
-      expect(captures.at(-1)?.state).toEqual({status: 'hidden'}),
+      expect(captures.at(-1)?.state.status).toBe('retained'),
     );
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
     expect(captures.at(-1)?.eligible).toEqual({ logCount: 1, planCount: 0 });
     await expect(guestLogbook.get('profile-log')).resolves.toBeDefined();
 
