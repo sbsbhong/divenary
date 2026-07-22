@@ -1,6 +1,8 @@
 import React from 'react';
 import {
   CommonActions,
+  DarkTheme,
+  DefaultTheme,
   NavigationContainer,
   StackActions,
   TabActions,
@@ -50,6 +52,7 @@ import { KeyboardAwareScrollView } from '../ui/keyboard-aware-scroll-view';
 import { Pressable } from '../ui/pressable';
 import { Text } from '../ui/text';
 import { VStack } from '../ui/vstack';
+import { useGluestackColors } from '../ui/gluestack-ui-provider';
 import LoginScreen from '../../screens/auth/login-screen';
 import OnboardingScreen from '../../screens/auth/onboarding-screen';
 import AccountClaimScreen from '../../screens/account-claim/screen';
@@ -157,12 +160,17 @@ export function resolveAuthLoginSheetAllowedDetents(
   return platformOS === 'ios' && (!Number.isFinite(majorVersion) || majorVersion < 16) ? [0.5, 1] : 'fitToContents';
 }
 
-export const ACCOUNT_CLAIM_SHEET_OPTIONS: NativeStackNavigationOptions = {
-  presentation: 'formSheet',
-  sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS,
-  sheetGrabberVisible: true,
-  sheetCornerRadius: 28,
-};
+export function createAccountClaimSheetOptions(
+  backgroundColor: string,
+): NativeStackNavigationOptions {
+  return {
+    presentation: 'formSheet',
+    sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS,
+    sheetGrabberVisible: true,
+    sheetCornerRadius: 28,
+    contentStyle: { backgroundColor },
+  };
+}
 
 export default function RootNavigation(): React.JSX.Element {
   const { t } = useTranslation();
@@ -185,9 +193,35 @@ export default function RootNavigation(): React.JSX.Element {
     settings: 0,
   });
   const insets = useSafeAreaInsets();
+  const palette = useGluestackColors();
   const logbook = useDiveLogbook();
   const planning = useDivePlans();
-  const { isHydrated, language, watchSyncNotificationsEnabled } = useAppPreferences();
+  const { isHydrated, language, resolvedTheme, watchSyncNotificationsEnabled } = useAppPreferences();
+  const navigationTheme = React.useMemo(
+    () => ({
+      ...(resolvedTheme === 'dark' ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(resolvedTheme === 'dark' ? DarkTheme.colors : DefaultTheme.colors),
+        background: palette.background,
+        border: palette.border,
+        card: palette.background,
+        notification: palette.primary,
+        primary: palette.primary,
+        text: palette.foreground,
+      },
+    }),
+    [
+      palette.background,
+      palette.border,
+      palette.foreground,
+      palette.primary,
+      resolvedTheme,
+    ],
+  );
+  const accountClaimSheetOptions = React.useMemo(
+    () => createAccountClaimSheetOptions(palette.background),
+    [palette.background],
+  );
 
   const refreshVisibleStackRoute = React.useCallback(() => {
     const rootState = rootStackNavigationRef.getRootState();
@@ -425,6 +459,35 @@ export default function RootNavigation(): React.JSX.Element {
     openStackScreen('accountClaim');
   }, [openStackScreen]);
 
+  const homeRecovery = React.useMemo(() => {
+    if (accountData.bootstrap.status === 'degraded') {
+      return {
+        title: t('home.recovery.bootstrapTitle'),
+        description: t('home.recovery.bootstrapDescription'),
+        actionLabel: t('common.retry'),
+        onPress: accountData.retryBootstrap,
+      };
+    }
+    if (
+      accountData.claim.state.status === 'failed' ||
+      accountData.claim.state.status === 'deferred'
+    ) {
+      return {
+        title: t('home.recovery.claimTitle'),
+        description: t('home.recovery.claimDescription'),
+        actionLabel: t('home.recovery.reviewAction'),
+        onPress: openAccountClaim,
+      };
+    }
+    return undefined;
+  }, [
+    accountData.bootstrap.status,
+    accountData.claim.state.status,
+    accountData.retryBootstrap,
+    openAccountClaim,
+    t,
+  ]);
+
   React.useEffect(() => {
     if (!navigationReady || !rootStackNavigationRef.isReady()) {
       return;
@@ -524,13 +587,18 @@ export default function RootNavigation(): React.JSX.Element {
           paddingLeft: insets.left,
           paddingRight: insets.right,
         }}>
-        <NavigationContainer ref={rootStackNavigationRef} onReady={handleNavigationReady} onStateChange={refreshVisibleStackRoute}>
+        <NavigationContainer
+          ref={rootStackNavigationRef}
+          theme={navigationTheme}
+          onReady={handleNavigationReady}
+          onStateChange={refreshVisibleStackRoute}>
           <Stack.Navigator
             initialRouteName="tabs"
             screenOptions={{
               headerShown: false,
               gestureEnabled: true,
               presentation: 'card',
+              contentStyle: { backgroundColor: palette.background },
             }}>
             <Stack.Screen name="tabs">
               {() => (
@@ -547,6 +615,7 @@ export default function RootNavigation(): React.JSX.Element {
                         isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
                         reselectToken={reselectTokens.home}
+                        recovery={homeRecovery}
                       />
                     )}
                   </AppTabs.Screen>
@@ -624,12 +693,13 @@ export default function RootNavigation(): React.JSX.Element {
                 sheetAllowedDetents: AUTH_LOGIN_SHEET_ALLOWED_DETENTS,
                 sheetGrabberVisible: true,
                 sheetCornerRadius: 28,
+                contentStyle: { backgroundColor: palette.background },
               }}>
               {props => <AuthLoginRoute {...props} />}
             </Stack.Screen>
             <Stack.Screen
               name="accountClaim"
-              options={ACCOUNT_CLAIM_SHEET_OPTIONS}>
+              options={accountClaimSheetOptions}>
               {() => <AccountClaimScreen />}
             </Stack.Screen>
             <Stack.Screen name="authOnboarding" options={{ gestureEnabled: false, presentation: 'modal' }}>

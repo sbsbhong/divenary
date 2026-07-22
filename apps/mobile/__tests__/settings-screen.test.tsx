@@ -216,9 +216,7 @@ describe('SettingsScreen', () => {
 
   test.each([
     ['guest', { status: 'guest' } as const, true, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
-    ['offline account', { status: 'authenticatedOffline', userId: 'user-id' } as const, false, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
     ['zero eligible rows', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
-    ['running claim', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 1, planCount: 1 }, { status: 'running', completed: 1, total: 2 } as const],
     ['isolated foreign manifest', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
   ])('hides device-data import for %s', async (_label, authState, isOnline, eligible, claimState) => {
     mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, state: authState }));
@@ -231,6 +229,7 @@ describe('SettingsScreen', () => {
   });
 
   test.each([
+    { status: 'running', completed: 1, total: 2 } as const,
     { status: 'failed', completed: 1, total: 2, errorCode: 'network_unavailable' } as const,
     { status: 'hidden' } as const,
     { status: 'deferred', logCount: 1, planCount: 0 } as const,
@@ -244,6 +243,27 @@ describe('SettingsScreen', () => {
     });
 
     expect(renderer.root.findByProps({ testID: 'settings-row-account-claim' })).toBeTruthy();
+  });
+
+  test('keeps account claim status visible while the account is offline', async () => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: {status: 'authenticatedOffline', userId: 'user-id'},
+      }),
+    );
+    const renderer = await renderSettings({
+      accountClaim: {
+        isOnline: false,
+        eligible: {logCount: 1, planCount: 1},
+        state: {status: 'choice', logCount: 1, planCount: 1},
+      },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(
+      renderer.root.findByProps({testID: 'settings-row-account-claim'}),
+    ).toBeTruthy();
   });
 
   test('labels offline membership as local-only and still allows logout', async () => {

@@ -44,6 +44,12 @@ type HomeScreenProps = {
   conditionsProvider?: HomeConditionsProvider;
   locationService?: LocationService;
   openSettings?: () => Promise<void>;
+  recovery?: {
+    title: string;
+    description: string;
+    actionLabel: string;
+    onPress: () => void;
+  };
 };
 
 export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
@@ -105,6 +111,8 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           </HStack>
         </VStack>
 
+        {props.recovery ? <HomeRecoveryCard {...props.recovery} /> : null}
+
         <HomeConditionsBand
           snapshot={conditionsController.snapshot}
           isRefreshing={conditionsController.isRefreshing}
@@ -146,6 +154,34 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
         <SafetyText>{t('home.safetyText')}</SafetyText>
       </VStack>
     </ScrollView>
+  );
+}
+
+function HomeRecoveryCard(
+  props: NonNullable<HomeScreenProps['recovery']>,
+): React.JSX.Element {
+  return (
+    <Pressable
+      testID="home-recovery-banner"
+      accessibilityRole="button"
+      accessibilityLabel={`${props.title}. ${props.actionLabel}`}
+      className="rounded-2xl bg-card px-4 py-4 active:bg-muted"
+      onPress={props.onPress}>
+      <HStack space="md" className="items-start">
+        <Box className="mt-1.5 h-2.5 w-2.5 rounded-full bg-primary" />
+        <VStack space="xs" className="flex-1">
+          <Text size="sm" bold className="text-card-foreground">
+            {props.title}
+          </Text>
+          <Text size="xs" className="leading-5 text-muted-foreground">
+            {props.description}
+          </Text>
+          <Text size="sm" bold className="pt-1 text-primary">
+            {props.actionLabel}
+          </Text>
+        </VStack>
+      </HStack>
+    </Pressable>
   );
 }
 

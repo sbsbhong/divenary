@@ -22,6 +22,38 @@ const guestProfileKey = `${dataProfileKeyPrefix({
 })}session-log-a:revision-1`;
 
 describe('guest claim store', () => {
+  it('round-trips sanitized failure context without changing the manifest digest', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({ localId: 'log-a', title: 'Moon Island' })]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.errorCode = 'profile_corrupt';
+    Reflect.set(snapshot, 'failure', {
+      phase: 'checking',
+      entityKind: 'log',
+      clientRecordId: 'log-a',
+      label: 'Moon Island',
+    });
+    const store = new GuestClaimStore({ storage, userId, now: () => 101 });
+
+    await store.write(snapshot);
+
+    await expect(store.read()).resolves.toMatchObject({
+      errorCode: 'profile_corrupt',
+      failure: {
+        phase: 'checking',
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        label: 'Moon Island',
+      },
+    });
+  });
+
   it('snapshots plans first with canonical payload and complete local/profile bytes', async () => {
     const storage = new InMemoryKeyValueStore();
     const profiles = profileStorage();

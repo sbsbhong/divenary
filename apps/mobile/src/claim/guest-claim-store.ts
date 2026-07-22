@@ -26,11 +26,13 @@ import type { DivePlan } from '../types/dive-plan';
 import {
   createProfileBytesSnapshot,
   encodeUtf8,
+  GuestClaimProfileError,
   sha256BytesHex,
   verifyProfileBytesSnapshot,
 } from './profile-bytes';
 import type {
   GuestClaimErrorCode,
+  GuestClaimFailureDetail,
   GuestClaimItem,
   GuestClaimManifest,
 } from './guest-claim-types';
@@ -74,6 +76,7 @@ export type GuestClaimSnapshot = {
   manifest: GuestClaimManifest;
   snapshots: GuestClaimSnapshotItem[];
   errorCode?: GuestClaimErrorCode;
+  failure?: GuestClaimFailureDetail;
 };
 
 export type GuestClaimStoreLike = {
@@ -90,7 +93,10 @@ export class GuestClaimStorageError extends Error {
 }
 
 export class GuestClaimPreparationError extends Error {
-  constructor(readonly code: GuestClaimErrorCode) {
+  constructor(
+    readonly code: GuestClaimErrorCode,
+    readonly failure?: GuestClaimFailureDetail,
+  ) {
     super(code);
     this.name = 'GuestClaimPreparationError';
   }
@@ -179,10 +185,22 @@ export async function createGuestClaimSnapshot(options: {
   }
 
   for (const sourceLog of logs) {
-    const prepared = await prepareLogSnapshot(
-      sourceLog,
-      options.profileStorage,
-    );
+    let prepared: Awaited<ReturnType<typeof prepareLogSnapshot>>;
+    try {
+      prepared = await prepareLogSnapshot(sourceLog, options.profileStorage);
+    } catch (error) {
+      const failure = claimFailureDetail('checking', sourceLog);
+      if (error instanceof GuestClaimPreparationError) {
+        throw new GuestClaimPreparationError(
+          error.code,
+          error.failure ?? failure,
+        );
+      }
+      if (error instanceof GuestClaimProfileError) {
+        throw new GuestClaimPreparationError(error.code, failure);
+      }
+      throw error;
+    }
     const remote = mapLogPayload(
       prepared.log,
       options.userId,
@@ -464,6 +482,7 @@ function parseStoredSnapshot(
       'manifest',
       'snapshots',
       'errorCode',
+      'failure',
     ]) ||
     value.schemaVersion !== SIDECAR_SCHEMA_VERSION ||
     value.userId !== expectedUserId ||
@@ -477,7 +496,12 @@ function parseStoredSnapshot(
   }
   const snapshots = value.snapshots.map(parseSidecar);
   const manifest = parseManifest(value.manifest, expectedUserId, snapshots);
-  if ((manifest.status === 'failed') !== (value.errorCode !== undefined)) {
+  const failure =
+    value.failure === undefined ? undefined : parseFailure(value.failure);
+  if (
+    (manifest.status === 'failed') !== (value.errorCode !== undefined) ||
+    (failure !== undefined && manifest.status !== 'failed')
+  ) {
     throw new GuestClaimStorageError();
   }
   validateSnapshotSet(manifest, snapshots);
@@ -489,6 +513,39 @@ function parseStoredSnapshot(
     ...(value.errorCode === undefined
       ? {}
       : { errorCode: value.errorCode as GuestClaimErrorCode }),
+    ...(failure === undefined ? {} : { failure }),
+  };
+}
+
+function parseFailure(value: unknown): GuestClaimFailureDetail {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'phase',
+      'entityKind',
+      'clientRecordId',
+      'label',
+    ]) ||
+    !['checking', 'uploading', 'finalizing', 'cleanup'].includes(
+      String(value.phase),
+    ) ||
+    (value.entityKind !== undefined &&
+      value.entityKind !== 'plan' &&
+      value.entityKind !== 'log') ||
+    !isOptionalBoundedString(value.clientRecordId, 512) ||
+    !isOptionalBoundedString(value.label, 200)
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  return {
+    phase: value.phase as GuestClaimFailureDetail['phase'],
+    ...(value.entityKind === undefined
+      ? {}
+      : { entityKind: value.entityKind }),
+    ...(value.clientRecordId === undefined
+      ? {}
+      : { clientRecordId: value.clientRecordId }),
+    ...(value.label === undefined ? {} : { label: value.label }),
   };
 }
 
@@ -947,6 +1004,19 @@ function claimLabel(value: DiveLogEntry | DivePlan): string | undefined {
     : (value.title ?? value.site.name);
 }
 
+function claimFailureDetail(
+  phase: GuestClaimFailureDetail['phase'],
+  value: DiveLogEntry | DivePlan,
+): GuestClaimFailureDetail {
+  const label = claimLabel(value);
+  return {
+    phase,
+    entityKind: 'manual' in value ? 'log' : 'plan',
+    clientRecordId: value.localId.slice(0, 512),
+    ...(label === undefined ? {} : { label: label.slice(0, 200) }),
+  };
+}
+
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(',')}]`;
@@ -1022,6 +1092,16 @@ function isOptionalString(value: unknown): value is string | undefined {
 
 function isOptionalNonEmptyString(value: unknown): value is string | undefined {
   return value === undefined || isNonEmptyString(value);
+}
+
+function isOptionalBoundedString(
+  value: unknown,
+  maxLength: number,
+): value is string | undefined {
+  return (
+    value === undefined ||
+    (typeof value === 'string' && value.length > 0 && value.length <= maxLength)
+  );
 }
 
 function isFiniteNumber(value: unknown): value is number {

@@ -53,6 +53,13 @@ export type GuestClaimErrorCode =
   | 'remote_conflict'
   | 'claim_validation_failed';
 
+export type GuestClaimFailureDetail = {
+  phase: 'checking' | 'uploading' | 'finalizing' | 'cleanup';
+  entityKind?: GuestClaimItem['entityKind'];
+  clientRecordId?: string;
+  label?: string;
+};
+
 export type GuestClaimViewState =
   | { status: 'hidden' }
   | { status: 'choice'; logCount: number; planCount: number }
@@ -69,5 +76,6 @@ export type GuestClaimViewState =
       completed: number;
       total: number;
       errorCode: GuestClaimErrorCode;
+      failure?: GuestClaimFailureDetail;
     }
   | { status: 'complete'; imported: number };

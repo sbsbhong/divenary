@@ -1,8 +1,8 @@
 # 모바일 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-19; Guest data account claim staging promotion evidence, 2026-07-20
-Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
-Updated: 2026-07-20
+Sources: pre-Karpathy wiki page, 2026-06-28; Mobile native reverse geocoder implementation, 2026-07-10; Watch session UI and sync startup fixes, 2026-07-10; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-19; Guest data account claim staging promotion evidence, 2026-07-20; Mobile claim bootstrap and theme recovery, 2026-07-22
+Raw: [Pre-Karpathy: 모바일 구조](../../raw/architecture/mobile.md); [Mobile native reverse geocoder implementation](../../raw/architecture/2026-07-10-mobile-native-reverse-geocoder.md); [Watch session UI and sync startup fixes](../../raw/architecture/2026-07-10-watch-session-ui-sync-fixes.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md)
+Updated: 2026-07-22
 
 ## 요약
 
@@ -15,7 +15,7 @@ Updated: 2026-07-20
 주요 source 경계는 다음과 같다.
 
 - `src/App.tsx`: 앱 UI entry.
-- `src/providers.tsx`: app-owned `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `AuthProvider`, `GluestackUIProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
+- `src/providers.tsx`: app-owned `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `GluestackUIProvider`, render error boundary, `AuthProvider`, `AccountDataProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
 - `src/auth/`: Keychain session adapter, native Google/Apple credential adapter, membership cache, recent-provider preference와 mobile Auth assembly.
 - `src/claim/`: immutable guest snapshot/manifest, exact profile-byte verification, resumable claim service와 persistent claim store.
 - `src/states/account-data.tsx`: 현재 Auth principal에 맞는 repository publication, account/guest row composition, account sync와 claim lifecycle, user/cache isolation.
@@ -63,7 +63,7 @@ Updated: 2026-07-20
 Settings는 현재 다음 범위로 제한된다.
 
 - 테마 선호는 `system`, `light`, `dark`를 지원한다. `system`은 device color scheme이 `dark`일 때만 dark mode로 해석하고, 그 외에는 light mode로 해석한다.
-- `AppPreferencesProvider`가 `resolvedTheme`을 계산하고 `GluestackUIProvider` mode와 `StatusBar` style에 전달한다.
+- `AppPreferencesProvider`가 `resolvedTheme`을 계산하지만 Gluestack/NativeWind override에는 저장된 `themePreference` 자체를 전달한다. `system`으로 돌아가면 manual override를 해제하고, `resolvedTheme`은 `StatusBar`와 React Navigation의 light/dark base를 정하는 데만 사용한다. Navigation과 native form sheet의 uncovered area는 semantic background를 명시한다.
 - 언어 선호는 `ko`, `en`만 지원한다. 선택 변경은 `i18next.changeLanguage`를 사용하며, 실패하면 이전 언어 상태를 유지한다.
 - 설정 값 중 `themePreference`, `language`, `watchSyncNotificationsEnabled`는 AsyncStorage 기반 versioned JSON store에 저장된다. `resolvedTheme`은 저장하지 않고 device color scheme과 `themePreference`에서 파생한다.
 - Watch sync notification은 사용자가 켤 때 Notifee permission을 요청한다. Permission이 거부되면 preference를 켜지 않고, foreground import toast와 repository import는 계속 동작한다. 알림 문구는 local repository 저장 결과만 뜻하며 cloud upload나 Supabase sync를 의미하지 않는다.
@@ -79,15 +79,17 @@ Styling rule은 현재 코드 기준으로 다음과 같다.
 
 앱 기본 Logbook/Planbook 저장소는 principal namespace에 묶인 persistent repository다. Legacy unscoped data는 durable migration lock 아래 한 번만 guest namespace로 복사·검증한 뒤 source를 제거한다. Account mutation은 local repository 저장과 durable outbox enqueue를 먼저 완료하고, coordinator가 remote revision을 확인해 재시도하거나 conflict를 보존한다. `LocalDiveLogRepository`와 `LocalDivePlanRepository`는 테스트와 집중된 동작 검증용으로 남아 있다.
 
+Account-data bootstrap은 `loading`, `ready`, `degraded`, `recoveryRequired`를 구분한다. 선택된 principal의 local repositories를 먼저 publish한 뒤 claim inspection, outbox reconciliation, remote hydrate/drain을 수행한다. Optional 단계 실패는 이미 공개한 로컬 데이터를 철회하지 않고 Home recovery banner에서 재시도하게 한다. 선택된 principal의 local repository 구성 자체가 실패하면 다른 principal로 fallback하지 않고 preserve-data recovery screen을 표시한다. 예상하지 못한 render error도 같은 비파괴적 recovery screen으로 전환한다.
+
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 
 WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. Native inbox와 module은 pending payload, event, acknowledge, planned dive, linked watch 상태를 관리한다. JS provider와 Logbook 수동 action은 같은 `WatchConnectivityImportCoordinator`를 사용해 concurrent import를 직렬화한다. 저장이 끝난 payload만 imported acknowledge하고 실패 payload는 재시도할 수 있게 남긴다. Foreground toast와 opt-in notification은 local 저장 결과만 뜻한다.
 
 Guest 수동 로그는 `source: 'manual'`, `cloudSyncStatus: 'notConfigured'`로 저장한다. Account mutation은 outbox 상태에 맞춰 cloud status를 전이한다. 비어 있거나 유효하지 않은 수치 field는 `undefined`로 유지한다. Watch 기반 항목을 수정하면 raw watch capture와 `source: 'watch'`를 유지한다. Raw `watchCapture.session.syncStatus`는 Watch 전송 provenance이고 top-level `cloudSyncStatus`와 별개다.
 
-Guest data claim은 현재 guest Logbook/Planbook과 전체 profile bytes를 immutable snapshot/manifest로 먼저 보존한다. 각 항목의 원격 write/readback과 profile digest·byte count·sample count 검증이 끝난 뒤에만 진행 수를 올린다. 전체 batch의 remote finalize와 committed readback을 검증한 뒤 이미 commit된 snapshot을 base account local repository에 `synced` copy로 직접 publish/readback하고, 그 다음 `cleanupPending`을 저장한다. Snapshot과 같은 guest row는 exact delete하고, snapshot 뒤 바뀐 row는 normal account local-first/outbox에 `pending` update로 저장·readback한 뒤 guest copy를 삭제한다. 이 local cleanup이 모두 끝나야 manifest를 `committed`로 저장하며 중단되면 `cleanupPending`에서 재개한다. Deferred guest data의 기본 합성은 account-copy-wins다. User generation과 principal-scoped cache key는 이전 account callback이 새 account 상태를 publish하지 못하게 한다.
+Guest data claim은 현재 guest Logbook/Planbook과 전체 profile bytes를 immutable snapshot/manifest로 먼저 보존한다. 관계와 profile bytes/digest/sample count를 원격 batch 생성 전에 검사한다. 실패 snapshot은 digest-covered manifest 밖의 strict optional detail에 `checking`/`uploading`/`finalizing`/`cleanup` phase와 bounded item id/label만 보존하며 payload나 profile bytes를 진단 정보에 복제하지 않는다. 각 항목의 원격 write/readback과 검증이 끝난 뒤에만 진행 수를 올린다. 전체 batch의 remote finalize와 committed readback을 검증한 뒤 이미 commit된 snapshot을 base account local repository에 `synced` copy로 직접 publish/readback하고, 그 다음 `cleanupPending`을 저장한다. Snapshot과 같은 guest row는 exact delete하고, snapshot 뒤 바뀐 row는 normal account local-first/outbox에 `pending` update로 저장·readback한 뒤 guest copy를 삭제한다. 이 local cleanup이 모두 끝나야 manifest를 `committed`로 저장하며 중단되면 `cleanupPending`에서 재개한다. Deferred guest data의 기본 합성은 account-copy-wins다. User generation과 principal-scoped cache key는 이전 account callback이 새 account 상태를 publish하지 못하게 한다.
 
-Claim 선택/진행 화면은 로그인 뒤 native form sheet로 통합됐다. 항목별 remote write/readback 뒤 정확한 `3 / 32` 형태의 count와 progress bar를 갱신하고, Reduce Motion과 screen reader progress value를 지원한다. Hosted staging automated verifier는 통과했지만 screenshot, iPhone/Android physical claim과 background/force-quit resume는 아직 검증하지 않았다.
+Claim 선택/진행 화면은 로그인 뒤 native form sheet로 통합됐다. 준비, 항목별 진행, finalizing, cleanup, 실패 상태가 모두 비어 있지 않은 내용을 렌더링한다. Settings는 owned account의 eligible/running/failed/deferred 상태를 online/offline에서도 다시 열 수 있고, Home은 degraded bootstrap 또는 failed/deferred claim에 compact recovery banner 하나를 표시한다. 항목별 remote write/readback 뒤 정확한 `3 / 32` 형태의 count와 progress bar를 갱신하고, Reduce Motion과 screen reader progress value를 지원한다. Hosted staging automated verifier는 통과했지만 screenshot, iPhone/Android physical claim과 background/force-quit resume는 아직 검증하지 않았다.
 
 앱 기본 Planbook 저장소는 `PersistentDivePlanRepository`다. 이 저장소는 `DivePlan[]`를 `dive-app:planbook:v2` key에 저장하고, `LocalDivePlanRepository`와 같은 계획 정렬 helper를 사용한다. v2 key는 two-mode reset을 위해 기존 local v1 Planbook data와 분리한다. 계획 화면은 `draft`, `planned`, `completed` 상태만 사용하고, 새로 선택 가능한 `diveMode`는 scuba와 freedive 두 가지다. 완료로 전환할 때 Logbook 초안을 만들지 나중에 할지 선택하게 한다. 계획에서 로그를 만들 때는 navigation 계층이 임시 `pendingDraft`를 Logbook editor로 넘기며, 자동으로 완료 로그를 저장하지 않는다. `planned` 상태이고 아직 로그로 전환되지 않은 계획은 `watchPlannedDives` envelope로 watch companion에 전달되어 watch Home에서 선택한 뒤 시작할 수 있다.
 

@@ -1,15 +1,16 @@
 import {
-  ACCOUNT_CLAIM_SHEET_OPTIONS,
+  createAccountClaimSheetOptions,
   resolveAccountClaimAutoRoute,
 } from '../src/components/navigation';
 
 describe('account claim automatic navigation', () => {
   test('uses the native form sheet presentation', () => {
-    expect(ACCOUNT_CLAIM_SHEET_OPTIONS).toEqual({
+    expect(createAccountClaimSheetOptions('#f5f5f7')).toEqual({
       presentation: 'formSheet',
       sheetAllowedDetents: expect.anything(),
       sheetGrabberVisible: true,
       sheetCornerRadius: 28,
+      contentStyle: { backgroundColor: '#f5f5f7' },
     });
   });
 

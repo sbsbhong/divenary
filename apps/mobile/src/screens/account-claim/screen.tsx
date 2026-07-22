@@ -9,6 +9,7 @@ import { ArrowUpIcon, Icon } from '../../components/ui/icon';
 import { SafeAreaView } from '../../components/ui/safe-area-view';
 import { Text } from '../../components/ui/text';
 import { HStack } from '../../components/ui/hstack';
+import { Spinner } from '../../components/ui/spinner';
 import { VStack } from '../../components/ui/vstack';
 import { useAccountData } from '../../states/account-data';
 import { DepthTraceProgress } from './depth-trace-progress';
@@ -18,15 +19,30 @@ type ClaimAction = 'start' | 'retry' | 'keep';
 export default function AccountClaimScreen(): React.JSX.Element {
   const { t } = useTranslation();
   const navigation = useNavigation();
-  const { claim } = useAccountData();
+  const {claim, isOnline = true} = useAccountData();
   const [busyAction, setBusyAction] = React.useState<ClaimAction>();
   const announcedCompletion = React.useRef(false);
+  const requestedRefresh = React.useRef(false);
   const isRunning =
     claim.state.status === 'running' ||
     busyAction === 'start' ||
     busyAction === 'retry';
+  const isPreparing =
+    (busyAction === 'start' || busyAction === 'retry') &&
+    claim.state.status !== 'running';
 
   usePreventRemove(isRunning, () => undefined);
+
+  React.useEffect(() => {
+    if (
+      claim.state.status !== 'hidden' ||
+      requestedRefresh.current
+    ) {
+      return;
+    }
+    requestedRefresh.current = true;
+    void claim.refresh().catch(() => undefined);
+  }, [claim]);
 
   React.useEffect(() => {
     if (claim.state.status !== 'complete' || announcedCompletion.current) {
@@ -58,6 +74,8 @@ export default function AccountClaimScreen(): React.JSX.Element {
           await claim.keepOnDevice();
           navigation.goBack();
         }
+      } catch {
+        await claim.refresh().catch(() => undefined);
       } finally {
         setBusyAction(undefined);
       }
@@ -66,13 +84,14 @@ export default function AccountClaimScreen(): React.JSX.Element {
   );
 
   return (
-    <SafeAreaView edges={['bottom']} className="bg-background">
+    <SafeAreaView edges={['bottom']} className="flex-1 bg-background">
       <VStack
         testID="account-claim-screen"
         space="xl"
         className="px-6 pb-5 pt-5"
       >
-        {claim.state.status === 'choice' || claim.state.status === 'deferred' ? (
+        {(claim.state.status === 'choice' || claim.state.status === 'deferred') &&
+        !isPreparing ? (
           <ChoiceContent
             logCount={claim.state.logCount}
             planCount={claim.state.planCount}
@@ -81,22 +100,34 @@ export default function AccountClaimScreen(): React.JSX.Element {
               runAction(claim.state.status === 'deferred' ? 'retry' : 'start')
             }
             onKeep={() => runAction('keep')}
+            isOnline={isOnline}
           />
+        ) : null}
+
+        {claim.state.status === 'hidden' || isPreparing ? (
+          <PreparingContent />
         ) : null}
 
         {claim.state.status === 'running' ? (
           <ProgressContent
-            title={t('accountClaim.progressTitle')}
+            title={t(
+              claim.state.phase === 'finalizing'
+                ? 'accountClaim.finalizingTitle'
+                : claim.state.phase === 'cleanup'
+                  ? 'accountClaim.cleanupTitle'
+                  : 'accountClaim.progressTitle',
+            )}
             completed={claim.state.completed}
             total={claim.state.total}
             currentLabel={claim.state.currentLabel}
           />
         ) : null}
 
-        {claim.state.status === 'failed' ? (
+        {claim.state.status === 'failed' && !isPreparing ? (
           <FailureContent
             completed={claim.state.completed}
             total={claim.state.total}
+            failure={claim.state.failure}
             busyAction={busyAction}
             onRetry={() => runAction('retry')}
             onKeep={() => runAction('keep')}
@@ -113,15 +144,18 @@ function ChoiceContent({
   busyAction,
   onImport,
   onKeep,
+  isOnline,
 }: {
   logCount: number;
   planCount: number;
   busyAction?: ClaimAction;
   onImport(): void;
   onKeep(): void;
+  isOnline: boolean;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const disabled = busyAction !== undefined;
+  const importDisabled = disabled || !isOnline;
 
   return (
     <>
@@ -162,9 +196,9 @@ function ChoiceContent({
           testID="account-claim-import"
           accessibilityLabel={t('accountClaim.importAction')}
           accessibilityRole="button"
-          accessibilityState={{ disabled, busy: busyAction === 'start' }}
+          accessibilityState={{disabled: importDisabled, busy: busyAction === 'start'}}
           className="min-h-12 w-full rounded-lg"
-          disabled={disabled}
+          disabled={importDisabled}
           onPress={onImport}
           size="lg"
         >
@@ -188,6 +222,31 @@ function ChoiceContent({
         </Button>
       </VStack>
     </>
+  );
+}
+
+function PreparingContent(): React.JSX.Element {
+  const {t} = useTranslation();
+
+  return (
+    <VStack
+      testID="account-claim-preparing"
+      space="lg"
+      className="items-center py-8">
+      <Spinner size="large" className="text-primary" />
+      <VStack space="xs" className="items-center">
+        <Text
+          accessibilityRole="header"
+          size="xl"
+          bold
+          className="text-center text-foreground">
+          {t('accountClaim.preparingTitle')}
+        </Text>
+        <Text size="sm" className="text-center text-muted-foreground">
+          {t('accountClaim.preparingDescription')}
+        </Text>
+      </VStack>
+    </VStack>
   );
 }
 
@@ -248,12 +307,14 @@ function ProgressContent({
 function FailureContent({
   completed,
   total,
+  failure,
   busyAction,
   onRetry,
   onKeep,
 }: {
   completed: number;
   total: number;
+  failure?: import('../../claim/guest-claim-types').GuestClaimFailureDetail;
   busyAction?: ClaimAction;
   onRetry(): void;
   onKeep(): void;
@@ -268,6 +329,14 @@ function FailureContent({
         completed={completed}
         total={total}
       />
+      <Text
+        testID="account-claim-failure-detail"
+        size="sm"
+        className="leading-5 text-muted-foreground">
+        {failure?.label
+          ? t('accountClaim.failureItemDescription', {label: failure.label})
+          : t('accountClaim.failureDescription')}
+      </Text>
       <VStack space="sm">
         <Button
           testID="account-claim-retry"

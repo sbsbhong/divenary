@@ -1,8 +1,8 @@
 # Mobile/Watch UI 언어
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12
-Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md)
-Updated: 2026-07-12
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22
+Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md)
+Updated: 2026-07-22
 
 ## 요약
 
@@ -38,6 +38,8 @@ watchOS 앱의 기준은 다음과 같다.
 - status badge는 낮은 채도와 얇은 강조만 가진 chip이어야 하며, primary-filled button처럼 보이면 안 된다.
 - 40m 초과 unsupported-depth marker는 낮은 채도의 review warning으로 표시하고, critical alarm이나 수중 행동 지시처럼 보이면 안 된다.
 - primary blue는 action과 선택 상태의 신호로만 쓴다.
+- `system` appearance는 별도 light/dark 값으로 복사해 저장하지 않고 OS appearance를 따르는 override 해제 상태로 유지한다. Native navigation, modal, form sheet의 uncovered area까지 같은 semantic background를 명시한다.
+- 복구 UI는 앱을 가리는 장기 blank 화면 대신 themed loading shell, compact Home banner, 단일 retry action을 사용한다. 데이터 삭제, 저장소 초기화, 자동 로그아웃을 복구 action으로 제시하지 않는다.
 - `success`, `warning` 같은 별도 강조 색을 브랜드 색처럼 쓰지 않는다.
 - 큰 graph와 큰 숫자를 한 화면에 여러 개 동시에 두지 않는다.
 - safety 관련 copy는 항상 `review`, `reminder`, `non-certified assistant` 범위로 제한한다.

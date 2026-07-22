@@ -907,3 +907,9 @@
 - Verified: staging finalizer는 같은 local row를 다른 target ID로 확정하지 않으며 verifier는 published payload digest와 해당 rollback을 확인한다.
 
 ## [2026-07-20] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-22] ingest | Mobile claim bootstrap and theme recovery
+- Updated: 모바일 구조
+- Updated: 동기화 흐름 구조
+- Updated: Mobile/Watch UI 언어
+- Updated: Knowledge Base Index
