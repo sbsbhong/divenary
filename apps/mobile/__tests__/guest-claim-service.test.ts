@@ -1143,6 +1143,12 @@ describe('guest claim service', () => {
 
     expect(result?.manifest.status).toBe('failed');
     expect(result?.errorCode).toBe('profile_corrupt');
+    expect(result?.failure).toEqual({
+      phase: 'uploading',
+      entityKind: 'log',
+      clientRecordId: 'log-a',
+      label: 'Local Reef',
+    });
     expect(progress).toEqual([0]);
     expect(remote.attachProfile).not.toHaveBeenCalled();
   });
@@ -1556,12 +1562,13 @@ describe('guest claim service', () => {
       userId,
       now: clock(),
     });
+    const remote = remoteRepository(store);
     const service = claimService({
       store,
       guest: repositories([watchLog('log-a', [])], []),
       account: repositories([], []),
       profile: profileStorage(),
-      remote: remoteRepository(store),
+      remote,
     });
 
     await expect(service.start()).rejects.toBeInstanceOf(
@@ -1569,7 +1576,14 @@ describe('guest claim service', () => {
     );
     await expect(service.start()).rejects.toMatchObject({
       code: 'profile_missing',
+      failure: {
+        phase: 'checking',
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        label: 'Local Reef',
+      },
     });
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
   });
 });
 

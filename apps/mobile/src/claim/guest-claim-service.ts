@@ -26,6 +26,7 @@ import {
 } from './guest-claim-store';
 import type {
   GuestClaimErrorCode,
+  GuestClaimFailureDetail,
   GuestClaimItem,
   GuestClaimProgress,
 } from './guest-claim-types';
@@ -39,7 +40,10 @@ import {
 } from './profile-bytes';
 
 export class GuestClaimServiceError extends Error {
-  constructor(readonly code: GuestClaimErrorCode) {
+  constructor(
+    readonly code: GuestClaimErrorCode,
+    readonly failure?: GuestClaimFailureDetail,
+  ) {
     super(code);
     this.name = 'GuestClaimServiceError';
   }
@@ -164,6 +168,7 @@ export class GuestClaimService {
       ) {
         snapshot.manifest.status = 'running';
         delete snapshot.errorCode;
+        delete snapshot.failure;
         await this.persist(snapshot);
         return this.run(snapshot);
       }
@@ -188,6 +193,7 @@ export class GuestClaimService {
       }
       snapshot.manifest.status = 'running';
       delete snapshot.errorCode;
+      delete snapshot.failure;
       await this.persist(snapshot);
       return this.run(snapshot);
     });
@@ -222,6 +228,7 @@ export class GuestClaimService {
     }
     snapshot.manifest.status = 'deferred';
     delete snapshot.errorCode;
+    delete snapshot.failure;
     await this.persist(snapshot);
     return snapshot;
   }
@@ -262,11 +269,13 @@ export class GuestClaimService {
   }
 
   private async run(snapshot: GuestClaimSnapshot): Promise<GuestClaimSnapshot> {
+    let failureContext: GuestClaimFailureDetail = { phase: 'uploading' };
     try {
       this.assertCanContinue();
       if (snapshot.manifest.status !== 'finalizing') {
         snapshot.manifest.status = 'running';
         delete snapshot.errorCode;
+        delete snapshot.failure;
         await this.persist(snapshot);
         this.emitProgress(snapshot, 'uploading');
 
@@ -293,11 +302,20 @@ export class GuestClaimService {
             if (item.completedAt !== undefined) {
               continue;
             }
+            const label = snapshot.snapshots[index]?.label;
+            failureContext = {
+              phase: 'uploading',
+              entityKind: item.entityKind,
+              clientRecordId: item.clientRecordId.slice(0, 512),
+              ...(label === undefined
+                ? {}
+                : { label: label.slice(0, 200) }),
+            };
             await this.stageItem(snapshot, index);
           }
         }
       }
-
+      failureContext = { phase: 'finalizing' };
       return await this.finalize(snapshot);
     } catch (error) {
       if (snapshot.userId !== this.options.userId) {
@@ -306,6 +324,7 @@ export class GuestClaimService {
       const failure = this.serviceError(error);
       snapshot.manifest.status = 'failed';
       snapshot.errorCode = failure.code;
+      snapshot.failure = failure.failure ?? failureContext;
       await this.persist(snapshot);
       return snapshot;
     }
@@ -463,6 +482,7 @@ export class GuestClaimService {
 
     snapshot.manifest.status = 'cleanupPending';
     delete snapshot.errorCode;
+    delete snapshot.failure;
     await this.persist(snapshot);
     this.emitProgress(snapshot, 'cleanup');
     return this.cleanup(snapshot, true);
@@ -580,6 +600,7 @@ export class GuestClaimService {
     if (!cleanupPendingPersisted) {
       snapshot.manifest.status = 'cleanupPending';
       delete snapshot.errorCode;
+      delete snapshot.failure;
       await this.persist(snapshot);
     }
     try {
@@ -1299,7 +1320,7 @@ export class GuestClaimService {
       return error;
     }
     if (error instanceof GuestClaimPreparationError) {
-      return new GuestClaimServiceError(error.code);
+      return new GuestClaimServiceError(error.code, error.failure);
     }
     if (error instanceof GuestClaimProfileError) {
       return new GuestClaimServiceError(error.code);
