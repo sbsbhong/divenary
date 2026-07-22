@@ -29,12 +29,27 @@ export type GuestClaimManifest = {
     | 'committed'
     | 'cleanupPending'
     | 'deferred'
+    | 'retained'
     | 'failed';
   planCount: number;
   logCount: number;
   items: GuestClaimItem[];
   createdAt: number;
   updatedAt: number;
+};
+
+export type GuestClaimRetainedReason =
+  | 'profile_missing'
+  | 'profile_corrupt'
+  | 'related_item_retained';
+
+export type GuestClaimRetainedItem = {
+  entityKind: GuestClaimItem['entityKind'];
+  clientRecordId: string;
+  localRecordSha256: string;
+  label?: string;
+  reason: GuestClaimRetainedReason;
+  relatedClientRecordId?: string;
 };
 
 export type GuestClaimProgress = {

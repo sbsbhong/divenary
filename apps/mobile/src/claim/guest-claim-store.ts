@@ -35,6 +35,8 @@ import type {
   GuestClaimFailureDetail,
   GuestClaimItem,
   GuestClaimManifest,
+  GuestClaimRetainedItem,
+  GuestClaimRetainedReason,
 } from './guest-claim-types';
 
 const SIDECAR_SCHEMA_VERSION = 1;
@@ -75,6 +77,7 @@ export type GuestClaimSnapshot = {
   userId: string;
   manifest: GuestClaimManifest;
   snapshots: GuestClaimSnapshotItem[];
+  retainedItems: GuestClaimRetainedItem[];
   errorCode?: GuestClaimErrorCode;
   failure?: GuestClaimFailureDetail;
 };
@@ -160,8 +163,70 @@ export async function createGuestClaimSnapshot(options: {
   const relationships = validateRelationships(plans, logs);
   const items: GuestClaimItem[] = [];
   const snapshots: GuestClaimSnapshotItem[] = [];
+  const preparedLogs = new Map<
+    string,
+    Awaited<ReturnType<typeof prepareLogSnapshot>>
+  >();
+  const retainedLogReasons = new Map<
+    string,
+    Extract<GuestClaimRetainedReason, 'profile_missing' | 'profile_corrupt'>
+  >();
 
+  for (const sourceLog of logs) {
+    try {
+      preparedLogs.set(
+        sourceLog.localId,
+        await prepareLogSnapshot(sourceLog, options.profileStorage),
+      );
+    } catch (error) {
+      if (
+        error instanceof GuestClaimProfileError &&
+        (error.code === 'profile_missing' || error.code === 'profile_corrupt')
+      ) {
+        retainedLogReasons.set(sourceLog.localId, error.code);
+        continue;
+      }
+      if (error instanceof GuestClaimPreparationError) {
+        throw new GuestClaimPreparationError(
+          error.code,
+          error.failure ?? claimFailureDetail('checking', sourceLog),
+        );
+      }
+      throw error;
+    }
+  }
+
+  const retainedPlanRelations = new Map<string, string>();
   for (const plan of plans) {
+    if (
+      plan.convertedLogLocalId !== undefined &&
+      retainedLogReasons.has(plan.convertedLogLocalId)
+    ) {
+      retainedPlanRelations.set(plan.localId, plan.convertedLogLocalId);
+    }
+  }
+  const claimablePlans = plans.filter(
+    plan => !retainedPlanRelations.has(plan.localId),
+  );
+  const claimableLogs = logs.filter(
+    log => !retainedLogReasons.has(log.localId),
+  );
+  const retainedItems: GuestClaimRetainedItem[] = [
+    ...plans
+      .filter(plan => retainedPlanRelations.has(plan.localId))
+      .map(plan =>
+        retainedItem(plan, 'plan', 'related_item_retained', {
+          relatedClientRecordId: retainedPlanRelations.get(plan.localId)!,
+        }),
+      ),
+    ...logs
+      .filter(log => retainedLogReasons.has(log.localId))
+      .map(log =>
+        retainedItem(log, 'log', retainedLogReasons.get(log.localId)!),
+      ),
+  ];
+
+  for (const plan of claimablePlans) {
     const remote = mapPlanPayload(plan);
     const key = `plan:${plan.localId}`;
     const localRecordBytes = canonicalJson(plan);
@@ -184,22 +249,13 @@ export async function createGuestClaimSnapshot(options: {
     });
   }
 
-  for (const sourceLog of logs) {
-    let prepared: Awaited<ReturnType<typeof prepareLogSnapshot>>;
-    try {
-      prepared = await prepareLogSnapshot(sourceLog, options.profileStorage);
-    } catch (error) {
-      const failure = claimFailureDetail('checking', sourceLog);
-      if (error instanceof GuestClaimPreparationError) {
-        throw new GuestClaimPreparationError(
-          error.code,
-          error.failure ?? failure,
-        );
-      }
-      if (error instanceof GuestClaimProfileError) {
-        throw new GuestClaimPreparationError(error.code, failure);
-      }
-      throw error;
+  for (const sourceLog of claimableLogs) {
+    const prepared = preparedLogs.get(sourceLog.localId);
+    if (prepared === undefined) {
+      throw new GuestClaimPreparationError(
+        'claim_validation_failed',
+        claimFailureDetail('checking', sourceLog),
+      );
     }
     const remote = mapLogPayload(
       prepared.log,
@@ -248,8 +304,8 @@ export async function createGuestClaimSnapshot(options: {
   const manifestSha256 = manifestDigest({
     schemaVersion: 1,
     userId: options.userId,
-    planCount: plans.length,
-    logCount: logs.length,
+    planCount: claimablePlans.length,
+    logCount: claimableLogs.length,
     items,
     snapshots,
     createdAt,
@@ -262,14 +318,37 @@ export async function createGuestClaimSnapshot(options: {
       userId: options.userId,
       clientBatchId: `claim:${createdAt}:${manifestSha256.slice(0, 16)}`,
       manifestSha256,
-      status: 'prepared',
-      planCount: plans.length,
-      logCount: logs.length,
+      status:
+        items.length === 0 && retainedItems.length > 0
+          ? 'retained'
+          : 'prepared',
+      planCount: claimablePlans.length,
+      logCount: claimableLogs.length,
       items,
       createdAt,
       updatedAt: createdAt,
     },
     snapshots,
+    retainedItems,
+  };
+}
+
+function retainedItem(
+  record: DiveLogEntry | DivePlan,
+  entityKind: GuestClaimRetainedItem['entityKind'],
+  reason: GuestClaimRetainedReason,
+  relation: Pick<GuestClaimRetainedItem, 'relatedClientRecordId'> | undefined =
+    undefined,
+): GuestClaimRetainedItem {
+  const localRecordBytes = canonicalJson(record);
+  const label = claimLabel(record);
+  return {
+    entityKind,
+    clientRecordId: record.localId,
+    localRecordSha256: digestUtf8(localRecordBytes),
+    ...(label === undefined ? {} : {label}),
+    reason,
+    ...(relation?.relatedClientRecordId === undefined ? {} : relation),
   };
 }
 
@@ -481,6 +560,7 @@ function parseStoredSnapshot(
       'userId',
       'manifest',
       'snapshots',
+      'retainedItems',
       'errorCode',
       'failure',
     ]) ||
@@ -496,6 +576,15 @@ function parseStoredSnapshot(
   }
   const snapshots = value.snapshots.map(parseSidecar);
   const manifest = parseManifest(value.manifest, expectedUserId, snapshots);
+  const retainedItems =
+    value.retainedItems === undefined
+      ? []
+      : Array.isArray(value.retainedItems)
+        ? value.retainedItems.map(parseRetainedItem)
+        : undefined;
+  if (retainedItems === undefined) {
+    throw new GuestClaimStorageError();
+  }
   const failure =
     value.failure === undefined ? undefined : parseFailure(value.failure);
   if (
@@ -505,16 +594,75 @@ function parseStoredSnapshot(
     throw new GuestClaimStorageError();
   }
   validateSnapshotSet(manifest, snapshots);
+  validateRetainedSet(manifest, retainedItems);
   return {
     schemaVersion: 1,
     userId: expectedUserId,
     manifest,
     snapshots,
+    retainedItems,
     ...(value.errorCode === undefined
       ? {}
       : { errorCode: value.errorCode as GuestClaimErrorCode }),
     ...(failure === undefined ? {} : { failure }),
   };
+}
+
+function parseRetainedItem(value: unknown): GuestClaimRetainedItem {
+  if (
+    !isRecord(value) ||
+    !hasOnlyKeys(value, [
+      'entityKind',
+      'clientRecordId',
+      'localRecordSha256',
+      'label',
+      'reason',
+      'relatedClientRecordId',
+    ]) ||
+    (value.entityKind !== 'plan' && value.entityKind !== 'log') ||
+    !isNonEmptyString(value.clientRecordId) ||
+    !SHA256_PATTERN.test(String(value.localRecordSha256)) ||
+    !isOptionalBoundedString(value.label, 200) ||
+    !isRetainedReason(value.reason) ||
+    !isOptionalNonEmptyString(value.relatedClientRecordId) ||
+    (value.reason === 'related_item_retained') !==
+      (value.relatedClientRecordId !== undefined)
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  return {
+    entityKind: value.entityKind,
+    clientRecordId: value.clientRecordId,
+    localRecordSha256: value.localRecordSha256 as string,
+    ...(value.label === undefined ? {} : {label: value.label}),
+    reason: value.reason,
+    ...(value.relatedClientRecordId === undefined
+      ? {}
+      : {relatedClientRecordId: value.relatedClientRecordId}),
+  };
+}
+
+function validateRetainedSet(
+  manifest: GuestClaimManifest,
+  retainedItems: GuestClaimRetainedItem[],
+): void {
+  const claimedKeys = new Set(manifest.items.map(item => item.key));
+  const retainedKeys = retainedItems.map(
+    item => `${item.entityKind}:${item.clientRecordId}`,
+  );
+  if (
+    new Set(retainedKeys).size !== retainedKeys.length ||
+    retainedKeys.some(key => claimedKeys.has(key)) ||
+    (manifest.status === 'retained' &&
+      (manifest.items.length !== 0 ||
+        retainedItems.length === 0 ||
+        manifest.remoteBatchId !== undefined)) ||
+    (manifest.status !== 'retained' &&
+      manifest.items.length === 0 &&
+      retainedItems.length > 0)
+  ) {
+    throw new GuestClaimStorageError();
+  }
 }
 
 function parseFailure(value: unknown): GuestClaimFailureDetail {
@@ -1053,7 +1201,18 @@ function isManifestStatus(
     value === 'committed' ||
     value === 'cleanupPending' ||
     value === 'deferred' ||
+    value === 'retained' ||
     value === 'failed'
+  );
+}
+
+function isRetainedReason(
+  value: unknown,
+): value is GuestClaimRetainedReason {
+  return (
+    value === 'profile_missing' ||
+    value === 'profile_corrupt' ||
+    value === 'related_item_retained'
   );
 }
 

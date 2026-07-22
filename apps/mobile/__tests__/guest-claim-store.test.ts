@@ -22,6 +22,87 @@ const guestProfileKey = `${dataProfileKeyPrefix({
 })}session-log-a:revision-1`;
 
 describe('guest claim store', () => {
+  it('keeps an unverifiable watch log while snapshotting unrelated valid logs', async () => {
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({localId: 'manual-a'}),
+        diveLog({
+          localId: 'log-a',
+          title: '위치 다이브',
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: 1,
+          },
+        }),
+        diveLog({localId: 'manual-b'}),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+
+    expect(snapshot.manifest.items.map(item => item.key)).toEqual([
+      'log:manual-a',
+      'log:manual-b',
+    ]);
+    expect(snapshot.retainedItems).toEqual([
+      expect.objectContaining({
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        label: '위치 다이브',
+        reason: 'profile_missing',
+      }),
+    ]);
+    expect(snapshot.manifest).toMatchObject({
+      status: 'prepared',
+      planCount: 0,
+      logCount: 2,
+    });
+  });
+
+  it('retains the relationship pair when a converted watch log profile is corrupt', async () => {
+    const profiles = profileStorage();
+    await profiles.write(guestProfileKey, [
+      {localSessionId: 'wrong-session', timestamp: 10, depthMeters: 1},
+    ]);
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: 1,
+          },
+        }),
+      ]),
+      planRepository: repository([
+        divePlan({localId: 'plan-a', convertedLogLocalId: 'log-a'}),
+      ]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+
+    expect(snapshot.manifest.items).toEqual([]);
+    expect(snapshot.manifest.status).toBe('retained');
+    expect(snapshot.retainedItems).toEqual([
+      expect.objectContaining({
+        entityKind: 'plan',
+        clientRecordId: 'plan-a',
+        reason: 'related_item_retained',
+        relatedClientRecordId: 'log-a',
+      }),
+      expect.objectContaining({
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        reason: 'profile_corrupt',
+      }),
+    ]);
+  });
+
   it('round-trips sanitized failure context without changing the manifest digest', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({
@@ -51,6 +132,27 @@ describe('guest claim store', () => {
         clientRecordId: 'log-a',
         label: 'Moon Island',
       },
+    });
+  });
+
+  it('reads legacy claim sidecars without retained metadata as an empty list', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const legacy = structuredClone(snapshot) as Partial<typeof snapshot>;
+    delete legacy.retainedItems;
+    await storage.setString(
+      dataStorageKeys({kind: 'user', userId}).claim,
+      JSON.stringify(legacy),
+    );
+
+    await expect(new GuestClaimStore({storage, userId}).read()).resolves.toMatchObject({
+      retainedItems: [],
     });
   });
 
