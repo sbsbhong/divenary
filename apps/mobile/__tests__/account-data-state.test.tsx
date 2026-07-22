@@ -1437,6 +1437,11 @@ describe('account data state', () => {
     };
     const remote = guestClaimRepository();
     const guestLogbook = new LocalDiveLogRepository([profileLog]);
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
     const captures: ReturnType<typeof useAccountData>['claim'][] = [];
     const Capture = () => {
       captures.push(useAccountData().claim);
@@ -1456,11 +1461,7 @@ describe('account data state', () => {
           }}
           dependencies={{
             metadataStorage,
-            profileStorage: {
-              write: jest.fn(async () => undefined),
-              read: jest.fn(async () => undefined),
-              remove: jest.fn(async () => undefined),
-            },
+            profileStorage,
             migrateLegacyData: jest.fn(async () => undefined),
             createRepositories: principal => ({
               principal,
@@ -1509,6 +1510,16 @@ describe('account data state', () => {
       expect(captures.at(-1)?.state.status).toBe('retained'),
     );
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+
+    profileStorage.read.mockRejectedValueOnce(
+      new Error('profile storage temporarily unavailable'),
+    );
+    await ReactTestRenderer.act(async () => {
+      await captures.at(-1)!.recheckRetained();
+    });
+    await waitFor(() =>
+      expect(captures.at(-1)?.state.status).toBe('retained'),
+    );
     expect(captures.at(-1)?.eligible).toEqual({ logCount: 1, planCount: 0 });
     await expect(guestLogbook.get('profile-log')).resolves.toBeDefined();
 

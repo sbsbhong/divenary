@@ -124,11 +124,20 @@ export class GuestClaimService {
       ) {
         return existing;
       }
+    }
+    const snapshot = await this.createFreshSnapshot();
+    if (snapshot === undefined && existing !== undefined) {
       if (!this.options.store.remove) {
         throw new GuestClaimServiceError('claim_validation_failed');
       }
       await this.options.store.remove();
     }
+    return snapshot;
+  }
+
+  private async createFreshSnapshot(): Promise<
+    GuestClaimSnapshot | undefined
+  > {
     this.assertCanContinue();
     let snapshot: GuestClaimSnapshot;
     try {
@@ -231,12 +240,12 @@ export class GuestClaimService {
         throw new GuestClaimServiceError('claim_validation_failed');
       }
       this.assertCanContinue();
-      await this.options.store.remove();
-      const snapshot = await this.prepare();
-      if (
-        snapshot === undefined ||
-        snapshot.manifest.status === 'retained'
-      ) {
+      const snapshot = await this.createFreshSnapshot();
+      if (snapshot === undefined) {
+        await this.options.store.remove();
+        return undefined;
+      }
+      if (snapshot.manifest.status === 'retained') {
         return snapshot;
       }
       return this.run(snapshot);

@@ -747,7 +747,7 @@ export function AccountDataProviderCore({
         if (!isClaimCurrent()) {
           return;
         }
-        if (operation === 'defer') {
+        if (operation === 'defer' || operation === 'recheckRetained') {
           let snapshot: GuestClaimSnapshot | undefined;
           try {
             snapshot = await publication.claimStore?.read();
@@ -761,12 +761,14 @@ export function AccountDataProviderCore({
             await refreshClaim(publication, { resumeActive: false });
             return;
           }
-          setClaimPresentation({
-            queryScope: desiredScope,
-            eligible,
-            state: { status: 'hidden' },
-          });
-          return;
+          if (operation === 'defer') {
+            setClaimPresentation({
+              queryScope: desiredScope,
+              eligible,
+              state: { status: 'hidden' },
+            });
+            return;
+          }
         }
         let completed = 0;
         try {

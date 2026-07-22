@@ -1649,6 +1649,31 @@ describe('guest claim service', () => {
     expect(remote.createOrLoadBatch).toHaveBeenCalledTimes(1);
     await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
   });
+
+  it('preserves the terminal snapshot when an explicit recheck cannot build a replacement', async () => {
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const profile = profileStorage();
+    const service = claimService({
+      store,
+      guest: repositories([watchLog('log-a', [])], []),
+      account: repositories([], []),
+      profile,
+      remote: remoteRepository(store),
+    });
+    const terminal = await service.start();
+    jest.mocked(profile.read).mockRejectedValueOnce(
+      new Error('profile storage temporarily unavailable'),
+    );
+
+    await expect(service.recheckRetained()).rejects.toMatchObject({
+      code: 'claim_validation_failed',
+    });
+    await expect(store.read()).resolves.toEqual(terminal);
+  });
 });
 
 function claimService(input: {
