@@ -1348,6 +1348,13 @@ function presentationForSnapshot(
         ? {}
         : {failure: snapshot.failure}),
     };
+  } else if (
+    (snapshot.manifest.status === 'committed' ||
+      snapshot.manifest.status === 'retained') &&
+    isOnline &&
+    eligible.logCount + eligible.planCount > snapshot.retainedItems.length
+  ) {
+    state = {status: 'choice', ...eligible};
   } else if (snapshot.manifest.status === 'committed') {
     state = {
       status: 'complete',

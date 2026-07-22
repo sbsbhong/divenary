@@ -155,6 +155,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
             imported={claim.state.imported}
             retainedItems={claim.state.retainedItems}
             busyAction={busyAction}
+            isOnline={isOnline}
             onDone={() => navigation.goBack()}
             onRecheck={() => runAction('recheck')}
           />
@@ -164,6 +165,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
           <RetainedResultContent
             retainedItems={claim.state.retainedItems}
             busyAction={busyAction}
+            isOnline={isOnline}
             onDone={() => navigation.goBack()}
             onRecheck={() => runAction('recheck')}
           />
@@ -177,17 +179,20 @@ function RetainedResultContent({
   imported,
   retainedItems,
   busyAction,
+  isOnline,
   onDone,
   onRecheck,
 }: {
   imported?: number;
   retainedItems: GuestClaimRetainedItem[];
   busyAction?: ClaimAction;
+  isOnline: boolean;
   onDone(): void;
   onRecheck(): void;
 }): React.JSX.Element {
   const {t} = useTranslation();
   const disabled = busyAction !== undefined;
+  const recheckDisabled = disabled || !isOnline;
   const first = retainedItems[0];
 
   return (
@@ -260,9 +265,12 @@ function RetainedResultContent({
           testID="account-claim-recheck"
           accessibilityLabel={t('accountClaim.recheckAction')}
           accessibilityRole="button"
-          accessibilityState={{disabled, busy: busyAction === 'recheck'}}
+          accessibilityState={{
+            disabled: recheckDisabled,
+            busy: busyAction === 'recheck',
+          }}
           className="min-h-11 w-full"
-          disabled={disabled}
+          disabled={recheckDisabled}
           onPress={onRecheck}
           variant="link">
           <ButtonText className="text-base font-semibold">
