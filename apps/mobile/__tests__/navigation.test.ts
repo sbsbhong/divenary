@@ -89,4 +89,20 @@ describe('account claim automatic navigation', () => {
       }),
     ).toBeUndefined();
   });
+
+  test.each(['retained', 'complete'] as const)(
+    'does not automatically route a %s terminal result',
+    claimStatus => {
+      expect(
+        resolveAccountClaimAutoRoute({
+          authStatus: 'authenticated',
+          userId: 'user-1',
+          isOnline: true,
+          eligibleCount: 1,
+          claimStatus,
+          currentRoute: 'tabs',
+        }),
+      ).toBeUndefined();
+    },
+  );
 });

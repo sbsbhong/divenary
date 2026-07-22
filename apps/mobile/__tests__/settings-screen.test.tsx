@@ -214,6 +214,42 @@ describe('SettingsScreen', () => {
     expect(onOpenAccountClaim).toHaveBeenCalledTimes(1);
   });
 
+  test('shows a retained device-data recovery count after a partial import', async () => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: {status: 'authenticated', userId: 'user-id'},
+      }),
+    );
+    const retainedItem = {
+      entityKind: 'log' as const,
+      clientRecordId: 'log-a',
+      localRecordSha256: 'a'.repeat(64),
+      label: '위치 다이브',
+      reason: 'profile_missing' as const,
+    };
+    const renderer = await renderSettings({
+      accountClaim: {
+        isOnline: true,
+        eligible: {logCount: 1, planCount: 0},
+        state: {
+          status: 'complete',
+          imported: 13,
+          retainedItems: [retainedItem],
+        },
+      },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(
+      renderer.root.findByProps({testID: 'settings-row-account-claim'}),
+    ).toBeTruthy();
+    expect(
+      renderer.root.findByProps({testID: 'settings-account-claim-count'}).props
+        .children,
+    ).toBe('확인 필요 1');
+  });
+
   test.each([
     ['guest', { status: 'guest' } as const, true, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
     ['zero eligible rows', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],

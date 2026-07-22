@@ -380,4 +380,72 @@ describe('AccountClaimScreen', () => {
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledTimes(1);
     expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
+
+  test('shows partial completion until the user acknowledges the retained item', async () => {
+    mockClaim = claimFixture({
+      status: 'complete',
+      imported: 13,
+      retainedItems: [
+        {
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          localRecordSha256: 'a'.repeat(64),
+          label: '위치 다이브',
+          reason: 'profile_missing',
+        },
+      ],
+    });
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
+    ).toBe('기기 데이터를 가져왔습니다');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-result-summary'}).props
+        .children,
+    ).toContain('13개');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-retained-item'}).props
+        .children,
+    ).toContain('위치 다이브');
+    expect(mockGoBack).not.toHaveBeenCalled();
+    expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
+      '13개를 가져왔고 1개는 기기에 유지했습니다',
+    );
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({testID: 'account-claim-done'}).props.onPress();
+    });
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+  });
+
+  test('shows retained-only recovery without a zero progress failure and rechecks explicitly', async () => {
+    mockClaim = claimFixture({
+      status: 'retained',
+      retainedItems: [
+        {
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          localRecordSha256: 'a'.repeat(64),
+          label: '위치 다이브',
+          reason: 'profile_corrupt',
+        },
+      ],
+    });
+    const renderer = await renderScreen();
+    const serialized = JSON.stringify(renderer.toJSON());
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
+    ).toBe('일부 데이터를 확인해야 합니다');
+    expect(serialized).not.toContain('0 / 1');
+    expect(serialized).not.toContain('가져오기를 완료하지 못했습니다');
+    expect(serialized).not.toContain('profile_corrupt');
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({testID: 'account-claim-recheck'}).props
+        .onPress();
+    });
+    expect(mockClaim.recheckRetained).toHaveBeenCalledTimes(1);
+  });
 });

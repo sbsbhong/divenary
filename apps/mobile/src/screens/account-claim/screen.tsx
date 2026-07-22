@@ -13,8 +13,9 @@ import { Spinner } from '../../components/ui/spinner';
 import { VStack } from '../../components/ui/vstack';
 import { useAccountData } from '../../states/account-data';
 import { DepthTraceProgress } from './depth-trace-progress';
+import type {GuestClaimRetainedItem} from '../../claim/guest-claim-types';
 
-type ClaimAction = 'start' | 'retry' | 'keep';
+type ClaimAction = 'start' | 'retry' | 'recheck' | 'keep';
 
 export default function AccountClaimScreen(): React.JSX.Element {
   const { t } = useTranslation();
@@ -26,9 +27,12 @@ export default function AccountClaimScreen(): React.JSX.Element {
   const isRunning =
     claim.state.status === 'running' ||
     busyAction === 'start' ||
-    busyAction === 'retry';
+    busyAction === 'retry' ||
+    busyAction === 'recheck';
   const isPreparing =
-    (busyAction === 'start' || busyAction === 'retry') &&
+    (busyAction === 'start' ||
+      busyAction === 'retry' ||
+      busyAction === 'recheck') &&
     claim.state.status !== 'running';
 
   usePreventRemove(isRunning, () => undefined);
@@ -50,12 +54,20 @@ export default function AccountClaimScreen(): React.JSX.Element {
     }
 
     announcedCompletion.current = true;
+    const retainedCount = claim.state.retainedItems.length;
     AccessibilityInfo.announceForAccessibility(
-      t('accountClaim.completeAnnouncement', {
-        count: claim.state.imported,
-      }),
+      retainedCount > 0
+        ? t('accountClaim.partialCompleteAnnouncement', {
+            imported: claim.state.imported,
+            retained: retainedCount,
+          })
+        : t('accountClaim.completeAnnouncement', {
+            count: claim.state.imported,
+          }),
     );
-    navigation.goBack();
+    if (retainedCount === 0) {
+      navigation.goBack();
+    }
   }, [claim.state, navigation, t]);
 
   const runAction = React.useCallback(
@@ -70,6 +82,8 @@ export default function AccountClaimScreen(): React.JSX.Element {
           await claim.start();
         } else if (action === 'retry') {
           await claim.retry();
+        } else if (action === 'recheck') {
+          await claim.recheckRetained();
         } else {
           await claim.keepOnDevice();
           navigation.goBack();
@@ -133,8 +147,130 @@ export default function AccountClaimScreen(): React.JSX.Element {
             onKeep={() => runAction('keep')}
           />
         ) : null}
+
+        {claim.state.status === 'complete' &&
+        claim.state.retainedItems.length > 0 &&
+        !isPreparing ? (
+          <RetainedResultContent
+            imported={claim.state.imported}
+            retainedItems={claim.state.retainedItems}
+            busyAction={busyAction}
+            onDone={() => navigation.goBack()}
+            onRecheck={() => runAction('recheck')}
+          />
+        ) : null}
+
+        {claim.state.status === 'retained' && !isPreparing ? (
+          <RetainedResultContent
+            retainedItems={claim.state.retainedItems}
+            busyAction={busyAction}
+            onDone={() => navigation.goBack()}
+            onRecheck={() => runAction('recheck')}
+          />
+        ) : null}
       </VStack>
     </SafeAreaView>
+  );
+}
+
+function RetainedResultContent({
+  imported,
+  retainedItems,
+  busyAction,
+  onDone,
+  onRecheck,
+}: {
+  imported?: number;
+  retainedItems: GuestClaimRetainedItem[];
+  busyAction?: ClaimAction;
+  onDone(): void;
+  onRecheck(): void;
+}): React.JSX.Element {
+  const {t} = useTranslation();
+  const disabled = busyAction !== undefined;
+  const first = retainedItems[0];
+
+  return (
+    <>
+      <VStack space="sm">
+        <Text
+          testID="account-claim-title"
+          accessibilityRole="header"
+          maxFontSizeMultiplier={1.5}
+          className="text-xl font-semibold leading-7 text-foreground">
+          {t(
+            imported === undefined
+              ? 'accountClaim.retainedTitle'
+              : 'accountClaim.partialCompleteTitle',
+          )}
+        </Text>
+        <Text
+          testID="account-claim-result-summary"
+          size="sm"
+          className="leading-5 text-muted-foreground">
+          {imported === undefined
+            ? t('accountClaim.retainedDescription', {
+                count: retainedItems.length,
+              })
+            : t('accountClaim.partialCompleteSummary', {count: imported})}
+        </Text>
+        {imported === undefined ? null : (
+          <Text size="sm" className="leading-5 text-muted-foreground">
+            {t('accountClaim.retainedNotice', {count: retainedItems.length})}
+          </Text>
+        )}
+      </VStack>
+
+      {first ? (
+        <VStack space="xs" className="rounded-2xl bg-card px-4 py-3">
+          <Text
+            testID="account-claim-retained-item"
+            maxFontSizeMultiplier={1.5}
+            className="font-semibold text-foreground">
+            {first.label ?? t('accountClaim.unknownRetainedItem')}
+          </Text>
+          <Text size="sm" className="leading-5 text-muted-foreground">
+            {t(`accountClaim.retainedReasons.${first.reason}`)}
+          </Text>
+          {retainedItems.length > 1 ? (
+            <Text size="xs" className="text-muted-foreground">
+              {t('accountClaim.additionalRetainedItems', {
+                count: retainedItems.length - 1,
+              })}
+            </Text>
+          ) : null}
+        </VStack>
+      ) : null}
+
+      <VStack space="sm">
+        <Button
+          testID="account-claim-done"
+          accessibilityLabel={t('accountClaim.doneAction')}
+          accessibilityRole="button"
+          accessibilityState={{disabled}}
+          className="min-h-12 w-full rounded-lg"
+          disabled={disabled}
+          onPress={onDone}
+          size="lg">
+          <ButtonText className="text-base font-semibold">
+            {t('accountClaim.doneAction')}
+          </ButtonText>
+        </Button>
+        <Button
+          testID="account-claim-recheck"
+          accessibilityLabel={t('accountClaim.recheckAction')}
+          accessibilityRole="button"
+          accessibilityState={{disabled, busy: busyAction === 'recheck'}}
+          className="min-h-11 w-full"
+          disabled={disabled}
+          onPress={onRecheck}
+          variant="link">
+          <ButtonText className="text-base font-semibold">
+            {t('accountClaim.recheckAction')}
+          </ButtonText>
+        </Button>
+      </VStack>
+    </>
   );
 }
 
