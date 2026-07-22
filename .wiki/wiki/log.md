@@ -913,3 +913,9 @@
 - Updated: 동기화 흐름 구조
 - Updated: Mobile/Watch UI 언어
 - Updated: Knowledge Base Index
+
+## [2026-07-22] ingest | Guest claim profile quarantine
+- Updated: 모바일 구조
+- Updated: 동기화 흐름 구조
+- Updated: 다이브 로그 도메인
+- Updated: Knowledge Base Index
