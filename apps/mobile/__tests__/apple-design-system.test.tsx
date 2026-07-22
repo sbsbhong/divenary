@@ -6,6 +6,8 @@ import { GluestackUIProvider } from '../src/components/ui/gluestack-ui-provider'
 import { colors } from '../src/components/ui/gluestack-ui-provider/config';
 import { useAppPreferences } from '../src/states/app-preferences';
 
+const mockSetColorScheme = jest.fn();
+
 jest.mock('../src/states/auth', () => {
   const ReactModule = require('react') as typeof import('react');
 
@@ -48,7 +50,7 @@ jest.mock('nativewind', () => {
     ...actual,
     useColorScheme: jest.fn(() => ({
       colorScheme: 'light',
-      setColorScheme: jest.fn(),
+      setColorScheme: mockSetColorScheme,
     })),
   };
 });
@@ -66,7 +68,12 @@ const readSource = (...segments: string[]) => {
 function ThemeToggle(): React.JSX.Element {
   const { setThemePreference } = useAppPreferences();
 
-  return <Pressable testID="set-dark-theme" onPress={() => setThemePreference('dark')} />;
+  return (
+    <>
+      <Pressable testID="set-dark-theme" onPress={() => setThemePreference('dark')} />
+      <Pressable testID="set-system-theme" onPress={() => setThemePreference('system')} />
+    </>
+  );
 }
 
 describe('Apple design system mapping', () => {
@@ -82,7 +89,7 @@ describe('Apple design system mapping', () => {
     expect(colors.light['--ring']).toBe('0 113 227');
   });
 
-  test('uses light mode as the default resolved mobile surface', async () => {
+  test('passes the system preference while resolving a light status surface', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -91,8 +98,9 @@ describe('Apple design system mapping', () => {
 
     const root = renderer!.root;
 
-    expect(root.findByType(GluestackUIProvider).props.mode).toBe('light');
+    expect(root.findByType(GluestackUIProvider).props.mode).toBe('system');
     expect(root.findByType(StatusBar).props.barStyle).toBe('dark-content');
+    expect(mockSetColorScheme).toHaveBeenLastCalledWith('system');
   });
 
   test('updates Gluestack mode and status bar from runtime theme preference', async () => {
@@ -114,6 +122,14 @@ describe('Apple design system mapping', () => {
 
     expect(root.findByType(GluestackUIProvider).props.mode).toBe('dark');
     expect(root.findByType(StatusBar).props.barStyle).toBe('light-content');
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'set-system-theme' }).props.onPress();
+    });
+
+    expect(root.findByType(GluestackUIProvider).props.mode).toBe('system');
+    expect(root.findByType(StatusBar).props.barStyle).toBe('dark-content');
+    expect(mockSetColorScheme).toHaveBeenLastCalledWith('system');
   });
 
   test('keeps mobile screens within the Apple-style UI rules from DESIGN.md', () => {

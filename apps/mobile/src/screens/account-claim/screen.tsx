@@ -66,7 +66,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
   );
 
   return (
-    <SafeAreaView edges={['bottom']} className="bg-background">
+    <SafeAreaView edges={['bottom']} className="flex-1 bg-background">
       <VStack
         testID="account-claim-screen"
         space="xl"

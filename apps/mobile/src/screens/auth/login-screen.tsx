@@ -61,7 +61,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
   );
 
   return (
-    <SafeAreaView testID="auth-login-safe-area" edges={['bottom']} className="bg-background">
+    <SafeAreaView testID="auth-login-safe-area" edges={['bottom']} className="flex-1 bg-background">
       <VStack testID="auth-login-screen" space="md" className="px-5 pb-2 pt-3">
         <Box className="relative min-h-11 justify-center">
           <Box

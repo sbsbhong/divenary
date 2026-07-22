@@ -39,10 +39,10 @@ export default function Providers(props: ProvidersProps): React.JSX.Element {
 }
 
 function ThemedProviders(props: ProvidersProps): React.JSX.Element {
-  const { resolvedTheme } = useAppPreferences();
+  const { resolvedTheme, themePreference } = useAppPreferences();
 
   return (
-    <GluestackUIProvider mode={resolvedTheme}>
+    <GluestackUIProvider mode={themePreference}>
       <StatusBar barStyle={resolvedTheme === 'dark' ? 'light-content' : 'dark-content'} />
       {props.children}
     </GluestackUIProvider>
