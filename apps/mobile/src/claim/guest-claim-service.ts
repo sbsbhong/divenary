@@ -34,6 +34,7 @@ import type {
 } from './guest-claim-types';
 import {
   createProfileBytesSnapshot,
+  createStoredProfileBytesSnapshot,
   encodeUtf8,
   GuestClaimProfileError,
   type ProfileBytesSnapshot,
@@ -1113,18 +1114,33 @@ export class GuestClaimService {
       return capture;
     }
     assertGuestProfileKey(reference.storageKey);
+    const snapshot = createStoredProfileBytesSnapshot(
+      await this.options.profileStorage.read(reference.storageKey),
+      {
+        localSessionId: log.watchCapture.session.localSessionId,
+        sampleCount: reference.sampleCount,
+        sha256: reference.sha256,
+        artifactSha256: reference.artifactSha256,
+      },
+    );
+    capture.record = {
+      ...log,
+      watchCapture: {
+        ...log.watchCapture,
+        profile: {
+          ...reference,
+          sha256: snapshot.sha256,
+          ...(snapshot.artifactSha256 === undefined
+            ? {}
+            : {artifactSha256: snapshot.artifactSha256}),
+        },
+      },
+    };
     capture.profile = {
       storageKey: reference.storageKey,
       contentRevision: reference.contentRevision,
       localSessionId: log.watchCapture.session.localSessionId,
-      snapshot: createProfileBytesSnapshot(
-        await this.options.profileStorage.read(reference.storageKey),
-        {
-          localSessionId: log.watchCapture.session.localSessionId,
-          sampleCount: reference.sampleCount,
-          sha256: reference.sha256,
-        },
-      ),
+      snapshot,
     };
     return capture;
   }
