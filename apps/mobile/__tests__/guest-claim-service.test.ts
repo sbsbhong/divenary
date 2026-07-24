@@ -15,6 +15,7 @@ import {
   GuestClaimServiceError,
 } from '../src/claim/guest-claim-service';
 import {createProfileBytesSnapshot} from '../src/claim/profile-bytes';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 import {createAccountLocalFirstRepositories} from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
@@ -139,6 +140,51 @@ describe('guest claim service', () => {
     await expect(
       account.logbook.getWatchProfile('log-a'),
     ).resolves.toHaveLength(200);
+  });
+
+  it('publishes a recovered legacy artifact digest only in the account-local profile reference', async () => {
+    const profile = profileStorage();
+    const fullSamples = depthSamples(2);
+    const legacyArtifactSha256 = 'a'.repeat(64);
+    const log = watchLog('log-a', fullSamples.slice(0, 1));
+    log.watchCapture!.profile = {
+      ...log.watchCapture!.profile!,
+      sampleCount: fullSamples.length,
+      sha256: legacyArtifactSha256,
+    };
+    await profile.write(guestProfileKey, fullSamples);
+    const guest = repositories([log], []);
+    const account = repositories([], [], [], 'account');
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({store, guest, account, profile, remote});
+
+    await service.prepare();
+    await expect(guest.logbook.get('log-a')).resolves.toEqual(log);
+    await expect(profile.read(guestProfileKey)).resolves.toEqual(fullSamples);
+
+    await expect(service.start()).resolves.toMatchObject({
+      manifest: {status: 'committed'},
+    });
+
+    const profileDigest = createWatchProfileDigest(fullSamples).sha256;
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      watchCapture: {
+        profile: {
+          sha256: profileDigest,
+          artifactSha256: legacyArtifactSha256,
+        },
+      },
+    });
+    const logStage = remote.stageRecord.mock.calls.find(
+      ([input]) => input.entityKind === 'log',
+    )?.[0];
+    expect(logStage?.payload).toMatchObject({profile_sha256: profileDigest});
+    expect(JSON.stringify(logStage?.payload)).not.toContain('artifactSha256');
   });
 
   it('does not publish committed before cleanup deletion finishes', async () => {

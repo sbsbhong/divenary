@@ -14,6 +14,7 @@ import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { DivePlan } from '../src/types/dive-plan';
 import type { WatchDepthSample } from '../src/types/dive-session';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
@@ -22,6 +23,131 @@ const guestProfileKey = `${dataProfileKeyPrefix({
 })}session-log-a:revision-1`;
 
 describe('guest claim store', () => {
+  it('normalizes a marker-less legacy artifact digest only in the claim snapshot', async () => {
+    const profiles = profileStorage();
+    const samples = depthSamples(2);
+    const legacyArtifactSha256 = 'a'.repeat(64);
+    const log = diveLog({
+      localId: 'log-a',
+      samples: samples.slice(0, 1),
+      profile: {
+        storageKey: guestProfileKey,
+        contentRevision: 'revision-1',
+        sampleCount: samples.length,
+        sha256: legacyArtifactSha256,
+      },
+    });
+    const guestLogbook = repository([log]);
+    await profiles.write(guestProfileKey, samples);
+
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+
+    const profileDigest = createWatchProfileDigest(samples).sha256;
+    expect(snapshot.retainedItems).toHaveLength(0);
+    expect(snapshot.manifest.logCount).toBe(1);
+    expect(snapshot.manifest.items[0]?.profile).toEqual(
+      expect.objectContaining({sha256: profileDigest}),
+    );
+    const localSnapshot = JSON.parse(
+      snapshot.snapshots[0]!.localRecordBytes,
+    ) as DiveLogEntry;
+    expect(localSnapshot.watchCapture?.profile).toEqual(
+      expect.objectContaining({
+        sha256: profileDigest,
+        artifactSha256: legacyArtifactSha256,
+      }),
+    );
+    await expect(guestLogbook.get(log.localId)).resolves.toEqual(log);
+    await expect(profiles.read(guestProfileKey)).resolves.toEqual(samples);
+  });
+
+  it.each<
+    [
+      string,
+      WatchDepthSample[] | undefined,
+      'profile_missing' | 'profile_corrupt',
+    ]
+  >([
+    ['missing profile', undefined, 'profile_missing'],
+    ['sample count mismatch', depthSamples(2), 'profile_corrupt'],
+    [
+      'session mismatch',
+      [{localSessionId: 'wrong-session', timestamp: 100, depthMeters: 2}],
+      'profile_corrupt',
+    ],
+  ])('%s stays retained', async (_name, storedSamples, reason) => {
+    const profiles = profileStorage();
+    const samples = depthSamples(1);
+    if (storedSamples !== undefined) {
+      await profiles.write(guestProfileKey, storedSamples);
+    }
+
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples,
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: samples.length,
+            sha256: 'a'.repeat(64),
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+
+    expect(snapshot.manifest.logCount).toBe(0);
+    expect(snapshot.retainedItems).toEqual([
+      expect.objectContaining({
+        entityKind: 'log',
+        clientRecordId: 'log-a',
+        reason,
+      }),
+    ]);
+  });
+
+  it('keeps a versioned digest mismatch retained instead of reinterpreting it', async () => {
+    const profiles = profileStorage();
+    const samples = depthSamples(1);
+    await profiles.write(guestProfileKey, samples);
+
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples,
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: samples.length,
+            sha256: 'a'.repeat(64),
+            artifactSha256: 'b'.repeat(64),
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+
+    expect(snapshot.manifest.logCount).toBe(0);
+    expect(snapshot.retainedItems).toEqual([
+      expect.objectContaining({reason: 'profile_corrupt'}),
+    ]);
+  });
+
   it('keeps an unverifiable watch log while snapshotting unrelated valid logs', async () => {
     const snapshot = await createGuestClaimSnapshot({
       userId,

@@ -24,6 +24,7 @@ import {
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import {
+  createStoredProfileBytesSnapshot,
   createProfileBytesSnapshot,
   encodeUtf8,
   GuestClaimProfileError,
@@ -263,7 +264,7 @@ export async function createGuestClaimSnapshot(options: {
       prepared.byteCount,
     );
     const key = `log:${prepared.log.localId}`;
-    const localRecordBytes = canonicalJson(sourceLog);
+    const localRecordBytes = canonicalJson(prepared.log);
     const sourcePlanClientRecordId = relationships.get(prepared.log.localId);
     items.push({
       key,
@@ -384,20 +385,62 @@ export async function guestRecordMatchesClaimSnapshot(options: {
   if (
     options.item.key !== options.sidecar.key ||
     options.item.entityKind !== options.sidecar.entityKind ||
-    options.record.localId !== options.item.clientRecordId ||
-    digestUtf8(canonicalJson(options.record)) !==
-      options.sidecar.localRecordSha256
+    options.record.localId !== options.item.clientRecordId
   ) {
     return false;
   }
   if (options.item.profile === undefined) {
-    return true;
+    return (
+      digestUtf8(canonicalJson(options.record)) ===
+      options.sidecar.localRecordSha256
+    );
   }
-  return claimProfileStillMatches(
+  if (!(await claimProfileStillMatches(
     options.item,
     options.sidecar,
     options.profileStorage,
-  );
+  ))) {
+    return false;
+  }
+  try {
+    const log = options.record as DiveLogEntry;
+    const profileReference = log.watchCapture?.profile;
+    if (
+      profileReference === undefined ||
+      log.watchCapture === undefined ||
+      profileReference.storageKey !== options.item.profile.storageKey
+    ) {
+      return false;
+    }
+    const profile = createStoredProfileBytesSnapshot(
+      await options.profileStorage.read(profileReference.storageKey),
+      {
+        localSessionId: log.watchCapture.session.localSessionId,
+        sampleCount: profileReference.sampleCount,
+        sha256: profileReference.sha256,
+        artifactSha256: profileReference.artifactSha256,
+      },
+    );
+    const normalized = {
+      ...log,
+      watchCapture: {
+        ...log.watchCapture,
+        profile: {
+          ...profileReference,
+          sha256: profile.sha256,
+          ...(profile.artifactSha256 === undefined
+            ? {}
+            : {artifactSha256: profile.artifactSha256}),
+        },
+      },
+    };
+    return (
+      digestUtf8(canonicalJson(normalized)) ===
+      options.sidecar.localRecordSha256
+    );
+  } catch {
+    return false;
+  }
 }
 
 export function retainedGuestRecordsMatchClaimSnapshot(options: {
@@ -472,7 +515,7 @@ async function prepareLogSnapshot(
   profileStorage: WatchProfileStorage,
 ): Promise<{
   log: DiveLogEntry;
-  profile?: ReturnType<typeof createProfileBytesSnapshot>;
+  profile?: ReturnType<typeof createStoredProfileBytesSnapshot>;
   byteCount?: number;
 }> {
   const preview = source.watchCapture?.samples.slice(0, 160);
@@ -494,19 +537,26 @@ async function prepareLogSnapshot(
   if (!isGuestProfileStorageKey(profileReference.storageKey)) {
     throw new GuestClaimPreparationError('claim_validation_failed');
   }
-  const profile = createProfileBytesSnapshot(
+  const profile = createStoredProfileBytesSnapshot(
     await profileStorage.read(profileReference.storageKey),
     {
       localSessionId: log.watchCapture.session.localSessionId,
       sampleCount: profileReference.sampleCount,
       sha256: profileReference.sha256,
+      artifactSha256: profileReference.artifactSha256,
     },
   );
   log = {
     ...log,
     watchCapture: {
       ...log.watchCapture,
-      profile: { ...profileReference, sha256: profile.sha256 },
+      profile: {
+        ...profileReference,
+        sha256: profile.sha256,
+        ...(profile.artifactSha256 === undefined
+          ? {}
+          : {artifactSha256: profile.artifactSha256}),
+      },
     },
   };
   return { log, profile, byteCount: profile.byteCount };

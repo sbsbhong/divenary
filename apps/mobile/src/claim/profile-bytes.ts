@@ -26,6 +26,10 @@ export type ProfileBytesSnapshot = {
   samples: WatchDepthSample[];
 };
 
+export type StoredProfileBytesSnapshot = ProfileBytesSnapshot & {
+  artifactSha256?: string;
+};
+
 export function createProfileBytesSnapshot(
   samples: WatchDepthSample[] | undefined,
   expectation: {
@@ -72,6 +76,40 @@ export function createProfileBytesSnapshot(
     sampleCount: verifiedSamples.length,
     samples: verifiedSamples,
   };
+}
+
+export function createStoredProfileBytesSnapshot(
+  samples: WatchDepthSample[] | undefined,
+  expectation: {
+    localSessionId: string;
+    sampleCount: number;
+    sha256?: string;
+    artifactSha256?: string;
+  },
+): StoredProfileBytesSnapshot {
+  const snapshot = createProfileBytesSnapshot(samples, {
+    localSessionId: expectation.localSessionId,
+    sampleCount: expectation.sampleCount,
+  });
+
+  if (expectation.artifactSha256 !== undefined) {
+    if (
+      expectation.sha256 === undefined ||
+      expectation.sha256 !== snapshot.sha256
+    ) {
+      throw new GuestClaimProfileError('profile_corrupt');
+    }
+    return {...snapshot, artifactSha256: expectation.artifactSha256};
+  }
+
+  if (
+    expectation.sha256 === undefined ||
+    expectation.sha256 === snapshot.sha256
+  ) {
+    return snapshot;
+  }
+
+  return {...snapshot, artifactSha256: expectation.sha256};
 }
 
 export function verifyProfileBytesSnapshot(

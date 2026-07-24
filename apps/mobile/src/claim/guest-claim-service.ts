@@ -618,6 +618,7 @@ export class GuestClaimService {
           watchCapture: {
             ...local.watchCapture,
             profile: {
+              ...local.watchCapture.profile,
               storageKey: accountStorageKey,
               contentRevision: item.profile.contentRevision,
               sha256: item.profile.sha256,
@@ -696,7 +697,8 @@ export class GuestClaimService {
         } else {
           deleteResult = await this.options.guestRepositories.logbook.deleteIf(
             item.clientRecordId,
-            candidate => canonicalLocal(candidate) === expectedRecordBytes,
+            candidate =>
+              matchesSnapshotLocalRecord(candidate, expectedRecordBytes),
             { retainProfileAfterDelete: true },
           );
         }
@@ -1519,6 +1521,46 @@ function assertLocalReadback<T extends DiveLogEntry | DivePlan>(
 
 function canonicalLocal(value: DiveLogEntry | DivePlan): string {
   return canonicalJson(value);
+}
+
+function matchesSnapshotLocalRecord(
+  candidate: DiveLogEntry,
+  expectedRecordBytes: string,
+): boolean {
+  if (canonicalLocal(candidate) === expectedRecordBytes) {
+    return true;
+  }
+  let expected: DiveLogEntry;
+  try {
+    expected = JSON.parse(expectedRecordBytes) as DiveLogEntry;
+  } catch {
+    return false;
+  }
+  const expectedProfile = expected.watchCapture?.profile;
+  const candidateProfile = candidate.watchCapture?.profile;
+  const isMarkerlessMissingDigest =
+    expectedProfile?.artifactSha256 === undefined &&
+    candidateProfile?.artifactSha256 === undefined &&
+    candidateProfile?.sha256 === undefined;
+  const isMarkerlessLegacyDigest =
+    expectedProfile?.artifactSha256 !== undefined &&
+    candidateProfile?.artifactSha256 === undefined &&
+    candidateProfile?.sha256 === expectedProfile.artifactSha256;
+  if (
+    candidateProfile === undefined ||
+    (!isMarkerlessMissingDigest && !isMarkerlessLegacyDigest)
+  ) {
+    return false;
+  }
+  return (
+    canonicalLocal({
+      ...candidate,
+      watchCapture: {
+        ...candidate.watchCapture!,
+        profile: expectedProfile,
+      },
+    }) === expectedRecordBytes
+  );
 }
 
 function canonicalClaimContent(value: DiveLogEntry | DivePlan): string {
