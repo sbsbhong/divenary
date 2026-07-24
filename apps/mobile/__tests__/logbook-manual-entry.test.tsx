@@ -1143,7 +1143,9 @@ describe('Logbook manual entry flow', () => {
     );
     const row = renderer.root.findByProps({ testID: 'logbook-list-item-Demo Reef' });
 
-    expect(row.props.accessibilityLabel).toBe('Demo Reef, Demo, Only on this device');
+    expect(row.props.accessibilityLabel).toBe(
+      'Demo Reef, Jun 13, 09:00 PM, Demo, Only on this device, 12.00 m, Scuba, 10:00, no tags',
+    );
     expect(row.props.accessible).toBe(true);
     for (const badgeTestID of ['logbook-demo-badge-Demo Reef', 'logbook-device-badge-Demo Reef']) {
       const badge = renderer.root.findAllByProps({ testID: badgeTestID }).find(node => node.props.accessible === false);
@@ -1153,6 +1155,29 @@ describe('Logbook manual entry flow', () => {
       expect(badge!.props.accessibilityElementsHidden).toBe(true);
       expect(badge!.props.importantForAccessibility).toBe('no-hide-descendants');
     }
+  });
+
+  test('includes the visible unsupported-depth marker in a badged row announcement', async () => {
+    const renderer = await renderLogbook(
+      new LocalDiveLogRepository([
+        {
+          ...unsupportedDepthWatchEntry,
+          ownerUserId: undefined,
+          watchCapture: {
+            ...unsupportedDepthWatchEntry.watchCapture!,
+            session: {
+              ...unsupportedDepthWatchEntry.watchCapture!.session,
+              captureMode: 'demo',
+            },
+          },
+        },
+      ]),
+      { isAuthenticated: true },
+    );
+    const label = renderer.root.findByProps({ testID: 'logbook-list-item-Unsupported Watch Reef' }).props.accessibilityLabel as string;
+
+    expect(label).toContain('Outside watch support');
+    expect(label.match(/Outside watch support/g)).toHaveLength(1);
   });
 
   test('does not label guest rows before authentication', async () => {

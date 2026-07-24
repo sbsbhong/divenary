@@ -366,6 +366,9 @@ function SessionListItem(props: {
   const maxDepthLabel = formatDepth(listMetrics.maxDepthMeters);
   const durationLabel = formatListDuration(listMetrics.durationSeconds);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
+  const dateLabel = formatDate(session.startedAt, locale, t('formatters.unknownDate'));
+  const diveModeLabel = session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet');
+  const unsupportedDepthLabel = unsupportedDepth ? t('logbook.unsupportedDepthMarker') : undefined;
   const badges = [
     ...(props.entry.watchCapture?.session.captureMode === 'demo'
       ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }]
@@ -374,7 +377,16 @@ function SessionListItem(props: {
       ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }]
       : []),
   ];
-  const accessibilityLabel = [title, ...badges.map(badge => badge.label)].join(', ');
+  const accessibilityLabel = [
+    title,
+    dateLabel,
+    ...badges.map(badge => badge.label),
+    unsupportedDepthLabel,
+    maxDepthLabel,
+    diveModeLabel,
+    durationLabel,
+    tags,
+  ].filter((label): label is string => label !== undefined).join(', ');
 
   return (
     <Pressable
@@ -395,7 +407,7 @@ function SessionListItem(props: {
             <VStack space="xs" className="flex-1">
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
               <Text className="text-sm leading-5 text-muted-foreground">
-                {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
+                {dateLabel}
               </Text>
               {badges.length ? (
                 <HStack testID={`logbook-list-badges-${siteName}`} space="xs" className="flex-wrap items-center">
@@ -425,7 +437,7 @@ function SessionListItem(props: {
           </VStack>
         </HStack>
         <Text className="pl-14 text-sm leading-5 text-muted-foreground">
-          {session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet')} ·{' '}
+          {diveModeLabel} ·{' '}
           <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text> · {tags}
         </Text>
       </VStack>

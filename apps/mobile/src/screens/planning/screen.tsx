@@ -377,8 +377,10 @@ function ActivePlanPanel(props: {
   }
 
   const title = getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }));
+  const activePlanEyebrow = t('planning.activePlan', { defaultValue: 'Active plan' });
   const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
   const accessibilityLabel = [
+    activePlanEyebrow,
     title,
     statusLabel,
     ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
@@ -391,7 +393,7 @@ function ActivePlanPanel(props: {
         accessible={props.showsDeviceOnlyBadge ? true : undefined}
         accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}>
         <DiveSummaryCard.Header
-          eyebrow={t('planning.activePlan', { defaultValue: 'Active plan' })}
+          eyebrow={activePlanEyebrow}
           title={title}
           right={<StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />}
         />
@@ -440,9 +442,18 @@ function PlanRow(props: {
   const { t } = useTranslation();
   const siteName = props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
   const title = props.plan.title ?? siteName;
+  const dateLabel = formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }));
+  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
+  const diveModeLabel = props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet');
+  const entryStyleLabel = props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none');
   const accessibilityLabel = [
     title,
+    siteName,
+    dateLabel,
     ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
+    statusLabel,
+    diveModeLabel,
+    entryStyleLabel,
   ].join(', ');
 
   return (
@@ -465,7 +476,7 @@ function PlanRow(props: {
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
               <HStack space="xs" className="flex-wrap items-center">
                 <Text className="text-sm leading-5 text-muted-foreground">
-                  {siteName} · {formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
+                  {siteName} · {dateLabel}
                 </Text>
                 {props.showsDeviceOnlyBadge ? (
                   <ListStatusBadge
@@ -477,11 +488,10 @@ function PlanRow(props: {
               </HStack>
             </VStack>
           </HStack>
-          <StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />
+          <StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />
         </HStack>
         <Text className="pl-5 text-sm leading-5 text-muted-foreground">
-          {props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet')} ·{' '}
-          {props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none')}
+          {diveModeLabel} · {entryStyleLabel}
         </Text>
       </VStack>
     </Pressable>
