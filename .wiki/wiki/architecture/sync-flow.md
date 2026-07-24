@@ -86,6 +86,7 @@ Account local-first sync 동작은 다음과 같다.
 - Account Logbook/Planbook save는 user-scoped local repository와 durable outbox를 먼저 갱신한다. Coordinator는 outbox operation을 순서대로 remote repository에 적용한다.
 - 성공한 remote revision은 local row와 뒤따르는 같은 entity operation에 반영한다. Expected revision이 맞지 않으면 현재 local payload와 remote latest를 conflict record로 보존한다.
 - Profile이 있는 log operation은 operation-owned profile snapshot을 outbox에 보존해 원본 local profile이 바뀌거나 정리되어도 같은 operation을 재시도할 수 있게 한다.
+- account partition의 marker 없는 legacy transport-digest row는 outbox 준비 중 full samples의 strict parser·sample count·session ID 검사를 통과할 때만 local account metadata를 원자적으로 sample digest `sha256`과 기존 transport digest `artifactSha256`으로 정규화한다. 이후 upload는 sample digest를 사용한다. `artifactSha256`이 이미 있는 row의 digest 불일치와 구조 검증 실패는 자동 복구하지 않고 fail-closed로 유지한다.
 - User 전환과 logout은 account repository, outbox, downloaded profile, claim state와 React Query cache를 user scope로 분리한다. 이전 user generation의 비동기 결과는 새 user state에 commit할 수 없다.
 
 Guest data claim 동작은 다음과 같다.

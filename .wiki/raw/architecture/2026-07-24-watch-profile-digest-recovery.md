@@ -1,6 +1,6 @@
 # Watch Profile Digest Recovery and List Badges
 
-Source: local://docs/superpowers/specs/2026-07-24-watch-profile-digest-recovery-list-badges-design.md
+Source URL: local://docs/superpowers/specs/2026-07-24-watch-profile-digest-recovery-list-badges-design.md
 Collected: 2026-07-24
 Published: 2026-07-24
 

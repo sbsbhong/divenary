@@ -34,7 +34,7 @@
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch/mobile local profile, staging-verified remote object와 auth user deletion 뒤에도 남는 Storage cleanup gate를 기록한다. | 2026-07-20 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage와 target ID 재사용을 rollback하는 claim finalizer를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch artifact digest와 Mobile profile digest를 분리하고, marker 없는 legacy row만 immutable claim snapshot에서 보수적으로 복구한다. | 2026-07-24 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Watch artifact digest와 Mobile profile digest를 분리하고, marker 없는 legacy row를 guest claim snapshot 또는 account outbox 준비에서 보수적으로 복구한다. | 2026-07-24 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains
