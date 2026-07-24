@@ -67,6 +67,7 @@ describe('mobile i18n', () => {
     expect(
       i18n.getResource('en', 'translation', 'accountClaim.deviceBadge'),
     ).toBe('Only on this device');
+    expect(i18n.getResource('en', 'translation', 'logbook.demoCapture')).toBe('Demo');
   });
 
   test('keeps Korean and English translation leaf keys in parity', () => {

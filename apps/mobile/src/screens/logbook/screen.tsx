@@ -374,11 +374,14 @@ function SessionListItem(props: {
       ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }]
       : []),
   ];
+  const accessibilityLabel = [title, ...badges.map(badge => badge.label)].join(', ');
 
   return (
     <Pressable
       testID={`logbook-list-item-${siteName}`}
       onPress={props.onPress}
+      accessible={badges.length ? true : undefined}
+      accessibilityLabel={badges.length ? accessibilityLabel : undefined}
       className="rounded-2xl bg-card px-4 py-4"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <VStack space="sm">

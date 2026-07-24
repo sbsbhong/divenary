@@ -605,6 +605,11 @@ describe('Planning screen planbook flow', () => {
     expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.label).toBe('Only on this device');
     expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Account Plan Reef' })).toHaveLength(0);
     expect(renderer.root.findByProps({ testID: 'planning-active-device-badge' }).props.label).toBe('Only on this device');
+    expect(renderer.root.findByProps({ testID: 'planning-plan-row-Device Plan Reef' }).props.accessibilityLabel).toBe('Device Plan Reef, Only on this device');
+    expect(renderer.root.findByProps({ testID: 'planning-active-summary-accessibility' }).props.accessibilityLabel).toBe('Device Plan Reef, Planned, Only on this device');
+    expect(
+      renderer.root.findAllByProps({ testID: 'planning-active-device-badge' }).find(node => node.props.accessible === false),
+    ).toBeTruthy();
   });
 
   it('keeps account active plans free of a device-only badge', async () => {

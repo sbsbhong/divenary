@@ -1136,6 +1136,25 @@ describe('Logbook manual entry flow', () => {
     ]);
   });
 
+  test('announces retained demo storage status once from the logbook row', async () => {
+    const renderer = await renderLogbook(
+      new LocalDiveLogRepository([deviceOnlyDemoEntry]),
+      { isAuthenticated: true },
+    );
+    const row = renderer.root.findByProps({ testID: 'logbook-list-item-Demo Reef' });
+
+    expect(row.props.accessibilityLabel).toBe('Demo Reef, Demo, Only on this device');
+    expect(row.props.accessible).toBe(true);
+    for (const badgeTestID of ['logbook-demo-badge-Demo Reef', 'logbook-device-badge-Demo Reef']) {
+      const badge = renderer.root.findAllByProps({ testID: badgeTestID }).find(node => node.props.accessible === false);
+
+      expect(badge).toBeTruthy();
+      expect(badge!.props.accessible).toBe(false);
+      expect(badge!.props.accessibilityElementsHidden).toBe(true);
+      expect(badge!.props.importantForAccessibility).toBe('no-hide-descendants');
+    }
+  });
+
   test('does not label guest rows before authentication', async () => {
     const renderer = await renderLogbook(
       new LocalDiveLogRepository([

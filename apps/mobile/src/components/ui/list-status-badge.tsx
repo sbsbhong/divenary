@@ -15,14 +15,16 @@ export function ListStatusBadge(props: ListStatusBadgeProps): React.JSX.Element 
   return (
     <HStack
       testID={props.testID}
-      accessibilityLabel={props.label}
+      accessible={false}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
       className={
         isDevice
           ? 'self-start items-center rounded-full bg-warning/10 px-2.5 py-1'
           : 'self-start items-center rounded-full bg-muted px-2.5 py-1'
       }>
       {isDevice ? <Icon as={PhoneIcon} size="xs" className="mr-1 text-warning" /> : null}
-      <Text className={isDevice ? 'text-xs font-semibold text-warning' : 'text-xs font-semibold text-muted-foreground'}>
+      <Text size="xs" className={isDevice ? 'font-semibold text-warning' : 'font-semibold text-muted-foreground'}>
         {props.label}
       </Text>
     </HStack>

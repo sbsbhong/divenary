@@ -376,13 +376,26 @@ function ActivePlanPanel(props: {
     );
   }
 
+  const title = getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }));
+  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
+  const accessibilityLabel = [
+    title,
+    statusLabel,
+    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
+  ].join(', ');
+
   return (
     <DiveSummaryCard accent="secondary">
-      <DiveSummaryCard.Header
-        eyebrow={t('planning.activePlan', { defaultValue: 'Active plan' })}
-        title={getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }))}
-        right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />}
-      />
+      <Box
+        testID="planning-active-summary-accessibility"
+        accessible={props.showsDeviceOnlyBadge ? true : undefined}
+        accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}>
+        <DiveSummaryCard.Header
+          eyebrow={t('planning.activePlan', { defaultValue: 'Active plan' })}
+          title={title}
+          right={<StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />}
+        />
+      </Box>
       <DiveSummaryCard.Body>
         {props.showsDeviceOnlyBadge ? (
           <ListStatusBadge
@@ -427,11 +440,17 @@ function PlanRow(props: {
   const { t } = useTranslation();
   const siteName = props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
   const title = props.plan.title ?? siteName;
+  const accessibilityLabel = [
+    title,
+    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
+  ].join(', ');
 
   return (
     <Pressable
       testID={`planning-plan-row-${siteName}`}
       onPress={props.onPress}
+      accessible={props.showsDeviceOnlyBadge ? true : undefined}
+      accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}
       className="rounded-2xl bg-card px-4 py-4"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <VStack space="sm">
