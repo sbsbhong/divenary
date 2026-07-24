@@ -2099,6 +2099,57 @@ describe('WatchConnectivitySyncProvider', () => {
     }));
   });
 
+  it('ACKs a legacy profile digest artifact duplicate without overwriting the persisted row', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'legacy-artifact-duplicate-logbook',
+      now: () => 1781355000,
+    });
+    const queryClient = createQueryClient();
+    const payloadJson = JSON.stringify(metadataRichFixture);
+    const artifactSha256 = bytesToHex(sha256(new TextEncoder().encode(payloadJson)));
+    const parsedPayload = parseWatchSyncMessageJson(payloadJson);
+    if (!parsedPayload.ok) {
+      throw new Error(parsedPayload.error.message);
+    }
+
+    const [imported] = await repository.importWatchMessages([parsedPayload.message]);
+    const legacyProfile = {
+      ...imported.watchCapture!.profile!,
+      sha256: artifactSha256,
+    };
+    const legacyEntry = {
+      ...imported,
+      watchCapture: {
+        ...imported.watchCapture!,
+        profile: legacyProfile,
+      },
+    };
+    await repository.save(legacyEntry);
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+
+    const summary = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [{
+        payloadId: 'legacy-artifact-duplicate',
+        payloadJson,
+        localSessionId: metadataRichFixture.session.localSessionId,
+        contentRevision: metadataRichFixture.session.profile?.contentRevision,
+        sha256: artifactSha256,
+        receivedAt: 1781355000,
+      }],
+      acknowledgeImportedPayloads,
+      coordinator: new WatchConnectivityImportCoordinator(),
+    });
+
+    expect(summary).toEqual({receivedCount: 1, importedCount: 0});
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      'legacy-artifact-duplicate',
+    ]);
+    await expect(repository.list()).resolves.toEqual([legacyEntry]);
+  });
+
   it('commits log and plan locally before ACK, then enqueues before requesting remote sync', async () => {
     const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
     const planRepository = new LocalDivePlanRepository([{
