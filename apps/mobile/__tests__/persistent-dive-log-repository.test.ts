@@ -10,6 +10,7 @@ import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../src/types/dive-session';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 
 const manualEntry = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'manual-1',
@@ -390,6 +391,35 @@ describe('PersistentDiveLogRepository', () => {
 
     expect(await storage.getString('custom-logbook')).toBeDefined();
     expect(entry.watchCapture?.profile?.storageKey).toBe('custom-profile:persistent-watch-1:260');
+  });
+
+  it('stores independent artifact and sample digests for imported watch profiles', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 500,
+    });
+    const message = {
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        samples: [{
+          localSessionId: watchMessage.session.localSessionId,
+          timestamp: 200,
+          depthMeters: 3,
+        }],
+      },
+    };
+
+    const [saved] = await repository.importWatchMessages([message], {
+      artifactDigests: ['a'.repeat(64)],
+    });
+
+    expect(saved.watchCapture?.profile).toEqual(expect.objectContaining({
+      artifactSha256: 'a'.repeat(64),
+      sha256: createWatchProfileDigest(message.session.samples).sha256,
+    }));
+    expect(saved.watchCapture?.profile?.sha256)
+      .not.toBe(saved.watchCapture?.profile?.artifactSha256);
   });
 
   it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {

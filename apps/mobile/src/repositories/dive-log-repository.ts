@@ -6,7 +6,7 @@ import type {
 } from './conditional-delete';
 
 export type ImportWatchMessagesOptions = {
-  profileDigests?: Array<string | undefined>;
+  artifactDigests?: Array<string | undefined>;
   assertCanCommit?: () => void;
 };
 

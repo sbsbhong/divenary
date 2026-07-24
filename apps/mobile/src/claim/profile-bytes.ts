@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 
 import type { WatchDepthSample } from '../types/dive-session';
+import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import type { GuestClaimErrorCode } from './guest-claim-types';
 
@@ -59,17 +60,15 @@ export function createProfileBytesSnapshot(
     throw new GuestClaimProfileError('profile_corrupt');
   }
 
-  const bytes = JSON.stringify(verifiedSamples);
-  const encoded = encodeUtf8(bytes);
-  const digest = sha256BytesHex(encoded);
-  if (expectation.sha256 !== undefined && expectation.sha256 !== digest) {
+  const digest = createWatchProfileDigest(verifiedSamples);
+  if (expectation.sha256 !== undefined && expectation.sha256 !== digest.sha256) {
     throw new GuestClaimProfileError('profile_corrupt');
   }
 
   return {
-    bytes,
-    byteCount: encoded.length,
-    sha256: digest,
+    bytes: digest.bytes,
+    byteCount: digest.byteCount,
+    sha256: digest.sha256,
     sampleCount: verifiedSamples.length,
     samples: verifiedSamples,
   };

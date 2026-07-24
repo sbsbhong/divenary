@@ -1,6 +1,7 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
+import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import { createAsyncStorageKeyValueStore, type PersistentKeyValueStore } from '../storage/persistent-key-value-store';
 import {
@@ -193,6 +194,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
 
         for (const [messageIndex, message] of messages.entries()) {
           const fullSamples = message.session.samples;
+          const profileDigest = createWatchProfileDigest(fullSamples);
           const contentRevision = message.session.profile?.contentRevision
             ?? `${message.session.endedAt ?? message.session.startedAt}`;
           const profileStorageKey = makeProfileStorageKey(
@@ -219,7 +221,8 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
                   storageKey: profileStorageKey,
                   contentRevision,
                   sampleCount: fullSamples.length,
-                  sha256: options?.profileDigests?.[messageIndex],
+                  sha256: profileDigest.sha256,
+                  artifactSha256: options?.artifactDigests?.[messageIndex],
                 },
               }
             : undefined;
@@ -480,12 +483,19 @@ function assertWatchCapture(value: unknown, storageKey: string): void {
 
   if (value.profile !== undefined) {
     if (!isRecord(value.profile)
-      || !hasOnlyKeys(value.profile, ['storageKey', 'contentRevision', 'sampleCount', 'sha256'])
+      || !hasOnlyKeys(value.profile, [
+        'storageKey',
+        'contentRevision',
+        'sampleCount',
+        'sha256',
+        'artifactSha256',
+      ])
       || !isNonEmptyString(value.profile.storageKey)
       || !isNonEmptyString(value.profile.contentRevision)
       || !Number.isInteger(value.profile.sampleCount)
       || (value.profile.sampleCount as number) < 0
       || !isOptionalNonEmptyString(value.profile.sha256)
+      || !isOptionalNonEmptyString(value.profile.artifactSha256)
       || (sessionResult.message.session.profile !== undefined
         && (sessionResult.message.session.profile.contentRevision !== value.profile.contentRevision
           || sessionResult.message.session.profile.sampleCount !== value.profile.sampleCount))) {

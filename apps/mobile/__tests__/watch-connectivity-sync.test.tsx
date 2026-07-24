@@ -1,4 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {sha256} from '@noble/hashes/sha256';
+import {bytesToHex} from '@noble/hashes/utils';
 import type {
   GuestClaimRemoteRepository,
   GuestClaimStageInput,
@@ -30,6 +32,8 @@ import { dataStorageKeys } from '../src/storage/data-principal';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import { AccountOutbox } from '../src/sync/account-outbox';
 import type { WatchDepthSample } from '../src/types/dive-session';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
+import {parseWatchSyncMessageJson} from '../src/utils/watch-sync-message-validation';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const createDeferred = () => {
@@ -127,6 +131,41 @@ describe('WatchConnectivitySyncProvider', () => {
     }
 
     jest.restoreAllMocks();
+  });
+
+  it('keeps the Watch artifact digest separate from the stored profile sample digest', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 1781355000,
+    });
+    const queryClient = createQueryClient();
+    const payloadJson = JSON.stringify(metadataRichFixture);
+    const artifactSha256 = bytesToHex(sha256(new TextEncoder().encode(payloadJson)));
+    const parsedPayload = parseWatchSyncMessageJson(payloadJson);
+    if (!parsedPayload.ok) {
+      throw new Error(parsedPayload.error.message);
+    }
+
+    await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient,
+      drainPendingPayloads: async () => [{
+        payloadId: 'digest-domain-payload',
+        payloadJson,
+        localSessionId: metadataRichFixture.session.localSessionId,
+        contentRevision: metadataRichFixture.session.profile?.contentRevision,
+        sha256: artifactSha256,
+        receivedAt: 1781355000,
+      }],
+      acknowledgeImportedPayloads: jest.fn().mockResolvedValue(undefined),
+    });
+
+    const [saved] = await repository.list();
+    expect(saved?.watchCapture?.profile).toEqual(expect.objectContaining({
+      artifactSha256,
+      sha256: createWatchProfileDigest(parsedPayload.message.session.samples).sha256,
+    }));
+    expect(saved?.watchCapture?.profile?.sha256).not.toBe(artifactSha256);
   });
 
   it('subscribes before draining pending payloads so startup deliveries are not missed', async () => {
