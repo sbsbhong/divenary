@@ -21,6 +21,7 @@ import {
   parseSnapshotLocalRecord,
   parseSnapshotPayload,
   retainedGuestRecordsMatchClaimSnapshot,
+  sourceRecordBytes,
   type GuestClaimSnapshot,
   type GuestClaimSnapshotItem,
   type GuestClaimStoreLike,
@@ -678,7 +679,9 @@ export class GuestClaimService {
           await this.promoteChangedGuest(snapshot, index, current);
           continue;
         }
-        const expectedRecordBytes = snapshot.snapshots[index]!.localRecordBytes;
+        const expectedRecordBytes = sourceRecordBytes(
+          snapshot.snapshots[index]!,
+        );
         let deleteResult: 'deleted' | 'notFound' | 'conditionFailed';
         if (item.entityKind === 'plan') {
           if (
@@ -697,8 +700,7 @@ export class GuestClaimService {
         } else {
           deleteResult = await this.options.guestRepositories.logbook.deleteIf(
             item.clientRecordId,
-            candidate =>
-              matchesSnapshotLocalRecord(candidate, expectedRecordBytes),
+            candidate => canonicalLocal(candidate) === expectedRecordBytes,
             { retainProfileAfterDelete: true },
           );
         }
@@ -1521,46 +1523,6 @@ function assertLocalReadback<T extends DiveLogEntry | DivePlan>(
 
 function canonicalLocal(value: DiveLogEntry | DivePlan): string {
   return canonicalJson(value);
-}
-
-function matchesSnapshotLocalRecord(
-  candidate: DiveLogEntry,
-  expectedRecordBytes: string,
-): boolean {
-  if (canonicalLocal(candidate) === expectedRecordBytes) {
-    return true;
-  }
-  let expected: DiveLogEntry;
-  try {
-    expected = JSON.parse(expectedRecordBytes) as DiveLogEntry;
-  } catch {
-    return false;
-  }
-  const expectedProfile = expected.watchCapture?.profile;
-  const candidateProfile = candidate.watchCapture?.profile;
-  const isMarkerlessMissingDigest =
-    expectedProfile?.artifactSha256 === undefined &&
-    candidateProfile?.artifactSha256 === undefined &&
-    candidateProfile?.sha256 === undefined;
-  const isMarkerlessLegacyDigest =
-    expectedProfile?.artifactSha256 !== undefined &&
-    candidateProfile?.artifactSha256 === undefined &&
-    candidateProfile?.sha256 === expectedProfile.artifactSha256;
-  if (
-    candidateProfile === undefined ||
-    (!isMarkerlessMissingDigest && !isMarkerlessLegacyDigest)
-  ) {
-    return false;
-  }
-  return (
-    canonicalLocal({
-      ...candidate,
-      watchCapture: {
-        ...candidate.watchCapture!,
-        profile: expectedProfile,
-      },
-    }) === expectedRecordBytes
-  );
 }
 
 function canonicalClaimContent(value: DiveLogEntry | DivePlan): string {

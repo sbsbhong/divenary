@@ -68,6 +68,8 @@ export type GuestClaimSnapshotItem = {
   payloadBytes: string;
   localRecordBytes: string;
   localRecordSha256: string;
+  sourceRecordBytes?: string;
+  sourceRecordSha256?: string;
   label?: string;
   profileBytes?: string;
   profileReadback?: GuestClaimProfileReadback;
@@ -246,6 +248,8 @@ export async function createGuestClaimSnapshot(options: {
       payloadBytes: canonicalJson(remote.payload),
       localRecordBytes,
       localRecordSha256: digestUtf8(localRecordBytes),
+      sourceRecordBytes: localRecordBytes,
+      sourceRecordSha256: digestUtf8(localRecordBytes),
       ...(claimLabel(plan) === undefined ? {} : { label: claimLabel(plan) }),
     });
   }
@@ -265,6 +269,7 @@ export async function createGuestClaimSnapshot(options: {
     );
     const key = `log:${prepared.log.localId}`;
     const localRecordBytes = canonicalJson(prepared.log);
+    const sourceRecordBytes = canonicalJson(sourceLog);
     const sourcePlanClientRecordId = relationships.get(prepared.log.localId);
     items.push({
       key,
@@ -292,6 +297,8 @@ export async function createGuestClaimSnapshot(options: {
       payloadBytes: canonicalJson(remote.payload),
       localRecordBytes,
       localRecordSha256: digestUtf8(localRecordBytes),
+      sourceRecordBytes,
+      sourceRecordSha256: digestUtf8(sourceRecordBytes),
       ...(claimLabel(prepared.log) === undefined
         ? {}
         : { label: claimLabel(prepared.log) }),
@@ -389,58 +396,28 @@ export async function guestRecordMatchesClaimSnapshot(options: {
   ) {
     return false;
   }
-  if (options.item.profile === undefined) {
-    return (
-      digestUtf8(canonicalJson(options.record)) ===
-      options.sidecar.localRecordSha256
-    );
-  }
-  if (!(await claimProfileStillMatches(
-    options.item,
-    options.sidecar,
-    options.profileStorage,
-  ))) {
+  if (
+    digestUtf8(canonicalJson(options.record)) !==
+    sourceRecordSha256(options.sidecar)
+  ) {
     return false;
   }
-  try {
-    const log = options.record as DiveLogEntry;
-    const profileReference = log.watchCapture?.profile;
-    if (
-      profileReference === undefined ||
-      log.watchCapture === undefined ||
-      profileReference.storageKey !== options.item.profile.storageKey
-    ) {
-      return false;
-    }
-    const profile = createStoredProfileBytesSnapshot(
-      await options.profileStorage.read(profileReference.storageKey),
-      {
-        localSessionId: log.watchCapture.session.localSessionId,
-        sampleCount: profileReference.sampleCount,
-        sha256: profileReference.sha256,
-        artifactSha256: profileReference.artifactSha256,
-      },
-    );
-    const normalized = {
-      ...log,
-      watchCapture: {
-        ...log.watchCapture,
-        profile: {
-          ...profileReference,
-          sha256: profile.sha256,
-          ...(profile.artifactSha256 === undefined
-            ? {}
-            : {artifactSha256: profile.artifactSha256}),
-        },
-      },
-    };
-    return (
-      digestUtf8(canonicalJson(normalized)) ===
-      options.sidecar.localRecordSha256
-    );
-  } catch {
-    return false;
-  }
+  return (
+    options.item.profile === undefined ||
+    (await claimProfileStillMatches(
+      options.item,
+      options.sidecar,
+      options.profileStorage,
+    ))
+  );
+}
+
+export function sourceRecordBytes(sidecar: GuestClaimSnapshotItem): string {
+  return sidecar.sourceRecordBytes ?? sidecar.localRecordBytes;
+}
+
+export function sourceRecordSha256(sidecar: GuestClaimSnapshotItem): string {
+  return sidecar.sourceRecordSha256 ?? sidecar.localRecordSha256;
 }
 
 export function retainedGuestRecordsMatchClaimSnapshot(options: {
@@ -646,6 +623,17 @@ function parseStoredSnapshot(
     throw new GuestClaimStorageError();
   }
   const snapshots = value.snapshots.map(parseSidecar);
+  if (
+    snapshots.some(
+      sidecar =>
+        (sidecar.sourceRecordBytes === undefined) !==
+        (sidecar.sourceRecordSha256 === undefined),
+    ) ||
+    (snapshots.some(sidecar => sidecar.sourceRecordBytes !== undefined) &&
+      snapshots.some(sidecar => sidecar.sourceRecordBytes === undefined))
+  ) {
+    throw new GuestClaimStorageError();
+  }
   const manifest = parseManifest(value.manifest, expectedUserId, snapshots);
   const retainedItems =
     value.retainedItems === undefined
@@ -939,6 +927,8 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
       'payloadBytes',
       'localRecordBytes',
       'localRecordSha256',
+      'sourceRecordBytes',
+      'sourceRecordSha256',
       'label',
       'profileBytes',
       'profileReadback',
@@ -949,6 +939,10 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     !isNonEmptyString(value.payloadBytes) ||
     !isNonEmptyString(value.localRecordBytes) ||
     !SHA256_PATTERN.test(String(value.localRecordSha256)) ||
+    (value.sourceRecordBytes !== undefined &&
+      !isNonEmptyString(value.sourceRecordBytes)) ||
+    (value.sourceRecordSha256 !== undefined &&
+      !SHA256_PATTERN.test(String(value.sourceRecordSha256))) ||
     !isOptionalNonEmptyString(value.label) ||
     !isOptionalString(value.profileBytes)
   ) {
@@ -964,6 +958,12 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     payloadBytes: value.payloadBytes,
     localRecordBytes: value.localRecordBytes,
     localRecordSha256: value.localRecordSha256 as string,
+    ...(value.sourceRecordBytes === undefined
+      ? {}
+      : {sourceRecordBytes: value.sourceRecordBytes}),
+    ...(value.sourceRecordSha256 === undefined
+      ? {}
+      : {sourceRecordSha256: value.sourceRecordSha256 as string}),
     ...(value.label === undefined ? {} : { label: value.label }),
     ...(value.profileBytes === undefined
       ? {}
@@ -1020,12 +1020,22 @@ function validateSnapshotSet(
       canonicalAccountPayloadSha256(payload) !== item.payloadSha256 ||
       digestUtf8(sidecar.localRecordBytes) !== sidecar.localRecordSha256 ||
       canonicalJson(parseJson(sidecar.localRecordBytes)) !==
-        sidecar.localRecordBytes
+        sidecar.localRecordBytes ||
+      digestUtf8(sourceRecordBytes(sidecar)) !== sourceRecordSha256(sidecar) ||
+      canonicalJson(parseJson(sourceRecordBytes(sidecar))) !==
+        sourceRecordBytes(sidecar)
     ) {
       throw new GuestClaimStorageError();
     }
     const local = parseSnapshotLocalRecord(sidecar);
-    if (local.localId !== item.clientRecordId) {
+    const source =
+      sidecar.entityKind === 'log'
+        ? parseLocalLog(sourceRecordBytes(sidecar))
+        : parseLocalPlan(sourceRecordBytes(sidecar));
+    if (
+      local.localId !== item.clientRecordId ||
+      source.localId !== item.clientRecordId
+    ) {
       throw new GuestClaimStorageError();
     }
     if (item.entityKind === 'plan') {
@@ -1165,6 +1175,9 @@ function manifestDigest(value: {
   snapshots: GuestClaimSnapshotItem[];
   createdAt: number;
 }): string {
+  const includesSourceRecordEvidence = value.snapshots.every(
+    sidecar => sidecar.sourceRecordSha256 !== undefined,
+  );
   return canonicalAccountPayloadSha256({
     schemaVersion: value.schemaVersion,
     userId: value.userId,
@@ -1182,6 +1195,9 @@ function manifestDigest(value: {
     localRecords: value.snapshots.map(sidecar => ({
       key: sidecar.key,
       localRecordSha256: sidecar.localRecordSha256,
+      ...(includesSourceRecordEvidence
+        ? {sourceRecordSha256: sidecar.sourceRecordSha256}
+        : {}),
     })),
     createdAt: value.createdAt,
   });

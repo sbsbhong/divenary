@@ -1011,6 +1011,16 @@ function createComposedAccountRepositories(options: {
         ? options.accountRepositories.logbook.getWatchProfile(localId)
         : options.guestRepositories.logbook.getWatchProfile(localId);
     },
+    async readStoredWatchProfile(localId) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        return options.guestRepositories.logbook.readStoredWatchProfile(
+          localId,
+        );
+      }
+      return (await options.accountRepositories.logbook.get(localId))
+        ? options.accountRepositories.logbook.readStoredWatchProfile(localId)
+        : options.guestRepositories.logbook.readStoredWatchProfile(localId);
+    },
     importWatchMessages(messages, importOptions) {
       return options.accountRepositories.logbook.importWatchMessages(
         messages,
@@ -1526,6 +1536,8 @@ function createAccountLogbookRepository(options: {
     },
     getWatchProfile: (localId: string) =>
       options.local.getWatchProfile(localId),
+    readStoredWatchProfile: (localId: string) =>
+      options.local.readStoredWatchProfile(localId),
     importWatchMessages: (
       messages: Parameters<DiveLogRepository['importWatchMessages']>[0],
       importOptions?: Parameters<DiveLogRepository['importWatchMessages']>[1],
@@ -1938,10 +1950,16 @@ async function prepareLogMutation(
     };
   }
 
+  const storedSamples = await options.local.readStoredWatchProfile(
+    saved.localId,
+  );
+  if (storedSamples === undefined) {
+    throw new Error('Local stored watch profile is unavailable');
+  }
   let snapshot: ReturnType<typeof createStoredProfileBytesSnapshot>;
   try {
     snapshot = createStoredProfileBytesSnapshot(
-      await options.local.getWatchProfile(saved.localId),
+      storedSamples,
       {
         localSessionId: saved.watchCapture.session.localSessionId,
         sampleCount: saved.watchCapture.profile.sampleCount,

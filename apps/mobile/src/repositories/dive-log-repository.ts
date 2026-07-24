@@ -31,4 +31,7 @@ export type DiveLogRepository = {
     options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]>;
   getWatchProfile(localId: string): Promise<WatchDepthSample[]>;
+  readStoredWatchProfile(
+    localId: string,
+  ): Promise<WatchDepthSample[] | undefined>;
 };

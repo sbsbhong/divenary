@@ -110,6 +110,24 @@ describe('principal repositories', () => {
     ]);
   });
 
+  it('routes strict stored-profile reads within each principal partition', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profileStorage = new RecordingProfileStorage();
+    const dependencies = {metadataStorage, profileStorage, now: () => 500};
+    const guest = createPrincipalRepositories({kind: 'guest'}, dependencies);
+    const account = createPrincipalRepositories({kind: 'user', userId: 'user/one'}, dependencies);
+
+    const [guestEntry] = await guest.logbook.importWatchMessages([watchMessage]);
+    const [accountEntry] = await account.logbook.importWatchMessages([watchMessage]);
+
+    await expect(guest.logbook.readStoredWatchProfile(guestEntry.localId)).resolves.toEqual(
+      watchMessage.session.samples,
+    );
+    await expect(account.logbook.readStoredWatchProfile(accountEntry.localId)).resolves.toEqual(
+      watchMessage.session.samples,
+    );
+  });
+
   it('composes account rows first and appends only non-duplicate guest rows without ownership', () => {
     const accountRows = [
       logEntry('same', 'account-user'),

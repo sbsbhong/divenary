@@ -725,6 +725,39 @@ describe('PersistentDiveLogRepository', () => {
     expect(entry.watchCapture?.samples.some(sample => sample.depthMeters === 42)).toBe(true);
     expect(entry.watchCapture?.profile?.sampleCount).toBe(1_000);
     await expect(repository.getWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+    await expect(repository.readStoredWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+  });
+
+  it('does not use inline preview samples when the stored profile sidecar is missing', async () => {
+    const profileStorage = new RecordingProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      now: () => 500,
+    });
+    const preview = Array.from({length: 160}, (_, index) => ({
+      localSessionId: 'preview-only',
+      timestamp: 200 + index,
+      depthMeters: index,
+    }));
+    await repository.save({
+      ...manualEntry({localId: 'preview-only', source: 'watch'}),
+      watchCapture: {
+        importKey: 'preview-only:200',
+        importedAt: 500,
+        session: {localSessionId: 'preview-only', startedAt: 200, samples: preview},
+        measuredValues: {startedAt: 200},
+        samples: preview,
+        profile: {
+          storageKey: 'missing-sidecar',
+          contentRevision: 'revision-1',
+          sampleCount: preview.length,
+        },
+      },
+    });
+
+    await expect(repository.getWatchProfile('preview-only')).resolves.toEqual(preview);
+    await expect(repository.readStoredWatchProfile('preview-only')).resolves.toBeUndefined();
   });
 
   it('preserves a shared profile until the final metadata reference is deleted', async () => {

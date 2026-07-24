@@ -6,6 +6,8 @@ import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import type { GuestClaimErrorCode } from './guest-claim-types';
 
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 export class GuestClaimProfileError extends Error {
   constructor(
     readonly code: Extract<
@@ -95,7 +97,8 @@ export function createStoredProfileBytesSnapshot(
   if (expectation.artifactSha256 !== undefined) {
     if (
       expectation.sha256 === undefined ||
-      expectation.sha256 !== snapshot.sha256
+      expectation.sha256 !== snapshot.sha256 ||
+      !SHA256_PATTERN.test(expectation.artifactSha256)
     ) {
       throw new GuestClaimProfileError('profile_corrupt');
     }
@@ -107,6 +110,10 @@ export function createStoredProfileBytesSnapshot(
     expectation.sha256 === snapshot.sha256
   ) {
     return snapshot;
+  }
+
+  if (!SHA256_PATTERN.test(expectation.sha256)) {
+    throw new GuestClaimProfileError('profile_corrupt');
   }
 
   return {...snapshot, artifactSha256: expectation.sha256};

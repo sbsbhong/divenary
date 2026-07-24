@@ -1,6 +1,7 @@
 import { canonicalAccountPayloadSha256 } from '../src/sync/account-payload';
 import {
   createGuestClaimSnapshot,
+  guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
 } from '../src/claim/guest-claim-store';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
@@ -63,8 +64,162 @@ describe('guest claim store', () => {
         artifactSha256: legacyArtifactSha256,
       }),
     );
+    const sourceSnapshot = JSON.parse(
+      snapshot.snapshots[0]!.sourceRecordBytes!,
+    ) as DiveLogEntry;
+    expect(sourceSnapshot.watchCapture?.profile).toEqual(
+      expect.objectContaining({sha256: legacyArtifactSha256}),
+    );
+    expect(sourceSnapshot.watchCapture?.profile?.artifactSha256).toBeUndefined();
     await expect(guestLogbook.get(log.localId)).resolves.toEqual(log);
     await expect(profiles.read(guestProfileKey)).resolves.toEqual(samples);
+  });
+
+  it('requires exact source metadata before treating a profile row as unchanged', async () => {
+    const profiles = profileStorage();
+    const versionedSamples = [
+      {localSessionId: 'session-versioned-log', timestamp: 10, depthMeters: 1},
+    ];
+    const canonicalSamples = [
+      {localSessionId: 'session-canonical-log', timestamp: 10, depthMeters: 1},
+    ];
+    const versionedProfileKey = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-versioned-log:revision-1`;
+    const canonicalProfileKey = `${dataProfileKeyPrefix({
+      kind: 'guest',
+    })}session-canonical-log:revision-1`;
+    await profiles.write(versionedProfileKey, versionedSamples);
+    await profiles.write(canonicalProfileKey, canonicalSamples);
+    const versioned = diveLog({
+      localId: 'versioned-log',
+      samples: versionedSamples,
+      profile: {
+        storageKey: versionedProfileKey,
+        contentRevision: 'revision-1',
+        sampleCount: versionedSamples.length,
+        sha256: createWatchProfileDigest(versionedSamples).sha256,
+        artifactSha256: 'a'.repeat(64),
+      },
+    });
+    const canonical = diveLog({
+      localId: 'canonical-log',
+      samples: canonicalSamples,
+      profile: {
+        storageKey: canonicalProfileKey,
+        contentRevision: 'revision-1',
+        sampleCount: canonicalSamples.length,
+        sha256: createWatchProfileDigest(canonicalSamples).sha256,
+      },
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([versioned, canonical]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+    const versionedItem = snapshot.manifest.items.find(
+      item => item.clientRecordId === versioned.localId,
+    )!;
+    const versionedSidecar = snapshot.snapshots.find(
+      item => item.key === versionedItem.key,
+    )!;
+    const canonicalItem = snapshot.manifest.items.find(
+      item => item.clientRecordId === canonical.localId,
+    )!;
+    const canonicalSidecar = snapshot.snapshots.find(
+      item => item.key === canonicalItem.key,
+    )!;
+
+    await expect(
+      guestRecordMatchesClaimSnapshot({
+        item: versionedItem,
+        sidecar: versionedSidecar,
+        record: {
+          ...versioned,
+          watchCapture: {
+            ...versioned.watchCapture!,
+            profile: {
+              ...versioned.watchCapture!.profile!,
+              sha256: 'a'.repeat(64),
+              artifactSha256: undefined,
+            },
+          },
+        },
+        profileStorage: profiles,
+      }),
+    ).resolves.toBe(false);
+    await expect(
+      guestRecordMatchesClaimSnapshot({
+        item: canonicalItem,
+        sidecar: canonicalSidecar,
+        record: {
+          ...canonical,
+          watchCapture: {
+            ...canonical.watchCapture!,
+            profile: {
+              ...canonical.watchCapture!.profile!,
+              sha256: undefined,
+            },
+          },
+        },
+        profileStorage: profiles,
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('retains malformed sample values and malformed profile digests', async () => {
+    const profiles = profileStorage();
+    const samples = depthSamples(1);
+    await profiles.write(guestProfileKey, [
+      {localSessionId: 'session-log-a', timestamp: Number.NaN, depthMeters: 2},
+    ]);
+
+    const malformedSample = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples,
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: 1,
+            sha256: 'a'.repeat(64),
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+    expect(malformedSample.retainedItems).toEqual([
+      expect.objectContaining({reason: 'profile_corrupt'}),
+    ]);
+
+    await profiles.write(guestProfileKey, samples);
+    const malformedDigest = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples,
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: 1,
+            sha256: 'not-a-sha256',
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+    expect(malformedDigest.retainedItems).toEqual([
+      expect.objectContaining({reason: 'profile_corrupt'}),
+    ]);
   });
 
   it.each<
@@ -261,7 +416,7 @@ describe('guest claim store', () => {
     });
   });
 
-  it('reads legacy claim sidecars without retained metadata as an empty list', async () => {
+  it('reads legacy claim sidecars without source evidence or retained metadata', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({
       userId,
@@ -272,6 +427,33 @@ describe('guest claim store', () => {
     });
     const legacy = structuredClone(snapshot) as Partial<typeof snapshot>;
     delete legacy.retainedItems;
+    for (const sidecar of legacy.snapshots ?? []) {
+      delete sidecar.sourceRecordBytes;
+      delete sidecar.sourceRecordSha256;
+    }
+    const manifest = legacy.manifest!;
+    const manifestSha256 = canonicalAccountPayloadSha256({
+      schemaVersion: 1,
+      userId,
+      planCount: manifest.planCount,
+      logCount: manifest.logCount,
+      items: manifest.items.map(item => ({
+        key: item.key,
+        entityKind: item.entityKind,
+        clientRecordId: item.clientRecordId,
+        payloadSha256: item.payloadSha256,
+        sourcePlanClientRecordId: item.sourcePlanClientRecordId ?? null,
+        convertedLogClientRecordId: item.convertedLogClientRecordId ?? null,
+        profile: item.profile ?? null,
+      })),
+      localRecords: (legacy.snapshots ?? []).map(sidecar => ({
+        key: sidecar.key,
+        localRecordSha256: sidecar.localRecordSha256,
+      })),
+      createdAt: manifest.createdAt,
+    });
+    manifest.manifestSha256 = manifestSha256;
+    manifest.clientBatchId = `claim:${manifest.createdAt}:${manifestSha256.slice(0, 16)}`;
     await storage.setString(
       dataStorageKeys({kind: 'user', userId}).claim,
       JSON.stringify(legacy),
@@ -279,6 +461,7 @@ describe('guest claim store', () => {
 
     await expect(new GuestClaimStore({storage, userId}).read()).resolves.toMatchObject({
       retainedItems: [],
+      snapshots: [expect.not.objectContaining({sourceRecordBytes: expect.anything()})],
     });
   });
 
@@ -648,6 +831,7 @@ function repository<T extends { localId: string }>(values: T[]) {
     removeWatchProfileIfUnreferenced: jest.fn(async () => undefined),
     importWatchMessages: jest.fn(async () => []),
     getWatchProfile: jest.fn(async () => []),
+    readStoredWatchProfile: jest.fn(async () => undefined),
   } as unknown as DiveLogRepository & DivePlanRepository;
 }
 

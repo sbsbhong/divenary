@@ -273,6 +273,19 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     return stored;
   }
 
+  async readStoredWatchProfile(
+    localId: string,
+  ): Promise<WatchDepthSample[] | undefined> {
+    const entry = (await this.readEntries()).find(
+      candidate => candidate.localId === localId,
+    );
+    const storageKey = entry?.watchCapture?.profile?.storageKey;
+    if (storageKey === undefined) {
+      return undefined;
+    }
+    return this.profileStorage.read(storageKey);
+  }
+
   private async readEntries(): Promise<DiveLogEntry[]> {
     return (await this.store.read()).map(cloneDiveLogEntry);
   }

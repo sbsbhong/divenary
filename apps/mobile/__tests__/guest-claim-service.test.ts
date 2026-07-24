@@ -170,6 +170,7 @@ describe('guest claim service', () => {
     await expect(service.start()).resolves.toMatchObject({
       manifest: {status: 'committed'},
     });
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
 
     const profileDigest = createWatchProfileDigest(fullSamples).sha256;
     await expect(account.logbook.get('log-a')).resolves.toMatchObject({
@@ -1931,6 +1932,10 @@ function repositories(
     getWatchProfile: jest.fn(async localId => {
       const key = logs.get(localId)?.watchCapture?.profile?.storageKey;
       return key ? (profileRegistry.get(key) ?? []) : [];
+    }),
+    readStoredWatchProfile: jest.fn(async localId => {
+      const key = logs.get(localId)?.watchCapture?.profile?.storageKey;
+      return key ? structuredClone(profileRegistry.get(key)) : undefined;
     }),
   } satisfies jest.Mocked<DiveLogRepository>;
   const planbook = {
