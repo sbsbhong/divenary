@@ -49,7 +49,8 @@ describe('mobile i18n', () => {
       '가져오기를 완료하지 못했습니다',
     );
     expect(i18n.t('accountClaim.retryAction')).toBe('다시 시도');
-    expect(i18n.t('accountClaim.deviceBadge')).toBe('기기 저장');
+    expect(i18n.t('accountClaim.deviceBadge')).toBe('이 기기에만 저장');
+    expect(i18n.t('logbook.demoCapture')).toBe('데모');
     expect(i18n.t('accountClaim.settingsAction')).toBe(
       '기기 데이터 가져오기',
     );
@@ -63,6 +64,9 @@ describe('mobile i18n', () => {
     expect(
       i18n.getResource('en', 'translation', 'accountClaim.keepAction'),
     ).toBe('Keep on device');
+    expect(
+      i18n.getResource('en', 'translation', 'accountClaim.deviceBadge'),
+    ).toBe('Only on this device');
   });
 
   test('keeps Korean and English translation leaf keys in parity', () => {

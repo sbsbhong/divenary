@@ -6,6 +6,7 @@ import { Box } from '../../components/ui/box';
 import { HStack } from '../../components/ui/hstack';
 import { ArrowRightIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../components/ui/icon';
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
+import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
@@ -272,7 +273,12 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
 
         {route === 'list' ? (
           <VStack space="lg">
-            <ActivePlanPanel plan={activePlan} locale={locale} onOpenPlan={openDetail} />
+            <ActivePlanPanel
+              plan={activePlan}
+              locale={locale}
+              showsDeviceOnlyBadge={Boolean(props.isAuthenticated && activePlan?.ownerUserId === undefined)}
+              onOpenPlan={openDetail}
+            />
             <VStack space="md">
               <HStack className="items-center justify-between">
                 <Text className="text-xl font-semibold text-foreground">{t('planning.planbook', { defaultValue: 'Planbook' })}</Text>
@@ -357,6 +363,7 @@ function getPlanEditorFieldOffset(fieldName: string): number {
 function ActivePlanPanel(props: {
   plan: DivePlan | undefined;
   locale: string;
+  showsDeviceOnlyBadge: boolean;
   onOpenPlan: (plan: DivePlan) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -377,6 +384,13 @@ function ActivePlanPanel(props: {
         right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />}
       />
       <DiveSummaryCard.Body>
+        {props.showsDeviceOnlyBadge ? (
+          <ListStatusBadge
+            kind="device"
+            label={t('accountClaim.deviceBadge')}
+            testID="planning-active-device-badge"
+          />
+        ) : null}
         <DiveSummaryCard.Metric
           label={t('planning.site', { defaultValue: 'Site' })}
           value={props.plan.site.name ?? t('planning.chooseSite', { defaultValue: 'Choose site' })}
@@ -435,14 +449,11 @@ function PlanRow(props: {
                   {siteName} · {formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
                 </Text>
                 {props.showsDeviceOnlyBadge ? (
-                  <Text
+                  <ListStatusBadge
                     testID={`planning-device-badge-${siteName}`}
-                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
-                    size="xs"
-                    bold
-                    className="text-muted-foreground">
-                    {t('accountClaim.deviceBadge')}
-                  </Text>
+                    kind="device"
+                    label={t('accountClaim.deviceBadge')}
+                  />
                 ) : null}
               </HStack>
             </VStack>

@@ -7,6 +7,7 @@ import { HStack } from '../../components/ui/hstack';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
+import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
@@ -365,6 +366,14 @@ function SessionListItem(props: {
   const maxDepthLabel = formatDepth(listMetrics.maxDepthMeters);
   const durationLabel = formatListDuration(listMetrics.durationSeconds);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
+  const badges = [
+    ...(props.entry.watchCapture?.session.captureMode === 'demo'
+      ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }]
+      : []),
+    ...(props.showsDeviceOnlyBadge
+      ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }]
+      : []),
+  ];
 
   return (
     <Pressable
@@ -382,21 +391,21 @@ function SessionListItem(props: {
             </Box>
             <VStack space="xs" className="flex-1">
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <HStack space="xs" className="flex-wrap items-center">
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
-                </Text>
-                {props.showsDeviceOnlyBadge ? (
-                  <Text
-                    testID={`logbook-device-badge-${siteName}`}
-                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
-                    size="xs"
-                    bold
-                    className="text-muted-foreground">
-                    {t('accountClaim.deviceBadge')}
-                  </Text>
-                ) : null}
-              </HStack>
+              <Text className="text-sm leading-5 text-muted-foreground">
+                {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
+              </Text>
+              {badges.length ? (
+                <HStack testID={`logbook-list-badges-${siteName}`} space="xs" className="flex-wrap items-center">
+                  {badges.map(badge => (
+                    <ListStatusBadge
+                      key={badge.kind}
+                      kind={badge.kind}
+                      label={badge.label}
+                      testID={badge.kind === 'demo' ? `logbook-demo-badge-${siteName}` : `logbook-device-badge-${siteName}`}
+                    />
+                  ))}
+                </HStack>
+              ) : null}
             </VStack>
           </HStack>
           <VStack space="xs" className="items-end">

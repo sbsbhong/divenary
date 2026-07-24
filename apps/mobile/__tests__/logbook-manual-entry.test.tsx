@@ -96,6 +96,11 @@ const demoWatchEntry: DiveLogEntry = {
   },
 };
 
+const deviceOnlyDemoEntry: DiveLogEntry = {
+  ...demoWatchEntry,
+  ownerUserId: undefined,
+};
+
 const debugTestWatchEntry: DiveLogEntry = {
   ...demoWatchEntry,
   localId: 'watch:debug-test-watch-entry-1:1781352600',
@@ -1105,9 +1110,30 @@ describe('Logbook manual entry flow', () => {
       { isAuthenticated: true },
     );
 
-    expect(renderer.root.findByProps({ testID: 'logbook-device-badge-Device Reef' }).props.children).toBe('On device');
-    expect(renderer.root.findAllByProps({ testID: 'logbook-device-badge-Account Reef' })).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'logbook-device-badge-Device Reef' }).props.accessibilityLabel).toContain('Device Reef');
+    const deviceBadge = renderer.root.findByProps({ testID: 'logbook-device-badge-Device Reef' });
+    const accountBadges = renderer.root.findAllByProps({ testID: 'logbook-device-badge-Account Reef' });
+
+    expect(deviceBadge.props.label).toBe('Only on this device');
+    expect(accountBadges).toHaveLength(0);
+  });
+
+  test('shows a demo badge on demo watch rows', async () => {
+    const renderer = await renderLogbook(new LocalDiveLogRepository([demoWatchEntry]));
+
+    expect(renderer.root.findByProps({ testID: 'logbook-demo-badge-Demo Reef' })).toBeTruthy();
+  });
+
+  test('shows demo then device-only badges for retained demo rows', async () => {
+    const renderer = await renderLogbook(
+      new LocalDiveLogRepository([deviceOnlyDemoEntry]),
+      { isAuthenticated: true },
+    );
+    const badgeRow = renderer.root.findByProps({ testID: 'logbook-list-badges-Demo Reef' });
+
+    expect(badgeRow.props.children.map((child: { props: { label: string } }) => child.props.label)).toEqual([
+      'Demo',
+      'Only on this device',
+    ]);
   });
 
   test('does not label guest rows before authentication', async () => {
