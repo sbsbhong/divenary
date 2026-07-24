@@ -1,8 +1,8 @@
 # 다이브 로그 도메인
 
-Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Guest data account claim implementation evidence, 2026-07-19; Guest claim profile quarantine, 2026-07-22
-Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest claim profile quarantine](../../raw/architecture/2026-07-22-guest-claim-profile-quarantine.md)
-Updated: 2026-07-22
+Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Guest data account claim implementation evidence, 2026-07-19; Guest claim profile quarantine, 2026-07-22; Watch profile digest recovery and list badges design, 2026-07-24
+Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest claim profile quarantine](../../raw/architecture/2026-07-22-guest-claim-profile-quarantine.md); [Watch profile digest recovery and list badges design](../../raw/architecture/2026-07-24-watch-profile-digest-recovery.md)
+Updated: 2026-07-24
 
 ## 요약
 
@@ -66,6 +66,12 @@ Sample metadata는 다음 field를 포함한다.
 - `depthMeters`
 - optional `pressureKPa`
 - optional `waterTemperatureCelsius`
+
+Watch-captured profile reference는 sample 자체와 WatchConnectivity artifact를 다른 digest domain으로 보존한다.
+
+- `sha256`은 full sample array를 `JSON.stringify`한 UTF-8 bytes의 SHA-256이다. Profile Storage, guest claim object, account sync object와 remote readback은 이 sample digest로 검증한다.
+- `artifactSha256`은 Watch `sessionEnded` 전체 artifact bytes의 SHA-256이다. 이는 mobile local metadata와 동일 artifact 중복 판정에만 사용하며 remote database나 Supabase Storage에는 보내지 않는다.
+- `captureMode`의 `real`/`demo`는 Watch capture provenance와 목록/상세 표시 metadata다. 데모는 별도의 import, profile hash, claim 또는 account sync 경로를 만들지 않는다.
 
 Review summary는 duration, max depth, average depth, sample count, average water temperature, freedive segment summary, scuba safety stop reminder summary를 포함할 수 있다. 이 값들은 과거 기록 확인용 값이며 감압 계산이나 비상 지침이 아니다. Apple Watch 기반 v1에서는 40m 이하 수심만 지원 범위로 취급한다. 40m보다 깊은 수심은 manual/watch/planning 값 모두 보존하되 unsupported-depth marker나 warning 없이 정상 지원처럼 표시하지 않는다.
 
