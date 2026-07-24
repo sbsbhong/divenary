@@ -1,5 +1,3 @@
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
-import { sha256 } from '@noble/hashes/sha256';
 import type {
   AccountDataRepository,
   GuestClaimRemoteRepository,
@@ -14,6 +12,7 @@ import {
   GuestClaimService,
   GuestClaimServiceError,
 } from '../claim/guest-claim-service';
+import {createStoredProfileBytesSnapshot} from '../claim/profile-bytes';
 import {
   guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
@@ -54,7 +53,6 @@ import {
 } from '../sync/account-sync-coordinator';
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
-import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import { useAuth, type AuthContextValue, type AuthState } from './auth';
 import RecoveryScreen from '../screens/recovery/screen';
@@ -1013,6 +1011,16 @@ function createComposedAccountRepositories(options: {
         ? options.accountRepositories.logbook.getWatchProfile(localId)
         : options.guestRepositories.logbook.getWatchProfile(localId);
     },
+    async readStoredWatchProfile(localId) {
+      if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
+        return options.guestRepositories.logbook.readStoredWatchProfile(
+          localId,
+        );
+      }
+      return (await options.accountRepositories.logbook.get(localId))
+        ? options.accountRepositories.logbook.readStoredWatchProfile(localId)
+        : options.guestRepositories.logbook.readStoredWatchProfile(localId);
+    },
     importWatchMessages(messages, importOptions) {
       return options.accountRepositories.logbook.importWatchMessages(
         messages,
@@ -1528,6 +1536,8 @@ function createAccountLogbookRepository(options: {
     },
     getWatchProfile: (localId: string) =>
       options.local.getWatchProfile(localId),
+    readStoredWatchProfile: (localId: string) =>
+      options.local.readStoredWatchProfile(localId),
     importWatchMessages: (
       messages: Parameters<DiveLogRepository['importWatchMessages']>[0],
       importOptions?: Parameters<DiveLogRepository['importWatchMessages']>[1],
@@ -1940,43 +1950,45 @@ async function prepareLogMutation(
     };
   }
 
-  const samples = await options.local.getWatchProfile(saved.localId);
-  const parsed = parseWatchSyncMessageValue({
-    type: 'sessionEnded',
-    session: { ...saved.watchCapture.session, samples },
-  });
-  if (!parsed.ok) {
-    throw new Error(`Malformed local watch profile: ${parsed.error.message}`);
+  const storedSamples = await options.local.readStoredWatchProfile(
+    saved.localId,
+  );
+  if (storedSamples === undefined) {
+    throw new Error('Local stored watch profile is unavailable');
   }
-  const fullSamples = parsed.message.session.samples;
-  if (
-    fullSamples.length !== saved.watchCapture.profile.sampleCount ||
-    fullSamples.some(
-      sample =>
-        sample.localSessionId !== saved.watchCapture?.session.localSessionId,
-    )
-  ) {
-    throw new Error('Local watch profile sample count or session is invalid');
-  }
-
-  const serializedProfile = JSON.stringify(fullSamples);
-  const profileBytes = utf8ToBytes(serializedProfile);
-  const digest = bytesToHex(sha256(profileBytes));
-  if (
-    saved.watchCapture.profile.sha256 !== undefined &&
-    saved.watchCapture.profile.sha256 !== digest
-  ) {
+  let snapshot: ReturnType<typeof createStoredProfileBytesSnapshot>;
+  try {
+    snapshot = createStoredProfileBytesSnapshot(
+      storedSamples,
+      {
+        localSessionId: saved.watchCapture.session.localSessionId,
+        sampleCount: saved.watchCapture.profile.sampleCount,
+        sha256: saved.watchCapture.profile.sha256,
+        artifactSha256: saved.watchCapture.profile.artifactSha256,
+      },
+    );
+  } catch {
     throw new Error('Local watch profile digest is invalid');
   }
-  const local = saved.watchCapture.profile.sha256
-    ? saved
-    : {
-        ...saved,
-        watchCapture: {
-          ...saved.watchCapture,
-          profile: { ...saved.watchCapture.profile, sha256: digest },
-        },
-      };
+  const normalizedProfile = {
+    ...saved.watchCapture.profile,
+    sha256: snapshot.sha256,
+    ...(snapshot.artifactSha256 === undefined
+      ? {}
+      : {artifactSha256: snapshot.artifactSha256}),
+  };
+  const local =
+    saved.watchCapture.profile.sha256 === normalizedProfile.sha256 &&
+    saved.watchCapture.profile.artifactSha256 ===
+      normalizedProfile.artifactSha256
+      ? saved
+      : {
+          ...saved,
+          watchCapture: {
+            ...saved.watchCapture,
+            profile: normalizedProfile,
+          },
+        };
   if (local !== saved) {
     await options.local.save(local);
   }
@@ -1985,10 +1997,10 @@ async function prepareLogMutation(
     remote: toRemoteLog(
       local,
       options.userId,
-      profileBytes.length,
+      snapshot.byteCount,
       sourcePlan?.remoteId,
     ),
-    serializedProfile,
+    serializedProfile: snapshot.bytes,
   };
 }
 

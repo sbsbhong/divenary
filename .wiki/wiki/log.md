@@ -919,3 +919,7 @@
 - Updated: 동기화 흐름 구조
 - Updated: 다이브 로그 도메인
 - Updated: Knowledge Base Index
+
+## [2026-07-24] ingest | Watch profile digest recovery
+- Updated: Mobile architecture
+- Updated: Dive log domain

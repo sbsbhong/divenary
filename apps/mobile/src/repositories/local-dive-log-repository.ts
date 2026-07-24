@@ -124,6 +124,12 @@ export class LocalDiveLogRepository implements DiveLogRepository {
     return this.entriesByLocalId.get(localId)?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
   }
 
+  async readStoredWatchProfile(
+    _localId: string,
+  ): Promise<WatchDepthSample[] | undefined> {
+    return undefined;
+  }
+
   listSync(): DiveLogEntry[] {
     return Array.from(this.entriesByLocalId.values()).map(cloneDiveLogEntry).sort(compareDiveLogEntries);
   }

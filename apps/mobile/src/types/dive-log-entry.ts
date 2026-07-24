@@ -73,6 +73,7 @@ export type DiveLogWatchCapture = {
     contentRevision: string;
     sampleCount: number;
     sha256?: string;
+    artifactSha256?: string;
   };
 };
 

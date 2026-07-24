@@ -15,6 +15,7 @@ import {
   GuestClaimServiceError,
 } from '../src/claim/guest-claim-service';
 import {createProfileBytesSnapshot} from '../src/claim/profile-bytes';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 import {createAccountLocalFirstRepositories} from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
@@ -139,6 +140,147 @@ describe('guest claim service', () => {
     await expect(
       account.logbook.getWatchProfile('log-a'),
     ).resolves.toHaveLength(200);
+  });
+
+  it('publishes a recovered legacy artifact digest only in the account-local profile reference', async () => {
+    const profile = profileStorage();
+    const fullSamples = depthSamples(2);
+    const legacyArtifactSha256 = 'a'.repeat(64);
+    const log = watchLog('log-a', fullSamples.slice(0, 1));
+    log.watchCapture!.profile = {
+      ...log.watchCapture!.profile!,
+      sampleCount: fullSamples.length,
+      sha256: legacyArtifactSha256,
+    };
+    await profile.write(guestProfileKey, fullSamples);
+    const guest = repositories([log], []);
+    const account = repositories([], [], [], 'account');
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({store, guest, account, profile, remote});
+
+    await service.prepare();
+    await expect(guest.logbook.get('log-a')).resolves.toEqual(log);
+    await expect(profile.read(guestProfileKey)).resolves.toEqual(fullSamples);
+
+    await expect(service.start()).resolves.toMatchObject({
+      manifest: {status: 'committed'},
+    });
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
+
+    const profileDigest = createWatchProfileDigest(fullSamples).sha256;
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      watchCapture: {
+        profile: {
+          sha256: profileDigest,
+          artifactSha256: legacyArtifactSha256,
+        },
+      },
+    });
+    const logStage = remote.stageRecord.mock.calls.find(
+      ([input]) => input.entityKind === 'log',
+    )?.[0];
+    expect(logStage?.payload).toMatchObject({profile_sha256: profileDigest});
+    expect(JSON.stringify(logStage?.payload)).not.toContain('artifactSha256');
+  });
+
+  it('promotes a metadata-only edit of a prepared legacy profile and completes cleanup', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const fullSamples = depthSamples(2);
+    const legacyArtifactSha256 = 'a'.repeat(64);
+    const profileDigest = createWatchProfileDigest(fullSamples).sha256;
+    const original = watchLog('log-a', fullSamples.slice(0, 1));
+    original.watchCapture!.profile = {
+      ...original.watchCapture!.profile!,
+      sampleCount: fullSamples.length,
+      sha256: legacyArtifactSha256,
+    };
+    await profile.write(guestProfileKey, fullSamples);
+    const guest = repositories([original], []);
+    const account = repositories([], [], [], 'account');
+    const outbox = new AccountOutbox({
+      storage: metadataStorage,
+      storageKey: dataStorageKeys({kind: 'user', userId}).outbox,
+      now: clock(),
+      jitter: () => 0,
+    });
+    const accountMutations = createAccountLocalFirstRepositories({
+      userId,
+      repositories: account,
+      outbox,
+      createId: () => uuid('9', 1),
+      now: clock(),
+    });
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    let editedDuringCleanup = false;
+    const service = new GuestClaimService({
+      userId,
+      store,
+      guestRepositories: guest,
+      accountRepositories: account,
+      accountMutationRepositories: accountMutations,
+      profileStorage: profile,
+      remoteRepository: remote,
+      now: clock(),
+      onSnapshot: async snapshot => {
+        if (
+          snapshot.manifest.status !== 'cleanupPending' ||
+          editedDuringCleanup
+        ) {
+          return;
+        }
+        editedDuringCleanup = true;
+        const current = (await guest.logbook.get('log-a'))!;
+        await guest.logbook.save({
+          ...current,
+          updatedAt: 12,
+          manual: {
+            ...current.manual,
+            title: 'edited during cleanup',
+            notes: 'metadata only',
+          },
+        });
+      },
+    });
+
+    const result = await service.start();
+
+    expect(editedDuringCleanup).toBe(true);
+    expect(result?.manifest.status).toBe('committed');
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
+    await expect(profile.read(guestProfileKey)).resolves.toBeUndefined();
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      manual: {
+        title: 'edited during cleanup',
+        notes: 'metadata only',
+      },
+      cloudSyncStatus: 'pending',
+      watchCapture: {
+        profile: {
+          sha256: profileDigest,
+          artifactSha256: legacyArtifactSha256,
+        },
+      },
+    });
+    const operations = await outbox.list(userId);
+    expect(operations).toHaveLength(1);
+    expect(JSON.stringify(operations[0]!.payload.remote)).not.toContain(
+      'artifactSha256',
+    );
+    const logStage = remote.stageRecord.mock.calls.find(
+      ([input]) => input.entityKind === 'log',
+    )?.[0];
+    expect(JSON.stringify(logStage?.payload)).not.toContain('artifactSha256');
   });
 
   it('does not publish committed before cleanup deletion finishes', async () => {
@@ -1885,6 +2027,10 @@ function repositories(
     getWatchProfile: jest.fn(async localId => {
       const key = logs.get(localId)?.watchCapture?.profile?.storageKey;
       return key ? (profileRegistry.get(key) ?? []) : [];
+    }),
+    readStoredWatchProfile: jest.fn(async localId => {
+      const key = logs.get(localId)?.watchCapture?.profile?.storageKey;
+      return key ? structuredClone(profileRegistry.get(key)) : undefined;
     }),
   } satisfies jest.Mocked<DiveLogRepository>;
   const planbook = {

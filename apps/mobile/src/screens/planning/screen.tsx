@@ -6,6 +6,7 @@ import { Box } from '../../components/ui/box';
 import { HStack } from '../../components/ui/hstack';
 import { ArrowRightIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../components/ui/icon';
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
+import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
@@ -272,7 +273,12 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
 
         {route === 'list' ? (
           <VStack space="lg">
-            <ActivePlanPanel plan={activePlan} locale={locale} onOpenPlan={openDetail} />
+            <ActivePlanPanel
+              plan={activePlan}
+              locale={locale}
+              showsDeviceOnlyBadge={Boolean(props.isAuthenticated && activePlan?.ownerUserId === undefined)}
+              onOpenPlan={openDetail}
+            />
             <VStack space="md">
               <HStack className="items-center justify-between">
                 <Text className="text-xl font-semibold text-foreground">{t('planning.planbook', { defaultValue: 'Planbook' })}</Text>
@@ -357,6 +363,7 @@ function getPlanEditorFieldOffset(fieldName: string): number {
 function ActivePlanPanel(props: {
   plan: DivePlan | undefined;
   locale: string;
+  showsDeviceOnlyBadge: boolean;
   onOpenPlan: (plan: DivePlan) => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
@@ -369,14 +376,36 @@ function ActivePlanPanel(props: {
     );
   }
 
+  const title = getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }));
+  const activePlanEyebrow = t('planning.activePlan', { defaultValue: 'Active plan' });
+  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
+  const accessibilityLabel = [
+    activePlanEyebrow,
+    title,
+    statusLabel,
+    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
+  ].join(', ');
+
   return (
     <DiveSummaryCard accent="secondary">
-      <DiveSummaryCard.Header
-        eyebrow={t('planning.activePlan', { defaultValue: 'Active plan' })}
-        title={getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }))}
-        right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />}
-      />
+      <Box
+        testID="planning-active-summary-accessibility"
+        accessible={props.showsDeviceOnlyBadge ? true : undefined}
+        accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}>
+        <DiveSummaryCard.Header
+          eyebrow={activePlanEyebrow}
+          title={title}
+          right={<StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />}
+        />
+      </Box>
       <DiveSummaryCard.Body>
+        {props.showsDeviceOnlyBadge ? (
+          <ListStatusBadge
+            kind="device"
+            label={t('accountClaim.deviceBadge')}
+            testID="planning-active-device-badge"
+          />
+        ) : null}
         <DiveSummaryCard.Metric
           label={t('planning.site', { defaultValue: 'Site' })}
           value={props.plan.site.name ?? t('planning.chooseSite', { defaultValue: 'Choose site' })}
@@ -413,11 +442,26 @@ function PlanRow(props: {
   const { t } = useTranslation();
   const siteName = props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
   const title = props.plan.title ?? siteName;
+  const dateLabel = formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }));
+  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
+  const diveModeLabel = props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet');
+  const entryStyleLabel = props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none');
+  const accessibilityLabel = [
+    title,
+    siteName,
+    dateLabel,
+    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
+    statusLabel,
+    diveModeLabel,
+    entryStyleLabel,
+  ].join(', ');
 
   return (
     <Pressable
       testID={`planning-plan-row-${siteName}`}
       onPress={props.onPress}
+      accessible={props.showsDeviceOnlyBadge ? true : undefined}
+      accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}
       className="rounded-2xl bg-card px-4 py-4"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <VStack space="sm">
@@ -432,26 +476,22 @@ function PlanRow(props: {
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
               <HStack space="xs" className="flex-wrap items-center">
                 <Text className="text-sm leading-5 text-muted-foreground">
-                  {siteName} · {formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
+                  {siteName} · {dateLabel}
                 </Text>
                 {props.showsDeviceOnlyBadge ? (
-                  <Text
+                  <ListStatusBadge
                     testID={`planning-device-badge-${siteName}`}
-                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
-                    size="xs"
-                    bold
-                    className="text-muted-foreground">
-                    {t('accountClaim.deviceBadge')}
-                  </Text>
+                    kind="device"
+                    label={t('accountClaim.deviceBadge')}
+                  />
                 ) : null}
               </HStack>
             </VStack>
           </HStack>
-          <StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone={statusTone(props.plan.status)} />
+          <StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />
         </HStack>
         <Text className="pl-5 text-sm leading-5 text-muted-foreground">
-          {props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet')} ·{' '}
-          {props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none')}
+          {diveModeLabel} · {entryStyleLabel}
         </Text>
       </VStack>
     </Pressable>

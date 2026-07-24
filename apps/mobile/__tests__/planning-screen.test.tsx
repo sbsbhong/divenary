@@ -597,14 +597,43 @@ describe('Planning screen planbook flow', () => {
     const renderer = await renderPlanning(
       new LocalDivePlanRepository([
         plan({ localId: 'account-plan', ownerUserId: 'user-1', site: { name: 'Account Plan Reef' } }),
-        plan({ localId: 'device-plan', ownerUserId: undefined, site: { name: 'Device Plan Reef' } }),
+        plan({
+          localId: 'device-plan',
+          ownerUserId: undefined,
+          status: 'planned',
+          title: 'Device Plan Morning',
+          plannedAt: 1781352000,
+          site: { name: 'Device Plan Reef' },
+          diveMode: 'scuba',
+          entryStyle: 'boat',
+        }),
       ]),
       { isAuthenticated: true },
     );
 
-    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.children).toBe('On device');
+    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.label).toBe('Only on this device');
     expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Account Plan Reef' })).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.accessibilityLabel).toContain('Device Plan Reef');
+    expect(renderer.root.findByProps({ testID: 'planning-active-device-badge' }).props.label).toBe('Only on this device');
+    expect(renderer.root.findByProps({ testID: 'planning-plan-row-Device Plan Reef' }).props.accessibilityLabel).toBe(
+      'Device Plan Morning, Device Plan Reef, Jun 13, 09:00 PM, Only on this device, Planned, Scuba, Boat',
+    );
+    expect(renderer.root.findByProps({ testID: 'planning-active-summary-accessibility' }).props.accessibilityLabel).toBe(
+      'Active plan, Device Plan Morning, Planned, Only on this device',
+    );
+    expect(
+      renderer.root.findAllByProps({ testID: 'planning-active-device-badge' }).find(node => node.props.accessible === false),
+    ).toBeTruthy();
+  });
+
+  it('keeps account active plans free of a device-only badge', async () => {
+    const renderer = await renderPlanning(
+      new LocalDivePlanRepository([
+        plan({ localId: 'account-active-plan', ownerUserId: 'user-1', status: 'planned', site: { name: 'Account Active Reef' } }),
+      ]),
+      { isAuthenticated: true },
+    );
+
+    expect(renderer.root.findAllByProps({ testID: 'planning-active-device-badge' })).toHaveLength(0);
   });
 
   it('does not label guest plans before authentication', async () => {

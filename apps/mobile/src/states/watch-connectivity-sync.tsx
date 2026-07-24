@@ -318,7 +318,7 @@ async function importWatchConnectivityPayloadOnce({
     entry.watchCapture?.session.localSessionId === result.message.session.localSessionId
       && entry.watchCapture?.profile?.contentRevision === payload.contentRevision
       && Boolean(payload.sha256)
-      && entry.watchCapture?.profile?.sha256 === payload.sha256,
+      && storedArtifactDigest(entry) === payload.sha256,
   );
   if (duplicate) {
     const existingPlan = await findSourcePlan(planRepository, result.message);
@@ -341,7 +341,7 @@ async function importWatchConnectivityPayloadOnce({
   }
   guard.assertActive();
   const entries = await repository.importWatchMessages([result.message], {
-    profileDigests: [payload.sha256],
+    artifactDigests: [payload.sha256],
     assertCanCommit: guard.assertActive,
   });
   const { importedEntry, completedPlan, entries: importedEntries } = await markWatchConnectivityImported(
@@ -364,6 +364,11 @@ async function importWatchConnectivityPayloadOnce({
   requestAccountSyncSafely(onLocalWritesCommitted);
   await notifyImportedEntrySafely(importedEntry, notifyImportedEntry);
   return importedEntry;
+}
+
+function storedArtifactDigest(entry: DiveLogEntry): string | undefined {
+  const profile = entry.watchCapture?.profile;
+  return profile?.artifactSha256 ?? profile?.sha256;
 }
 
 function requestAccountSyncSafely(

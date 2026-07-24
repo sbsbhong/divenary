@@ -10,6 +10,7 @@ import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../src/types/dive-session';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 
 const manualEntry = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'manual-1',
@@ -392,6 +393,35 @@ describe('PersistentDiveLogRepository', () => {
     expect(entry.watchCapture?.profile?.storageKey).toBe('custom-profile:persistent-watch-1:260');
   });
 
+  it('stores independent artifact and sample digests for imported watch profiles', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 500,
+    });
+    const message = {
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        samples: [{
+          localSessionId: watchMessage.session.localSessionId,
+          timestamp: 200,
+          depthMeters: 3,
+        }],
+      },
+    };
+
+    const [saved] = await repository.importWatchMessages([message], {
+      artifactDigests: ['a'.repeat(64)],
+    });
+
+    expect(saved.watchCapture?.profile).toEqual(expect.objectContaining({
+      artifactSha256: 'a'.repeat(64),
+      sha256: createWatchProfileDigest(message.session.samples).sha256,
+    }));
+    expect(saved.watchCapture?.profile?.sha256)
+      .not.toBe(saved.watchCapture?.profile?.artifactSha256);
+  });
+
   it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {
     const storage = new InMemoryKeyValueStore();
     const legacyStatuses = ['localOnly', 'pending', 'synced', 'failed'] as const;
@@ -695,6 +725,39 @@ describe('PersistentDiveLogRepository', () => {
     expect(entry.watchCapture?.samples.some(sample => sample.depthMeters === 42)).toBe(true);
     expect(entry.watchCapture?.profile?.sampleCount).toBe(1_000);
     await expect(repository.getWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+    await expect(repository.readStoredWatchProfile(entry.localId)).resolves.toHaveLength(1_000);
+  });
+
+  it('does not use inline preview samples when the stored profile sidecar is missing', async () => {
+    const profileStorage = new RecordingProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      now: () => 500,
+    });
+    const preview = Array.from({length: 160}, (_, index) => ({
+      localSessionId: 'preview-only',
+      timestamp: 200 + index,
+      depthMeters: index,
+    }));
+    await repository.save({
+      ...manualEntry({localId: 'preview-only', source: 'watch'}),
+      watchCapture: {
+        importKey: 'preview-only:200',
+        importedAt: 500,
+        session: {localSessionId: 'preview-only', startedAt: 200, samples: preview},
+        measuredValues: {startedAt: 200},
+        samples: preview,
+        profile: {
+          storageKey: 'missing-sidecar',
+          contentRevision: 'revision-1',
+          sampleCount: preview.length,
+        },
+      },
+    });
+
+    await expect(repository.getWatchProfile('preview-only')).resolves.toEqual(preview);
+    await expect(repository.readStoredWatchProfile('preview-only')).resolves.toBeUndefined();
   });
 
   it('preserves a shared profile until the final metadata reference is deleted', async () => {

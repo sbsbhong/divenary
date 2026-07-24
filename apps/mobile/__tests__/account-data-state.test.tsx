@@ -31,6 +31,7 @@ import {
   createGuestClaimSnapshot,
   GuestClaimStore,
 } from '../src/claim/guest-claim-store';
+import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 
@@ -461,12 +462,14 @@ describe('account data state', () => {
       storage: new InMemoryKeyValueStore(),
       storageKey: 'outbox',
     });
+    const localLogbook = new LocalDiveLogRepository();
+    jest.spyOn(localLogbook, 'readStoredWatchProfile').mockResolvedValue([]);
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
         principal: { kind: 'user', userId },
         queryScope: `user:${userId}`,
-        logbook: new LocalDiveLogRepository(),
+        logbook: localLogbook,
         planbook: new LocalDivePlanRepository(),
       },
       outbox,
@@ -517,7 +520,7 @@ describe('account data state', () => {
     const serialized = JSON.stringify(fullSamples);
     const digest = bytesToHex(sha256(utf8ToBytes(serialized)));
     const localLogbook = new LocalDiveLogRepository();
-    jest.spyOn(localLogbook, 'getWatchProfile').mockResolvedValue(fullSamples);
+    jest.spyOn(localLogbook, 'readStoredWatchProfile').mockResolvedValue(fullSamples);
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
@@ -564,6 +567,115 @@ describe('account data state', () => {
     });
   });
 
+  it('normalizes a marker-less legacy profile digest before saving and enqueueing it', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
+    const fullSamples = [
+      {localSessionId: 'watch-1', timestamp: 100, depthMeters: 2},
+      {localSessionId: 'watch-1', timestamp: 101, depthMeters: 8},
+    ];
+    const legacyArtifactSha256 = 'a'.repeat(64);
+    const profileDigest = createWatchProfileDigest(fullSamples).sha256;
+    const localLogbook = new LocalDiveLogRepository();
+    jest.spyOn(localLogbook, 'readStoredWatchProfile').mockResolvedValue(fullSamples);
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: {kind: 'user', userId},
+        queryScope: `user:${userId}`,
+        logbook: localLogbook,
+        planbook: new LocalDivePlanRepository(),
+      },
+      outbox,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+
+    await repositories.logbook.save({
+      ...entry,
+      source: 'watch',
+      watchCapture: {
+        importKey: 'watch-1:100',
+        importedAt: 100,
+        session: {localSessionId: 'watch-1', startedAt: 100, samples: []},
+        measuredValues: {startedAt: 100},
+        samples: fullSamples.slice(0, 1),
+        profile: {
+          storageKey: 'device-profile-key',
+          contentRevision: 'revision-1',
+          sampleCount: fullSamples.length,
+          sha256: legacyArtifactSha256,
+        },
+      },
+    });
+
+    await expect(localLogbook.get(entry.localId)).resolves.toMatchObject({
+      watchCapture: {
+        profile: {
+          sha256: profileDigest,
+          artifactSha256: legacyArtifactSha256,
+        },
+      },
+    });
+    const [queued] = await outbox.list(userId);
+    expect((queued.payload.local as DiveLogEntry).watchCapture?.profile).toEqual(
+      expect.objectContaining({
+        sha256: profileDigest,
+        artifactSha256: legacyArtifactSha256,
+      }),
+    );
+    expect((queued.payload.remote as RemoteDiveLog).payload).toMatchObject({
+      profile_sha256: profileDigest,
+    });
+  });
+
+  it('does not enqueue a <=160-sample profile when its stored sidecar is missing', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const preview = Array.from({length: 160}, (_, index) => ({
+      localSessionId: 'watch-1',
+      timestamp: 100 + index,
+      depthMeters: index / 10,
+    }));
+    const localLogbook = new LocalDiveLogRepository();
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: {kind: 'user', userId},
+        queryScope: `user:${userId}`,
+        logbook: localLogbook,
+        planbook: new LocalDivePlanRepository(),
+      },
+      outbox,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+    });
+
+    await expect(
+      repositories.logbook.save({
+        ...entry,
+        source: 'watch',
+        watchCapture: {
+          importKey: 'watch-1:100',
+          importedAt: 100,
+          session: {localSessionId: 'watch-1', startedAt: 100, samples: preview},
+          measuredValues: {startedAt: 100},
+          samples: preview,
+          profile: {
+            storageKey: 'missing-sidecar',
+            contentRevision: 'revision-1',
+            sampleCount: preview.length,
+            sha256: createWatchProfileDigest(preview).sha256,
+          },
+        },
+      }),
+    ).rejects.toThrow('stored watch profile');
+
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+  });
+
   it('removes an operation-owned profile snapshot when enqueue fails', async () => {
     const storage = new InMemoryKeyValueStore();
     const outbox = new AccountOutbox({storage, storageKey: 'outbox'});
@@ -574,7 +686,7 @@ describe('account data state', () => {
     const serialized = JSON.stringify(fullSamples);
     const digest = bytesToHex(sha256(utf8ToBytes(serialized)));
     const localLogbook = new LocalDiveLogRepository();
-    jest.spyOn(localLogbook, 'getWatchProfile').mockResolvedValue(fullSamples);
+    jest.spyOn(localLogbook, 'readStoredWatchProfile').mockResolvedValue(fullSamples);
     let rejectedOperationId: string | undefined;
     jest.spyOn(outbox, 'enqueue').mockImplementationOnce(async operation => {
       rejectedOperationId = operation.operationId;
@@ -622,12 +734,15 @@ describe('account data state', () => {
     await expect(outbox.list(userId)).resolves.toEqual([]);
   });
 
-  it('fails closed before enqueueing a profile whose immutable digest is wrong', async () => {
+  it('fails closed before enqueueing a versioned profile whose immutable digest is wrong', async () => {
     const outbox = new AccountOutbox({
       storage: new InMemoryKeyValueStore(),
       storageKey: 'outbox',
     });
     const localLogbook = new LocalDiveLogRepository();
+    jest.spyOn(localLogbook, 'readStoredWatchProfile').mockResolvedValue([
+      {localSessionId: 'watch-1', timestamp: 100, depthMeters: 2},
+    ]);
     const repositories = createAccountLocalFirstRepositories({
       userId,
       repositories: {
@@ -661,6 +776,7 @@ describe('account data state', () => {
             contentRevision: 'revision-1',
             sampleCount: 1,
             sha256: '0'.repeat(64),
+            artifactSha256: 'a'.repeat(64),
           },
         },
       }),

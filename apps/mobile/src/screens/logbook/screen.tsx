@@ -7,6 +7,7 @@ import { HStack } from '../../components/ui/hstack';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
+import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
@@ -365,11 +366,34 @@ function SessionListItem(props: {
   const maxDepthLabel = formatDepth(listMetrics.maxDepthMeters);
   const durationLabel = formatListDuration(listMetrics.durationSeconds);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
+  const dateLabel = formatDate(session.startedAt, locale, t('formatters.unknownDate'));
+  const diveModeLabel = session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet');
+  const unsupportedDepthLabel = unsupportedDepth ? t('logbook.unsupportedDepthMarker') : undefined;
+  const badges = [
+    ...(props.entry.watchCapture?.session.captureMode === 'demo'
+      ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }]
+      : []),
+    ...(props.showsDeviceOnlyBadge
+      ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }]
+      : []),
+  ];
+  const accessibilityLabel = [
+    title,
+    dateLabel,
+    ...badges.map(badge => badge.label),
+    unsupportedDepthLabel,
+    maxDepthLabel,
+    diveModeLabel,
+    durationLabel,
+    tags,
+  ].filter((label): label is string => label !== undefined).join(', ');
 
   return (
     <Pressable
       testID={`logbook-list-item-${siteName}`}
       onPress={props.onPress}
+      accessible={badges.length ? true : undefined}
+      accessibilityLabel={badges.length ? accessibilityLabel : undefined}
       className="rounded-2xl bg-card px-4 py-4"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <VStack space="sm">
@@ -382,21 +406,21 @@ function SessionListItem(props: {
             </Box>
             <VStack space="xs" className="flex-1">
               <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <HStack space="xs" className="flex-wrap items-center">
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {formatDate(session.startedAt, locale, t('formatters.unknownDate'))}
-                </Text>
-                {props.showsDeviceOnlyBadge ? (
-                  <Text
-                    testID={`logbook-device-badge-${siteName}`}
-                    accessibilityLabel={`${title}, ${t('accountClaim.deviceBadge')}`}
-                    size="xs"
-                    bold
-                    className="text-muted-foreground">
-                    {t('accountClaim.deviceBadge')}
-                  </Text>
-                ) : null}
-              </HStack>
+              <Text className="text-sm leading-5 text-muted-foreground">
+                {dateLabel}
+              </Text>
+              {badges.length ? (
+                <HStack testID={`logbook-list-badges-${siteName}`} space="xs" className="flex-wrap items-center">
+                  {badges.map(badge => (
+                    <ListStatusBadge
+                      key={badge.kind}
+                      kind={badge.kind}
+                      label={badge.label}
+                      testID={badge.kind === 'demo' ? `logbook-demo-badge-${siteName}` : `logbook-device-badge-${siteName}`}
+                    />
+                  ))}
+                </HStack>
+              ) : null}
             </VStack>
           </HStack>
           <VStack space="xs" className="items-end">
@@ -413,7 +437,7 @@ function SessionListItem(props: {
           </VStack>
         </HStack>
         <Text className="pl-14 text-sm leading-5 text-muted-foreground">
-          {session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet')} ·{' '}
+          {diveModeLabel} ·{' '}
           <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text> · {tags}
         </Text>
       </VStack>

@@ -87,6 +87,8 @@ describe('Apple design system mapping', () => {
     expect(colors.light['--muted']).toBe('245 245 247');
     expect(colors.light['--muted-foreground']).toBe('122 122 122');
     expect(colors.light['--ring']).toBe('0 113 227');
+    expect(colors.light['--warning']).toBe('167 79 0');
+    expect(colors.dark['--warning']).toBe('255 159 10');
   });
 
   test('passes the system preference while resolving a light status surface', async () => {
@@ -161,6 +163,17 @@ describe('Apple design system mapping', () => {
     expect(statusPillStyles).not.toContain('bg-primary text-primary-foreground');
     expect(statusPillStyles).not.toContain('bg-secondary text-secondary-foreground');
     expect(statusPillStyles).toContain('bg-primary/10');
+  });
+
+  test('defines a semantic warning badge without destructive red styling', () => {
+    const tailwindConfig = readSource('tailwind.config.js');
+    const badge = readSource('src', 'components', 'ui', 'list-status-badge.tsx');
+
+    expect(tailwindConfig).toContain("warning: 'rgb(var(--warning)/<alpha-value>)'");
+    expect(tailwindConfig).toMatch(/foreground\|card\|popover\|muted\|destructive\|border\|input\|ring\|primary\|secondary\|background\|accent\|warning/);
+    expect(badge).toContain('bg-warning/10');
+    expect(badge).toContain('text-warning');
+    expect(badge).not.toMatch(/red|destructive/);
   });
 
   test('uses a lightweight text Pressable for the Home login entry', () => {

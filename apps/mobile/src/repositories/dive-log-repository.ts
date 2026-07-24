@@ -6,7 +6,7 @@ import type {
 } from './conditional-delete';
 
 export type ImportWatchMessagesOptions = {
-  profileDigests?: Array<string | undefined>;
+  artifactDigests?: Array<string | undefined>;
   assertCanCommit?: () => void;
 };
 
@@ -31,4 +31,7 @@ export type DiveLogRepository = {
     options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]>;
   getWatchProfile(localId: string): Promise<WatchDepthSample[]>;
+  readStoredWatchProfile(
+    localId: string,
+  ): Promise<WatchDepthSample[] | undefined>;
 };
