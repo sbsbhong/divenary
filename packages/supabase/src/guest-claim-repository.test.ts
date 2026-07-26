@@ -336,6 +336,47 @@ describe('GuestClaimRemoteRepository', () => {
     assert.deepEqual(storageCalls.map(call => (call as {method: string}).method), ['upload', 'download']);
   });
 
+  test('downloads a profile from a React Native Blob with FileReader', async () => {
+    const path = `${USER_ID}/claims/${BATCH_ID}/${STAGING_ID}/profile.json`;
+    const bytes = new Uint8Array([1, 2, 3]);
+    const nativeBlob = {size: bytes.length, type: 'application/json'} as Blob;
+    class NativeBlobFileReader {
+      result: string | ArrayBuffer | null = null;
+      error: DOMException | null = null;
+      onload: ((event: ProgressEvent<FileReader>) => void) | null = null;
+      onerror: ((event: ProgressEvent<FileReader>) => void) | null = null;
+      onabort: ((event: ProgressEvent<FileReader>) => void) | null = null;
+
+      readAsArrayBuffer(blob: Blob): void {
+        assert.equal(blob, nativeBlob);
+        this.result = bytes.slice().buffer as ArrayBuffer;
+        queueMicrotask(() => this.onload?.({} as ProgressEvent<FileReader>));
+      }
+    }
+    const originalFileReader = globalThis.FileReader;
+    Object.defineProperty(globalThis, 'FileReader', {
+      configurable: true,
+      writable: true,
+      value: NativeBlobFileReader,
+    });
+    const {client} = createClient([{data: nativeBlob, error: null}]);
+    const repository = createGuestClaimRemoteRepository(client as never, {userId: USER_ID});
+
+    try {
+      assert.deepEqual(await repository.downloadProfile(path), bytes);
+    } finally {
+      if (originalFileReader === undefined) {
+        Reflect.deleteProperty(globalThis, 'FileReader');
+      } else {
+        Object.defineProperty(globalThis, 'FileReader', {
+          configurable: true,
+          writable: true,
+          value: originalFileReader,
+        });
+      }
+    }
+  });
+
   test('rejects a non-duplicate profile upload error without downloading a profile', async () => {
     const path = `${USER_ID}/claims/${BATCH_ID}/${STAGING_ID}/profile.json`;
     const {client, storageCalls} = createClient([{data: null, error: {message: 'storage unavailable', status: 500}}]);

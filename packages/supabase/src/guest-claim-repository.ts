@@ -189,6 +189,34 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
   return left.length === right.length && left.every((byte, index) => byte === right[index]);
 }
 
+async function blobBytes(blob: Blob): Promise<Uint8Array> {
+  const arrayBuffer = Reflect.get(blob, 'arrayBuffer');
+  if (typeof arrayBuffer === 'function') {
+    return new Uint8Array(await arrayBuffer.call(blob));
+  }
+  return readBlobWithFileReader(blob);
+}
+
+function readBlobWithFileReader(blob: Blob): Promise<Uint8Array> {
+  if (typeof globalThis.FileReader !== 'function') {
+    throw new TypeError('Blob bytes are unavailable');
+  }
+  return new Promise((resolve, reject) => {
+    const reader = new globalThis.FileReader();
+    reader.onload = () => {
+      if (!(reader.result instanceof ArrayBuffer)) {
+        reject(new TypeError('Blob bytes are unavailable'));
+        return;
+      }
+      resolve(new Uint8Array(reader.result));
+    };
+    reader.onerror = () =>
+      reject(reader.error ?? new TypeError('Blob bytes are unavailable'));
+    reader.onabort = () => reject(new TypeError('Blob read was aborted'));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 function committedRecordsByKind(records: ClaimRow[], batchId: string, userId: string): {plans: ClaimRow[]; logs: ClaimRow[]} {
   const plans: ClaimRow[] = [];
   const logs: ClaimRow[] = [];
@@ -306,7 +334,7 @@ export function createGuestClaimRemoteRepository(
       const result = await client.storage.from('dive-profiles').download(path);
       if (result.error) throw claimError(result.error, 'profile');
       if (result.data === null) return fail('profile', 'remote_conflict');
-      return new Uint8Array(await result.data.arrayBuffer());
+      return blobBytes(result.data);
     } catch (error) {
       throw claimError(error, 'profile');
     }
