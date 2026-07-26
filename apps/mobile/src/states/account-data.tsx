@@ -245,6 +245,11 @@ export function AccountDataProviderCore({
     React.useState<AccountClaimPresentation>(() =>
       hiddenClaimPresentation('guest'),
     );
+  const [guestInventoryRevision, setGuestInventoryRevision] =
+    React.useState(0);
+  const notifyGuestInventoryChanged = React.useCallback(() => {
+    setGuestInventoryRevision(value => value + 1);
+  }, []);
 
   React.useEffect(() => {
     const generation = generationRef.current + 1;
@@ -323,6 +328,7 @@ export function AccountDataProviderCore({
               accountRepositories,
               guestRepositories,
               hiddenGuestIds,
+              onGuestInventoryChanged: notifyGuestInventoryChanged,
             }),
             localRepositories: base,
             accountRepositories,
@@ -559,6 +565,7 @@ export function AccountDataProviderCore({
     desiredPrincipal,
     desiredScope,
     isOnline,
+    notifyGuestInventoryChanged,
     queryClient,
   ]);
 
@@ -680,6 +687,29 @@ export function AccountDataProviderCore({
       }
     });
   }, [desiredScope, published, refreshClaim]);
+
+  React.useEffect(() => {
+    if (
+      guestInventoryRevision === 0 ||
+      !published ||
+      published.queryScope !== desiredScope
+    ) {
+      return;
+    }
+    refreshClaim(published, {resumeActive: false}).catch(error => {
+      if (publishedRef.current === published) {
+        console.warn(
+          'Failed to refresh guest inventory after mutation',
+          error,
+        );
+      }
+    });
+  }, [
+    desiredScope,
+    guestInventoryRevision,
+    published,
+    refreshClaim,
+  ]);
 
   const retryBootstrap = React.useCallback(() => {
     setBootstrapPresentation({
@@ -922,6 +952,7 @@ function createComposedAccountRepositories(options: {
   accountRepositories: PrincipalRepositories;
   guestRepositories: PrincipalRepositories;
   hiddenGuestIds: HiddenGuestIds;
+  onGuestInventoryChanged(): void;
 }): PrincipalRepositories {
   const accountLogbook = options.accountRepositories
     .logbook as DiveLogRepository &
@@ -966,13 +997,17 @@ function createComposedAccountRepositories(options: {
         (await options.guestRepositories.logbook.get(value.localId)) !==
           undefined
       ) {
-        return options.guestRepositories.logbook.save(value);
+        const saved = await options.guestRepositories.logbook.save(value);
+        options.onGuestInventoryChanged();
+        return saved;
       }
       return options.accountRepositories.logbook.save(value);
     },
     async delete(localId, deleteOptions) {
       if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
-        return options.guestRepositories.logbook.delete(localId, deleteOptions);
+        await options.guestRepositories.logbook.delete(localId, deleteOptions);
+        options.onGuestInventoryChanged();
+        return;
       }
       if (await options.accountRepositories.logbook.get(localId)) {
         return options.accountRepositories.logbook.delete(
@@ -980,15 +1015,18 @@ function createComposedAccountRepositories(options: {
           deleteOptions,
         );
       }
-      return options.guestRepositories.logbook.delete(localId, deleteOptions);
+      await options.guestRepositories.logbook.delete(localId, deleteOptions);
+      options.onGuestInventoryChanged();
     },
     async deleteIf(localId, predicate, deleteOptions) {
       if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
-        return options.guestRepositories.logbook.deleteIf(
+        const result = await options.guestRepositories.logbook.deleteIf(
           localId,
           predicate,
           deleteOptions,
         );
+        options.onGuestInventoryChanged();
+        return result;
       }
       if (await options.accountRepositories.logbook.get(localId)) {
         return options.accountRepositories.logbook.deleteIf(
@@ -997,11 +1035,13 @@ function createComposedAccountRepositories(options: {
           deleteOptions,
         );
       }
-      return options.guestRepositories.logbook.deleteIf(
+      const result = await options.guestRepositories.logbook.deleteIf(
         localId,
         predicate,
         deleteOptions,
       );
+      options.onGuestInventoryChanged();
+      return result;
     },
     async getWatchProfile(localId) {
       if (options.hiddenGuestIds.guestPriorityLogIds.has(localId)) {
@@ -1036,11 +1076,18 @@ function createComposedAccountRepositories(options: {
   const composedLogbook = logbook as DiveLogRepository &
     Partial<AccountQueueRepository<DiveLogEntry>>;
   if (accountLogbook.saveLocalOnly) {
-    composedLogbook.saveLocalOnly = async value =>
-      value.ownerUserId === undefined &&
-      (await options.guestRepositories.logbook.get(value.localId)) !== undefined
-        ? options.guestRepositories.logbook.save(value)
-        : accountLogbook.saveLocalOnly!(value);
+    composedLogbook.saveLocalOnly = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.logbook.get(value.localId)) !==
+          undefined
+      ) {
+        const saved = await options.guestRepositories.logbook.save(value);
+        options.onGuestInventoryChanged();
+        return saved;
+      }
+      return accountLogbook.saveLocalOnly!(value);
+    };
   }
   if (accountLogbook.enqueueSaved) {
     composedLogbook.enqueueSaved = async value => {
@@ -1108,38 +1155,59 @@ function createComposedAccountRepositories(options: {
         (await options.guestRepositories.planbook.get(value.localId)) !==
           undefined
       ) {
-        return options.guestRepositories.planbook.save(value);
+        const saved = await options.guestRepositories.planbook.save(value);
+        options.onGuestInventoryChanged();
+        return saved;
       }
       return options.accountRepositories.planbook.save(value);
     },
     async delete(localId) {
       if (options.hiddenGuestIds.guestPriorityPlanIds.has(localId)) {
-        return options.guestRepositories.planbook.delete(localId);
+        await options.guestRepositories.planbook.delete(localId);
+        options.onGuestInventoryChanged();
+        return;
       }
       if (await options.accountRepositories.planbook.get(localId)) {
         return options.accountRepositories.planbook.delete(localId);
       }
-      return options.guestRepositories.planbook.delete(localId);
+      await options.guestRepositories.planbook.delete(localId);
+      options.onGuestInventoryChanged();
     },
     async deleteIf(localId, predicate) {
       if (options.hiddenGuestIds.guestPriorityPlanIds.has(localId)) {
-        return options.guestRepositories.planbook.deleteIf(localId, predicate);
+        const result = await options.guestRepositories.planbook.deleteIf(
+          localId,
+          predicate,
+        );
+        options.onGuestInventoryChanged();
+        return result;
       }
       if (await options.accountRepositories.planbook.get(localId)) {
         return options.accountRepositories.planbook.deleteIf(localId, predicate);
       }
-      return options.guestRepositories.planbook.deleteIf(localId, predicate);
+      const result = await options.guestRepositories.planbook.deleteIf(
+        localId,
+        predicate,
+      );
+      options.onGuestInventoryChanged();
+      return result;
     },
   };
   const composedPlanbook = planbook as DivePlanRepository &
     Partial<AccountQueueRepository<DivePlan>>;
   if (accountPlanbook.saveLocalOnly) {
-    composedPlanbook.saveLocalOnly = async value =>
-      value.ownerUserId === undefined &&
-      (await options.guestRepositories.planbook.get(value.localId)) !==
-        undefined
-        ? options.guestRepositories.planbook.save(value)
-        : accountPlanbook.saveLocalOnly!(value);
+    composedPlanbook.saveLocalOnly = async value => {
+      if (
+        value.ownerUserId === undefined &&
+        (await options.guestRepositories.planbook.get(value.localId)) !==
+          undefined
+      ) {
+        const saved = await options.guestRepositories.planbook.save(value);
+        options.onGuestInventoryChanged();
+        return saved;
+      }
+      return accountPlanbook.saveLocalOnly!(value);
+    };
   }
   if (accountPlanbook.enqueueSaved) {
     composedPlanbook.enqueueSaved = async value => {
@@ -1330,6 +1398,20 @@ function presentationForSnapshot(
         isOnline && eligible.logCount + eligible.planCount > 0
           ? { status: 'choice', ...eligible }
           : { status: 'hidden' },
+    };
+  }
+  if (
+    eligible.logCount + eligible.planCount === 0 &&
+    (snapshot.manifest.status === 'prepared' ||
+      snapshot.manifest.status === 'deferred' ||
+      snapshot.manifest.status === 'retained' ||
+      (snapshot.manifest.status === 'failed' &&
+        snapshot.manifest.remoteBatchId === undefined))
+  ) {
+    return {
+      queryScope,
+      eligible,
+      state: {status: 'hidden'},
     };
   }
   const completed = snapshot.manifest.items.filter(
