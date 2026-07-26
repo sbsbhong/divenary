@@ -1761,6 +1761,7 @@ describe('account data state', () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const guestLogbook = new LocalDiveLogRepository([entry]);
     const guestPlanbook = new LocalDivePlanRepository();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
     const store = new GuestClaimStore({storage: metadataStorage, userId});
     const snapshot = await createGuestClaimSnapshot({
       userId,
@@ -1825,6 +1826,19 @@ describe('account data state', () => {
       expect(capture?.claim.eligible).toEqual({logCount: 1, planCount: 0}),
     );
 
+    jest
+      .spyOn(guestLogbook, 'list')
+      .mockRejectedValueOnce(new Error('guest inventory unavailable'));
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.save({...entry, updatedAt: 101});
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(capture?.claim.eligible).toEqual({logCount: 0, planCount: 0});
+      expect(capture?.claim.state).toEqual({status: 'hidden'});
+    });
+
     await ReactTestRenderer.act(async () => {
       await capture!.logbookRepository.delete(entry.localId);
       await flushPromises();
@@ -1838,6 +1852,7 @@ describe('account data state', () => {
 
     await ReactTestRenderer.act(async () => renderer!.unmount());
     queryClient.clear();
+    warn.mockRestore();
   });
 
   it('keeps guest rows ahead of partial account copies until the claim is published', async () => {

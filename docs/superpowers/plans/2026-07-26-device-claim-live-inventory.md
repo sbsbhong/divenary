@@ -245,6 +245,8 @@ Add focused assertions that:
 - deleting a device-only guest log publishes a revision;
 - deleting a device-only guest plan publishes a revision;
 - account-owned save/delete does not publish a guest inventory revision.
+- a guest inventory read failure after a previous nonzero count publishes
+  `eligible = 0` with hidden presentation instead of retaining the stale count.
 
 Exercise behavior through the provider and resulting claim count rather than exporting the callback.
 
@@ -276,6 +278,11 @@ const notifyGuestInventoryChanged = React.useCallback(() => {
 Pass the notifier into `createComposedAccountRepositories`.
 
 For each composed method that actually routes to `guestRepositories`, await the guest operation, call `onGuestInventoryChanged()`, then return the original result. Cover logbook `save`, `delete`, `deleteIf`, optional `saveLocalOnly`, and planbook equivalents. Account-routed operations must not notify.
+
+Wrap both live inventory reads in the existing claim-generation guard. When a
+read fails, publish `hiddenClaimPresentation(desiredScope)` before propagating
+the error to the existing degraded/logging path so a previous count cannot
+remain visible.
 
 - [ ] **Step 5: Refresh claim presentation without auto-resume**
 

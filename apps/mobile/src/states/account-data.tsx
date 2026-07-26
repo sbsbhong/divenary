@@ -579,6 +579,16 @@ export function AccountDataProviderCore({
         generationRef.current === claimGeneration &&
         publishedRef.current === publication &&
         publication.claimGeneration === claimGeneration;
+      const readEligibleGuestCounts = async () => {
+        try {
+          return await eligibleGuestCounts(publication);
+        } catch (error) {
+          if (isClaimCurrent()) {
+            setClaimPresentation(hiddenClaimPresentation(desiredScope));
+          }
+          throw error;
+        }
+      };
       if (
         publication.queryScope !== desiredScope ||
         publication.principal.kind !== 'user' ||
@@ -621,7 +631,7 @@ export function AccountDataProviderCore({
         dependencies.profileStorage,
         isClaimCurrent,
       );
-      const eligible = await eligibleGuestCounts(publication);
+      const eligible = await readEligibleGuestCounts();
       if (!isClaimCurrent()) {
         return;
       }
@@ -652,7 +662,7 @@ export function AccountDataProviderCore({
             dependencies.profileStorage,
             isClaimCurrent,
           );
-          const refreshedEligible = await eligibleGuestCounts(publication);
+          const refreshedEligible = await readEligibleGuestCounts();
           if (isClaimCurrent()) {
             setClaimPresentation(
               presentationForSnapshot(
