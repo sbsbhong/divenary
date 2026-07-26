@@ -958,3 +958,11 @@
 - Clarified: Home generic recovery는 stale device-import 표시가 아니라 같은 `remoteHydration` 실패였으며 성공한 pull이 matching issue를 해제한다.
 
 ## [2026-07-26] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-26] ingest | React Native profile download recovery
+- Added: React Native profile download recovery evidence raw source
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: React Native native `Blob`의 profile bytes는 `FileReader` fallback으로 읽고 global `TextDecoder`가 없으면 RFC 3629와 BOM 동작을 보존하는 strict UTF-8 decoder를 사용한다.
+- Verified: remote list 5개와 HTTP 200인 1,585-byte/6-sample profile의 SHA-256·descriptor가 일치했고, correction 뒤 account partition 5개와 native Watch profile 6 samples로 hydrate됐다.
+- Clarified: 단일 Watch row의 runtime hydration 실패가 정상 account row 4개 publication 뒤 Home `remoteHydration` 안내를 남겼으며 schema, RLS, integrity contract와 UI는 변경하지 않았다.
