@@ -130,7 +130,9 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
   }, []);
 
   React.useEffect(() => {
-    void loadConditions();
+    if (AppState.currentState === 'active') {
+      void loadConditions();
+    }
   }, [loadConditions]);
 
   React.useEffect(() => {

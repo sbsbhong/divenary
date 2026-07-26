@@ -17,6 +17,19 @@ export type LocationService = {
   getCurrentLocation(): Promise<LocationResult>;
 };
 
+export type LocationServiceFactoryOptions = {
+  getCurrentPosition: typeof Geolocation.getCurrentPosition;
+  wait?: (milliseconds: number) => Promise<void>;
+};
+
+type CurrentPositionResult = LocationResult | {
+  status: 'transientUnavailable';
+  errorMessage?: string;
+};
+
+const TRANSIENT_RETRY_DELAYS_MS = [250, 750] as const;
+const POSITION_UNAVAILABLE = 2;
+
 const currentPositionOptions = {
   enableHighAccuracy: false,
   timeout: 8000,
@@ -30,17 +43,44 @@ Geolocation.setRNConfiguration({
   locationProvider: 'auto',
 });
 
-export const defaultLocationService: LocationService = {
-  getCurrentLocation: async () => {
-    const permission = await requestForegroundLocationPermission();
+export const defaultLocationService = createLocationService({
+  getCurrentPosition: Geolocation.getCurrentPosition,
+});
 
-    if (permission.status !== 'granted') {
-      return permission;
-    }
+export function createLocationService(options: LocationServiceFactoryOptions): LocationService {
+  const wait = options.wait ?? defaultWait;
 
-    return getCurrentPosition();
-  },
-};
+  return {
+    getCurrentLocation: async () => {
+      const permission = await requestForegroundLocationPermission();
+
+      if (permission.status !== 'granted') {
+        return permission;
+      }
+
+      for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+        const result = await requestCurrentPosition(options.getCurrentPosition);
+
+        if (result.status !== 'transientUnavailable') {
+          return result;
+        }
+
+        const delay = TRANSIENT_RETRY_DELAYS_MS[attempt];
+
+        if (delay === undefined) {
+          return {
+            status: 'unavailable',
+            errorMessage: result.errorMessage,
+          };
+        }
+
+        await wait(delay);
+      }
+
+      return { status: 'unavailable' };
+    },
+  };
+}
 
 async function requestForegroundLocationPermission(): Promise<LocationResult | { status: 'granted' }> {
   if (Platform.OS !== 'android') {
@@ -55,9 +95,11 @@ async function requestForegroundLocationPermission(): Promise<LocationResult | {
     : { status: 'permissionDenied' };
 }
 
-function getCurrentPosition(): Promise<LocationResult> {
+function requestCurrentPosition(
+  getCurrentPosition: typeof Geolocation.getCurrentPosition,
+): Promise<CurrentPositionResult> {
   return new Promise(resolve => {
-    Geolocation.getCurrentPosition(
+    getCurrentPosition(
       position => resolve(mapPosition(position)),
       error => resolve(mapPositionError(error)),
       currentPositionOptions,
@@ -77,13 +119,26 @@ function mapPosition(position: GeolocationResponse): LocationResult {
   };
 }
 
-function mapPositionError(error: GeolocationError): LocationResult {
-  if (error.code === error.PERMISSION_DENIED || error.code === 1) {
+function mapPositionError(error: GeolocationError): CurrentPositionResult {
+  if (error.code === 1) {
     return { status: 'permissionDenied' };
+  }
+
+  if (error.code === POSITION_UNAVAILABLE) {
+    return {
+      status: 'transientUnavailable',
+      errorMessage: error.message,
+    };
   }
 
   return {
     status: 'unavailable',
     errorMessage: error.message,
   };
+}
+
+function defaultWait(milliseconds: number): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, milliseconds);
+  });
 }

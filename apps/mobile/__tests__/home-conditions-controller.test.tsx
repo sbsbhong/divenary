@@ -12,6 +12,7 @@ import type { LocationService } from '../src/conditions/location-service';
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
 let nextHarnessLocaleId = 0;
+const initialAppStateCurrentStateDescriptor = Object.getOwnPropertyDescriptor(AppState, 'currentState');
 
 function createDeferred<T>(): {
   promise: Promise<T>;
@@ -111,10 +112,18 @@ const renderHarness = async (props: Omit<HarnessProps, 'onSnapshot'> & { onSnaps
 describe('useHomeConditions', () => {
   beforeEach(() => {
     resetHomeConditionsCacheForTests();
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
+
+    if (initialAppStateCurrentStateDescriptor) {
+      Object.defineProperty(AppState, 'currentState', initialAppStateCurrentStateDescriptor);
+    }
   });
 
   it('loads provider conditions with current coordinates', async () => {
@@ -132,6 +141,36 @@ describe('useHomeConditions', () => {
       locale,
     }));
     expect(latestSnapshot()).toMatchObject(readySnapshot);
+  });
+
+  it('waits for an active AppState before the initial conditions request', async () => {
+    const listeners: Array<(state: AppStateStatus) => void> = [];
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      listeners.push(listener as (state: AppStateStatus) => void);
+      return { remove: jest.fn() };
+    });
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'inactive',
+    });
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn(async () => grantedLocation),
+    };
+    const provider = createProvider();
+
+    await renderHarness({ locationService, provider });
+
+    expect(locationService.getCurrentLocation).not.toHaveBeenCalled();
+    expect(provider.getCurrentConditions).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      listeners[0]('active');
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(locationService.getCurrentLocation).toHaveBeenCalledTimes(1);
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(1);
   });
 
   it('returns permissionDenied without calling the provider when location permission is denied', async () => {
@@ -384,10 +423,6 @@ describe('useHomeConditions', () => {
       listeners.push(listener as (state: AppStateStatus) => void);
       return { remove: jest.fn() };
     });
-    Object.defineProperty(AppState, 'currentState', {
-      configurable: true,
-      value: 'background',
-    });
     const locationService: LocationService = {
       getCurrentLocation: jest.fn(async () => grantedLocation),
     };
@@ -409,6 +444,11 @@ describe('useHomeConditions', () => {
       onController,
     });
     const controller = onController.mock.calls[onController.mock.calls.length - 1][0];
+
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'background',
+    });
 
     await ReactTestRenderer.act(async () => {
       controller.retry();

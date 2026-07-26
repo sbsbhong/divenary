@@ -1,4 +1,5 @@
 import React from 'react';
+import { AppState } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import i18n from '../src/i18n';
 import HomeScreen from '../src/screens/home/screen';
@@ -10,6 +11,7 @@ import { resetHomeConditionsCacheForTests } from '../src/conditions/use-home-con
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const mountedRenderers: ReactTestRenderer.ReactTestRenderer[] = [];
+const initialAppStateCurrentStateDescriptor = Object.getOwnPropertyDescriptor(AppState, 'currentState');
 
 jest.mock('react-native-reanimated', () => {
   const createAnimation = () => {
@@ -102,10 +104,18 @@ describe('Home conditions interface', () => {
         renderer.unmount();
       }
     });
+
+    if (initialAppStateCurrentStateDescriptor) {
+      Object.defineProperty(AppState, 'currentState', initialAppStateCurrentStateDescriptor);
+    }
   });
 
   beforeEach(async () => {
     resetHomeConditionsCacheForTests();
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
 
     const asyncStorageMock = jest.requireMock('@react-native-async-storage/async-storage') as {
       __resetAsyncStorageMock: () => void;
