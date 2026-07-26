@@ -52,6 +52,15 @@ export function createPrincipalRepositories(
   };
 }
 
+export async function verifyPrincipalRepositories(
+  repositories: PrincipalRepositories,
+): Promise<void> {
+  await Promise.all([
+    repositories.logbook.list(),
+    repositories.planbook.list(),
+  ]);
+}
+
 type PrincipalRow = DiveLogEntry | DivePlan;
 
 export function composeAccountAndDeferredGuestRows<T extends PrincipalRow>(

@@ -194,6 +194,59 @@ describe('account data state', () => {
     warn.mockRestore();
   });
 
+  it('fails closed before remote hydration when the user logbook is unreadable', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const userLogbookKey = dataStorageKeys({
+      kind: 'user',
+      userId,
+    }).logbook;
+    const invalidRaw = '{"schemaVersion":99,"updatedAt":1,"value":[]}';
+    await storage.setString(userLogbookKey, invalidRaw);
+    const remote = accountRepository();
+    const queryClient = new QueryClient();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{
+            state: {status: 'authenticated', userId},
+            accountDataRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage: storage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          {React.createElement('account-data-child', {
+            testID: 'account-data-child',
+          })}
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    expect(
+      renderer!.root.findByProps({testID: 'account-data-recovery-screen'}),
+    ).toBeTruthy();
+    expect(remote.listLogs).not.toHaveBeenCalled();
+    expect(remote.listPlans).not.toHaveBeenCalled();
+    await expect(storage.getString(userLogbookKey)).resolves.toBe(invalidRaw);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    warn.mockRestore();
+  });
+
   it('keeps local account data published when remote hydration fails', async () => {
     jest
       .spyOn(AccountSyncCoordinator.prototype, 'hydrate')
@@ -865,6 +918,7 @@ describe('account data state', () => {
     const guestLogbook = new LocalDiveLogRepository();
     jest
       .spyOn(guestLogbook, 'list')
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('guest inventory unavailable'))
       .mockResolvedValue([]);
     const queryClient = new QueryClient();
@@ -941,6 +995,7 @@ describe('account data state', () => {
     const guestLogbook = new LocalDiveLogRepository();
     jest
       .spyOn(guestLogbook, 'list')
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('guest inventory unavailable'))
       .mockResolvedValue([]);
     const queryClient = new QueryClient();
@@ -1027,6 +1082,7 @@ describe('account data state', () => {
     const guestLogbook = new LocalDiveLogRepository();
     jest
       .spyOn(guestLogbook, 'list')
+      .mockResolvedValueOnce([])
       .mockRejectedValueOnce(new Error('guest inventory unavailable'))
       .mockResolvedValue([]);
     const checkpointHint = jest

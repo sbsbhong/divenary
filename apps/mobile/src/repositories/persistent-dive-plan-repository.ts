@@ -38,6 +38,12 @@ export class PersistentDivePlanRepository implements DivePlanRepository {
       storage: options.storage ?? createAsyncStorageKeyValueStore(),
       now: this.now,
       onReadError: options.onReadError,
+      readFailurePolicy: 'throw',
+      recoveryKeys: {
+        pending: `${storageKey}:journal:pending:v1`,
+        commit: `${storageKey}:journal:commit:v1`,
+        quarantinePrefix: `${storageKey}:quarantine:v1:`,
+      },
     });
   }
 

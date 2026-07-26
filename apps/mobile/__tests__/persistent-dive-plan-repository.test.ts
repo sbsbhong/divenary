@@ -5,6 +5,7 @@ import {
 } from '../src/repositories/persistent-dive-plan-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
+import {PersistentJsonReadError} from '../src/storage/persistent-json-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { DivePlan } from '../src/types/dive-plan';
 
@@ -83,6 +84,21 @@ class PausedWriteStore implements PersistentKeyValueStore {
 }
 
 describe('PersistentDivePlanRepository', () => {
+  it('does not replace unreadable local planbook bytes when a save follows', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const raw = '{"schemaVersion":99,"updatedAt":1,"value":[]}';
+    await storage.setString('principal-planbook', raw);
+    const repository = new PersistentDivePlanRepository({
+      storage,
+      storageKey: 'principal-planbook',
+    });
+
+    await expect(repository.save(plan({}))).rejects.toBeInstanceOf(
+      PersistentJsonReadError,
+    );
+    await expect(storage.getString('principal-planbook')).resolves.toBe(raw);
+  });
+
   it('persists account revision and conflict state in the current schema', async () => {
     const storage = new InMemoryKeyValueStore();
     const repository = new PersistentDivePlanRepository({storage, now: () => 500});

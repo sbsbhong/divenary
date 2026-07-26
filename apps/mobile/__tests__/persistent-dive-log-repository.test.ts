@@ -6,6 +6,7 @@ import {
 } from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
+import {PersistentJsonReadError} from '../src/storage/persistent-json-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
@@ -210,6 +211,21 @@ function watchEntryWithProfile(localId: string, importKey: string, profileKey: s
 }
 
 describe('PersistentDiveLogRepository', () => {
+  it('does not replace unreadable local logbook bytes when a save follows', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const raw = '{"schemaVersion":99,"updatedAt":1,"value":[]}';
+    await storage.setString('principal-logbook', raw);
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      storageKey: 'principal-logbook',
+    });
+
+    await expect(repository.save(manualEntry())).rejects.toBeInstanceOf(
+      PersistentJsonReadError,
+    );
+    await expect(storage.getString('principal-logbook')).resolves.toBe(raw);
+  });
+
   it('does not seed the built-in presentation fixture into persistent storage', async () => {
     const repository = createDefaultPersistentDiveLogRepository({
       storage: new InMemoryKeyValueStore(),

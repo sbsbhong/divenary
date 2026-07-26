@@ -1,9 +1,18 @@
+import { sha256 } from '@noble/hashes/sha256';
+import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
+
 import type { PersistentKeyValueStore } from './persistent-key-value-store';
 
 export type StoredEnvelope<T> = {
   schemaVersion: number;
   updatedAt: number;
   value: T;
+};
+
+export type PersistentJsonRecoveryKeys = {
+  pending: string;
+  commit: string;
+  quarantinePrefix: string;
 };
 
 export type PersistentJsonStoreOptions<T> = {
@@ -14,6 +23,8 @@ export type PersistentJsonStoreOptions<T> = {
   storage: PersistentKeyValueStore;
   now?: () => number;
   onReadError?: (error: Error) => void;
+  readFailurePolicy?: 'default' | 'throw';
+  recoveryKeys?: PersistentJsonRecoveryKeys;
 };
 
 export class UnsupportedStorageVersionError extends Error {
@@ -23,6 +34,29 @@ export class UnsupportedStorageVersionError extends Error {
   }
 }
 
+export class PersistentJsonReadError extends Error {
+  constructor(
+    readonly key: string,
+    readonly cause: Error,
+  ) {
+    super(`Failed to read durable JSON for ${key}`);
+    this.name = 'PersistentJsonReadError';
+  }
+}
+
+export class PersistentJsonRecoveryError extends Error {
+  constructor(readonly key: string, message: string) {
+    super(message);
+    this.name = 'PersistentJsonRecoveryError';
+  }
+}
+
+type JournalMarker = {
+  schemaVersion: 1;
+  digest: string;
+  byteCount: number;
+};
+
 export class PersistentJsonStore<T> {
   private readonly key: string;
   private readonly schemaVersion: number;
@@ -31,6 +65,8 @@ export class PersistentJsonStore<T> {
   private readonly storage: PersistentKeyValueStore;
   private readonly now: () => number;
   private readonly onReadError?: (error: Error) => void;
+  private readonly readFailurePolicy: 'default' | 'throw';
+  private readonly recoveryKeys?: PersistentJsonRecoveryKeys;
 
   constructor(options: PersistentJsonStoreOptions<T>) {
     this.key = options.key;
@@ -40,9 +76,12 @@ export class PersistentJsonStore<T> {
     this.storage = options.storage;
     this.now = options.now ?? (() => Date.now() / 1000);
     this.onReadError = options.onReadError;
+    this.readFailurePolicy = options.readFailurePolicy ?? 'default';
+    this.recoveryKeys = options.recoveryKeys;
   }
 
   async read(): Promise<T> {
+    await this.recoverCommittedWrite();
     const rawValue = await this.storage.getString(this.key);
 
     if (rawValue === undefined) {
@@ -53,8 +92,7 @@ export class PersistentJsonStore<T> {
       const envelope = JSON.parse(rawValue) as StoredEnvelope<unknown>;
       return this.migrate(envelope);
     } catch (error) {
-      this.onReadError?.(toError(error));
-      return this.defaultValue();
+      return this.handleReadError(rawValue, error);
     }
   }
 
@@ -65,11 +103,99 @@ export class PersistentJsonStore<T> {
       value,
     };
 
-    await this.storage.setString(this.key, JSON.stringify(envelope));
+    const serialized = JSON.stringify(envelope);
+    if (!this.recoveryKeys) {
+      await this.storage.setString(this.key, serialized);
+      return;
+    }
+    await this.storage.setString(this.recoveryKeys.pending, serialized);
+    if ((await this.storage.getString(this.recoveryKeys.pending)) !== serialized) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        'Pending write readback failed',
+      );
+    }
+    await this.storage.setString(
+      this.recoveryKeys.commit,
+      JSON.stringify({
+        schemaVersion: 1,
+        digest: digest(serialized),
+        byteCount: byteCount(serialized),
+      } satisfies JournalMarker),
+    );
+    await this.storage.setString(this.key, serialized);
+    if ((await this.storage.getString(this.key)) !== serialized) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        'Main write readback failed',
+      );
+    }
+    await this.storage.remove(this.recoveryKeys.commit);
+    await this.storage.remove(this.recoveryKeys.pending);
   }
 
   async remove(): Promise<void> {
     await this.storage.remove(this.key);
+  }
+
+  private async recoverCommittedWrite(): Promise<void> {
+    if (!this.recoveryKeys) {
+      return;
+    }
+    const markerRaw = await this.storage.getString(this.recoveryKeys.commit);
+    if (markerRaw === undefined) {
+      return;
+    }
+    let marker: JournalMarker;
+    try {
+      marker = parseJournalMarker(markerRaw);
+    } catch {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Invalid committed JSON journal for ${this.key}`,
+      );
+    }
+    const pending = await this.storage.getString(this.recoveryKeys.pending);
+    if (
+      pending === undefined ||
+      byteCount(pending) !== marker.byteCount ||
+      digest(pending) !== marker.digest
+    ) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Invalid committed JSON journal for ${this.key}`,
+      );
+    }
+    await this.storage.setString(this.key, pending);
+    if ((await this.storage.getString(this.key)) !== pending) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Failed JSON journal readback for ${this.key}`,
+      );
+    }
+    await this.storage.remove(this.recoveryKeys.commit);
+    await this.storage.remove(this.recoveryKeys.pending);
+  }
+
+  private async handleReadError(raw: string, error: unknown): Promise<T> {
+    const cause = toError(error);
+    this.onReadError?.(cause);
+    if (this.readFailurePolicy !== 'throw') {
+      return this.defaultValue();
+    }
+    if (this.recoveryKeys) {
+      const quarantineKey = `${this.recoveryKeys.quarantinePrefix}${digest(raw)}`;
+      if ((await this.storage.getString(quarantineKey)) === undefined) {
+        await this.storage.setString(quarantineKey, raw);
+      }
+      if ((await this.storage.getString(quarantineKey)) !== raw) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          `Failed JSON quarantine readback for ${this.key}`,
+        );
+      }
+    }
+    throw new PersistentJsonReadError(this.key, cause);
   }
 }
 
@@ -83,4 +209,27 @@ export function migrateVersionedValue<T>(key: string, schemaVersion: number, env
 
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
+}
+
+function digest(value: string): string {
+  return bytesToHex(sha256(utf8ToBytes(value)));
+}
+
+function byteCount(value: string): number {
+  return utf8ToBytes(value).length;
+}
+
+function parseJournalMarker(raw: string): JournalMarker {
+  const value = JSON.parse(raw) as unknown;
+  if (
+    typeof value !== 'object' ||
+    value === null ||
+    (value as {schemaVersion?: unknown}).schemaVersion !== 1 ||
+    typeof (value as {digest?: unknown}).digest !== 'string' ||
+    !Number.isSafeInteger((value as {byteCount?: unknown}).byteCount) ||
+    ((value as {byteCount: number}).byteCount < 0)
+  ) {
+    throw new Error('Invalid JSON journal marker');
+  }
+  return value as JournalMarker;
 }

@@ -63,6 +63,12 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       storage: metadataStorage,
       now: this.now,
       onReadError: options.onReadError,
+      readFailurePolicy: 'throw',
+      recoveryKeys: {
+        pending: `${storageKey}:journal:pending:v1`,
+        commit: `${storageKey}:journal:commit:v1`,
+        quarantinePrefix: `${storageKey}:quarantine:v1:`,
+      },
     });
   }
 

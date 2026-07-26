@@ -31,6 +31,7 @@ import type { DivePlanRepository } from '../repositories/dive-plan-repository';
 import {
   composeAccountAndDeferredGuestRows,
   createPrincipalRepositories,
+  verifyPrincipalRepositories,
   type PrincipalRepositories,
   type PrincipalRepositoryDependencies,
 } from '../repositories/principal-repositories';
@@ -324,14 +325,21 @@ export function AccountDataProviderCore({
           dependencies,
         );
         if (desiredPrincipal.kind === 'guest') {
+          await verifyPrincipalRepositories(base);
           guestRepositoriesRef.current = base;
           nextPublication = { ...base, localRepositories: base };
         } else {
-          guestRepositoriesRef.current ??= dependencies.createRepositories(
-            { kind: 'guest' },
-            dependencies,
-          );
-          const guestRepositories = guestRepositoriesRef.current;
+          const guestRepositories =
+            guestRepositoriesRef.current ??
+            dependencies.createRepositories(
+              { kind: 'guest' },
+              dependencies,
+            );
+          await Promise.all([
+            verifyPrincipalRepositories(base),
+            verifyPrincipalRepositories(guestRepositories),
+          ]);
+          guestRepositoriesRef.current = guestRepositories;
           const outbox = new AccountOutbox({
             storage: dependencies.metadataStorage,
             storageKey: dataStorageKeys(desiredPrincipal).outbox,
