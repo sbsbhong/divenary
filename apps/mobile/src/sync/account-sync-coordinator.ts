@@ -1,7 +1,6 @@
 import {sha256} from '@noble/hashes/sha256';
 import {
   bytesToHex,
-  bytesToUtf8,
   utf8ToBytes,
 } from '@noble/hashes/utils';
 import type {
@@ -27,6 +26,7 @@ import type {WatchProfileStorage} from '../storage/watch-profile-storage';
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {DivePlan} from '../types/dive-plan';
 import type {WatchDepthSample} from '../types/dive-session';
+import {decodeUtf8} from '../utils/utf8';
 import {parseWatchSyncMessageValue} from '../utils/watch-sync-message-validation';
 import {
   type AccountOutboxItem,
@@ -920,7 +920,7 @@ export class AccountSyncCoordinator {
     if (bytesToHex(sha256(bytes)) !== descriptor.sha256) {
       throw new Error('Malformed remote log profile digest');
     }
-    const samples = parseProfileSamples(bytesToUtf8(bytes), localSessionId);
+    const samples = parseProfileSamples(decodeUtf8(bytes), localSessionId);
     if (samples.length !== descriptor.sampleCount) {
       throw new Error('Malformed remote log profile sample count');
     }

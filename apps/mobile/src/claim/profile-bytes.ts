@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha256';
 import { bytesToHex } from '@noble/hashes/utils';
 
 import type { WatchDepthSample } from '../types/dive-session';
+import {decodeUtf8 as decodeUtf8Bytes} from '../utils/utf8';
 import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import type { GuestClaimErrorCode } from './guest-claim-types';
@@ -172,5 +173,5 @@ export function verifyRawProfileBytes(
 }
 
 export function decodeUtf8(value: Uint8Array): string {
-  return new TextDecoder('utf-8', { fatal: true }).decode(value);
+  return decodeUtf8Bytes(value);
 }

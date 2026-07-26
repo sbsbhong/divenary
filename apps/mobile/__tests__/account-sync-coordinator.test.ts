@@ -30,6 +30,24 @@ import type {WatchDepthSample, WatchSyncMessage} from '../src/types/dive-session
 const userId = '00000000-0000-4000-8000-000000000001';
 const remoteId = '10000000-0000-4000-8000-000000000001';
 
+async function withTextDecoderUnavailable<T>(
+  run: () => Promise<T>,
+): Promise<T> {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    'TextDecoder',
+  );
+  Reflect.deleteProperty(globalThis, 'TextDecoder');
+
+  try {
+    return await run();
+  } finally {
+    if (descriptor !== undefined) {
+      Object.defineProperty(globalThis, 'TextDecoder', descriptor);
+    }
+  }
+}
+
 const localLog = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'local-log-1',
   remoteId,
@@ -1912,6 +1930,59 @@ describe('AccountSyncCoordinator', () => {
         }),
       }),
     );
+  });
+
+  it('hydrates and persists a remote Watch profile without a global TextDecoder', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+      {localSessionId: 'watch-remote', timestamp: 101, depthMeters: 7},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const digest = bytesToHex(sha256(bytes));
+    const remoteValue = watchRemoteLog({
+      profilePath: `${userId}/logs/${remoteId}/revision-1.json`,
+      digest,
+      byteCount: bytes.length,
+      samples,
+    });
+    const profileStorage = createWatchProfileStorage(
+      new InMemoryKeyValueStore(),
+    );
+    const logbook = new LocalDiveLogRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile: jest.fn(async () => bytes)},
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+    });
+
+    await withTextDecoderUnavailable(async () => {
+      await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    });
+
+    const expectedKey = `dive-mobile:watch-profile:user%3A${userId}:remote:${remoteId}:revision-1`;
+    await expect(profileStorage.read(expectedKey)).resolves.toEqual(samples);
+    await expect(logbook.get(remoteValue.localId)).resolves.toMatchObject({
+      remoteId,
+      cloudSyncStatus: 'synced',
+      watchCapture: {
+        profile: {
+          storageKey: expectedKey,
+          contentRevision: 'revision-1',
+          sampleCount: samples.length,
+          sha256: digest,
+        },
+      },
+    });
   });
 
   it('hydrates a canonical finalized-claim profile path', async () => {
