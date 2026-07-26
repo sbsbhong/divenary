@@ -4,6 +4,8 @@ import {
   migrateDiveLogbookEnvelope,
   PersistentDiveLogRepository,
 } from '../src/repositories/persistent-dive-log-repository';
+import {sha256} from '@noble/hashes/sha256';
+import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import {
@@ -511,6 +513,54 @@ describe('PersistentDiveLogRepository', () => {
       priorMetadata,
     );
     await expect(repository.list()).resolves.toEqual([priorEntry]);
+  });
+
+  it('rolls back to metadata recovered from a committed journal when the guard becomes stale', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const oldEntry = manualEntry({localId: 'old-main'});
+    const recoveredEntry = manualEntry({localId: 'recovered-main'});
+    const oldMain = JSON.stringify({
+      schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+      updatedAt: 100,
+      value: [oldEntry],
+    });
+    const recoveredMain = JSON.stringify({
+      schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
+      updatedAt: 200,
+      value: [recoveredEntry],
+    });
+    const pendingKey = `${mobileStorageKeys.logbook}:journal:pending:v1`;
+    const commitKey = `${mobileStorageKeys.logbook}:journal:commit:v1`;
+    await storage.setString(mobileStorageKeys.logbook, oldMain);
+    await storage.setString(pendingKey, recoveredMain);
+    await storage.setString(commitKey, JSON.stringify({
+      schemaVersion: 1,
+      digest: bytesToHex(sha256(utf8ToBytes(recoveredMain))),
+      byteCount: utf8ToBytes(recoveredMain).length,
+    }));
+    const profileStorage = new RecordingProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      now: () => 500,
+    });
+    let guardCalls = 0;
+
+    await expect(repository.importWatchMessages([watchMessage], {
+      assertCanCommit: () => {
+        guardCalls += 1;
+        if (guardCalls === 4) {
+          throw new Error('stale principal after metadata write');
+        }
+      },
+    })).rejects.toThrow('stale principal after metadata write');
+
+    expect(guardCalls).toBe(4);
+    expect(profileStorage.values).toEqual(new Map());
+    await expect(storage.getString(mobileStorageKeys.logbook)).resolves.toBe(
+      recoveredMain,
+    );
+    await expect(repository.list()).resolves.toEqual([recoveredEntry]);
   });
 
   it('honors explicit metadata and profile key options', async () => {

@@ -190,7 +190,8 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     options?: ImportWatchMessagesOptions,
   ): Promise<DiveLogEntry[]> {
     return this.enqueueMutation(async () => {
-      const metadataSnapshot = await this.metadataStorage.getString(this.storageKey);
+      let metadataSnapshot: string | undefined;
+      let metadataSnapshotCaptured = false;
       const profileSnapshots: ProfileWriteSnapshot[] = [];
       const obsoleteProfileKeys = new Set<string>();
       let metadataWriteAttempted = false;
@@ -198,6 +199,8 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       const now = this.now();
       try {
         let entries = await this.readEntries();
+        metadataSnapshot = await this.metadataStorage.getString(this.storageKey);
+        metadataSnapshotCaptured = true;
 
         for (const [messageIndex, message] of messages.entries()) {
           const fullSamples = message.session.samples;
@@ -253,7 +256,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       } catch (error) {
         const writeCommitted =
           error instanceof PersistentJsonCommittedWriteError;
-        if (metadataWriteAttempted && !writeCommitted) {
+        if (
+          metadataWriteAttempted &&
+          metadataSnapshotCaptured &&
+          !writeCommitted
+        ) {
           await this.restoreMetadataSnapshot(metadataSnapshot);
         }
         if (!writeCommitted) {

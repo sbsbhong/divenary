@@ -409,16 +409,6 @@ async function importWatchConnectivityPayloadOnce({
     return undefined;
   }
 
-  const historicalIdentity = watchArtifactIdentity(result.message, payload);
-  if (
-    historicalIdentity !== undefined &&
-    (await isHistoricalWatchArtifact?.(historicalIdentity)) === true
-  ) {
-    guard.assertActive();
-    await acknowledgePayload(payload, acknowledgeImportedPayloads);
-    return undefined;
-  }
-
   const existingEntries = await repository.list();
   const duplicate = existingEntries.find(entry =>
     entry.watchCapture?.session.localSessionId === result.message.session.localSessionId
@@ -443,6 +433,15 @@ async function importWatchConnectivityPayloadOnce({
     await enqueueExistingPendingAccountValue(repository, pendingDuplicate);
     await enqueueExistingPendingAccountValue(planRepository, pendingPlan);
     requestAccountSyncSafely(onLocalWritesCommitted);
+    return undefined;
+  }
+  const historicalIdentity = watchArtifactIdentity(result.message, payload);
+  if (
+    historicalIdentity !== undefined &&
+    (await isHistoricalWatchArtifact?.(historicalIdentity)) === true
+  ) {
+    guard.assertActive();
+    await acknowledgePayload(payload, acknowledgeImportedPayloads);
     return undefined;
   }
   guard.assertActive();

@@ -2572,6 +2572,7 @@ describe('WatchConnectivitySyncProvider', () => {
       ...seedPayload,
       payloadId: 'duplicate-replay',
     };
+    const isHistoricalWatchArtifact = jest.fn().mockResolvedValue(true);
 
     const result = await importPendingWatchConnectivityPayloads({
       repository,
@@ -2593,9 +2594,11 @@ describe('WatchConnectivitySyncProvider', () => {
       onLocalWritesCommitted: async () => {
         order.push('remote');
       },
+      isHistoricalWatchArtifact,
     });
 
     expect(result).toEqual({receivedCount: 1, importedCount: 0});
+    expect(isHistoricalWatchArtifact).not.toHaveBeenCalled();
     expect(order).toEqual([
       'save-log',
       'save-plan',
