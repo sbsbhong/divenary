@@ -1,4 +1,4 @@
-import { useNavigation, usePreventRemove } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import React from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { useTranslation } from 'react-i18next';
@@ -24,29 +24,29 @@ export default function AccountClaimScreen(): React.JSX.Element {
   const [busyAction, setBusyAction] = React.useState<ClaimAction>();
   const announcedCompletion = React.useRef(false);
   const requestedRefresh = React.useRef(false);
-  const isRunning =
-    claim.state.status === 'running' ||
-    busyAction === 'start' ||
-    busyAction === 'retry' ||
-    busyAction === 'recheck';
   const isPreparing =
     (busyAction === 'start' ||
       busyAction === 'retry' ||
       busyAction === 'recheck') &&
     claim.state.status !== 'running';
 
-  usePreventRemove(isRunning, () => undefined);
-
   React.useEffect(() => {
-    if (
-      claim.state.status !== 'hidden' ||
-      requestedRefresh.current
-    ) {
+    if (requestedRefresh.current) {
       return;
     }
     requestedRefresh.current = true;
     void claim.refresh().catch(() => undefined);
   }, [claim]);
+
+  React.useEffect(() => {
+    if (
+      claim.state.status === 'hidden' &&
+      claim.eligible.logCount + claim.eligible.planCount === 0 &&
+      busyAction === undefined
+    ) {
+      navigation.goBack();
+    }
+  }, [busyAction, claim.eligible, claim.state.status, navigation]);
 
   React.useEffect(() => {
     if (claim.state.status !== 'complete' || announcedCompletion.current) {
@@ -76,6 +76,12 @@ export default function AccountClaimScreen(): React.JSX.Element {
         return;
       }
 
+      if (action === 'keep') {
+        navigation.goBack();
+        void claim.keepOnDevice().catch(() => undefined);
+        return;
+      }
+
       setBusyAction(action);
       try {
         if (action === 'start') {
@@ -84,9 +90,6 @@ export default function AccountClaimScreen(): React.JSX.Element {
           await claim.retry();
         } else if (action === 'recheck') {
           await claim.recheckRetained();
-        } else {
-          await claim.keepOnDevice();
-          navigation.goBack();
         }
       } catch {
         await claim.refresh().catch(() => undefined);
@@ -119,7 +122,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
         ) : null}
 
         {claim.state.status === 'hidden' || isPreparing ? (
-          <PreparingContent />
+          <PreparingContent onClose={() => navigation.goBack()} />
         ) : null}
 
         {claim.state.status === 'running' ? (
@@ -134,6 +137,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
             completed={claim.state.completed}
             total={claim.state.total}
             currentLabel={claim.state.currentLabel}
+            onClose={() => navigation.goBack()}
           />
         ) : null}
 
@@ -369,7 +373,11 @@ function ChoiceContent({
   );
 }
 
-function PreparingContent(): React.JSX.Element {
+function PreparingContent({
+  onClose,
+}: {
+  onClose(): void;
+}): React.JSX.Element {
   const {t} = useTranslation();
 
   return (
@@ -390,6 +398,7 @@ function PreparingContent(): React.JSX.Element {
           {t('accountClaim.preparingDescription')}
         </Text>
       </VStack>
+      <CloseButton onPress={onClose} />
     </VStack>
   );
 }
@@ -399,11 +408,13 @@ function ProgressContent({
   completed,
   total,
   currentLabel,
+  onClose,
 }: {
   title: string;
   completed: number;
   total: number;
   currentLabel?: string;
+  onClose?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
 
@@ -444,7 +455,26 @@ function ProgressContent({
         {String(total)}
       </Text>
       <DepthTraceProgress completed={completed} total={total} />
+      {onClose ? <CloseButton onPress={onClose} /> : null}
     </VStack>
+  );
+}
+
+function CloseButton({onPress}: {onPress(): void}): React.JSX.Element {
+  const {t} = useTranslation();
+
+  return (
+    <Button
+      testID="account-claim-close"
+      accessibilityLabel={t('accountClaim.closeAction')}
+      accessibilityRole="button"
+      className="min-h-11 w-full"
+      onPress={onPress}
+      variant="link">
+      <ButtonText className="text-base font-semibold">
+        {t('accountClaim.closeAction')}
+      </ButtonText>
+    </Button>
   );
 }
 

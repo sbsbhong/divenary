@@ -159,7 +159,7 @@ describe('AccountClaimScreen', () => {
     expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
 
-  test('renders exact active progress and prevents navigation without a close control', async () => {
+  test('renders exact active progress and allows the sheet to close', async () => {
     mockClaim = claimFixture({
       status: 'running',
       completed: 3,
@@ -188,70 +188,32 @@ describe('AccountClaimScreen', () => {
       renderer.root.findByProps({ testID: 'account-claim-current-label' }).props
         .children,
     ).toBe('Jeju Moon Island');
-    expect(
-      renderer.root.findAllByProps({ testID: 'account-claim-close' }),
-    ).toHaveLength(0);
-    expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
-  });
-
-  test('renders a nonempty preparing state and refreshes a hidden eligible claim', async () => {
-    mockClaim = claimFixture(
-      {status: 'hidden'},
-      {logCount: 3, planCount: 2},
-    );
-    const renderer = await renderScreen();
-
-    expect(
-      renderer.root.findByProps({testID: 'account-claim-preparing'}),
-    ).toBeTruthy();
-    expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({testID: 'account-claim-close'}).props
+        .onPress();
+    });
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(mockPreventRemove).not.toHaveBeenCalled();
   });
 
   test.each([
-    [
-      'start',
-      { status: 'choice', logCount: 24, planCount: 8 } as const,
-      'account-claim-import',
-    ],
-    [
-      'retry',
-      {
-        status: 'failed',
-        completed: 3,
-        total: 32,
-        errorCode: 'network_unavailable',
-      } as const,
-      'account-claim-retry',
-    ],
-  ])(
-    'prevents removal while %s waits and releases it when the action rejects',
-    async (action, state, testID) => {
-      const pending = deferred<void>();
-      const claimAction = action as 'start' | 'retry';
-      mockClaim = claimFixture(state);
-      mockClaim[claimAction] = jest.fn(() => pending.promise);
-      const renderer = await renderScreen();
-      let settled: Promise<void> | undefined;
+    {status: 'choice', logCount: 3, planCount: 2} as const,
+    {status: 'deferred', logCount: 3, planCount: 2} as const,
+    {
+      status: 'failed',
+      completed: 0,
+      total: 5,
+      errorCode: 'claim_validation_failed',
+    } as const,
+    {status: 'hidden'} as const,
+  ])('refreshes current inventory from an initial $status state', async state => {
+    mockClaim = claimFixture(state, {logCount: 3, planCount: 2});
+    await renderScreen();
 
-      await ReactTestRenderer.act(async () => {
-        const actionPromise = renderer.root.findByProps({ testID }).props
-          .onPress() as Promise<void>;
-        settled = actionPromise.catch(() => undefined);
-        await Promise.resolve();
-      });
+    expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+  });
 
-      expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
-
-      await ReactTestRenderer.act(async () => {
-        pending.reject(new Error('claim action failed'));
-        await settled;
-      });
-
-      expect(mockPreventRemove).toHaveBeenLastCalledWith(false);
-    },
-  );
-
-  test('keeps removal prevention active when Start settles into running state', async () => {
+  test('allows closing while claim preparation is still pending', async () => {
     const pending = deferred<void>();
     mockClaim = claimFixture({
       status: 'choice',
@@ -268,14 +230,63 @@ describe('AccountClaimScreen', () => {
       await Promise.resolve();
     });
 
-    mockClaim = claimFixture({ status: 'running', completed: 0, total: 32 });
     await ReactTestRenderer.act(async () => {
-      renderer.update(<AccountClaimScreen />);
+      renderer.root.findByProps({testID: 'account-claim-close'}).props
+        .onPress();
+    });
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(mockPreventRemove).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
       pending.resolve();
       await pending.promise;
     });
+  });
 
-    expect(mockPreventRemove).toHaveBeenLastCalledWith(true);
+  test('closes immediately when keep-on-device persistence is pending', async () => {
+    const pending = deferred<void>();
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.keepOnDevice = jest.fn(() => pending.promise);
+    const renderer = await renderScreen();
+    let settled: Promise<void> | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      settled = renderer.root
+        .findByProps({testID: 'account-claim-keep'})
+        .props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+    expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      pending.resolve();
+      await settled;
+    });
+  });
+
+  test('closes after refresh reports no live device data', async () => {
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 1,
+      planCount: 0,
+    }, {logCount: 1, planCount: 0});
+    const renderer = await renderScreen();
+
+    mockClaim = claimFixture(
+      {status: 'hidden'},
+      {logCount: 0, planCount: 0},
+    );
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<AccountClaimScreen />);
+    });
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
   });
 
   test('clamps the depth trace and disables its transition for reduced motion', async () => {
@@ -335,7 +346,7 @@ describe('AccountClaimScreen', () => {
 
     expect(mockClaim.retry).toHaveBeenCalledTimes(1);
     expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
-    expect(mockPreventRemove).toHaveBeenLastCalledWith(false);
+    expect(mockPreventRemove).not.toHaveBeenCalled();
   });
 
   test('shows the failed item and phase without exposing the internal error code', async () => {

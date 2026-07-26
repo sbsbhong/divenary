@@ -41,6 +41,7 @@ describe('mobile i18n', () => {
     expect(i18n.t('accountClaim.planCount')).toBe('다이빙 계획');
     expect(i18n.t('accountClaim.importAction')).toBe('계정으로 가져오기');
     expect(i18n.t('accountClaim.keepAction')).toBe('기기에 유지');
+    expect(i18n.t('accountClaim.closeAction')).toBe('닫기');
     expect(i18n.t('accountClaim.progressTitle')).toBe('계정으로 가져오는 중');
     expect(
       i18n.t('accountClaim.progressCount', { completed: 3, total: 32 }),
@@ -64,6 +65,9 @@ describe('mobile i18n', () => {
     expect(
       i18n.getResource('en', 'translation', 'accountClaim.keepAction'),
     ).toBe('Keep on device');
+    expect(
+      i18n.getResource('en', 'translation', 'accountClaim.closeAction'),
+    ).toBe('Close');
     expect(
       i18n.getResource('en', 'translation', 'accountClaim.deviceBadge'),
     ).toBe('Only on this device');
