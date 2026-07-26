@@ -35,8 +35,8 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       self.pendingPlannedDivesJson = self.userDefaults.string(
         forKey: Self.plannedDivesContextStorageKey
       )
+      self.connectivitySession?.delegate = self
     }
-    connectivitySession?.delegate = self
   }
 
   func activate() {
@@ -129,15 +129,16 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   func sessionDidBecomeInactive(_ session: WCSession) {}
 
   func sessionDidDeactivate(_ session: WCSession) {
-    session.activate()
+    stateQueue.async {
+      session.activate()
+    }
   }
 
   func sessionReachabilityDidChange(_ session: WCSession) {
-    guard session.isReachable else {
-      return
-    }
-
     stateQueue.async { [weak self] in
+      guard session.isReachable else {
+        return
+      }
       self?.flushPendingPlannedDivesContextOnStateQueue()
       self?.flushPendingAcknowledgementsOnStateQueue()
     }
@@ -301,11 +302,13 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     didFinish userInfoTransfer: WCSessionUserInfoTransfer,
     error: Error?
   ) {
-    guard error == nil,
-          let identity = PendingWatchConnectivityAcknowledgement.identity(from: userInfoTransfer.userInfo) else {
-      return
-    }
     stateQueue.async { [weak self] in
+      guard error == nil,
+            let identity = PendingWatchConnectivityAcknowledgement.identity(
+              from: userInfoTransfer.userInfo
+            ) else {
+        return
+      }
       self?.pendingAcknowledgements.removeAll { $0.identity == identity }
       self?.persistPendingAcknowledgements()
     }

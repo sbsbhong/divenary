@@ -8,6 +8,7 @@ import type {
 } from '@repo/supabase';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import {AppState, type AppStateStatus} from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
@@ -21,7 +22,10 @@ import {
 import {GuestClaimService} from '../src/claim/guest-claim-service';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
 import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
-import { importPendingWatchConnectivityPayloads, WatchConnectivitySyncProvider } from '../src/states/watch-connectivity-sync';
+import {
+  importPendingWatchConnectivityPayloads,
+  WatchConnectivitySyncProvider as RuntimeWatchConnectivitySyncProvider,
+} from '../src/states/watch-connectivity-sync';
 import {
   AccountDataProviderCore,
   createAccountLocalFirstRepositories,
@@ -37,6 +41,22 @@ import {parseWatchSyncMessageJson} from '../src/utils/watch-sync-message-validat
 import i18n from '../src/i18n';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+const immediateAfterInteractions = (
+  task: () => void | Promise<void>,
+): {cancel(): void} => {
+  task();
+  return {cancel: jest.fn()};
+};
+const WatchConnectivitySyncProvider = (
+  props: React.ComponentProps<typeof RuntimeWatchConnectivitySyncProvider>,
+) => (
+  <RuntimeWatchConnectivitySyncProvider
+    {...props}
+    scheduleAfterInteractions={
+      props.scheduleAfterInteractions ?? immediateAfterInteractions
+    }
+  />
+);
 const waitFor = async (assertion: () => void) => {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     try {
@@ -50,10 +70,15 @@ const waitFor = async (assertion: () => void) => {
 };
 const controlledAfterInteractionsScheduler = () => {
   const tasks: Array<() => void | Promise<void>> = [];
+  const cancels: jest.Mock[] = [];
   return {
+    tasks,
+    cancels,
     schedule: jest.fn((task: () => void | Promise<void>) => {
       tasks.push(task);
-      return {cancel: jest.fn()};
+      const cancel = jest.fn();
+      cancels.push(cancel);
+      return {cancel};
     }),
     async flush() {
       const task = tasks.shift();
@@ -306,6 +331,198 @@ describe('WatchConnectivitySyncProvider', () => {
       expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2),
     );
     expect(yieldToRuntime).toHaveBeenCalledTimes(1);
+  });
+
+  it('defers a foreground drain until the interaction scheduler flushes', async () => {
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((_event, listener) => {
+        appStateListener = listener;
+        return {remove: jest.fn()};
+      });
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const drainPendingPayloads = jest.fn().mockResolvedValue([]);
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(
+        ReactTestRenderer.create(
+          <QueryClientProvider client={queryClient}>
+            <WatchConnectivitySyncProvider
+              repository={repository}
+              drainPendingPayloads={drainPendingPayloads}
+              scheduleAfterInteractions={afterInteractions.schedule}
+              subscribeToPayloads={() => ({remove: jest.fn()})}
+            />
+          </QueryClientProvider>,
+        ),
+      );
+      await flushPromises();
+    });
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+    });
+    expect(drainPendingPayloads).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      appStateListener?.('active');
+      await flushPromises();
+    });
+    expect(drainPendingPayloads).toHaveBeenCalledTimes(1);
+    expect(afterInteractions.tasks).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+    });
+    expect(drainPendingPayloads).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels every pending drain and makes stale callbacks inert on unmount', async () => {
+    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    jest
+      .spyOn(AppState, 'addEventListener')
+      .mockImplementation((_event, listener) => {
+        appStateListener = listener;
+        return {remove: jest.fn()};
+      });
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const drainPendingPayloads = jest.fn().mockResolvedValue([]);
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={drainPendingPayloads}
+            scheduleAfterInteractions={afterInteractions.schedule}
+            subscribeToPayloads={() => ({remove: jest.fn()})}
+          />
+          </QueryClientProvider>,
+      );
+      await flushPromises();
+    });
+    await ReactTestRenderer.act(async () => {
+      appStateListener?.('active');
+      appStateListener?.('active');
+      await flushPromises();
+    });
+    expect(afterInteractions.tasks).toHaveLength(3);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    expect(afterInteractions.cancels).toHaveLength(3);
+    afterInteractions.cancels.forEach(cancel =>
+      expect(cancel).toHaveBeenCalledTimes(1),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await Promise.all(afterInteractions.tasks.map(task => task()));
+    });
+    expect(drainPendingPayloads).not.toHaveBeenCalled();
+  });
+
+  it('starts an explicit manual import while the automatic drain remains scheduled', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const automaticDrain = jest.fn().mockResolvedValue([]);
+    const manualDrain = jest.fn().mockResolvedValue([]);
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(
+        ReactTestRenderer.create(
+          <QueryClientProvider client={queryClient}>
+            <WatchConnectivitySyncProvider
+              repository={repository}
+              coordinator={new WatchConnectivityImportCoordinator()}
+              drainPendingPayloads={automaticDrain}
+              scheduleAfterInteractions={afterInteractions.schedule}
+              subscribeToPayloads={() => ({remove: jest.fn()})}
+            />
+          </QueryClientProvider>,
+        ),
+      );
+      await flushPromises();
+    });
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        coordinator: new WatchConnectivityImportCoordinator(),
+        drainPendingPayloads: manualDrain,
+      }),
+    ).resolves.toEqual({receivedCount: 0, importedCount: 0});
+    expect(manualDrain).toHaveBeenCalledTimes(1);
+    expect(automaticDrain).not.toHaveBeenCalled();
+    expect(afterInteractions.tasks).toHaveLength(1);
+  });
+
+  it('yields once between a historical payload and an invalid payload with no trailing yield', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const historical = makePendingPayload(
+      'historical-payload',
+      'historical-session',
+      'a',
+    );
+    const invalid = {
+      ...makePendingPayload('invalid-payload', 'invalid-session', 'b'),
+      payloadJson: '{"invalid":true}',
+    };
+    const drainPendingPayloads = jest
+      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .mockResolvedValueOnce([historical, invalid])
+      .mockResolvedValue([]);
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads,
+        acknowledgePayloads,
+        acknowledgeImportedPayloads,
+        isHistoricalWatchArtifact: jest.fn().mockResolvedValue(true),
+        yieldToRuntime,
+      }),
+    ).resolves.toEqual({receivedCount: 2, importedCount: 0});
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      historical.payloadId,
+    ]);
+    expect(acknowledgePayloads).toHaveBeenCalledWith([invalid.payloadId]);
+    expect(yieldToRuntime).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not yield after a failed first payload', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const payload = makePendingPayload('failed-payload', 'failed-session', 'c');
+    const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: jest
+          .fn()
+          .mockResolvedValueOnce([payload])
+          .mockResolvedValue([]),
+        isHistoricalWatchArtifact: jest
+          .fn()
+          .mockRejectedValue(new Error('history unavailable')),
+        yieldToRuntime,
+      }),
+    ).rejects.toThrow('history unavailable');
+    expect(yieldToRuntime).not.toHaveBeenCalled();
   });
 
   it('uses the active principal repositories and scope, then acknowledges before account enqueue and drain', async () => {

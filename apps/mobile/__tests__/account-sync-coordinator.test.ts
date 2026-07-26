@@ -1401,6 +1401,51 @@ describe('AccountSyncCoordinator', () => {
     expect(yieldToRuntime).toHaveBeenCalledTimes(1);
   });
 
+  it('yields after a malformed row, preserves its validation failure, and hydrates the next row', async () => {
+    const malformedPlan = remotePlan({
+      localId: 'malformed-plan',
+      payloadSha256: 'not-the-plan-digest',
+    });
+    const validLog = remoteLog({
+      id: '10000000-0000-4000-8000-000000000002',
+      localId: 'valid-log-after-malformed-plan',
+    });
+    const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+    const logbook = new LocalDiveLogRepository();
+    const planbook = new LocalDivePlanRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listPlans: jest.fn(async () => ({items: [malformedPlan]})),
+        listLogs: jest.fn(async () => ({items: [validLog]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: planbook,
+      yieldToRuntime,
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({changed: 1, failureCount: 1});
+    expect((hydrationError as Error).message).toContain(
+      'Malformed remote plan',
+    );
+    expect(yieldToRuntime).toHaveBeenCalledTimes(1);
+    await expect(planbook.get(malformedPlan.localId)).resolves.toBeUndefined();
+    await expect(logbook.get(validLog.localId)).resolves.toMatchObject({
+      localId: validLog.localId,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
   it('hydrates the observed Watch max-depth roundtrip instead of reporting a partial failure', async () => {
     const {mapperValue} = observedWatchFloatRoundtrip();
     const logbook = new LocalDiveLogRepository();

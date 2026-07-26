@@ -13,13 +13,14 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import {
-  AccountDataProviderCore,
+  AccountDataProviderCore as RuntimeAccountDataProviderCore,
   clearPrincipalQueries,
   createAccountLocalFirstRepositories,
   invalidatePrincipalQueries,
   reconcilePendingAccountOperations,
   useAccountData,
 } from '../src/states/account-data';
+import i18n from '../src/i18n';
 import { AccountOutbox } from '../src/sync/account-outbox';
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
@@ -38,6 +39,25 @@ import {
 import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 
 const userId = '00000000-0000-4000-8000-000000000001';
+const immediateAfterInteractions = (
+  task: () => void | Promise<void>,
+): {cancel(): void} => {
+  task();
+  return {cancel: jest.fn()};
+};
+const AccountDataProviderCore = (
+  props: React.ComponentProps<typeof RuntimeAccountDataProviderCore>,
+) => (
+  <RuntimeAccountDataProviderCore
+    {...props}
+    dependencies={{
+      ...props.dependencies,
+      scheduleAfterInteractions:
+        props.dependencies?.scheduleAfterInteractions ??
+        immediateAfterInteractions,
+    }}
+  />
+);
 
 const entry: DiveLogEntry = {
   localId: 'local-log-1',
@@ -72,6 +92,12 @@ const plan: DivePlan = {
 };
 
 describe('account data state', () => {
+  beforeEach(async () => {
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('ko');
+    });
+  });
+
   it('publishes local account rows before scheduling the initial cloud hydration', async () => {
     const localLogbook = new LocalDiveLogRepository([entry]);
     const remote = accountRepository();
@@ -368,8 +394,11 @@ describe('account data state', () => {
       testID: 'account-data-recovery-screen',
     });
     expect(recovery).toBeTruthy();
-    expect(JSON.stringify(renderer!.toJSON())).not.toContain('로그아웃');
-    expect(JSON.stringify(renderer!.toJSON())).not.toContain('삭제');
+    expect(new Set(
+      renderer!.root
+        .findAll(node => node.props.role === 'button')
+        .map(node => node.props.testID),
+    )).toEqual(new Set(['recovery-retry']));
 
     await ReactTestRenderer.act(async () => {
       recovery.findByProps({testID: 'recovery-retry'}).props.onPress();
@@ -442,6 +471,8 @@ describe('account data state', () => {
       .spyOn(AccountSyncCoordinator.prototype, 'hydrate')
       .mockRejectedValueOnce(new Error('remote unavailable'));
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const afterInteractions = controlledAfterInteractionsScheduler();
     const captures: ReturnType<typeof useAccountData>[] = [];
     const Capture = () => {
       captures.push(useAccountData());
@@ -475,6 +506,7 @@ describe('account data state', () => {
               logbook: new LocalDiveLogRepository(),
               planbook: new LocalDivePlanRepository(),
             }),
+            scheduleAfterInteractions: afterInteractions.schedule,
             createId: () => '10000000-0000-4000-8000-000000000001',
             now: () => 100,
             jitter: () => 0,
@@ -486,6 +518,13 @@ describe('account data state', () => {
     });
 
     await waitFor(() =>
+      expect(captures.at(-1)?.bootstrap).toEqual({status: 'ready'}),
+    );
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+      await flushPromises();
+    });
+    await waitFor(() =>
       expect(captures.at(-1)?.bootstrap).toEqual({
         status: 'degraded',
         issue: {stage: 'remoteHydration', retryable: true},
@@ -494,10 +533,12 @@ describe('account data state', () => {
     expect(
       renderer!.root.findByProps({testID: 'account-data-child'}),
     ).toBeTruthy();
+    expect(error).not.toHaveBeenCalled();
 
     await ReactTestRenderer.act(async () => renderer!.unmount());
     queryClient.clear();
     warn.mockRestore();
+    error.mockRestore();
     jest.restoreAllMocks();
   });
 
@@ -520,6 +561,8 @@ describe('account data state', () => {
     const queryClient = new QueryClient();
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const afterInteractions = controlledAfterInteractionsScheduler();
     let capture: ReturnType<typeof useAccountData> | undefined;
     const Capture = () => {
       capture = useAccountData();
@@ -555,6 +598,7 @@ describe('account data state', () => {
                   : localLogbook,
               planbook: new LocalDivePlanRepository(),
             }),
+            scheduleAfterInteractions: afterInteractions.schedule,
             createId: () => '10000000-0000-4000-8000-000000000001',
             now: () => 100,
             jitter: () => 0,
@@ -562,6 +606,11 @@ describe('account data state', () => {
           <Capture />
         </AccountDataProviderCore>,
       );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
       await flushPromises();
     });
     await waitFor(() =>
@@ -578,6 +627,7 @@ describe('account data state', () => {
     });
     await waitFor(() => expect(remote.listLogs).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    expect(error).not.toHaveBeenCalled();
 
     await expect(localLogbook.get(cloudLog.localId)).resolves.toMatchObject({
       localId: cloudLog.localId,
@@ -591,6 +641,7 @@ describe('account data state', () => {
     await ReactTestRenderer.act(async () => renderer!.unmount());
     queryClient.clear();
     warn.mockRestore();
+    error.mockRestore();
     jest.restoreAllMocks();
   });
 
@@ -863,6 +914,8 @@ describe('account data state', () => {
     const queryClient = new QueryClient();
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const afterInteractions = controlledAfterInteractionsScheduler();
     let capture: ReturnType<typeof useAccountData> | undefined;
     const Capture = () => {
       capture = useAccountData();
@@ -898,6 +951,7 @@ describe('account data state', () => {
                   : localLogbook,
               planbook: new LocalDivePlanRepository(),
             }),
+            scheduleAfterInteractions: afterInteractions.schedule,
             createId: () => '10000000-0000-4000-8000-000000000001',
             now: () => 100,
             jitter: () => 0,
@@ -905,6 +959,13 @@ describe('account data state', () => {
           <Capture />
         </AccountDataProviderCore>,
       );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.bootstrap).toEqual({status: 'ready'}),
+    );
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
       await flushPromises();
     });
     await waitFor(() =>
@@ -918,10 +979,12 @@ describe('account data state', () => {
     expect(invalidate).toHaveBeenCalledWith({
       predicate: expect.any(Function),
     });
+    expect(error).not.toHaveBeenCalled();
 
     await ReactTestRenderer.act(async () => renderer!.unmount());
     queryClient.clear();
     warn.mockRestore();
+    error.mockRestore();
   });
 
   it('publishes a missing remote log and clears remoteHydration degradation after a successful cloud refresh', async () => {
@@ -949,6 +1012,8 @@ describe('account data state', () => {
     const localLogbook = new LocalDiveLogRepository();
     const queryClient = new QueryClient();
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const error = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const afterInteractions = controlledAfterInteractionsScheduler();
     let capture: ReturnType<typeof useAccountData> | undefined;
     const Capture = () => {
       capture = useAccountData();
@@ -984,6 +1049,7 @@ describe('account data state', () => {
                   : localLogbook,
               planbook: new LocalDivePlanRepository(),
             }),
+            scheduleAfterInteractions: afterInteractions.schedule,
             createId: () => '10000000-0000-4000-8000-000000000001',
             now: () => 100,
             jitter: () => 0,
@@ -991,6 +1057,11 @@ describe('account data state', () => {
           <Capture />
         </AccountDataProviderCore>,
       );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
       await flushPromises();
     });
     await waitFor(() =>
@@ -1008,10 +1079,12 @@ describe('account data state', () => {
 
     await expect(localLogbook.get(recoveredCloudLog.localId)).resolves.toBeDefined();
     expect(capture?.bootstrap).toEqual({status: 'ready'});
+    expect(error).not.toHaveBeenCalled();
 
     await ReactTestRenderer.act(async () => renderer!.unmount());
     queryClient.clear();
     warn.mockRestore();
+    error.mockRestore();
   });
 
   it('publishes partial explicit hydration changes before keeping remoteHydration degraded', async () => {

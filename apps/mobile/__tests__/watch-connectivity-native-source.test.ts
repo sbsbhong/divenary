@@ -46,6 +46,100 @@ describe('WatchConnectivity native source contract', () => {
     expect(bridge).toContain('acknowledgeImportedPayloads');
   });
 
+  it('owns inbox and WCSession state on one deadlock-safe serial queue', () => {
+    const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
+    const module = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModule.swift');
+    const initializationBlock = inbox.slice(
+      inbox.indexOf('private override init()'),
+      inbox.indexOf('func activate()'),
+    );
+    const acknowledgeBlock = inbox.slice(
+      inbox.indexOf('func acknowledge('),
+      inbox.indexOf('func acknowledgeImported('),
+    );
+    const acknowledgePersistenceBlock = inbox.slice(
+      inbox.indexOf('private func acknowledgeOnStateQueue('),
+      inbox.indexOf('private func acknowledgeImportedOnStateQueue('),
+    );
+    const enqueueBlock = inbox.slice(
+      inbox.indexOf('private func enqueuePendingPayloadOnStateQueue('),
+      inbox.indexOf('private func makePendingPayload('),
+    );
+    const deactivateBlock = inbox.slice(
+      inbox.indexOf('func sessionDidDeactivate('),
+      inbox.indexOf('func sessionReachabilityDidChange('),
+    );
+    const reachabilityBlock = inbox.slice(
+      inbox.indexOf('func sessionReachabilityDidChange('),
+      inbox.indexOf('func sessionWatchStateDidChange('),
+    );
+
+    expect(inbox).toContain('DispatchSpecificKey<Void>()');
+    expect(inbox).toContain('DispatchQueue.getSpecific(key: stateQueueKey)');
+    expect(inbox).toContain('stateQueue.sync(execute: operation)');
+    expect(inbox).toContain('performOnStateQueueSync { [weak self] in');
+    expect(initializationBlock).toMatch(
+      /stateQueue\.async \{ \[weak self\] in[\s\S]*self\.connectivitySession\?\.delegate = self/,
+    );
+    expect(
+      initializationBlock.indexOf('self.pendingPlannedDivesJson ='),
+    ).toBeLessThan(
+      initializationBlock.indexOf('self.connectivitySession?.delegate = self'),
+    );
+    expect(inbox).toMatch(
+      /guard let self else \{\s+completion\(\[\]\)\s+return\s+\}/,
+    );
+    expect(inbox).toContain(
+      'let status = self?.updatePlannedDivesOnStateQueue(',
+    );
+    expect(inbox).toContain('completion(self?.linkedWatchInfoOnStateQueue() ?? [:])');
+    expect(
+      acknowledgeBlock.indexOf(
+        'self?.acknowledgeOnStateQueue(payloadIds: payloadIds)',
+      ),
+    ).toBeLessThan(
+      acknowledgeBlock.indexOf('completion()'),
+    );
+    expect(acknowledgePersistenceBlock).toContain('persistPendingPayloads()');
+    expect(deactivateBlock).toMatch(
+      /stateQueue\.async \{[^}]*session\.activate\(\)/s,
+    );
+    expect(reachabilityBlock).toMatch(
+      /stateQueue\.async \{[^}]*guard session\.isReachable else/s,
+    );
+    expect(inbox).toMatch(
+      /didFinish userInfoTransfer:[\s\S]*stateQueue\.async \{ \[weak self\] in[\s\S]*userInfoTransfer\.userInfo/,
+    );
+    expect(enqueueBlock.indexOf('let dictionary =')).toBeLessThan(
+      enqueueBlock.indexOf('DispatchQueue.main.async'),
+    );
+    expect(enqueueBlock).toMatch(
+      /DispatchQueue\.main\.async[\s\S]*NotificationCenter\.default\.post\([\s\S]*userInfo: dictionary/,
+    );
+    expect(enqueueBlock).not.toMatch(
+      /DispatchQueue\.main\.async[\s\S]*payload\.dictionary/,
+    );
+    expect(module).toMatch(
+      /acknowledge\(payloadIds: payloadIds\) \{\s+resolve\(nil\)/,
+    );
+  });
+
+  it('uses fixed privacy-safe slow-stage measurements with a 100ms threshold', () => {
+    const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
+    const watchSync = readRepoFile('apps/mobile/src/states/watch-connectivity-sync.tsx');
+    const accountSync = readRepoFile('apps/mobile/src/sync/account-sync-coordinator.ts');
+    const measurements = `${inbox}\n${watchSync}\n${accountSync}`;
+
+    expect(inbox).toContain('if durationMs >= 100');
+    expect(watchSync).toContain('if (__DEV__ && durationMs >= 100)');
+    expect(accountSync).toContain('if (__DEV__ && durationMs >= 100)');
+    expect(watchSync).toContain("label: 'watch-import'");
+    expect(accountSync).toContain("label: 'account-hydrate-row'");
+    expect(measurements).not.toMatch(
+      /\[performance\].*(payloadId|localSessionId|userId|siteName|notes|coordinates|profileBytes)/,
+    );
+  });
+
   it('updates saved watch session sync status when WatchConnectivity finishes a transfer', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
     const envelope = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift');
@@ -75,9 +169,11 @@ describe('WatchConnectivity native source contract', () => {
     expect(transport).not.toContain('transferUserInfo(userInfo)');
     expect(transport).toContain('didFinish fileTransfer: WCSessionFileTransfer');
     expect(inbox).toContain('didReceive file: WCSessionFile');
-    expect(inbox).toContain('persistPendingFile(sourceURL: file.fileURL');
+    expect(inbox).toMatch(
+      /persistPendingFile\(\s+sourceURL: file\.fileURL,\s+metadata: metadata\s+\)/,
+    );
     expect(inbox).toContain('WatchConnectivityInbox", isDirectory: true');
-    expect(inbox).toContain('enqueuePendingPayload(');
+    expect(inbox).toContain('enqueuePendingPayloadOnStateQueue(payload)');
   });
 
   it('re-enqueues unsynced watch sessions after loading persisted sessions', () => {
@@ -136,7 +232,9 @@ describe('WatchConnectivity native source contract', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
 
     expect(inbox).toContain('plannedDivesContextStorageKey');
-    expect(inbox).toContain('userDefaults.string(forKey: Self.plannedDivesContextStorageKey)');
+    expect(inbox).toMatch(
+      /self\.userDefaults\.string\(\s+forKey: Self\.plannedDivesContextStorageKey\s+\)/,
+    );
     expect(inbox).toContain('userDefaults.set(plannedDivesJson, forKey: Self.plannedDivesContextStorageKey)');
     expect(inbox).toContain('NSSelectorFromString("updateApplicationContext:error:")');
     expect(inbox).toContain('AutoreleasingUnsafeMutablePointer<NSError?>');
