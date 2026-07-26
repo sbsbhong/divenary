@@ -11,6 +11,7 @@ import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-rep
 import {PersistentDiveLogRepository} from '../src/repositories/persistent-dive-log-repository';
 import { AccountOutbox, type AccountOutboxItem } from '../src/sync/account-outbox';
 import {
+  createAccountRemoteLog,
   parseAccountRemoteLog,
   parseAccountRemotePlan,
 } from '../src/sync/account-payload';
@@ -299,6 +300,138 @@ describe('AccountSyncCoordinator', () => {
 
     expect(parsed.payload.planned_at).toBe('2024-02-29T10:00:00.000Z');
     expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('accepts the observed Watch max-depth binary64 roundtrip with the original digest', () => {
+    const {canonical, mapperValue} = observedWatchFloatRoundtrip();
+
+    expect(canonical.payloadSha256).toBe(
+      canonicalSha256(canonical.payload),
+    );
+    expect(canonical.payloadSha256).not.toBe(
+      canonicalSha256(mapperValue.payload),
+    );
+
+    const parsed = parseAccountRemoteLog(mapperValue);
+
+    expect(parsed.payload.max_depth_meters).toBe(
+      OBSERVED_WATCH_MAX_DEPTH_METERS,
+    );
+    expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('recovers an adjacent manual duration while keeping its integer rating exact', () => {
+    const base = localLog();
+    const canonical = createAccountRemoteLog(
+      localLog({
+        manual: {
+          ...base.manual,
+          rating: 4,
+          measuredValues: {
+            ...base.manual.measuredValues,
+            durationSeconds: 120.00000000000001,
+          },
+        },
+      }),
+      userId,
+    );
+    const mapperValue = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        duration_seconds: 120,
+        rating: 4,
+      },
+    };
+
+    const parsed = parseAccountRemoteLog(mapperValue);
+
+    expect(parsed.payload.duration_seconds).toBe(120.00000000000001);
+    expect(parsed.payload.rating).toBe(4);
+    expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('rejects adjacent drift in rating because the persisted field is an integer', () => {
+    const base = localLog();
+    const canonical = createAccountRemoteLog(
+      localLog({
+        manual: {
+          ...base.manual,
+          rating: 4,
+        },
+      }),
+      userId,
+    );
+    const mapperValue = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        rating: 4.000000000000001,
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(mapperValue)).toThrow(/digest/i);
+  });
+
+  it('combines Watch float recovery with the existing finalized relation fallback', () => {
+    const {canonical, mapperValue} = observedWatchFloatRoundtrip();
+    const finalized = {
+      ...mapperValue,
+      payload: {
+        ...mapperValue.payload,
+        source_plan_id: '20000000-0000-4000-8000-000000000001',
+      },
+    };
+
+    const parsed = parseAccountRemoteLog(finalized);
+
+    expect(parsed.payload.max_depth_meters).toBe(
+      OBSERVED_WATCH_MAX_DEPTH_METERS,
+    );
+    expect(parsed.payload.source_plan_id).toBe(
+      '20000000-0000-4000-8000-000000000001',
+    );
+    expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('rejects Watch float recovery when the typed value is more than one ULP away', () => {
+    const {mapperValue} = observedWatchFloatRoundtrip();
+    const divergent = {
+      ...mapperValue,
+      payload: {
+        ...mapperValue.payload,
+        max_depth_meters: 11.5,
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(divergent)).toThrow(/digest/i);
+  });
+
+  it('rejects Watch float recovery when the hashed source max depth was mutated', () => {
+    const {mapperValue} = observedWatchFloatRoundtrip();
+    const watchMetadata = mapperValue.payload.watch_metadata as Record<
+      string,
+      unknown
+    >;
+    const measuredValues = watchMetadata.measuredValues as Record<
+      string,
+      unknown
+    >;
+    const divergent = {
+      ...mapperValue,
+      payload: {
+        ...mapperValue.payload,
+        watch_metadata: {
+          ...watchMetadata,
+          measuredValues: {
+            ...measuredValues,
+            maxDepthMeters: 11.5,
+          },
+        },
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(divergent)).toThrow(/digest/i);
   });
 
   it('rejects log timestamp precision that Date would silently truncate', () => {
@@ -1226,6 +1359,37 @@ describe('AccountSyncCoordinator', () => {
       cloudSyncStatus: 'synced',
       createdAt: 17,
       updatedAt: 29,
+    });
+  });
+
+  it('hydrates the observed Watch max-depth roundtrip instead of reporting a partial failure', async () => {
+    const {mapperValue} = observedWatchFloatRoundtrip();
+    const logbook = new LocalDiveLogRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [mapperValue]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(logbook.get(mapperValue.localId)).resolves.toMatchObject({
+      localId: mapperValue.localId,
+      remoteId: mapperValue.id,
+      ownerUserId: userId,
+      source: 'watch',
+      cloudSyncStatus: 'synced',
+      watchCapture: {
+        measuredValues: {
+          maxDepthMeters: OBSERVED_WATCH_MAX_DEPTH_METERS,
+        },
+      },
     });
   });
 
@@ -2275,6 +2439,44 @@ describe('AccountSyncCoordinator', () => {
     expect(save).not.toHaveBeenCalled();
   });
 });
+
+const OBSERVED_WATCH_MAX_DEPTH_METERS = 11.600000000000001;
+
+function observedWatchFloatRoundtrip(): {
+  canonical: RemoteDiveLog;
+  mapperValue: RemoteDiveLog;
+} {
+  const entry = localLog({
+    localId:
+      'watch:34AA0C02-3DC9-4D6A-AB6D-E91F1A3EEFF3:1784557969.601667',
+    source: 'watch',
+    watchCapture: {
+      importKey:
+        '34AA0C02-3DC9-4D6A-AB6D-E91F1A3EEFF3:1784557969.601667',
+      importedAt: 1784557970,
+      session: {
+        localSessionId: '34AA0C02-3DC9-4D6A-AB6D-E91F1A3EEFF3',
+        startedAt: 1784557969.601667,
+        maxDepthMeters: OBSERVED_WATCH_MAX_DEPTH_METERS,
+        samples: [],
+      },
+      measuredValues: {
+        startedAt: 1784557969.601667,
+        maxDepthMeters: OBSERVED_WATCH_MAX_DEPTH_METERS,
+      },
+      samples: [],
+    },
+  });
+  const canonical = createAccountRemoteLog(entry, userId);
+  const mapperValue = {
+    ...canonical,
+    payload: {
+      ...canonical.payload,
+      max_depth_meters: 11.6,
+    },
+  };
+  return {canonical, mapperValue};
+}
 
 function watchRemoteLog(input: {
   profilePath: string;

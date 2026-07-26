@@ -947,3 +947,14 @@
 - Corrected: relation UUID와 `/claims/` profile path를 가진 finalized claim row를 generic account hydration이 검증 후 수용한다.
 - Corrected: foreground pull은 엄격히 재검증한 unchanged Watch profile cache만 재사용하고 누락·손상 cache는 remote download로 복구한다.
 - Recorded: foreground와 explicit refresh는 coalesced remote pull을 수행하고, equivalent historical conflict만 자동 복구하며 divergent conflict는 보존한다.
+
+## [2026-07-26] ingest | Account float roundtrip recovery
+- Added: Account float roundtrip recovery evidence raw source
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: Supabase가 반환한 5개 중 Watch row 하나가 binary64 one-ULP 표현 차이로 digest validation에서 격리되어 4개만 보이던 원인을 기록했다.
+- Recorded: typed floating summary는 embedded source와 exact neighbor이고 restored payload가 stored SHA-256과 정확히 일치할 때만 복구한다.
+- Corrected: one-ULP 호환 범위는 `double precision`인 duration/depth로 제한하고 `integer` rating은 exact comparison을 유지한다.
+- Clarified: Home generic recovery는 stale device-import 표시가 아니라 같은 `remoteHydration` 실패였으며 성공한 pull이 matching issue를 해제한다.
+
+## [2026-07-26] lint | 0 issues found, 0 auto-fixed

@@ -1,6 +1,10 @@
 import {sha256} from '@noble/hashes/sha256';
 import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
-import type {RemoteDiveLog, RemoteDivePlan} from '@repo/supabase';
+import {
+  sameAccountFloat,
+  type RemoteDiveLog,
+  type RemoteDivePlan,
+} from '@repo/supabase';
 
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {DivePlan} from '../types/dive-plan';
@@ -179,13 +183,8 @@ export function parseAccountRemoteLog(value: unknown): RemoteDiveLog {
     'log ended_at',
   );
   assertLogPayload(payload);
-  if (
-    !matchesPayloadDigest(
-      payload,
-      value.payloadSha256,
-      'source_plan_id',
-    )
-  ) {
+  const verifiedPayload = verifiedLogPayload(payload, value.payloadSha256);
+  if (verifiedPayload === undefined) {
     throw new Error('Malformed remote log payload digest');
   }
   return {
@@ -193,7 +192,7 @@ export function parseAccountRemoteLog(value: unknown): RemoteDiveLog {
     localId: value.localId,
     revision: value.revision,
     payloadSha256: value.payloadSha256,
-    payload,
+    payload: verifiedPayload,
     ...(value.profilePath === undefined
       ? {}
       : {profilePath: value.profilePath}),
@@ -245,6 +244,77 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
 
 export function canonicalAccountPayloadSha256(value: unknown): string {
   return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
+}
+
+function verifiedLogPayload(
+  payload: Record<string, unknown>,
+  digest: string,
+): Record<string, unknown> | undefined {
+  if (matchesPayloadDigest(payload, digest, 'source_plan_id')) {
+    return payload;
+  }
+  const sourceDerivedPayload = sourceDerivedLogFloatPayload(payload);
+  if (
+    sourceDerivedPayload !== undefined &&
+    matchesPayloadDigest(
+      sourceDerivedPayload,
+      digest,
+      'source_plan_id',
+    )
+  ) {
+    return sourceDerivedPayload;
+  }
+  return undefined;
+}
+
+function sourceDerivedLogFloatPayload(
+  payload: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const manualData = isRecord(payload.manual_data)
+    ? payload.manual_data
+    : undefined;
+  const manualMeasuredValues = isRecord(manualData?.measuredValues)
+    ? manualData.measuredValues
+    : undefined;
+  const watchMetadata = isRecord(payload.watch_metadata)
+    ? payload.watch_metadata
+    : undefined;
+  const watchMeasuredValues = isRecord(watchMetadata?.measuredValues)
+    ? watchMetadata.measuredValues
+    : undefined;
+  const watchDurationSeconds = watchMeasuredValues?.durationSeconds;
+  const watchMaxDepthMeters = watchMeasuredValues?.maxDepthMeters;
+  const candidate = {...payload};
+  let changed = false;
+
+  const replaceWithSourceFloat = (
+    payloadKey: 'duration_seconds' | 'max_depth_meters',
+    sourceValue: unknown,
+  ): void => {
+    const typedValue = payload[payloadKey];
+    if (
+      isFiniteNumber(typedValue) &&
+      isFiniteNumber(sourceValue) &&
+      typedValue !== sourceValue &&
+      sameAccountFloat(typedValue, sourceValue)
+    ) {
+      candidate[payloadKey] = sourceValue;
+      changed = true;
+    }
+  };
+
+  replaceWithSourceFloat(
+    'duration_seconds',
+    watchDurationSeconds ??
+      manualMeasuredValues?.durationSeconds,
+  );
+  replaceWithSourceFloat(
+    'max_depth_meters',
+    watchMaxDepthMeters ??
+      manualMeasuredValues?.maxDepthMeters,
+  );
+
+  return changed ? candidate : undefined;
 }
 
 function matchesPayloadDigest(

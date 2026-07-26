@@ -681,6 +681,96 @@ describe('account data state', () => {
     warn.mockRestore();
   });
 
+  it('publishes a missing remote log and clears remoteHydration degradation after a successful cloud refresh', async () => {
+    const initiallyHydratedLog = remoteLog({
+      localId: 'initially-hydrated-log',
+    });
+    const malformedCloudLog = remoteLog({
+      localId: 'malformed-bootstrap-log',
+      payloadSha256: 'not-the-payload-digest',
+    });
+    const recoveredCloudLog = remoteLog({
+      id: '10000000-0000-4000-8000-000000000002',
+      localId: 'recovered-cloud-log',
+    });
+    const remote = accountRepository({
+      listLogs: jest
+        .fn()
+        .mockResolvedValueOnce({
+          items: [initiallyHydratedLog, malformedCloudLog],
+        })
+        .mockResolvedValueOnce({
+          items: [initiallyHydratedLog, recoveredCloudLog],
+        }),
+    });
+    const localLogbook = new LocalDiveLogRepository();
+    const queryClient = new QueryClient();
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{
+            state: {status: 'authenticated', userId},
+            accountDataRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? new LocalDiveLogRepository()
+                  : localLogbook,
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.bootstrap).toEqual({
+        status: 'degraded',
+        issue: {stage: 'remoteHydration', retryable: true},
+      }),
+    );
+    await expect(localLogbook.get(initiallyHydratedLog.localId)).resolves.toBeDefined();
+    await expect(localLogbook.get(recoveredCloudLog.localId)).resolves.toBeUndefined();
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.refreshCloudData();
+    });
+
+    await expect(localLogbook.get(recoveredCloudLog.localId)).resolves.toBeDefined();
+    expect(capture?.bootstrap).toEqual({status: 'ready'});
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    warn.mockRestore();
+  });
+
   it('publishes partial explicit hydration changes before keeping remoteHydration degraded', async () => {
     const validCloudLog = remoteLog({localId: 'partial-refresh-log'});
     const malformedCloudLog = remoteLog({

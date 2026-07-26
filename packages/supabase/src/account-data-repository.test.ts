@@ -382,6 +382,104 @@ describe('AccountDataRepository', () => {
     }
   });
 
+  test('accepts one-binary64-neighbor readback for typed numeric log summaries', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          duration_seconds: 120,
+          max_depth_meters: 11.6,
+          rating: 4,
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    const result = await repository.saveLog(
+      remoteLog({
+        payload: {
+          source: 'manual',
+          started_at: STARTED_AT,
+          duration_seconds: 120.00000000000001,
+          max_depth_meters: 11.600000000000001,
+          rating: 4,
+          manual_data: {},
+          mobile_data: {},
+          provenance: {},
+        },
+      }),
+    );
+
+    assert.equal(result.status, 'saved');
+  });
+
+  test('keeps a numeric log summary farther than one binary64 neighbor in conflict', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          duration_seconds: 120,
+          max_depth_meters: 11.6,
+          rating: 4,
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    const result = await repository.saveLog(
+      remoteLog({
+        payload: {
+          source: 'manual',
+          started_at: STARTED_AT,
+          duration_seconds: 120.00000000000003,
+          max_depth_meters: 11.600000000000001,
+          rating: 4,
+          manual_data: {},
+          mobile_data: {},
+          provenance: {},
+        },
+      }),
+    );
+
+    assert.equal(result.status, 'conflict');
+  });
+
+  test('does not treat an adjacent fractional rating as a floating readback', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          rating: 4,
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    const result = await repository.saveLog(
+      remoteLog({
+        payload: {
+          source: 'manual',
+          started_at: STARTED_AT,
+          rating: 4.000000000000001,
+          manual_data: {},
+          mobile_data: {},
+          provenance: {},
+        },
+      }),
+    );
+
+    assert.equal(result.status, 'conflict');
+  });
+
   test('accepts equivalent PostgREST plan timestamp readback as saved', async () => {
     const {client} = createClient([
       {

@@ -1,6 +1,7 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 
 import type {Database} from './database.types.ts';
+import {sameAccountFloat} from './account-data-numbers.ts';
 import {
   fromDiveLogRow,
   fromDivePlanRow,
@@ -35,6 +36,10 @@ export class AccountDataRepositoryError extends Error {
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 const maximumPageSize = 100;
+const accountFloatFields = new Set([
+  'duration_seconds',
+  'max_depth_meters',
+]);
 
 function fail(operation: AccountDataRepositoryOperation): never {
   throw new AccountDataRepositoryError(operation);
@@ -157,11 +162,19 @@ function hasPersistedFields(
   row: Record<string, unknown>,
   fields: Record<string, unknown>,
 ): boolean {
-  return Object.entries(fields).every(([key, value]) => (
-    key === 'started_at' || key === 'ended_at' || key === 'planned_at'
-      ? sameAccountTimestamp(row[key], value)
-      : samePersistedValue(row[key], value)
-  ));
+  return Object.entries(fields).every(([key, value]) => {
+    if (key === 'started_at' || key === 'ended_at' || key === 'planned_at') {
+      return sameAccountTimestamp(row[key], value);
+    }
+    if (
+      accountFloatFields.has(key)
+      && typeof row[key] === 'number'
+      && typeof value === 'number'
+    ) {
+      return sameAccountFloat(row[key], value);
+    }
+    return samePersistedValue(row[key], value);
+  });
 }
 
 function savedLogResult(
