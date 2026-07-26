@@ -1,12 +1,12 @@
 # 1Hz 프로파일 파일 저장과 동기화
 
-Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
-Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
-Updated: 2026-07-20
+Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20; Physical device cold start and data integrity, 2026-07-26
+Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Physical device cold start and data integrity](../../raw/architecture/2026-07-26-physical-device-cold-start-data-integrity.md)
+Updated: 2026-07-26
 
 ## 요약
 
-Watch 기록은 원시 센서 콜백과 영구 프로파일의 cadence를 분리한다. 실시간 화면과 freedive/scuba 상태 엔진은 모든 유효한 실제 콜백을 사용하고, 저장·전송·모바일 장기 보관용 프로파일은 초당 최대 한 개의 실제 관측값으로 제한한다. 전체 세션은 크기와 관계없이 immutable JSON 파일 하나로 전달하며 chunk protocol은 사용하지 않는다.
+Watch 기록은 원시 센서 콜백과 영구 프로파일의 cadence를 분리한다. 실시간 화면과 freedive/scuba 상태 엔진은 모든 유효한 실제 콜백을 사용하고, 저장·전송·모바일 장기 보관용 프로파일은 초당 최대 한 개의 실제 관측값으로 제한한다. 전체 세션은 크기와 관계없이 immutable JSON 파일 하나로 전달하며 chunk protocol은 사용하지 않는다. 모바일은 artifact identity로 새 항목을 제한 없이 처리하고, inactive claim history의 exact retransmission은 삭제된 row를 다시 만들지 않고 acknowledge할 수 있다.
 
 ## Watch 기록과 파일 구조
 
@@ -48,9 +48,11 @@ Artifact identity는 다음 값의 조합이다.
 
 Watch는 같은 revision/digest의 `outstandingFileTransfers`가 있으면 중복 enqueue하지 않는다. `didFinish fileTransfer` 성공은 iPhone repository import 성공을 뜻하지 않으므로 `pending`을 유지한다. ACK의 session, revision, digest가 현재 manifest와 모두 일치할 때만 `synced`로 바뀐다. Canonical artifact는 WatchConnectivity transfer callback에서 삭제하지 않는다.
 
+모바일 재조정 identity는 `localSessionId`, `contentRevision`, artifact `sha256` 세 값을 모두 사용한다. 현재 repository에 row가 없고 live guest source도 없을 때 inactive claim history가 exact identity를 보존하면 historical retransmission을 다시 저장하거나 toast로 알리지 않고 imported acknowledgement만 보낸다. Identity가 하나라도 다르거나 history에 없으면 새 artifact이며, 대기 개수 제한 없이 local commit 뒤 각각 한 번 acknowledge한다.
+
 ## iPhone durable inbox와 ACK outbox
 
-iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 있다는 전제에서 callback 안에 다음 순서를 수행한다.
+iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 있다는 전제에서 callback 안에 다음 순서를 수행한다. File materialization, JSON encode와 UserDefaults 접근은 전용 serial queue가 소유하며 main queue는 immutable event 전달만 담당한다.
 
 1. 파일 bytes를 읽고 metadata의 byte count와 SHA-256을 검증한다.
 2. JSON 구조가 읽히는지 확인한다.
@@ -58,7 +60,7 @@ iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 
 4. UserDefaults pending index에는 path와 identity만 저장한다.
 5. JS에는 drain 시 한 payload만 문자열로 materialize한다.
 
-JS validator와 mobile repository 저장이 모두 성공하면 native layer는 ACK를 persistent outbox에 먼저 추가한다. 그 다음 inbound index와 file을 삭제한다. WCSession activation 전에는 ACK를 보내지 않고, activation 뒤 `transferUserInfo`에 제출한다. ACK는 enqueue 시점이 아니라 `didFinish userInfoTransfer` 성공 callback에서만 outbox에서 제거한다. activation 실패 시 상태를 다시 비활성으로 돌려 다음 activation에서 재시도한다. 이 순서가 cold start에서 “모바일에는 저장됐지만 Watch는 계속 pending”인 상태를 막는다.
+JS validator와 mobile repository 저장이 모두 성공하면 native layer는 ACK를 persistent outbox에 먼저 추가한다. 그 다음 inbound index와 file을 삭제한다. WCSession activation 전에는 ACK를 보내지 않고, activation 뒤 `transferUserInfo`에 제출한다. ACK는 enqueue 시점이 아니라 `didFinish userInfoTransfer` 성공 callback에서만 outbox에서 제거한다. activation 실패 시 상태를 다시 비활성으로 돌려 다음 activation에서 재시도한다. 자동 drain은 event subscription을 유지한 채 첫 상호작용 뒤 시작하고 payload 사이에 cooperative yield를 둔다. 이 순서가 cold start에서 “모바일에는 저장됐지만 Watch는 계속 pending”인 상태를 막는다.
 
 ## 모바일 metadata와 profile 분리
 
@@ -83,6 +85,7 @@ iOS에서 사용자가 알림을 이미 거부했다면 `requestPermission()`은
 - corrupted/truncated inbound file은 repository에 전달하거나 ACK하지 않는다.
 - repository/profile 저장 실패는 inbound item을 남겨 다음 drain에서 재시도한다.
 - duplicate identity는 native inbox와 Watch outstanding transfer에서 합친다.
+- Logbook/Planbook의 fail-closed recovery journal과 exact-byte quarantine은 복구 증거이며 live Watch/profile inventory에 포함하지 않는다.
 - 자동 검증은 3시간 상한, sparse/invalid/temperature sample, large artifact digest, migration, file-only route, mobile import/dedupe와 permission lifecycle을 포함한다.
 - paired iPhone/Watch의 foreground, background, force-quit, offline/reconnect, 8,000 sample 전달은 별도 실기기 gate다.
 

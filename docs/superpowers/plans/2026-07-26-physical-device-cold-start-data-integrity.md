@@ -8,6 +8,10 @@
 
 **Tech Stack:** React Native 0.85.3, React 19.2.3, TypeScript, Jest, React Query, AsyncStorage, Swift, WatchConnectivity, Core Location, Supabase typed repositories.
 
+**Status (2026-07-26):** Tasks 1–4 are implemented and committed. Task 5 durable documentation and automated verification are complete with the known native-source concern below. Physical-device review and final integration gates remain pending.
+
+**Implementation evidence:** Task 1 finished at 4 suites/117 tests, Task 2 at 4 suites/38 tests, Task 3 at 3 suites/111 tests, and Task 4 at 3 JavaScript suites/186 tests plus 5 targeted native contracts. Each task also passed mobile typecheck; Task 4 passed a fresh external iOS Simulator build. These are scoped task results, not a claim that the current dirty full native-source suite is green.
+
 ## Global Constraints
 
 - Work on the ordinary branch `codex/physical-device-cold-start-integrity`; do not create a worktree.
@@ -43,7 +47,7 @@
 - Produces: selected principal repositories that are read-verified before publication.
 - Consumes: `PersistentKeyValueStore`, `@noble/hashes/sha256`, existing envelope migration functions.
 
-- [ ] **Step 1: Add failing exact-byte preservation tests**
+- [x] **Step 1: Add failing exact-byte preservation tests**
 
 Add tests with these behaviors:
 
@@ -106,7 +110,7 @@ expect(remote.listPlans).not.toHaveBeenCalled();
 expect(storage.getString(userLogbookKey)).resolves.toBe(invalidRaw);
 ```
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 Run:
 
@@ -120,7 +124,7 @@ yarn workspace @repo/mobile test --runInBand \
 
 Expected: new tests fail because durable reads still return defaults, journal recovery does not exist, and account bootstrap starts remote work without a successful principal read.
 
-- [ ] **Step 3: Add typed fail-closed reads and recovery journal**
+- [x] **Step 3: Add typed fail-closed reads and recovery journal**
 
 Add these public types:
 
@@ -275,7 +279,7 @@ recoveryKeys: {
 
 App preferences do not pass these options and retain default fallback behavior.
 
-- [ ] **Step 4: Verify selected principal repositories before publication**
+- [x] **Step 4: Verify selected principal repositories before publication**
 
 After `createPrincipalRepositories` and before setting `publishedRef`:
 
@@ -292,13 +296,13 @@ async function verifyPrincipalRepositories(
 
 For account publication, verify both the account base and guest repositories before constructing the composed surface. If any read throws, let the existing outer bootstrap catch publish `recoveryRequired/localRepository`; do not create a coordinator, reconcile outbox or start claim inspection.
 
-- [ ] **Step 5: Run focused tests and verify GREEN**
+- [x] **Step 5: Run focused tests and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: all focused suites pass; new regression tests prove exact main bytes survive read failure and remote methods are not invoked.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 git add \
@@ -327,7 +331,7 @@ git commit -m "fix(mobile): fail closed on unreadable local data"
 - Produces: one logical Home conditions request that starts only while AppState is active.
 - Consumes: existing `LocationService` and `LocationResult`.
 
-- [ ] **Step 1: Add failing transient-error and AppState tests**
+- [x] **Step 1: Add failing transient-error and AppState tests**
 
 Add a real location-service test:
 
@@ -388,7 +392,7 @@ it('does not retry permission denial', async () => {
 
 In the controller suite, mock initial AppState `inactive`, mount, assert zero location calls, emit `active`, then assert exactly one call.
 
-- [ ] **Step 2: Run the focused tests and verify RED**
+- [x] **Step 2: Run the focused tests and verify RED**
 
 ```bash
 yarn workspace @repo/mobile test --runInBand \
@@ -398,7 +402,7 @@ yarn workspace @repo/mobile test --runInBand \
 
 Expected: `createLocationService` is absent and the controller starts while inactive.
 
-- [ ] **Step 3: Implement bounded transient location retry**
+- [x] **Step 3: Implement bounded transient location retry**
 
 Use these exact defaults:
 
@@ -433,7 +437,7 @@ for (let attempt = 0; attempt <= TRANSIENT_RETRY_DELAYS_MS.length; attempt += 1)
 
 Map code 1 directly to `permissionDenied`, code 2 to the internal transient result, and all other codes to final `unavailable`.
 
-- [ ] **Step 4: Gate the initial request on active AppState**
+- [x] **Step 4: Gate the initial request on active AppState**
 
 In `useHomeConditions`, replace unconditional mount loading with:
 
@@ -447,7 +451,7 @@ React.useEffect(() => {
 
 Keep the existing active-transition listener and locale single-flight so the transition cannot create a second logical request while the first is running.
 
-- [ ] **Step 5: Run focused weather tests and verify GREEN**
+- [x] **Step 5: Run focused weather tests and verify GREEN**
 
 Run the command from Step 2, then:
 
@@ -459,7 +463,7 @@ yarn workspace @repo/mobile test --runInBand \
 
 Expected: all location and Home conditions suites pass.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 git add \
@@ -486,7 +490,7 @@ git commit -m "fix(mobile): recover cold-start location requests"
 - Produces: `AccountDataContextValue.isHistoricalWatchArtifact(identity): Promise<boolean>`.
 - Consumes: parsed `GuestClaimSnapshot`, exact guest inventory and Watch payload metadata.
 
-- [ ] **Step 1: Add failing identity and two-payload tests**
+- [x] **Step 1: Add failing identity and two-payload tests**
 
 Test pure identity matching:
 
@@ -545,7 +549,7 @@ it('acknowledges one historical duplicate and imports the other new payload', as
 
 Add a separate case proving two fresh payloads create two rows.
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 ```bash
 yarn workspace @repo/mobile test --runInBand \
@@ -556,7 +560,7 @@ yarn workspace @repo/mobile test --runInBand \
 
 Expected: history helper/context method do not exist and the historical payload is currently re-imported.
 
-- [ ] **Step 3: Implement exact historical identity matching**
+- [x] **Step 3: Implement exact historical identity matching**
 
 Define:
 
@@ -593,7 +597,7 @@ return (
 
 Do not match incomplete identity or a running/finalizing checkpoint.
 
-- [ ] **Step 4: Expose cached account history lookup**
+- [x] **Step 4: Expose cached account history lookup**
 
 Add to `AccountDataContextValue`:
 
@@ -613,7 +617,7 @@ Store a publication-scoped `historicalArtifactLookup` Promise cache. On first lo
 
 Clear the cache from the claim service `onSnapshot` callback and after any live guest inventory mutation.
 
-- [ ] **Step 5: Reconcile before repository import**
+- [x] **Step 5: Reconcile before repository import**
 
 Extend Watch provider/import options:
 
@@ -642,13 +646,13 @@ Historical acknowledgement must not call `notifyImportedEntry`, mutate React Que
 
 Use `accountData?.isHistoricalWatchArtifact` as the provider default.
 
-- [ ] **Step 6: Run focused tests and verify GREEN**
+- [x] **Step 6: Run focused tests and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: exact historical artifacts are acknowledged without a row; all new artifacts are imported.
 
-- [ ] **Step 7: Commit Task 3**
+- [x] **Step 7: Commit Task 3**
 
 ```bash
 git add \
@@ -679,7 +683,7 @@ git commit -m "fix(mobile): reconcile historical watch artifacts"
 - Produces: `scheduleAfterInteractions` and `yieldToRuntime` boundaries for automatic Watch drain and initial cloud hydration.
 - Consumes: Task 3 historical reconciliation callback.
 
-- [ ] **Step 1: Add failing scheduler and native queue tests**
+- [x] **Step 1: Add failing scheduler and native queue tests**
 
 In Watch provider tests inject:
 
@@ -710,7 +714,7 @@ expect(inbox).not.toContain('DispatchQueue.main.sync');
 expect(module).toContain('drainPendingPayloads { payloads in');
 ```
 
-- [ ] **Step 2: Run focused tests and verify RED**
+- [x] **Step 2: Run focused tests and verify RED**
 
 ```bash
 yarn workspace @repo/mobile test --runInBand \
@@ -722,7 +726,7 @@ yarn workspace @repo/mobile test --runInBand \
 
 Expected: auto work starts before scheduler flush, no runtime yield exists, and native inbox still uses main-sync file work.
 
-- [ ] **Step 3: Move native inbox state and file materialization to a serial queue**
+- [x] **Step 3: Move native inbox state and file materialization to a serial queue**
 
 Add:
 
@@ -790,7 +794,7 @@ func drainPendingPayloads(
 
 Resolve acknowledge promises only after state-queue persistence completes.
 
-- [ ] **Step 4: Schedule automatic Watch drain after interactions and yield between payloads**
+- [x] **Step 4: Schedule automatic Watch drain after interactions and yield between payloads**
 
 Extend provider props:
 
@@ -822,7 +826,7 @@ After each fresh payload except the final one:
 await yieldToRuntime();
 ```
 
-- [ ] **Step 5: Schedule initial cloud hydration and yield between remote rows**
+- [x] **Step 5: Schedule initial cloud hydration and yield between remote rows**
 
 Add `yieldToRuntime?: () => Promise<void>` to `AccountSyncCoordinatorOptions`, defaulting to a zero-delay timer Promise. Call it after each attempted remote row when another row remains.
 
@@ -830,7 +834,7 @@ In `AccountDataProvider`, publish verified local repositories first. Schedule on
 
 Track and cancel the scheduled handle on principal change/unmount. Cancellation must settle the internal operation rather than leave `cloudRefresh.promise` pending.
 
-- [ ] **Step 6: Add privacy-safe slow-stage measurements**
+- [x] **Step 6: Add privacy-safe slow-stage measurements**
 
 Create a local helper inside each affected module:
 
@@ -855,13 +859,13 @@ Labels may contain only fixed stage names such as `watch-import`, `account-hydra
 
 For Swift, use `ContinuousClock` or `CFAbsoluteTimeGetCurrent()` and log only fixed stage plus duration in DEBUG builds.
 
-- [ ] **Step 7: Run focused tests and verify GREEN**
+- [x] **Step 7: Run focused tests and verify GREEN**
 
 Run the command from Step 2.
 
 Expected: all suites pass and source assertions prove no main-sync inbox path.
 
-- [ ] **Step 8: Run iOS compile gate and commit Task 4**
+- [x] **Step 8: Run iOS compile gate and commit Task 4**
 
 ```bash
 yarn mobile:typecheck
@@ -902,7 +906,7 @@ git commit -m "fix(mobile): prioritize interaction during cold start"
 - Consumes: implemented behavior and actual verification output from Tasks 1–4.
 - Produces: durable wiki description and final evidence.
 
-- [ ] **Step 1: Capture immutable implementation evidence**
+- [x] **Step 1: Capture immutable implementation evidence**
 
 Create the raw page using the repository raw template with:
 
@@ -940,7 +944,7 @@ source boundary를 포함한다. 실기기 검증은 cold launch 3회, sync 중 
 logout 입력, pending inbox reconciliation을 별도 확인한다.
 ```
 
-- [ ] **Step 2: Update compiled wiki articles**
+- [x] **Step 2: Update compiled wiki articles**
 
 Update the three architecture articles with these durable facts:
 
@@ -961,7 +965,7 @@ Set `Updated: 2026-07-26`, add the raw source link, update each index summary, a
 - Updated: 1Hz 프로파일 파일 저장과 동기화
 ```
 
-- [ ] **Step 3: Run complete relevant verification**
+- [x] **Step 3: Run complete relevant verification**
 
 ```bash
 yarn workspace @repo/mobile test --runInBand \
@@ -983,7 +987,25 @@ yarn codex:check
 
 Expected: every command exits zero. Report environment warnings separately and never claim an unrun command passed.
 
-- [ ] **Step 4: Inspect the branch diff and user-owned files**
+Actual Task 5 evidence with Node `22.20.0` on `PATH`:
+
+- Exact 11-suite command: exit `1`; 10/11 suites and 297/309 tests passed. All 12 failures are in `watch-connectivity-native-source.test.ts`, which reads pre-existing user-owned native/watchOS/project/script files.
+- Relevant non-native-source command: exit `0`; 10/10 suites and 276/276 tests passed.
+- Task 4 native queue/measurement selection: exit `0`; 5/5 passed.
+- `yarn mobile:typecheck`: exit `0`.
+- Sandboxed `yarn ios:build`: exit `66` before compilation because CoreSimulator/workspace access was denied. Approved external `yarn ios:build`: exit `0`, `BUILD SUCCEEDED`.
+- `yarn codex:check`: exit `0`; generation, mobile typecheck and watchOS Simulator build completed despite sandbox environment warnings.
+- Wiki deterministic lint: 30 articles and 30 index entries; missing/stale index rows, broken links, missing metadata and invalid topic depth were all zero. Heuristic review found no contradiction or missing cross-reference in the touched articles.
+
+Clean-archive evidence remains the comparison boundary for native-source contracts: `4274bee` was 20 pass/11 fail and `ab307e1` was 22 pass/the same 11 fail. The current dirty working tree result is not described as a clean-head baseline.
+
+Not run on the new build:
+
+- physical-device cold launch three times
+- tab/logout input feedback under 100ms during sync
+- live pending inbox historical/new artifact reconciliation
+
+- [x] **Step 4: Inspect the branch diff and user-owned files**
 
 ```bash
 git status --short
@@ -994,7 +1016,9 @@ git log --oneline main..HEAD
 
 Confirm the pre-existing watchOS, Xcode project, cache and underwater checklist modifications are neither staged nor present in branch commits.
 
-- [ ] **Step 5: Commit documentation**
+Actual: all four commands exited `0`. Before the Task 5 documentation commit, staging was empty. Branch commits from merge base `51fc81f` contain only the approved Task 1–4 implementation/test files and the original spec/plan; they do not contain the pre-existing watchOS source/tests, `Divenary.xcodeproj/project.pbxproj`, cache files, `check-watch-ui-language.mjs` or underwater checklist changes. Those working-tree files remain unstaged and untouched by Task 5.
+
+- [x] **Step 5: Commit documentation**
 
 ```bash
 git add \

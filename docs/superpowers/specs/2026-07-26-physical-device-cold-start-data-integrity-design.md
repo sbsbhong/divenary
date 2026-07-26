@@ -1,7 +1,8 @@
 # Physical Device Cold Start and Data Integrity Design
 
 Date: 2026-07-26
-Status: Approved
+Status: Implemented with verification concerns
+Approval: Approved design
 
 ## 배경
 
@@ -226,6 +227,24 @@ Remote metadata hydration은 local UI publication 뒤 schedule한다.
 - remote row와 Watch payload 사이 yield를 호출한다.
 - native source check는 pending file read가 main queue sync block에 없음을 고정한다.
 
+## 구현 및 검증 상태
+
+Tasks 1–4의 설계는 `75b38d3`부터 `ab307e1`까지 구현·검토됐다. 최종 focused evidence는 durable persistence 4 suites/117 tests, location/Home conditions 4 suites/38 tests, Watch history 3 suites/111 tests, interaction scheduling JavaScript 3 suites/186 tests와 native queue 계약 5 tests다.
+
+Task 5에서 Node `22.20.0` 경로를 명시해 새로 실행한 결과는 다음과 같다.
+
+- Brief의 exact 11-suite command: exit `1`, 10/11 suites와 297/309 tests pass. 실패 12개는 모두 현재 user-owned native/watchOS/project/script 파일을 읽는 `watch-connectivity-native-source.test.ts`에 있다. 이 결과를 전체 green으로 기록하지 않는다.
+- Native-source를 제외한 relevant 10 suites: exit `0`, 276/276 tests pass.
+- Task 4 native queue/measurement 관련 5 tests: exit `0`, 5/5 pass.
+- `yarn mobile:typecheck`: exit `0`.
+- Sandboxed `yarn ios:build`: CoreSimulator/workspace 접근 제한으로 compile 전 exit `66`. 같은 명령의 approved external run은 `ios/Divenary.xcworkspace`, `Divenary`, `generic/platform=iOS Simulator`에서 exit `0`, `BUILD SUCCEEDED`.
+- `yarn codex:check`: exit `0`. Sandbox CoreSimulator/provisioning warning이 있었지만 contract generation, mobile typecheck와 `DivenaryWatchApp` watchOS Simulator build가 모두 완료됐다.
+- Wiki deterministic lint: 30 articles/index entries, broken link·missing metadata·depth 오류 0개.
+
+Clean archive의 full native-source 비교는 clean base `4274bee`가 20 pass/11 fail, clean head `ab307e1`이 22 pass/같은 11 fail이다. 현재 dirty working tree의 12 failure와 섞어 Task 1–4 회귀로 분류하지 않으며, 이 Task에서 user-owned watchOS/Xcode/cache/script/checklist 파일을 수정하지 않는다.
+
+새 build에서 실기기 cold launch 3회, sync 중 tab/logout 입력의 100ms 미만 feedback과 live pending inbox reconciliation은 실행하지 않았다. 이 세 항목과 현재 기기 inventory 표시는 manual gate로 남는다.
+
 ## 완료 기준
 
 - `yarn mobile:typecheck` 성공
@@ -237,6 +256,8 @@ Remote metadata hydration은 local UI publication 뒤 schedule한다.
 - 현재 inbox의 새 artifact가 한 번 import되고 historical duplicate가 다시 나타나지 않음
 - stale checkpoint 15개가 device inventory count로 표시되지 않음
 - local durable read failure fixture에서 원본 bytes가 보존됨
+
+현재 자동 gate 중 mobile typecheck, non-native relevant Jest, targeted native boundary, external iOS build와 `codex:check`는 통과했다. Exact combined Jest는 현재 user-dirty native source contract 때문에 red이며, 실기기 세 gate는 미실행이다. 따라서 이 완료 기준 전체를 통과했다고 주장하지 않는다.
 
 ## 안전 경계
 
