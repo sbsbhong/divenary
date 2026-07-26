@@ -469,6 +469,32 @@ describe('guest claim service', () => {
     });
   });
 
+  it('drops a deferred local-only snapshot after its guest sources are deleted', async () => {
+    const guest = repositories([diveLog('log-a')], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote,
+    });
+
+    await service.defer();
+    await guest.logbook.delete('log-a');
+
+    await expect(service.retry()).resolves.toBeUndefined();
+    await expect(store.read()).resolves.toBeUndefined();
+    expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
+    expect(remote.stageRecord).not.toHaveBeenCalled();
+    expect(remote.finalize).not.toHaveBeenCalled();
+  });
+
   it('defers a failed snapshot with remote progress and never auto-resumes it', async () => {
     const guest = repositories([diveLog('log-a')], []);
     const store = new GuestClaimStore({
@@ -522,6 +548,37 @@ describe('guest claim service', () => {
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
     expect(remote.stageRecord).not.toHaveBeenCalled();
     expect(remote.finalize).not.toHaveBeenCalled();
+  });
+
+  it('preserves a failed remote-progress checkpoint after its guest source is deleted', async () => {
+    const guest = repositories([diveLog('log-a')], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    await store.write(snapshot);
+    await guest.logbook.delete('log-a');
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote: remoteRepository(store),
+    });
+
+    await expect(service.prepare()).resolves.toEqual(snapshot);
+    await expect(store.read()).resolves.toEqual(snapshot);
   });
 
   it('removes superseded account profiles when changed promotion resumes after outbox failure', async () => {

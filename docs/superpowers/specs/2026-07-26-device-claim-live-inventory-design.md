@@ -72,8 +72,9 @@ Snapshot의 `manifest.items.length`, `retainedItems.length`, `failed.total`은 �
 Retry 또는 defer 전에 snapshot을 다음처럼 분류한다.
 
 1. `prepared`, `deferred`, `retained`, `committed` 또는 `remoteBatchId`가 없는 `failed`
-   - 현재 guest inventory와 snapshot source set을 대조한다.
-   - row가 삭제·추가·변경되어 다르면 기존 local-only snapshot을 제거하고 현재 inventory로 새 snapshot을 만든다.
+   - 현재 guest inventory에 snapshot source가 모두 남아 있는지 대조한다.
+   - snapshot source row가 삭제됐으면 기존 local-only snapshot을 제거하고 현재 inventory로 새 snapshot을 만든다.
+   - snapshot 이후 추가되거나 변경된 row는 기존 changed-row promotion/outbox 경로가 보존하므로 snapshot을 폐기하지 않는다.
    - 현재 inventory가 비어 있으면 snapshot을 제거하고 `undefined`를 반환한다.
 2. `remoteBatchId`가 있거나 `running`, `finalizing`, `cleanupPending`인 snapshot
    - 원격 idempotency와 cleanup을 위해 기존 checkpoint를 보존한다.
@@ -81,7 +82,7 @@ Retry 또는 defer 전에 snapshot을 다음처럼 분류한다.
 3. `committed`/`retained` terminal snapshot
    - 기존 exact retained comparison을 유지하되, live inventory가 비어 있으면 terminal result를 Settings action으로 노출하지 않는다.
 
-Freshness 비교는 entity kind, `localId`, canonical local record digest를 사용한다. Claimable watch profile은 기존 strict profile 검증을 재사용한다. Settings count를 읽는 경로에서는 profile hashing을 수행하지 않는다.
+Freshness 비교는 snapshot이 참조하는 entity kind와 `localId`가 현재 inventory에 모두 존재하는지 확인한다. Row content 변경과 새 row 추가는 기존 immutable snapshot 뒤 account promotion/outbox 규칙으로 처리한다. Settings count를 읽는 경로에서는 profile hashing을 수행하지 않는다.
 
 ## Mutation and Refresh Flow
 
@@ -126,7 +127,7 @@ Claim service가 exact cleanup으로 guest row를 삭제하는 경우에도 같�
 ### Claim Service
 
 - deferred snapshot 15개를 만든 뒤 guest rows를 모두 삭제하면 retry가 snapshot을 업로드하지 않고 store를 제거한다.
-- local-only failed/prepared snapshot과 현재 inventory가 다르면 fresh snapshot으로 교체한다.
+- local-only failed/prepared snapshot source가 삭제됐으면 fresh snapshot으로 교체한다.
 - remote batch ID가 있는 failed snapshot은 기존 idempotent checkpoint를 보존한다.
 - unchanged deferred snapshot은 같은 batch identity와 immutable source를 재사용한다.
 

@@ -1,6 +1,7 @@
 import { canonicalAccountPayloadSha256 } from '../src/sync/account-payload';
 import {
   createGuestClaimSnapshot,
+  guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
 } from '../src/claim/guest-claim-store';
@@ -24,6 +25,39 @@ const guestProfileKey = `${dataProfileKeyPrefix({
 })}session-log-a:revision-1`;
 
 describe('guest claim store', () => {
+  it('requires every snapshot source while allowing post-snapshot rows', async () => {
+    const log = diveLog({localId: 'log-a'});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([log]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+
+    expect(
+      guestRecordsContainClaimSnapshotSources({
+        snapshot,
+        logs: [log],
+        plans: [],
+      }),
+    ).toBe(true);
+    expect(
+      guestRecordsContainClaimSnapshotSources({
+        snapshot,
+        logs: [],
+        plans: [],
+      }),
+    ).toBe(false);
+    expect(
+      guestRecordsContainClaimSnapshotSources({
+        snapshot,
+        logs: [log, diveLog({localId: 'log-b'})],
+        plans: [],
+      }),
+    ).toBe(true);
+  });
+
   it('normalizes a marker-less legacy artifact digest only in the claim snapshot', async () => {
     const profiles = profileStorage();
     const samples = depthSamples(2);

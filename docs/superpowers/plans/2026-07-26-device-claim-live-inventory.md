@@ -33,7 +33,7 @@
 - Modify: `apps/mobile/__tests__/guest-claim-service.test.ts`
 
 **Interfaces:**
-- Produces: `guestRecordSetMatchesClaimSnapshot(options: {snapshot: GuestClaimSnapshot; logs: DiveLogEntry[]; plans: DivePlan[]}): boolean`
+- Produces: `guestRecordsContainClaimSnapshotSources(options: {snapshot: GuestClaimSnapshot; logs: DiveLogEntry[]; plans: DivePlan[]}): boolean`
 - Consumes: snapshot `manifest.items`, `retainedItems`, current guest repository lists
 - Preserves: `retainedGuestRecordsMatchClaimSnapshot` exact digest comparison for terminal retained state
 
@@ -43,7 +43,7 @@ Add unit coverage in `guest-claim-store.test.ts`:
 
 ```ts
 expect(
-  guestRecordSetMatchesClaimSnapshot({
+  guestRecordsContainClaimSnapshotSources({
     snapshot,
     logs: [diveLog('log-a')],
     plans: [],
@@ -51,7 +51,7 @@ expect(
 ).toBe(true);
 
 expect(
-  guestRecordSetMatchesClaimSnapshot({
+  guestRecordsContainClaimSnapshotSources({
     snapshot,
     logs: [],
     plans: [],
@@ -59,15 +59,15 @@ expect(
 ).toBe(false);
 
 expect(
-  guestRecordSetMatchesClaimSnapshot({
+  guestRecordsContainClaimSnapshotSources({
     snapshot,
     logs: [diveLog('log-a'), diveLog('log-b')],
     plans: [],
   }),
-).toBe(false);
+).toBe(true);
 ```
 
-The helper compares the exact `entityKind:localId` set represented by both manifest items and retained items. It does not compare record content, so the existing immutable-snapshot-plus-changed-row-promotion contract remains intact.
+The helper requires every `entityKind:localId` represented by manifest items and retained items to remain present. It allows post-snapshot rows and does not compare record content, so the existing immutable-snapshot-plus-changed-row-promotion contract remains intact.
 
 - [ ] **Step 2: Write failing service regression tests**
 
@@ -119,7 +119,7 @@ Expected: FAIL because `guestRecordSetMatchesClaimSnapshot` does not exist and `
 In `guest-claim-store.ts`, build current and snapshot identity sets:
 
 ```ts
-export function guestRecordSetMatchesClaimSnapshot(options: {
+export function guestRecordsContainClaimSnapshotSources(options: {
   snapshot: GuestClaimSnapshot;
   logs: DiveLogEntry[];
   plans: DivePlan[];
@@ -134,10 +134,7 @@ export function guestRecordSetMatchesClaimSnapshot(options: {
       item => `${item.entityKind}:${item.clientRecordId}`,
     ),
   ]);
-  return (
-    current.size === expected.size &&
-    [...expected].every(key => current.has(key))
-  );
+  return [...expected].every(key => current.has(key));
 }
 ```
 
@@ -158,7 +155,11 @@ if (
     this.options.guestRepositories.planbook.list(),
   ]);
   if (
-    !guestRecordSetMatchesClaimSnapshot({snapshot: existing, logs, plans})
+    !guestRecordsContainClaimSnapshotSources({
+      snapshot: existing,
+      logs,
+      plans,
+    })
   ) {
     if (!this.options.store.remove) {
       throw new GuestClaimServiceError('claim_validation_failed');
@@ -557,7 +558,7 @@ Fix every Critical or Important finding, rerun the affected focused tests, `yarn
 ## Plan Self-Review
 
 - Every accepted spec requirement maps to a task: stale snapshot protection (Task 1), mutation refresh (Task 2), Settings/sheet behavior (Task 3), durable documentation and full gates (Task 4).
-- Snapshot freshness compares source membership, not row bytes, so the existing immutable snapshot and changed-row promotion contract is not contradicted.
+- Snapshot freshness requires original source membership but allows post-snapshot additions and row content changes, so the existing immutable snapshot and changed-row promotion contract is not contradicted.
 - Remote-progress snapshots are preserved; remote cancellation and OS background execution remain explicit non-goals.
 - All production changes have a preceding RED test and a focused GREEN command.
 - No placeholder, future implementation note, dependency addition, Supabase change, or Watch native change is included.
