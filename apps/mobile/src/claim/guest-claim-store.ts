@@ -420,6 +420,24 @@ export function sourceRecordSha256(sidecar: GuestClaimSnapshotItem): string {
   return sidecar.sourceRecordSha256 ?? sidecar.localRecordSha256;
 }
 
+export function guestRecordsContainClaimSnapshotSources(options: {
+  snapshot: GuestClaimSnapshot;
+  logs: DiveLogEntry[];
+  plans: DivePlan[];
+}): boolean {
+  const current = new Set([
+    ...options.logs.map(log => `log:${log.localId}`),
+    ...options.plans.map(plan => `plan:${plan.localId}`),
+  ]);
+  const expected = new Set([
+    ...options.snapshot.manifest.items.map(item => item.key),
+    ...options.snapshot.retainedItems.map(
+      item => `${item.entityKind}:${item.clientRecordId}`,
+    ),
+  ]);
+  return [...expected].every(key => current.has(key));
+}
+
 export function retainedGuestRecordsMatchClaimSnapshot(options: {
   snapshot: GuestClaimSnapshot;
   logs: DiveLogEntry[];

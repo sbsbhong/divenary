@@ -214,7 +214,7 @@ describe('SettingsScreen', () => {
     expect(onOpenAccountClaim).toHaveBeenCalledTimes(1);
   });
 
-  test('shows a retained device-data recovery count after a partial import', async () => {
+  test('uses the live device-data count after a partial import', async () => {
     mockUseAuth.mockReturnValue(
       createAuthContext({
         isConfigured: true,
@@ -247,7 +247,80 @@ describe('SettingsScreen', () => {
     expect(
       renderer.root.findByProps({testID: 'settings-account-claim-count'}).props
         .children,
-    ).toBe('확인 필요 1');
+    ).toBe('1');
+  });
+
+  const staleClaimStates: GuestClaimViewState[] = [
+    {
+      status: 'deferred',
+      logCount: 0,
+      planCount: 0,
+    },
+    {
+      status: 'failed',
+      completed: 0,
+      total: 15,
+      errorCode: 'claim_validation_failed',
+    },
+    {
+      status: 'retained',
+      retainedItems: [
+        {
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          localRecordSha256: 'a'.repeat(64),
+          reason: 'profile_missing',
+        },
+      ],
+    },
+  ];
+
+  test.each(staleClaimStates)('hides stale $status claim state when live inventory is empty', async claimState => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: {status: 'authenticated', userId: 'user-id'},
+      }),
+    );
+    const renderer = await renderSettings({
+      accountClaim: {
+        isOnline: true,
+        eligible: {logCount: 0, planCount: 0},
+        state: claimState,
+      },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(
+      renderer.root.findAllByProps({testID: 'settings-row-account-claim'}),
+    ).toHaveLength(0);
+  });
+
+  test('does not replace a live count with a failed snapshot total', async () => {
+    mockUseAuth.mockReturnValue(
+      createAuthContext({
+        isConfigured: true,
+        state: {status: 'authenticated', userId: 'user-id'},
+      }),
+    );
+    const renderer = await renderSettings({
+      accountClaim: {
+        isOnline: true,
+        eligible: {logCount: 1, planCount: 0},
+        state: {
+          status: 'failed',
+          completed: 0,
+          total: 15,
+          errorCode: 'claim_validation_failed',
+        },
+      },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(
+      renderer.root.findByProps({testID: 'settings-account-claim-count'}).props
+        .children,
+    ).toBe('1');
   });
 
   test.each([

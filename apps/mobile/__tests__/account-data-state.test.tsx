@@ -1757,6 +1757,89 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
+  it('refreshes live claim eligibility after deleting the final deferred guest row', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const store = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'deferred';
+    await store.write(snapshot);
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim.eligible).toEqual({logCount: 1, planCount: 0}),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(entry.localId);
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      expect(capture?.claim.eligible).toEqual({logCount: 0, planCount: 0});
+      expect(capture?.claim.state).toEqual({status: 'hidden'});
+    });
+    await expect(guestLogbook.list()).resolves.toEqual([]);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
   it('keeps guest rows ahead of partial account copies until the claim is published', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const guestEntry = {

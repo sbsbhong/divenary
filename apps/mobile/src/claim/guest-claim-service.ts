@@ -15,6 +15,7 @@ import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with
 import {
   createGuestClaimSnapshot,
   claimProfileStillMatches,
+  guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimPreparationError,
   GuestClaimStorageError,
@@ -105,7 +106,29 @@ export class GuestClaimService {
   }
 
   async prepare(): Promise<GuestClaimSnapshot | undefined> {
-    const existing = await this.readOwned();
+    let existing = await this.readOwned();
+    if (
+      existing !== undefined &&
+      isReplaceableLocalCheckpoint(existing)
+    ) {
+      const [logs, plans] = await Promise.all([
+        this.options.guestRepositories.logbook.list(),
+        this.options.guestRepositories.planbook.list(),
+      ]);
+      if (
+        !guestRecordsContainClaimSnapshotSources({
+          snapshot: existing,
+          logs,
+          plans,
+        })
+      ) {
+        if (!this.options.store.remove) {
+          throw new GuestClaimServiceError('claim_validation_failed');
+        }
+        await this.options.store.remove();
+        existing = undefined;
+      }
+    }
     if (existing !== undefined) {
       if (
         existing.manifest.status !== 'committed' &&
@@ -1439,6 +1462,17 @@ function isTransientClaimError(
   errorCode: GuestClaimErrorCode | undefined,
 ): boolean {
   return errorCode === 'network_unavailable';
+}
+
+function isReplaceableLocalCheckpoint(
+  snapshot: GuestClaimSnapshot,
+): boolean {
+  return (
+    snapshot.manifest.remoteBatchId === undefined &&
+    (snapshot.manifest.status === 'prepared' ||
+      snapshot.manifest.status === 'deferred' ||
+      snapshot.manifest.status === 'failed')
+  );
 }
 
 function verifyCommittedBatch(

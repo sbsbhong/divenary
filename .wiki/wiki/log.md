@@ -923,3 +923,6 @@
 ## [2026-07-24] ingest | Watch profile digest recovery
 - Updated: Mobile architecture
 - Updated: Dive log domain
+
+## [2026-07-26] ingest | Device claim live inventory
+- Updated: 동기화 흐름 구조
