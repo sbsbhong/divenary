@@ -37,6 +37,30 @@ import {parseWatchSyncMessageJson} from '../src/utils/watch-sync-message-validat
 import i18n from '../src/i18n';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
+const waitFor = async (assertion: () => void) => {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch {
+      await flushPromises();
+    }
+  }
+  assertion();
+};
+const controlledAfterInteractionsScheduler = () => {
+  const tasks: Array<() => void | Promise<void>> = [];
+  return {
+    schedule: jest.fn((task: () => void | Promise<void>) => {
+      tasks.push(task);
+      return {cancel: jest.fn()};
+    }),
+    async flush() {
+      const task = tasks.shift();
+      await task?.();
+    },
+  };
+};
 const createDeferred = () => {
   let resolve = () => {};
   const promise = new Promise<void>(nextResolve => {
@@ -206,6 +230,11 @@ describe('WatchConnectivitySyncProvider', () => {
     const queryClient = createQueryClient();
     const coordinator = new WatchConnectivityImportCoordinator();
     const startupOrder: string[] = [];
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const drainPendingPayloads = jest.fn(async () => {
+      startupOrder.push('drain');
+      return [];
+    });
 
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
@@ -213,11 +242,9 @@ describe('WatchConnectivitySyncProvider', () => {
           <WatchConnectivitySyncProvider
             repository={repository}
             coordinator={coordinator}
-            drainPendingPayloads={async () => {
-              startupOrder.push('drain');
-              return [];
-            }}
+            drainPendingPayloads={drainPendingPayloads}
             acknowledgePayloads={jest.fn()}
+            scheduleAfterInteractions={afterInteractions.schedule}
             subscribeToPayloads={() => {
               startupOrder.push('subscribe');
               return { remove: jest.fn() };
@@ -228,7 +255,57 @@ describe('WatchConnectivitySyncProvider', () => {
       await flushPromises();
     });
 
+    expect(startupOrder).toEqual(['subscribe']);
+    expect(drainPendingPayloads).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+    });
+
     expect(startupOrder.slice(0, 2)).toEqual(['subscribe', 'drain']);
+  });
+
+  it('yields to the runtime only between automatically imported payloads', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const payloads = [
+      makePendingPayload('scheduled-payload-1', 'scheduled-session-1', 'a'),
+      makePendingPayload('scheduled-payload-2', 'scheduled-session-2', 'b'),
+    ];
+    const drainPendingPayloads = jest
+      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .mockResolvedValueOnce([payloads[0]!])
+      .mockResolvedValueOnce([payloads[1]!])
+      .mockResolvedValue([]);
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(ReactTestRenderer.create(
+        <QueryClientProvider client={queryClient}>
+          <WatchConnectivitySyncProvider
+            repository={repository}
+            drainPendingPayloads={drainPendingPayloads}
+            acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+            scheduleAfterInteractions={afterInteractions.schedule}
+            yieldToRuntime={yieldToRuntime}
+            subscribeToPayloads={() => ({remove: jest.fn()})}
+          />
+        </QueryClientProvider>,
+      ));
+      await flushPromises();
+    });
+
+    expect(drainPendingPayloads).not.toHaveBeenCalled();
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+    });
+
+    await waitFor(() =>
+      expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2),
+    );
+    expect(yieldToRuntime).toHaveBeenCalledTimes(1);
   });
 
   it('uses the active principal repositories and scope, then acknowledges before account enqueue and drain', async () => {
@@ -951,6 +1028,11 @@ describe('WatchConnectivitySyncProvider', () => {
       await flushPromises();
       await flushPromises();
     });
+    await ReactTestRenderer.act(async () => {
+      await waitFor(() =>
+        expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2),
+      );
+    });
 
     const entries = await repository.list();
     expect(entries).toHaveLength(1);
@@ -997,6 +1079,11 @@ describe('WatchConnectivitySyncProvider', () => {
       );
       await flushPromises();
       await flushPromises();
+    });
+    await ReactTestRenderer.act(async () => {
+      await waitFor(() =>
+        expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2),
+      );
     });
 
     expect(

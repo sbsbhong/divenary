@@ -25,16 +25,23 @@ describe('WatchConnectivity native source contract', () => {
     expect(inbox).toContain('struct PendingWatchConnectivityPayload');
     expect(inbox).toContain('UserDefaults');
     expect(inbox).toContain('payloadId');
-    expect(inbox).toContain('func acknowledge(payloadIds: [String])');
-    expect(inbox).toContain('func acknowledgeImported(payloadIds: [String])');
+    expect(inbox).toContain(
+      'DispatchQueue(label: "com.divenary.watch-connectivity-inbox"',
+    );
+    expect(inbox).not.toContain('DispatchQueue.main.sync');
+    expect(inbox).toContain('func acknowledge(');
+    expect(inbox).toContain('func acknowledgeImported(');
     expect(inbox).toContain('didReceiveMessage message');
-    expect(inbox).toContain('enqueuePendingPayload(from: message)');
+    expect(inbox).toContain(
+      'enqueuePendingPayloadOnStateQueue(from: message)',
+    );
     expect(inbox).toContain('pendingAcknowledgements');
-    expect(inbox).toContain('flushPendingAcknowledgementsOnMainQueue');
+    expect(inbox).toContain('flushPendingAcknowledgementsOnStateQueue');
     expect(inbox).toContain('connectivitySession.sendMessage(dictionary');
     expect(inbox).toContain('watchSyncAcknowledgement');
     expect(module).toContain('@objc(acknowledgePayloads:resolver:rejecter:)');
     expect(module).toContain('@objc(acknowledgeImportedPayloads:resolver:rejecter:)');
+    expect(module).toContain('drainPendingPayloads { payloads in');
     expect(bridge).toContain('acknowledgePayloads');
     expect(bridge).toContain('acknowledgeImportedPayloads');
   });
@@ -117,7 +124,7 @@ describe('WatchConnectivity native source contract', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
 
     expect(inbox).toContain('pendingPlannedDivesJson');
-    expect(inbox).toContain('flushPendingPlannedDivesContextOnMainQueue()');
+    expect(inbox).toContain('flushPendingPlannedDivesContextOnStateQueue()');
     expect(inbox).toContain('activationState == .activated');
     expect(inbox).toContain('func sessionReachabilityDidChange(_ session: WCSession)');
     expect(transport).toContain('session.receivedApplicationContext');
@@ -145,8 +152,8 @@ describe('WatchConnectivity native source contract', () => {
   it('does not assert when planned dives are queued without an installed watch companion', () => {
     const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
     const flushBlock = inbox.slice(
-      inbox.indexOf('private func flushPendingPlannedDivesContextOnMainQueue()'),
-      inbox.indexOf('private func linkedWatchInfoOnMainQueue()'),
+      inbox.indexOf('private func flushPendingPlannedDivesContextOnStateQueue()'),
+      inbox.indexOf('private func linkedWatchInfoOnStateQueue()'),
     );
 
     expect(flushBlock).toContain('connectivitySession.isPaired');

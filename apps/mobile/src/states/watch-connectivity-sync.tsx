@@ -1,6 +1,6 @@
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import React from 'react';
-import { AppState } from 'react-native';
+import { AppState, InteractionManager } from 'react-native';
 import {
   acknowledgeImportedWatchConnectivityPayloads,
   acknowledgeWatchConnectivityPayloads,
@@ -47,6 +47,9 @@ type WatchConnectivitySyncProviderProps = {
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
   ) => Promise<boolean>;
+  scheduleAfterInteractions?: (
+    task: () => void | Promise<void>,
+  ) => {cancel(): void};
   yieldToRuntime?: () => Promise<void>;
 };
 
@@ -73,6 +76,7 @@ export type WatchConnectivityImportSummary = {
 };
 
 type WatchConnectivityAcknowledgement = (payloadIds: readonly string[]) => Promise<void>;
+type ScheduledAfterInteractions = {cancel(): void};
 
 type DeferredAccountQueueRepository<T> = {
   saveLocalOnly?(value: T): Promise<T>;
@@ -103,6 +107,33 @@ type WatchConnectivityPayloadImportOnceOptions = Omit<
   guard: WatchConnectivityImportGuard;
 };
 
+const defaultScheduleAfterInteractions = (
+  task: () => void | Promise<void>,
+): ScheduledAfterInteractions => {
+  const handle = InteractionManager.runAfterInteractions(task);
+  return {cancel: () => handle.cancel()};
+};
+
+const defaultYieldToRuntime = (): Promise<void> =>
+  new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+
+async function measureSlowStage<T>(
+  label: 'watch-import',
+  operation: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    const durationMs = performance.now() - startedAt;
+    if (__DEV__ && durationMs >= 100) {
+      console.warn(`[performance] ${label} ${Math.round(durationMs)}ms`);
+    }
+  }
+}
+
 export function WatchConnectivitySyncProvider(
   props: WatchConnectivitySyncProviderProps,
 ): React.JSX.Element {
@@ -125,6 +156,9 @@ export function WatchConnectivitySyncProvider(
     ?? (props.repository
       ? undefined
       : accountData?.isHistoricalWatchArtifact);
+  const scheduleAfterInteractions =
+    props.scheduleAfterInteractions ?? defaultScheduleAfterInteractions;
+  const yieldToRuntime = props.yieldToRuntime ?? defaultYieldToRuntime;
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
@@ -133,21 +167,24 @@ export function WatchConnectivitySyncProvider(
     }
     const scope = coordinator.activateScope(queryScope);
     let isMounted = true;
+    const scheduledDrains = new Set<ScheduledAfterInteractions>();
     const importPayload = async (payload: WatchConnectivityPayload) => {
-      const importedEntry = await importWatchConnectivityPayload({
-        payload,
-        repository,
-        planRepository,
-        queryClient,
-        acknowledgePayloads,
-        acknowledgeImportedPayloads,
-        notifyImportedEntry,
-        coordinator,
-        scope,
-        queryScope,
-        onLocalWritesCommitted,
-        isHistoricalWatchArtifact,
-      });
+      const importedEntry = await measureSlowStage('watch-import', () =>
+        importWatchConnectivityPayload({
+          payload,
+          repository,
+          planRepository,
+          queryClient,
+          acknowledgePayloads,
+          acknowledgeImportedPayloads,
+          notifyImportedEntry,
+          coordinator,
+          scope,
+          queryScope,
+          onLocalWritesCommitted,
+          isHistoricalWatchArtifact,
+        }),
+      );
 
       if (importedEntry) {
         onImportedEntry?.(importedEntry);
@@ -166,6 +203,7 @@ export function WatchConnectivitySyncProvider(
 
     const drain = async () => {
       const seenPayloadIds = new Set<string>();
+      let importedPreviousPayload = false;
       try {
         while (isMounted) {
           const payloads = await drainPendingPayloads();
@@ -177,11 +215,15 @@ export function WatchConnectivitySyncProvider(
             return;
           }
           for (const payload of freshPayloads) {
+            if (importedPreviousPayload) {
+              await yieldToRuntime();
+            }
             if (payload.payloadId) {
               seenPayloadIds.add(payload.payloadId);
             }
             try {
               await importPayload(payload);
+              importedPreviousPayload = true;
             } catch (error) {
               if (!isStaleWatchConnectivityImportError(error)) {
                 console.warn('Failed to import watch sync payload', error);
@@ -194,15 +236,36 @@ export function WatchConnectivitySyncProvider(
         console.warn('Failed to drain pending watch sync payloads', error);
       }
     };
-    void drain();
+    const scheduleDrain = () => {
+      let handle: ScheduledAfterInteractions | undefined;
+      let startedSynchronously = false;
+      const run = async () => {
+        startedSynchronously = true;
+        if (handle) {
+          scheduledDrains.delete(handle);
+        }
+        if (isMounted) {
+          await drain();
+        }
+      };
+      handle = scheduleAfterInteractions(run);
+      if (!startedSynchronously) {
+        scheduledDrains.add(handle);
+      }
+    };
+    scheduleDrain();
     const appStateSubscription = AppState.addEventListener('change', nextState => {
       if (nextState === 'active') {
-        void drain();
+        scheduleDrain();
       }
     });
 
     return () => {
       isMounted = false;
+      for (const handle of scheduledDrains) {
+        handle.cancel();
+      }
+      scheduledDrains.clear();
       coordinator.invalidateScope(scope);
       subscription.remove();
       appStateSubscription.remove();
@@ -221,7 +284,9 @@ export function WatchConnectivitySyncProvider(
     queryClient,
     queryScope,
     repository,
+    scheduleAfterInteractions,
     subscribeToPayloads,
+    yieldToRuntime,
   ]);
 
   return <>{children}</>;
@@ -239,11 +304,13 @@ export async function importPendingWatchConnectivityPayloads({
   coordinator = defaultWatchConnectivityImportCoordinator,
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
+  yieldToRuntime = defaultYieldToRuntime,
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
   let importedCount = 0;
   let receivedCount = 0;
   const seenPayloadIds = new Set<string>();
   const scope = coordinator.activateScope(queryScope);
+  let importedPreviousPayload = false;
 
   while (true) {
     const payloads = await drainPendingPayloads();
@@ -256,23 +323,29 @@ export async function importPendingWatchConnectivityPayloads({
     }
     receivedCount += freshPayloads.length;
     for (const payload of freshPayloads) {
+      if (importedPreviousPayload) {
+        await yieldToRuntime();
+      }
       if (payload.payloadId) {
         seenPayloadIds.add(payload.payloadId);
       }
-      const importedEntry = await importWatchConnectivityPayload({
-        payload,
-        repository,
-        planRepository,
-        queryClient,
-        queryScope,
-        acknowledgePayloads,
-        acknowledgeImportedPayloads,
-        notifyImportedEntry,
-        coordinator,
-        scope,
-        onLocalWritesCommitted,
-        isHistoricalWatchArtifact,
-      });
+      const importedEntry = await measureSlowStage('watch-import', () =>
+        importWatchConnectivityPayload({
+          payload,
+          repository,
+          planRepository,
+          queryClient,
+          queryScope,
+          acknowledgePayloads,
+          acknowledgeImportedPayloads,
+          notifyImportedEntry,
+          coordinator,
+          scope,
+          onLocalWritesCommitted,
+          isHistoricalWatchArtifact,
+        }),
+      );
+      importedPreviousPayload = true;
 
       if (importedEntry) {
         importedCount += 1;

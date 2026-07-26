@@ -46,42 +46,58 @@ final class WatchConnectivityModule: RCTEventEmitter {
   }
 
   @objc(drainPendingPayloads:rejecter:)
-  func drainPendingPayloads(resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
-    resolve(WatchConnectivityInbox.shared.drainPendingPayloads())
+  func drainPendingPayloads(
+    resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.drainPendingPayloads { payloads in
+      resolve(payloads)
+    }
   }
 
   @objc(acknowledgePayloads:resolver:rejecter:)
   func acknowledgePayloads(
     payloadIds: [String],
-    resolver resolve: RCTPromiseResolveBlock,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: RCTPromiseRejectBlock
   ) {
-    WatchConnectivityInbox.shared.acknowledge(payloadIds: payloadIds)
-    resolve(nil)
+    WatchConnectivityInbox.shared.acknowledge(payloadIds: payloadIds) {
+      resolve(nil)
+    }
   }
 
   @objc(acknowledgeImportedPayloads:resolver:rejecter:)
   func acknowledgeImportedPayloads(
     payloadIds: [String],
-    resolver resolve: RCTPromiseResolveBlock,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: RCTPromiseRejectBlock
   ) {
-    WatchConnectivityInbox.shared.acknowledgeImported(payloadIds: payloadIds)
-    resolve(nil)
+    WatchConnectivityInbox.shared.acknowledgeImported(payloadIds: payloadIds) {
+      resolve(nil)
+    }
   }
 
   @objc(updatePlannedDives:resolver:rejecter:)
   func updatePlannedDives(
     plannedDivesJson: String,
-    resolver resolve: RCTPromiseResolveBlock,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: RCTPromiseRejectBlock
   ) {
-    resolve(WatchConnectivityInbox.shared.updatePlannedDives(json: plannedDivesJson))
+    WatchConnectivityInbox.shared.updatePlannedDives(
+      json: plannedDivesJson
+    ) { status in
+      resolve(status)
+    }
   }
 
   @objc(getLinkedWatchInfo:rejecter:)
-  func getLinkedWatchInfo(resolve: RCTPromiseResolveBlock, rejecter reject: RCTPromiseRejectBlock) {
-    resolve(WatchConnectivityInbox.shared.linkedWatchInfo())
+  func getLinkedWatchInfo(
+    resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.linkedWatchInfo { info in
+      resolve(info)
+    }
   }
 
   private static let eventName = "DiveWatchSyncPayloadReceived"

@@ -55,7 +55,7 @@ type ScheduledAccountSync = {
   cancel(): void;
 };
 
-type AccountSyncCoordinatorOptions = {
+export type AccountSyncCoordinatorOptions = {
   userId: string;
   outbox: AccountOutbox;
   accountRepository: AccountDataRepository;
@@ -69,6 +69,7 @@ type AccountSyncCoordinatorOptions = {
     task: () => void,
     delayMs: number,
   ) => ScheduledAccountSync;
+  yieldToRuntime?: () => Promise<void>;
   onDidProcess?: () => void | Promise<void>;
 };
 
@@ -145,6 +146,7 @@ export class AccountSyncCoordinator {
     task: () => void,
     delayMs: number,
   ) => ScheduledAccountSync;
+  private readonly yieldToRuntime: () => Promise<void>;
   private onDidProcess?: () => void | Promise<void>;
   private commitGeneration = 0;
   private externalCommitGuard?: AssertCanCommit;
@@ -160,6 +162,7 @@ export class AccountSyncCoordinator {
     this.profileStorage = options.profileStorage;
     this.now = options.now ?? (() => Date.now() / 1_000);
     this.schedule = options.schedule ?? defaultSchedule;
+    this.yieldToRuntime = options.yieldToRuntime ?? defaultYieldToRuntime;
     this.onDidProcess = options.onDidProcess;
   }
 
@@ -283,151 +286,165 @@ export class AccountSyncCoordinator {
           }),
           []);
     let changed = 0;
+    let attemptedRows = 0;
+    const totalRows = plans.length + logs.length;
 
     for (const remoteValue of plans) {
       try {
-        const remote = parseRemotePlan(remoteValue);
-        changed += await withAccountEntityMutationLock(
-          this.userId,
-          'plan',
-          remote.localId,
-          async () => {
-            assertCanCommit();
-            if (
-              (await this.outbox.listEntity(
-                this.userId,
-                'plan',
-                remote.localId,
-              )).length > 0
-            ) {
-              return 0;
-            }
-            const current = await this.planRepository.get(remote.localId);
-            if (current?.cloudSyncStatus === 'pending') {
-              return 0;
-            }
-            const local = remotePlanToLocal(remote, this.userId);
-            const recoveringConflict =
-              current?.cloudSyncStatus === 'conflict';
-            if (
-              recoveringConflict &&
-              !isEquivalentHistoricalConflict(current, local, this.userId)
-            ) {
-              return 0;
-            }
-            if (sameJsonValue(current, local)) {
-              return 0;
-            }
-            try {
-              await this.commitPlanSave(
-                current,
-                local,
-                assertCanCommit,
-                recoveringConflict
-                  ? () =>
-                      this.outbox.removeEntityConflicts(
-                        this.userId,
-                        'plan',
-                        remote.localId,
-                        {assertCanCommit},
-                      )
-                  : undefined,
-              );
-            } catch (error) {
+        await measureSlowStage('account-hydrate-row', async () => {
+          const remote = parseRemotePlan(remoteValue);
+          changed += await withAccountEntityMutationLock(
+            this.userId,
+            'plan',
+            remote.localId,
+            async () => {
+              assertCanCommit();
+              if (
+                (await this.outbox.listEntity(
+                  this.userId,
+                  'plan',
+                  remote.localId,
+                )).length > 0
+              ) {
+                return 0;
+              }
+              const current = await this.planRepository.get(remote.localId);
+              if (current?.cloudSyncStatus === 'pending') {
+                return 0;
+              }
+              const local = remotePlanToLocal(remote, this.userId);
+              const recoveringConflict =
+                current?.cloudSyncStatus === 'conflict';
               if (
                 recoveringConflict &&
-                !isStaleAccountSyncCommitError(error)
+                !isEquivalentHistoricalConflict(current, local, this.userId)
               ) {
-                await this.restorePlan(current, remote.localId);
+                return 0;
               }
-              throw error;
-            }
-            return 1;
-          },
-        );
+              if (sameJsonValue(current, local)) {
+                return 0;
+              }
+              try {
+                await this.commitPlanSave(
+                  current,
+                  local,
+                  assertCanCommit,
+                  recoveringConflict
+                    ? () =>
+                        this.outbox.removeEntityConflicts(
+                          this.userId,
+                          'plan',
+                          remote.localId,
+                          {assertCanCommit},
+                        )
+                    : undefined,
+                );
+              } catch (error) {
+                if (
+                  recoveringConflict &&
+                  !isStaleAccountSyncCommitError(error)
+                ) {
+                  await this.restorePlan(current, remote.localId);
+                }
+                throw error;
+              }
+              return 1;
+            },
+          );
+        });
       } catch (error) {
         if (isStaleAccountSyncCommitError(error)) {
           throw error;
         }
         failures.push({entityKind: 'plan', phase: 'row', error});
       }
+      attemptedRows += 1;
+      if (attemptedRows < totalRows) {
+        await this.yieldToRuntime();
+      }
     }
     for (const remoteValue of logs) {
       try {
-        const remote = parseRemoteLog(remoteValue);
-        changed += await withAccountEntityMutationLock(
-          this.userId,
-          'log',
-          remote.localId,
-          async () => {
-            assertCanCommit();
-            if (
-              (await this.outbox.listEntity(
-                this.userId,
-                'log',
-                remote.localId,
-              )).length > 0
-            ) {
-              return 0;
-            }
-            const current = await this.logbookRepository.get(remote.localId);
-            if (current?.cloudSyncStatus === 'pending') {
-              return 0;
-            }
-            const prepared = await this.prepareHydratedLog(
-              remote,
-              current,
-              assertCanCommit,
-            );
-            const recoveringConflict =
-              current?.cloudSyncStatus === 'conflict';
-            if (
-              recoveringConflict &&
-              !isEquivalentHistoricalConflict(
+        await measureSlowStage('account-hydrate-row', async () => {
+          const remote = parseRemoteLog(remoteValue);
+          changed += await withAccountEntityMutationLock(
+            this.userId,
+            'log',
+            remote.localId,
+            async () => {
+              assertCanCommit();
+              if (
+                (await this.outbox.listEntity(
+                  this.userId,
+                  'log',
+                  remote.localId,
+                )).length > 0
+              ) {
+                return 0;
+              }
+              const current = await this.logbookRepository.get(remote.localId);
+              if (current?.cloudSyncStatus === 'pending') {
+                return 0;
+              }
+              const prepared = await this.prepareHydratedLog(
+                remote,
                 current,
-                prepared.local,
-                this.userId,
-              )
-            ) {
-              await prepared.rollbackProfile?.();
-              return 0;
-            }
-            if (sameJsonValue(current, prepared.local)) {
-              return 0;
-            }
-            try {
-              await this.commitLogSave(
-                current,
-                prepared.local,
                 assertCanCommit,
-                recoveringConflict
-                  ? () =>
-                      this.outbox.removeEntityConflicts(
-                        this.userId,
-                        'log',
-                        remote.localId,
-                        {assertCanCommit},
-                      )
-                  : undefined,
               );
-            } catch (error) {
+              const recoveringConflict =
+                current?.cloudSyncStatus === 'conflict';
               if (
                 recoveringConflict &&
-                !isStaleAccountSyncCommitError(error)
+                !isEquivalentHistoricalConflict(
+                  current,
+                  prepared.local,
+                  this.userId,
+                )
               ) {
-                await this.restoreLog(current, remote.localId);
+                await prepared.rollbackProfile?.();
+                return 0;
               }
-              await prepared.rollbackProfile?.();
-              throw error;
-            }
-            return 1;
-          },
-        );
+              if (sameJsonValue(current, prepared.local)) {
+                return 0;
+              }
+              try {
+                await this.commitLogSave(
+                  current,
+                  prepared.local,
+                  assertCanCommit,
+                  recoveringConflict
+                    ? () =>
+                        this.outbox.removeEntityConflicts(
+                          this.userId,
+                          'log',
+                          remote.localId,
+                          {assertCanCommit},
+                        )
+                    : undefined,
+                );
+              } catch (error) {
+                if (
+                  recoveringConflict &&
+                  !isStaleAccountSyncCommitError(error)
+                ) {
+                  await this.restoreLog(current, remote.localId);
+                }
+                await prepared.rollbackProfile?.();
+                throw error;
+              }
+              return 1;
+            },
+          );
+        });
       } catch (error) {
         if (isStaleAccountSyncCommitError(error)) {
           throw error;
         }
         failures.push({entityKind: 'log', phase: 'row', error});
+      }
+      attemptedRows += 1;
+      if (attemptedRows < totalRows) {
+        await this.yieldToRuntime();
       }
     }
     if (failures.length > 0) {
@@ -1602,6 +1619,27 @@ function defaultSchedule(
 ): ScheduledAccountSync {
   const timeout = setTimeout(task, delayMs);
   return {cancel: () => clearTimeout(timeout)};
+}
+
+function defaultYieldToRuntime(): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
+}
+
+async function measureSlowStage<T>(
+  label: 'account-hydrate-row',
+  operation: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    return await operation();
+  } finally {
+    const durationMs = performance.now() - startedAt;
+    if (__DEV__ && durationMs >= 100) {
+      console.warn(`[performance] ${label} ${Math.round(durationMs)}ms`);
+    }
+  }
 }
 
 function errorMessage(error: unknown): string {

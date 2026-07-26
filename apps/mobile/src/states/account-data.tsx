@@ -178,6 +178,8 @@ type PublishedAccountData = PrincipalRepositories & {
     generation: number | undefined;
     coordinator: AccountSyncCoordinator;
     promise: Promise<void>;
+    start?(): void;
+    cancel?(): void;
   };
   historicalArtifactLookup?: {
     generation: number;
@@ -326,6 +328,7 @@ export function AccountDataProviderCore({
         currentPublication?.queryScope !== undefined &&
         currentPublication.queryScope !== desiredScope
       ) {
+        currentPublication.cloudRefresh?.cancel?.();
         currentPublication.coordinator?.pause();
         await clearPrincipalQueries(queryClient, currentPublication.queryScope);
       }
@@ -595,37 +598,96 @@ export function AccountDataProviderCore({
         if (isOnline && nextPublication.coordinator) {
           const coordinator = nextPublication.coordinator;
           const refreshGeneration = nextPublication.claimGeneration;
-          let hydrated = 0;
-          const promise = (async () => {
-            hydrated = (await coordinator.hydrate({online: true})) ?? 0;
-            if (!isCurrent()) {
+          let settlePromise!: () => void;
+          let started = false;
+          let settled = false;
+          let scheduledHandle: {cancel(): void} | undefined;
+          const promise = new Promise<void>(resolve => {
+            settlePromise = resolve;
+          });
+          let operation!: NonNullable<PublishedAccountData['cloudRefresh']>;
+          const settle = () => {
+            if (settled) {
               return;
             }
-            await coordinator.drain({online: true});
-            if (!isCurrent()) {
+            settled = true;
+            settlePromise();
+          };
+          const run = async () => {
+            let hydrated = 0;
+            try {
+              hydrated = (await coordinator.hydrate({online: true})) ?? 0;
+              if (!isCurrent()) {
+                return;
+              }
+              await coordinator.drain({online: true});
+              if (!isCurrent()) {
+                return;
+              }
+              if (hydrated > 0) {
+                await invalidatePrincipalQueries(queryClient, desiredScope);
+              }
+            } catch (error) {
+              if (
+                isCurrent() &&
+                error instanceof AccountHydrationError &&
+                error.changed > 0
+              ) {
+                await invalidatePrincipalQueries(queryClient, desiredScope);
+              }
+              if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
+                setBootstrapPresentation({
+                  queryScope: desiredScope,
+                  state: {
+                    status: 'degraded',
+                    issue: {stage: 'remoteHydration', retryable: true},
+                  },
+                });
+                console.warn('Failed to hydrate remote account data', error);
+              }
+            } finally {
+              if (nextPublication.cloudRefresh === operation) {
+                nextPublication.cloudRefresh = undefined;
+              }
+              settle();
+            }
+          };
+          const start = () => {
+            if (started || settled) {
               return;
             }
-            if (hydrated > 0) {
-              await invalidatePrincipalQueries(queryClient, desiredScope);
+            started = true;
+            scheduledHandle?.cancel();
+            void run();
+          };
+          const cancel = () => {
+            scheduledHandle?.cancel();
+            if (nextPublication.cloudRefresh === operation) {
+              nextPublication.cloudRefresh = undefined;
             }
-          })();
-          const operation = {
+            settle();
+          };
+          operation = {
             generation: refreshGeneration,
             coordinator,
             promise,
+            start,
+            cancel,
           };
           nextPublication.cloudRefresh = operation;
           try {
-            await promise;
-          } catch (error) {
-            if (
-              isCurrent() &&
-              error instanceof AccountHydrationError &&
-              error.changed > 0
-            ) {
-              await invalidatePrincipalQueries(queryClient, desiredScope);
+            scheduledHandle = dependencies.scheduleAfterInteractions(
+              async () => {
+                start();
+                await promise;
+              },
+            );
+            if (settled || started) {
+              scheduledHandle.cancel();
             }
-            if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
+          } catch (error) {
+            cancel();
+            if (isCurrent()) {
               setBootstrapPresentation({
                 queryScope: desiredScope,
                 state: {
@@ -633,14 +695,10 @@ export function AccountDataProviderCore({
                   issue: {stage: 'remoteHydration', retryable: true},
                 },
               });
-              console.warn('Failed to hydrate remote account data', error);
-            }
-            return;
-          } finally {
-            if (nextPublication.cloudRefresh === operation) {
-              nextPublication.cloudRefresh = undefined;
+              console.warn('Failed to schedule remote account hydration', error);
             }
           }
+          await promise;
           if (!isCurrent()) {
             return;
           }
@@ -679,6 +737,7 @@ export function AccountDataProviderCore({
       if (generationRef.current === generation) {
         generationRef.current += 1;
         const publication = publications.get(desiredScope);
+        publication?.cloudRefresh?.cancel?.();
         publication?.coordinator?.pause();
         if (publication) {
           cancelZeroInventoryAudit(publication);
@@ -1110,6 +1169,7 @@ export function AccountDataProviderCore({
       activeRefresh.generation === generation &&
       activeRefresh.coordinator === coordinator
     ) {
+      activeRefresh.start?.();
       return activeRefresh.promise;
     }
 

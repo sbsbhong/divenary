@@ -15,6 +15,8 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
 
   private let connectivitySession: WCSession?
   private let userDefaults: UserDefaults
+  private let stateQueue = DispatchQueue(label: "com.divenary.watch-connectivity-inbox", qos: .utility)
+  private let stateQueueKey = DispatchSpecificKey<Void>()
   private var isActivated = false
   private var pendingPayloads: [PendingWatchConnectivityPayload] = []
   private var pendingAcknowledgements: [PendingWatchConnectivityAcknowledgement] = []
@@ -25,70 +27,84 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     connectivitySession = WCSession.isSupported() ? WCSession.default : nil
     userDefaults = .standard
     super.init()
-    pendingPayloads = Self.loadPendingPayloads(from: userDefaults)
-    pendingAcknowledgements = Self.loadPendingAcknowledgements(from: userDefaults)
-    pendingPlannedDivesJson = userDefaults.string(forKey: Self.plannedDivesContextStorageKey)
+    stateQueue.setSpecific(key: stateQueueKey, value: ())
+    stateQueue.async { [weak self] in
+      guard let self else { return }
+      self.pendingPayloads = Self.loadPendingPayloads(from: self.userDefaults)
+      self.pendingAcknowledgements = Self.loadPendingAcknowledgements(from: self.userDefaults)
+      self.pendingPlannedDivesJson = self.userDefaults.string(
+        forKey: Self.plannedDivesContextStorageKey
+      )
+    }
     connectivitySession?.delegate = self
   }
 
   func activate() {
-    guard !isActivated else {
-      return
-    }
+    stateQueue.async { [weak self] in
+      guard let self, !self.isActivated else {
+        return
+      }
 
-    isActivated = true
-    connectivitySession?.activate()
-  }
-
-  func drainPendingPayloads() -> [[String: Any]] {
-    if Thread.isMainThread {
-      return drainPendingPayloadsOnMainQueue()
-    }
-
-    return DispatchQueue.main.sync {
-      drainPendingPayloadsOnMainQueue()
+      self.isActivated = true
+      self.connectivitySession?.activate()
     }
   }
 
-  func acknowledge(payloadIds: [String]) {
-    if Thread.isMainThread {
-      acknowledgeOnMainQueue(payloadIds: payloadIds)
-      return
-    }
-
-    DispatchQueue.main.sync {
-      acknowledgeOnMainQueue(payloadIds: payloadIds)
-    }
-  }
-
-  func acknowledgeImported(payloadIds: [String]) {
-    if Thread.isMainThread {
-      acknowledgeImportedOnMainQueue(payloadIds: payloadIds)
-      return
-    }
-
-    DispatchQueue.main.sync {
-      acknowledgeImportedOnMainQueue(payloadIds: payloadIds)
+  func drainPendingPayloads(
+    completion: @escaping ([[String: Any]]) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      guard let self else {
+        completion([])
+        return
+      }
+      let payloads = self.measureSlowStage("watch-import") {
+        self.pendingPayloads
+          .prefix(1)
+          .map(\.dictionary)
+          .filter { !$0.isEmpty }
+      }
+      completion(payloads)
     }
   }
 
-  func updatePlannedDives(json plannedDivesJson: String) -> [String: Any] {
-    if Thread.isMainThread {
-      return updatePlannedDivesOnMainQueue(json: plannedDivesJson)
-    }
-
-    return DispatchQueue.main.sync {
-      updatePlannedDivesOnMainQueue(json: plannedDivesJson)
+  func acknowledge(
+    payloadIds: [String],
+    completion: @escaping () -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      self?.acknowledgeOnStateQueue(payloadIds: payloadIds)
+      completion()
     }
   }
 
-  func linkedWatchInfo() -> [String: Any] {
-    if Thread.isMainThread {
-      return linkedWatchInfoOnMainQueue()
+  func acknowledgeImported(
+    payloadIds: [String],
+    completion: @escaping () -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      self?.acknowledgeImportedOnStateQueue(payloadIds: payloadIds)
+      completion()
     }
+  }
 
-    return DispatchQueue.main.sync {
-      linkedWatchInfoOnMainQueue()
+  func updatePlannedDives(
+    json plannedDivesJson: String,
+    completion: @escaping ([String: Any]) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      let status = self?.updatePlannedDivesOnStateQueue(
+        json: plannedDivesJson
+      ) ?? [:]
+      completion(status)
+    }
+  }
+
+  func linkedWatchInfo(
+    completion: @escaping ([String: Any]) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      completion(self?.linkedWatchInfoOnStateQueue() ?? [:])
     }
   }
 
@@ -98,15 +114,15 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     error: Error?
   ) {
     guard error == nil, activationState == .activated else {
-      DispatchQueue.main.async { [weak self] in
+      stateQueue.async { [weak self] in
         self?.isActivated = false
       }
       return
     }
 
-    DispatchQueue.main.async { [weak self] in
-      self?.flushPendingPlannedDivesContextOnMainQueue()
-      self?.flushPendingAcknowledgementsOnMainQueue()
+    stateQueue.async { [weak self] in
+      self?.flushPendingPlannedDivesContextOnStateQueue()
+      self?.flushPendingAcknowledgementsOnStateQueue()
     }
   }
 
@@ -121,63 +137,88 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       return
     }
 
-    DispatchQueue.main.async { [weak self] in
-      self?.flushPendingPlannedDivesContextOnMainQueue()
-      self?.flushPendingAcknowledgementsOnMainQueue()
+    stateQueue.async { [weak self] in
+      self?.flushPendingPlannedDivesContextOnStateQueue()
+      self?.flushPendingAcknowledgementsOnStateQueue()
     }
   }
 
   func sessionWatchStateDidChange(_ session: WCSession) {
-    DispatchQueue.main.async { [weak self] in
-      self?.flushPendingPlannedDivesContextOnMainQueue()
+    stateQueue.async { [weak self] in
+      self?.flushPendingPlannedDivesContextOnStateQueue()
     }
   }
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-    enqueuePendingPayload(from: userInfo)
+    stateQueue.async { [weak self] in
+      self?.enqueuePendingPayloadOnStateQueue(from: userInfo)
+    }
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-    enqueuePendingPayload(from: message)
+    stateQueue.async { [weak self] in
+      self?.enqueuePendingPayloadOnStateQueue(from: message)
+    }
   }
 
   func session(_ session: WCSession, didReceive file: WCSessionFile) {
-    guard let metadata = file.metadata,
-          metadata[WatchConnectivityEnvelopeKey.kind] as? String == WatchConnectivityEnvelopeValue.kind,
-          let payload = try? persistPendingFile(sourceURL: file.fileURL, metadata: metadata) else {
-      return
+    performOnStateQueueSync { [weak self] in
+      guard let self,
+            let metadata = file.metadata,
+            metadata[WatchConnectivityEnvelopeKey.kind] as? String == WatchConnectivityEnvelopeValue.kind else {
+        return
+      }
+      guard let payload = try? self.measureSlowStage(
+        "watch-import",
+        operation: {
+          try self.persistPendingFile(
+            sourceURL: file.fileURL,
+            metadata: metadata
+          )
+        }
+      ) else {
+        return
+      }
+      self.enqueuePendingPayloadOnStateQueue(payload)
     }
-    enqueuePendingPayload(payload)
   }
 
-  private func enqueuePendingPayload(from userInfo: [String: Any]) {
+  private func enqueuePendingPayloadOnStateQueue(from userInfo: [String: Any]) {
     guard let payload = makePendingPayload(from: userInfo) else {
       return
     }
 
-    enqueuePendingPayload(payload)
+    enqueuePendingPayloadOnStateQueue(payload)
   }
 
-  private func enqueuePendingPayload(_ payload: PendingWatchConnectivityPayload) {
-    let persist = {
-      if self.pendingPayloads.contains(where: {
-        $0.localSessionId == payload.localSessionId
-          && $0.contentRevision == payload.contentRevision
-          && $0.sha256 == payload.sha256
-      }) {
-        if let filePath = payload.filePath {
-          try? FileManager.default.removeItem(atPath: filePath)
-        }
-        return
+  private func enqueuePendingPayloadOnStateQueue(
+    _ payload: PendingWatchConnectivityPayload
+  ) {
+    if pendingPayloads.contains(where: {
+      $0.localSessionId == payload.localSessionId
+        && $0.contentRevision == payload.contentRevision
+        && $0.sha256 == payload.sha256
+    }) {
+      if let filePath = payload.filePath {
+        try? FileManager.default.removeItem(atPath: filePath)
       }
-      self.pendingPayloads.append(payload)
-      self.persistPendingPayloads()
-      NotificationCenter.default.post(name: .diveWatchSyncPayloadReceived, object: self, userInfo: payload.dictionary)
+      return
     }
-    if Thread.isMainThread {
-      persist()
-    } else {
-      DispatchQueue.main.sync(execute: persist)
+    pendingPayloads.append(payload)
+    persistPendingPayloads()
+    let dictionary = measureSlowStage("watch-import") {
+      payload.dictionary
+    }
+    guard !dictionary.isEmpty else {
+      return
+    }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      NotificationCenter.default.post(
+        name: .diveWatchSyncPayloadReceived,
+        object: self,
+        userInfo: dictionary
+      )
     }
   }
 
@@ -190,11 +231,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     return try? persistPendingData(payloadData, metadata: userInfo)
   }
 
-  private func drainPendingPayloadsOnMainQueue() -> [[String: Any]] {
-    pendingPayloads.prefix(1).map(\.dictionary).filter { !$0.isEmpty }
-  }
-
-  private func acknowledgeOnMainQueue(payloadIds: [String]) {
+  private func acknowledgeOnStateQueue(payloadIds: [String]) {
     let payloadIdSet = Set(payloadIds)
     guard !payloadIdSet.isEmpty else {
       return
@@ -206,7 +243,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     removed.compactMap(\.filePath).forEach { try? FileManager.default.removeItem(atPath: $0) }
   }
 
-  private func acknowledgeImportedOnMainQueue(payloadIds: [String]) {
+  private func acknowledgeImportedOnStateQueue(payloadIds: [String]) {
     let payloadIdSet = Set(payloadIds)
     guard !payloadIdSet.isEmpty else {
       return
@@ -216,7 +253,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       .filter { payloadIdSet.contains($0.payloadId) }
 
     enqueueImportAcknowledgements(payloads: importedPayloads)
-    acknowledgeOnMainQueue(payloadIds: payloadIds)
+    acknowledgeOnStateQueue(payloadIds: payloadIds)
   }
 
   private func enqueueImportAcknowledgements(payloads: [PendingWatchConnectivityPayload]) {
@@ -241,10 +278,10 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       }
     }
     persistPendingAcknowledgements()
-    flushPendingAcknowledgementsOnMainQueue()
+    flushPendingAcknowledgementsOnStateQueue()
   }
 
-  private func flushPendingAcknowledgementsOnMainQueue() {
+  private func flushPendingAcknowledgementsOnStateQueue() {
     guard let connectivitySession,
           connectivitySession.activationState == .activated else { return }
     let outstandingIdentities = Set(connectivitySession.outstandingUserInfoTransfers.compactMap {
@@ -268,20 +305,24 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
           let identity = PendingWatchConnectivityAcknowledgement.identity(from: userInfoTransfer.userInfo) else {
       return
     }
-    DispatchQueue.main.async { [weak self] in
+    stateQueue.async { [weak self] in
       self?.pendingAcknowledgements.removeAll { $0.identity == identity }
       self?.persistPendingAcknowledgements()
     }
   }
 
-  private func updatePlannedDivesOnMainQueue(json plannedDivesJson: String) -> [String: Any] {
+  private func updatePlannedDivesOnStateQueue(
+    json plannedDivesJson: String
+  ) -> [String: Any] {
     pendingPlannedDivesJson = plannedDivesJson
     userDefaults.set(plannedDivesJson, forKey: Self.plannedDivesContextStorageKey)
-    flushPendingPlannedDivesContextOnMainQueue()
-    return plannedDivesStatusOnMainQueue(payloadCount: Self.countPlannedDives(in: plannedDivesJson))
+    flushPendingPlannedDivesContextOnStateQueue()
+    return plannedDivesStatusOnStateQueue(
+      payloadCount: Self.countPlannedDives(in: plannedDivesJson)
+    )
   }
 
-  private func flushPendingPlannedDivesContextOnMainQueue() {
+  private func flushPendingPlannedDivesContextOnStateQueue() {
     guard let connectivitySession,
           connectivitySession.activationState == .activated,
           let plannedDivesJson = pendingPlannedDivesJson else {
@@ -325,7 +366,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     lastPlannedDivesContextError = nil
   }
 
-  private func linkedWatchInfoOnMainQueue() -> [String: Any] {
+  private func linkedWatchInfoOnStateQueue() -> [String: Any] {
     guard WCSession.isSupported(),
           let connectivitySession else {
       return [
@@ -352,8 +393,8 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     return info
   }
 
-  private func plannedDivesStatusOnMainQueue(payloadCount: Int) -> [String: Any] {
-    var status = linkedWatchInfoOnMainQueue()
+  private func plannedDivesStatusOnStateQueue(payloadCount: Int) -> [String: Any] {
+    var status = linkedWatchInfoOnStateQueue()
     status["activationState"] = activationStateName(for: connectivitySession?.activationState)
     status["payloadCount"] = payloadCount
     status["queuedCount"] = pendingPlannedDivesJson == nil ? 0 : 1
@@ -513,6 +554,30 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       sampleCount: metadata[WatchConnectivityEnvelopeKey.sampleCount] as? Int,
       receivedAt: Date().timeIntervalSince1970
     )
+  }
+
+  private func performOnStateQueueSync(_ operation: () -> Void) {
+    if DispatchQueue.getSpecific(key: stateQueueKey) != nil {
+      operation()
+      return
+    }
+    stateQueue.sync(execute: operation)
+  }
+
+  private func measureSlowStage<T>(
+    _ label: StaticString,
+    operation: () throws -> T
+  ) rethrows -> T {
+    #if DEBUG
+    let startedAt = CFAbsoluteTimeGetCurrent()
+    defer {
+      let durationMs = (CFAbsoluteTimeGetCurrent() - startedAt) * 1_000
+      if durationMs >= 100 {
+        print("[performance] \(label) \(Int(durationMs.rounded()))ms")
+      }
+    }
+    #endif
+    return try operation()
   }
 
   private static func inboxDirectoryURL() -> URL {

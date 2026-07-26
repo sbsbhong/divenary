@@ -1380,6 +1380,27 @@ describe('AccountSyncCoordinator', () => {
     });
   });
 
+  it('yields only between hydrated remote rows without changing the update count', async () => {
+    const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteLog()]})),
+        listPlans: jest.fn(async () => ({items: [remotePlan()]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: new LocalDivePlanRepository(),
+      yieldToRuntime,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(2);
+    expect(yieldToRuntime).toHaveBeenCalledTimes(1);
+  });
+
   it('hydrates the observed Watch max-depth roundtrip instead of reporting a partial failure', async () => {
     const {mapperValue} = observedWatchFloatRoundtrip();
     const logbook = new LocalDiveLogRepository();

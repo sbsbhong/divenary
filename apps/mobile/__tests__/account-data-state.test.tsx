@@ -72,6 +72,196 @@ const plan: DivePlan = {
 };
 
 describe('account data state', () => {
+  it('publishes local account rows before scheduling the initial cloud hydration', async () => {
+    const localLogbook = new LocalDiveLogRepository([entry]);
+    const remote = accountRepository();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const queryClient = new QueryClient();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{
+            state: {status: 'authenticated', userId},
+            accountDataRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? new LocalDiveLogRepository()
+                  : localLogbook,
+              planbook: new LocalDivePlanRepository(),
+            }),
+            scheduleAfterInteractions: afterInteractions.schedule,
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    await expect(capture!.logbookRepository.list()).resolves.toEqual([entry]);
+    expect(remote.listLogs).not.toHaveBeenCalled();
+    expect(remote.listPlans).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.flush();
+    });
+    await waitFor(() => expect(remote.listLogs).toHaveBeenCalledTimes(1));
+    expect(remote.listPlans).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('starts an explicit cloud refresh immediately while automatic hydration is scheduled', async () => {
+    const remote = accountRepository();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const queryClient = new QueryClient();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{
+            state: {status: 'authenticated', userId},
+            accountDataRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage: new InMemoryKeyValueStore(),
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook: new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            scheduleAfterInteractions: afterInteractions.schedule,
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    expect(remote.listLogs).not.toHaveBeenCalled();
+    const refresh = capture!.refreshCloudData();
+    await waitFor(() => expect(remote.listLogs).toHaveBeenCalledTimes(1));
+    await refresh;
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('settles a cancelled scheduled hydration before an explicit refresh starts immediately', async () => {
+    const remote = accountRepository();
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const queryClient = new QueryClient();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const auth = {
+      state: {status: 'authenticated', userId} as const,
+      accountDataRepository: remote,
+    };
+    const dependencies = {
+      metadataStorage: new InMemoryKeyValueStore(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: (principal: {kind: 'guest'} | {kind: 'user'; userId: string}) => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      }),
+      scheduleAfterInteractions: afterInteractions.schedule,
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={auth}
+          dependencies={dependencies}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+    expect(afterInteractions.tasks).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      capture!.retryBootstrap();
+      await flushPromises();
+      await flushPromises();
+    });
+    expect(afterInteractions.cancels[0]).toHaveBeenCalledTimes(1);
+    await expect(afterInteractions.tasks[0]?.()).resolves.toBeUndefined();
+    expect(remote.listLogs).not.toHaveBeenCalled();
+    await waitFor(() => expect(afterInteractions.tasks).toHaveLength(2));
+
+    const refresh = capture!.refreshCloudData();
+    await waitFor(() => expect(remote.listLogs).toHaveBeenCalledTimes(1));
+    await refresh;
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
   it('publishes the selected principal when legacy migration is degraded', async () => {
     const queryClient = new QueryClient();
     const captures: ReturnType<typeof useAccountData>[] = [];
@@ -5289,6 +5479,7 @@ function controlledAfterInteractionsScheduler(): {
   >;
   tasks: Array<() => void | Promise<void>>;
   cancels: jest.Mock[];
+  flush(): Promise<void>;
 } {
   const tasks: Array<() => void | Promise<void>> = [];
   const cancels: jest.Mock[] = [];
@@ -5301,6 +5492,9 @@ function controlledAfterInteractionsScheduler(): {
       cancels.push(cancel);
       return {cancel};
     }),
+    async flush() {
+      await tasks.shift()?.();
+    },
   };
 }
 
