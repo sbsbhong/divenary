@@ -34,6 +34,7 @@ import { AccountOutbox } from '../src/sync/account-outbox';
 import type { WatchDepthSample } from '../src/types/dive-session';
 import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
 import {parseWatchSyncMessageJson} from '../src/utils/watch-sync-message-validation';
+import i18n from '../src/i18n';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const createDeferred = () => {
@@ -145,6 +146,12 @@ function makePendingPayload(
 }
 
 describe('WatchConnectivitySyncProvider', () => {
+  beforeEach(async () => {
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('ko');
+    });
+  });
+
   afterEach(async () => {
     await ReactTestRenderer.act(async () => {
       for (const renderer of renderers.splice(0)) {
@@ -433,9 +440,12 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgeImportedPayloads = jest.fn(async () => undefined);
     const onLocalWritesCommitted = jest.fn(async () => undefined);
     let drained = false;
+    let importSummary:
+      | Awaited<ReturnType<typeof importPendingWatchConnectivityPayloads>>
+      | undefined;
 
-    await expect(
-      importPendingWatchConnectivityPayloads({
+    await ReactTestRenderer.act(async () => {
+      importSummary = await importPendingWatchConnectivityPayloads({
         repository: accountData!.logbookRepository,
         planRepository: accountData!.planRepository,
         queryClient,
@@ -457,8 +467,11 @@ describe('WatchConnectivitySyncProvider', () => {
         },
         acknowledgeImportedPayloads,
         onLocalWritesCommitted,
-      }),
-    ).resolves.toEqual({receivedCount: 1, importedCount: 1});
+      });
+      await flushPromises();
+    });
+
+    expect(importSummary).toEqual({receivedCount: 1, importedCount: 1});
 
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
       'deferred-plan-watch-payload',
@@ -532,21 +545,32 @@ describe('WatchConnectivitySyncProvider', () => {
         })),
       },
     };
-    await expect(importPendingWatchConnectivityPayloads({
-      repository: accountData!.logbookRepository,
-      planRepository: accountData!.planRepository,
-      queryClient,
-      queryScope,
-      coordinator: new WatchConnectivityImportCoordinator(),
-      drainPendingPayloads: async () => [{
-        payloadId: 'failed-deferred-plan-watch-payload',
-        payloadJson: JSON.stringify(failedFixture),
-        localSessionId: failedFixture.session.localSessionId,
-        receivedAt: failedFixture.session.endedAt,
-      }],
-      acknowledgeImportedPayloads,
-      onLocalWritesCommitted,
-    })).resolves.toEqual({receivedCount: 1, importedCount: 1});
+    let failedImportSummary:
+      | Awaited<ReturnType<typeof importPendingWatchConnectivityPayloads>>
+      | undefined;
+    await ReactTestRenderer.act(async () => {
+      failedImportSummary = await importPendingWatchConnectivityPayloads({
+        repository: accountData!.logbookRepository,
+        planRepository: accountData!.planRepository,
+        queryClient,
+        queryScope,
+        coordinator: new WatchConnectivityImportCoordinator(),
+        drainPendingPayloads: async () => [{
+          payloadId: 'failed-deferred-plan-watch-payload',
+          payloadJson: JSON.stringify(failedFixture),
+          localSessionId: failedFixture.session.localSessionId,
+          receivedAt: failedFixture.session.endedAt,
+        }],
+        acknowledgeImportedPayloads,
+        onLocalWritesCommitted,
+      });
+      await flushPromises();
+    });
+
+    expect(failedImportSummary).toEqual({
+      receivedCount: 1,
+      importedCount: 1,
+    });
 
     const failedAccountLog = (await accountLogbook.list()).find(
       log => log.watchCapture?.session.sourcePlanLocalId === failedDeferredPlan.localId,
