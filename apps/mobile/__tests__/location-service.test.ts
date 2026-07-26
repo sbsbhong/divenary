@@ -77,4 +77,22 @@ describe('createLocationService', () => {
     });
     expect(request).toHaveBeenCalledTimes(1);
   });
+
+  it('does not retry timeout errors', async () => {
+    const request = jest.fn((_success, failure) =>
+      failure({ code: 3, message: 'timed out' }),
+    );
+    const wait = jest.fn(async () => undefined);
+    const service = createLocationService({
+      getCurrentPosition: request,
+      wait,
+    });
+
+    await expect(service.getCurrentLocation()).resolves.toEqual({
+      status: 'unavailable',
+      errorMessage: 'timed out',
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
 });
