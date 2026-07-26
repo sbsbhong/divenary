@@ -5,6 +5,7 @@ import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
 import { createAsyncStorageKeyValueStore, type PersistentKeyValueStore } from '../storage/persistent-key-value-store';
 import {
+  PersistentJsonCommittedWriteError,
   PersistentJsonStore,
   UnsupportedStorageVersionError,
   type StoredEnvelope,
@@ -250,10 +251,14 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         options?.assertCanCommit?.();
         committedEntries = entries;
       } catch (error) {
-        if (metadataWriteAttempted) {
+        const writeCommitted =
+          error instanceof PersistentJsonCommittedWriteError;
+        if (metadataWriteAttempted && !writeCommitted) {
           await this.restoreMetadataSnapshot(metadataSnapshot);
         }
-        await this.restoreProfileSnapshots(profileSnapshots);
+        if (!writeCommitted) {
+          await this.restoreProfileSnapshots(profileSnapshots);
+        }
         throw error;
       }
 

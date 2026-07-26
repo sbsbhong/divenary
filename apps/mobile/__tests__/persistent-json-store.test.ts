@@ -4,6 +4,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
   PersistentJsonReadError,
+  PersistentJsonRecoveryError,
   PersistentJsonStore,
   type PersistentJsonStoreOptions,
   UnsupportedStorageVersionError,
@@ -12,6 +13,24 @@ import {
 type StoredValue = {
   label: string;
 };
+
+class RecordingKeyValueStore extends InMemoryKeyValueStore {
+  readonly writes: Array<{key: string; value: string}> = [];
+
+  override async setString(key: string, value: string): Promise<void> {
+    this.writes.push({key, value});
+    await super.setString(key, value);
+  }
+}
+
+class CorruptingQuarantineStore extends InMemoryKeyValueStore {
+  override async setString(key: string, value: string): Promise<void> {
+    await super.setString(
+      key,
+      key.includes(':quarantine:') ? `${value}:corrupted` : value,
+    );
+  }
+}
 
 const createStore = (
   storage = new InMemoryKeyValueStore(),
@@ -87,14 +106,18 @@ async function createInterruptedJournalFixture(
         store,
         storage,
         mainKey,
+        recoveryKeys,
         expected: {label: 'old'},
+        pendingBytes: expectedMainBytes,
         expectedMainBytes: oldMainBytes,
       }
     : {
         store,
         storage,
         mainKey,
+        recoveryKeys,
         expected: {label: 'new'},
+        pendingBytes: expectedMainBytes,
         expectedMainBytes,
       };
 }
@@ -148,19 +171,53 @@ describe('PersistentJsonStore', () => {
 
   it('throws and preserves malformed durable bytes instead of returning the default', async () => {
     const storage = new InMemoryKeyValueStore();
-    const raw = '{"schemaVersion":3,"updatedAt":1,"value":[';
+    const raw = '{"schemaVersion":3,"updatedAt":1,"value":"잠수🌊"';
+    const quarantinePrefix = 'test:value:v1:quarantine:';
     await storage.setString('test:value:v1', raw);
     const {jsonStore: store} = createStore(storage, {
       readFailurePolicy: 'throw',
       recoveryKeys: {
         pending: 'test:value:v1:pending',
         commit: 'test:value:v1:commit',
-        quarantinePrefix: 'test:value:v1:quarantine:',
+        quarantinePrefix,
       },
     });
 
     await expect(store.read()).rejects.toBeInstanceOf(PersistentJsonReadError);
     await expect(storage.getString('test:value:v1')).resolves.toBe(raw);
+    await expect(
+      storage.getString(
+        `${quarantinePrefix}${bytesToHex(sha256(utf8ToBytes(raw)))}`,
+      ),
+    ).resolves.toBe(raw);
+    expect(utf8ToBytes(raw).length).toBeGreaterThan(raw.length);
+  });
+
+  it('writes an exact UTF-8 journal marker for a multibyte value', async () => {
+    const storage = new RecordingKeyValueStore();
+    const recoveryKeys = {
+      pending: 'test:value:v1:pending',
+      commit: 'test:value:v1:commit',
+      quarantinePrefix: 'test:value:v1:quarantine:',
+    };
+    const {jsonStore: store} = createStore(storage, {recoveryKeys});
+
+    await store.write({label: '잠수🌊'});
+
+    const pending = storage.writes.find(
+      write => write.key === recoveryKeys.pending,
+    )?.value;
+    const markerRaw = storage.writes.find(
+      write => write.key === recoveryKeys.commit,
+    )?.value;
+    expect(pending).toBeDefined();
+    expect(markerRaw).toBeDefined();
+    expect(JSON.parse(markerRaw!)).toEqual({
+      schemaVersion: 1,
+      digest: bytesToHex(sha256(utf8ToBytes(pending!))),
+      byteCount: utf8ToBytes(pending!).length,
+    });
+    expect(utf8ToBytes(pending!).length).toBeGreaterThan(pending!.length);
   });
 
   it.each([
@@ -173,6 +230,71 @@ describe('PersistentJsonStore', () => {
     expect(result).toEqual(fixture.expected);
     expect(await fixture.storage.getString(fixture.mainKey))
       .toBe(fixture.expectedMainBytes);
+    await expect(
+      fixture.storage.getString(fixture.recoveryKeys.commit),
+    ).resolves.toBeUndefined();
+    if (boundary === 'after-pending') {
+      await expect(
+        fixture.storage.getString(fixture.recoveryKeys.pending),
+      ).resolves.toBe(fixture.pendingBytes);
+    } else {
+      await expect(
+        fixture.storage.getString(fixture.recoveryKeys.pending),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  it('rejects an invalid committed marker without touching main bytes', async () => {
+    const fixture = await createInterruptedJournalFixture('after-pending');
+    await fixture.storage.setString(fixture.recoveryKeys.commit, '{invalid');
+
+    await expect(fixture.store.read()).rejects.toBeInstanceOf(
+      PersistentJsonRecoveryError,
+    );
+    await expect(fixture.storage.getString(fixture.mainKey)).resolves.toBe(
+      fixture.expectedMainBytes,
+    );
+  });
+
+  it('rejects a committed digest mismatch without touching main bytes', async () => {
+    const fixture = await createInterruptedJournalFixture('after-pending');
+    const pending = await fixture.storage.getString(
+      fixture.recoveryKeys.pending,
+    );
+    await fixture.storage.setString(
+      fixture.recoveryKeys.commit,
+      JSON.stringify({
+        schemaVersion: 1,
+        digest: '0'.repeat(64),
+        byteCount: utf8ToBytes(pending!).length,
+      }),
+    );
+
+    await expect(fixture.store.read()).rejects.toBeInstanceOf(
+      PersistentJsonRecoveryError,
+    );
+    await expect(fixture.storage.getString(fixture.mainKey)).resolves.toBe(
+      fixture.expectedMainBytes,
+    );
+  });
+
+  it('rejects quarantine readback corruption without touching main bytes', async () => {
+    const storage = new CorruptingQuarantineStore();
+    const raw = '{"schemaVersion":3,"value":"해양🌊"';
+    await storage.setString('test:value:v1', raw);
+    const {jsonStore: store} = createStore(storage, {
+      readFailurePolicy: 'throw',
+      recoveryKeys: {
+        pending: 'test:value:v1:pending',
+        commit: 'test:value:v1:commit',
+        quarantinePrefix: 'test:value:v1:quarantine:',
+      },
+    });
+
+    await expect(store.read()).rejects.toBeInstanceOf(
+      PersistentJsonRecoveryError,
+    );
+    await expect(storage.getString('test:value:v1')).resolves.toBe(raw);
   });
 
   it('removes a stored payload', async () => {
@@ -182,5 +304,21 @@ describe('PersistentJsonStore', () => {
     await jsonStore.remove();
 
     await expect(storage.getString('test:value:v1')).resolves.toBeUndefined();
+  });
+
+  it('removes a recovery-enabled payload without journal resurrection', async () => {
+    const fixture = await createInterruptedJournalFixture('after-commit');
+
+    await fixture.store.remove();
+
+    await expect(
+      fixture.storage.getString(fixture.recoveryKeys.commit),
+    ).resolves.toBeUndefined();
+    await expect(
+      fixture.storage.getString(fixture.recoveryKeys.pending),
+    ).resolves.toBeUndefined();
+    await expect(fixture.storage.getString(fixture.mainKey))
+      .resolves.toBeUndefined();
+    await expect(fixture.store.read()).resolves.toEqual({label: 'default'});
   });
 });

@@ -51,6 +51,18 @@ export class PersistentJsonRecoveryError extends Error {
   }
 }
 
+export class PersistentJsonCommittedWriteError extends Error {
+  constructor(
+    readonly key: string,
+    readonly cause: Error,
+  ) {
+    super(
+      `Durable JSON write for ${key} crossed its commit boundary: ${cause.message}`,
+    );
+    this.name = 'PersistentJsonCommittedWriteError';
+  }
+}
+
 type JournalMarker = {
   schemaVersion: 1;
   digest: string;
@@ -115,27 +127,82 @@ export class PersistentJsonStore<T> {
         'Pending write readback failed',
       );
     }
-    await this.storage.setString(
-      this.recoveryKeys.commit,
-      JSON.stringify({
-        schemaVersion: 1,
-        digest: digest(serialized),
-        byteCount: byteCount(serialized),
-      } satisfies JournalMarker),
-    );
-    await this.storage.setString(this.key, serialized);
-    if ((await this.storage.getString(this.key)) !== serialized) {
-      throw new PersistentJsonRecoveryError(
-        this.key,
-        'Main write readback failed',
-      );
+    const markerRaw = JSON.stringify({
+      schemaVersion: 1,
+      digest: digest(serialized),
+      byteCount: byteCount(serialized),
+    } satisfies JournalMarker);
+    try {
+      await this.storage.setString(this.recoveryKeys.commit, markerRaw);
+      if (
+        (await this.storage.getString(this.recoveryKeys.commit)) !== markerRaw
+      ) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          'Commit marker readback failed',
+        );
+      }
+    } catch (error) {
+      await this.handleUnverifiedCommit(error);
     }
-    await this.storage.remove(this.recoveryKeys.commit);
-    await this.storage.remove(this.recoveryKeys.pending);
+    try {
+      await this.storage.setString(this.key, serialized);
+      if ((await this.storage.getString(this.key)) !== serialized) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          'Main write readback failed',
+        );
+      }
+      await this.clearRecoveryJournal();
+    } catch (error) {
+      try {
+        await this.recoverCommittedWrite();
+        if ((await this.storage.getString(this.key)) !== serialized) {
+          throw new PersistentJsonRecoveryError(
+            this.key,
+            'Committed main write verification failed',
+          );
+        }
+        await this.clearRecoveryJournal();
+      } catch (recoveryError) {
+        throw new PersistentJsonCommittedWriteError(
+          this.key,
+          toError(recoveryError),
+        );
+      }
+    }
   }
 
   async remove(): Promise<void> {
+    if (this.recoveryKeys) {
+      await this.storage.remove(this.recoveryKeys.commit);
+      if (
+        (await this.storage.getString(this.recoveryKeys.commit)) !== undefined
+      ) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          `Failed JSON journal removal for ${this.key}`,
+        );
+      }
+    }
     await this.storage.remove(this.key);
+    if ((await this.storage.getString(this.key)) !== undefined) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Failed durable JSON removal for ${this.key}`,
+      );
+    }
+    if (this.recoveryKeys) {
+      await this.storage.remove(this.recoveryKeys.pending);
+      if (
+        (await this.storage.getString(this.recoveryKeys.pending)) !== undefined
+      ) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          `Failed pending JSON journal removal for ${this.key}`,
+        );
+      }
+    }
   }
 
   private async recoverCommittedWrite(): Promise<void> {
@@ -173,8 +240,7 @@ export class PersistentJsonStore<T> {
         `Failed JSON journal readback for ${this.key}`,
       );
     }
-    await this.storage.remove(this.recoveryKeys.commit);
-    await this.storage.remove(this.recoveryKeys.pending);
+    await this.clearRecoveryJournal();
   }
 
   private async handleReadError(raw: string, error: unknown): Promise<T> {
@@ -196,6 +262,53 @@ export class PersistentJsonStore<T> {
       }
     }
     throw new PersistentJsonReadError(this.key, cause);
+  }
+
+  private async handleUnverifiedCommit(error: unknown): Promise<never> {
+    if (!this.recoveryKeys) {
+      throw toError(error);
+    }
+    try {
+      await this.storage.remove(this.recoveryKeys.commit);
+      if (
+        (await this.storage.getString(this.recoveryKeys.commit)) !== undefined
+      ) {
+        throw new PersistentJsonRecoveryError(
+          this.key,
+          `Failed to invalidate JSON commit marker for ${this.key}`,
+        );
+      }
+    } catch (invalidationError) {
+      throw new PersistentJsonCommittedWriteError(
+        this.key,
+        toError(invalidationError),
+      );
+    }
+    throw toError(error);
+  }
+
+  private async clearRecoveryJournal(): Promise<void> {
+    if (!this.recoveryKeys) {
+      return;
+    }
+    await this.storage.remove(this.recoveryKeys.commit);
+    if (
+      (await this.storage.getString(this.recoveryKeys.commit)) !== undefined
+    ) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Failed JSON commit cleanup for ${this.key}`,
+      );
+    }
+    await this.storage.remove(this.recoveryKeys.pending);
+    if (
+      (await this.storage.getString(this.recoveryKeys.pending)) !== undefined
+    ) {
+      throw new PersistentJsonRecoveryError(
+        this.key,
+        `Failed JSON pending cleanup for ${this.key}`,
+      );
+    }
   }
 }
 

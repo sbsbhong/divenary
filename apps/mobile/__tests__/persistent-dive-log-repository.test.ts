@@ -6,7 +6,10 @@ import {
 } from '../src/repositories/persistent-dive-log-repository';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
-import {PersistentJsonReadError} from '../src/storage/persistent-json-store';
+import {
+  PersistentJsonCommittedWriteError,
+  PersistentJsonReadError,
+} from '../src/storage/persistent-json-store';
 import { mobileStorageKeys } from '../src/storage/storage-keys';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
@@ -75,6 +78,50 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
     return this.delegate.remove(key);
   }
 
+}
+
+class FailingPostCommitMainReadStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  private readonly commitKey = `${mobileStorageKeys.logbook}:journal:commit:v1`;
+  private commitPresent = false;
+  private mainReadFailureDelivered = false;
+  private recoveryFailureDelivered = false;
+
+  async getString(key: string): Promise<string | undefined> {
+    if (
+      key === mobileStorageKeys.logbook &&
+      this.commitPresent &&
+      !this.mainReadFailureDelivered
+    ) {
+      this.mainReadFailureDelivered = true;
+      throw new Error('simulated post-commit main read failure');
+    }
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (
+      key === mobileStorageKeys.logbook &&
+      this.mainReadFailureDelivered &&
+      !this.recoveryFailureDelivered
+    ) {
+      this.recoveryFailureDelivered = true;
+      if ((await this.delegate.getString(key)) !== undefined) {
+        throw new Error('simulated post-commit recovery failure');
+      }
+    }
+    await this.delegate.setString(key, value);
+    if (key === this.commitKey) {
+      this.commitPresent = true;
+    }
+  }
+
+  async remove(key: string): Promise<void> {
+    await this.delegate.remove(key);
+    if (key === this.commitKey) {
+      this.commitPresent = false;
+    }
+  }
 }
 
 class RecordingProfileStorage implements WatchProfileStorage {
@@ -352,6 +399,80 @@ describe('PersistentDiveLogRepository', () => {
     expect(profileStorage.values).toEqual(new Map());
     await expect(repository.list()).resolves.toEqual([]);
     await expect(storage.getString(mobileStorageKeys.logbook)).resolves.toBeUndefined();
+  });
+
+  it('keeps committed metadata and profile consistent after a post-main failure and retry', async () => {
+    const storage = new FailingPostCommitMainReadStore();
+    const profileStorage = new RecordingProfileStorage();
+    const profileKeyPrefix = 'post-commit-profile:';
+    const contentRevision = 'revision-after-main';
+    const message: WatchSyncMessage = {
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        profile: {
+          formatVersion: 1,
+          contentRevision,
+          sampleIntervalSeconds: 1,
+          sampleCount: 2,
+        },
+        samples: [
+          {
+            localSessionId: watchMessage.session.localSessionId,
+            timestamp: 200,
+            depthMeters: 3,
+          },
+          {
+            localSessionId: watchMessage.session.localSessionId,
+            timestamp: 201,
+            depthMeters: 8,
+          },
+        ],
+      },
+    };
+    const profileKey =
+      `${profileKeyPrefix}${message.session.localSessionId}:${contentRevision}`;
+    const repository = new PersistentDiveLogRepository({
+      storage,
+      profileStorage,
+      profileKeyPrefix,
+      now: () => 500,
+    });
+
+    await expect(repository.importWatchMessages([message])).rejects.toMatchObject(
+      {
+        name: PersistentJsonCommittedWriteError.name,
+        cause: {
+          message: 'simulated post-commit recovery failure',
+        },
+      },
+    );
+
+    const pendingKey =
+      `${mobileStorageKeys.logbook}:journal:pending:v1`;
+    const commitKey =
+      `${mobileStorageKeys.logbook}:journal:commit:v1`;
+    const pending = await storage.getString(pendingKey);
+    expect(await storage.getString(commitKey)).toBeDefined();
+    expect(pending).toBeDefined();
+    expect(await storage.getString(mobileStorageKeys.logbook)).toBe(pending);
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(
+      message.session.samples,
+    );
+
+    const [recovered] = await repository.list();
+    expect(recovered.watchCapture?.profile?.storageKey).toBe(profileKey);
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(
+      message.session.samples,
+    );
+
+    await expect(repository.importWatchMessages([message])).resolves.toHaveLength(1);
+    await expect(repository.list()).resolves.toHaveLength(1);
+    await expect(profileStorage.read(profileKey)).resolves.toEqual(
+      message.session.samples,
+    );
+    await expect(storage.getString(commitKey)).resolves.toBeUndefined();
+    await expect(storage.getString(pendingKey)).resolves.toBeUndefined();
   });
 
   it('restores profile and metadata when the guard becomes stale during metadata persistence', async () => {
