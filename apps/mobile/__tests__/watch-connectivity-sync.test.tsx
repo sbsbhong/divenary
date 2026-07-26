@@ -118,6 +118,32 @@ const createQueryClient = () => {
   return queryClient;
 };
 
+function makePendingPayload(
+  payloadId: string,
+  localSessionId: string,
+  digestCharacter: string,
+): WatchConnectivityPayload {
+  const payloadJson = JSON.stringify({
+    ...metadataRichFixture,
+    session: {
+      ...metadataRichFixture.session,
+      localSessionId,
+      samples: metadataRichFixture.session.samples.map(sample => ({
+        ...sample,
+        localSessionId,
+      })),
+    },
+  });
+  return {
+    payloadId,
+    payloadJson,
+    localSessionId,
+    contentRevision: metadataRichFixture.session.profile?.contentRevision,
+    sha256: digestCharacter.repeat(64),
+    receivedAt: 1781355000,
+  };
+}
+
 describe('WatchConnectivitySyncProvider', () => {
   afterEach(async () => {
     await ReactTestRenderer.act(async () => {
@@ -858,6 +884,167 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(await repository.list()).toHaveLength(1);
     expect(acknowledgePayloads).not.toHaveBeenCalled();
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith(['durable-payload-1']);
+  });
+
+  it('acknowledges one historical duplicate and imports the other new payload', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const duplicate = makePendingPayload(
+      'historical-payload',
+      'old-session',
+      'a',
+    );
+    const fresh = makePendingPayload('fresh-payload', 'new-session', 'b');
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const notifyImportedEntry = jest.fn().mockResolvedValue(undefined);
+    const onLocalWritesCommitted = jest.fn().mockResolvedValue(undefined);
+    let drained = false;
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(
+        ReactTestRenderer.create(
+          <QueryClientProvider client={queryClient}>
+            <WatchConnectivitySyncProvider
+              repository={repository}
+              drainPendingPayloads={async () => {
+                if (drained) {
+                  return [];
+                }
+                drained = true;
+                return [duplicate, fresh];
+              }}
+              acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+              isHistoricalWatchArtifact={async identity =>
+                identity.localSessionId === 'old-session'
+              }
+              notifyImportedEntry={notifyImportedEntry}
+              onLocalWritesCommitted={onLocalWritesCommitted}
+              subscribeToPayloads={() => ({remove: jest.fn()})}
+            />
+          </QueryClientProvider>,
+        ),
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+
+    const entries = await repository.list();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.watchCapture?.session.localSessionId).toBe(
+      'new-session',
+    );
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      duplicate.payloadId,
+    ]);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      fresh.payloadId,
+    ]);
+    expect(notifyImportedEntry).toHaveBeenCalledTimes(1);
+    expect(onLocalWritesCommitted).toHaveBeenCalledTimes(1);
+  });
+
+  it('imports every fresh payload when two are pending together', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const first = makePendingPayload('fresh-first', 'fresh-session-1', 'a');
+    const second = makePendingPayload('fresh-second', 'fresh-session-2', 'b');
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    let drained = false;
+
+    await ReactTestRenderer.act(async () => {
+      renderers.push(
+        ReactTestRenderer.create(
+          <QueryClientProvider client={queryClient}>
+            <WatchConnectivitySyncProvider
+              repository={repository}
+              drainPendingPayloads={async () => {
+                if (drained) {
+                  return [];
+                }
+                drained = true;
+                return [first, second];
+              }}
+              acknowledgeImportedPayloads={acknowledgeImportedPayloads}
+              isHistoricalWatchArtifact={async () => false}
+              subscribeToPayloads={() => ({remove: jest.fn()})}
+            />
+          </QueryClientProvider>,
+        ),
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(
+      (await repository.list())
+        .map(entry => entry.watchCapture?.session.localSessionId)
+        .sort(),
+    ).toEqual(['fresh-session-1', 'fresh-session-2']);
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not mutate local or query state for a historical acknowledgement', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const setQueryData = jest.spyOn(queryClient, 'setQueryData');
+    const invalidateQueries = jest.spyOn(queryClient, 'invalidateQueries');
+    const importWatchMessages = jest.spyOn(repository, 'importWatchMessages');
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const notifyImportedEntry = jest.fn().mockResolvedValue(undefined);
+    const onLocalWritesCommitted = jest.fn().mockResolvedValue(undefined);
+    const payload = makePendingPayload(
+      'historical-only',
+      'historical-session',
+      'a',
+    );
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: async () => [payload],
+        acknowledgeImportedPayloads,
+        isHistoricalWatchArtifact: async () => true,
+        notifyImportedEntry,
+        onLocalWritesCommitted,
+      }),
+    ).resolves.toEqual({receivedCount: 1, importedCount: 0});
+
+    await expect(repository.list()).resolves.toEqual([]);
+    expect(importWatchMessages).not.toHaveBeenCalled();
+    expect(setQueryData).not.toHaveBeenCalled();
+    expect(invalidateQueries).not.toHaveBeenCalled();
+    expect(notifyImportedEntry).not.toHaveBeenCalled();
+    expect(onLocalWritesCommitted).not.toHaveBeenCalled();
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      payload.payloadId,
+    ]);
+  });
+
+  it('leaves a payload unacknowledged when historical lookup fails', async () => {
+    const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
+    const queryClient = createQueryClient();
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const payload = makePendingPayload(
+      'history-read-failure',
+      'history-read-session',
+      'a',
+    );
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: async () => [payload],
+        acknowledgeImportedPayloads,
+        isHistoricalWatchArtifact: async () => {
+          throw new Error('claim history unavailable');
+        },
+      }),
+    ).rejects.toThrow('claim history unavailable');
+
+    await expect(repository.list()).resolves.toEqual([]);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
   });
 
   it('notifies only after a valid watch payload is saved locally', async () => {

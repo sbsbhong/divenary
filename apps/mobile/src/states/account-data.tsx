@@ -20,8 +20,13 @@ import {createStoredProfileBytesSnapshot} from '../claim/profile-bytes';
 import {
   guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
+  parseSnapshotLocalRecord,
   type GuestClaimSnapshot,
 } from '../claim/guest-claim-store';
+import {
+  claimSnapshotContainsHistoricalArtifact,
+  type WatchArtifactIdentity,
+} from '../claim/watch-artifact-history';
 import type {
   GuestClaimProgress,
   GuestClaimViewState,
@@ -76,6 +81,9 @@ export type AccountDataContextValue = {
   bootstrap: AccountDataBootstrapState;
   retryBootstrap(): void;
   claim: AccountClaimController;
+  isHistoricalWatchArtifact(
+    identity: WatchArtifactIdentity,
+  ): Promise<boolean>;
   requestSync(): Promise<AccountSyncDrainResult>;
   refreshCloudData(): Promise<void>;
 };
@@ -170,6 +178,10 @@ type PublishedAccountData = PrincipalRepositories & {
     generation: number | undefined;
     coordinator: AccountSyncCoordinator;
     promise: Promise<void>;
+  };
+  historicalArtifactLookup?: {
+    generation: number;
+    promise: Promise<Set<string>>;
   };
 };
 
@@ -278,6 +290,9 @@ export function AccountDataProviderCore({
   const [guestInventoryRevision, setGuestInventoryRevision] =
     React.useState(0);
   const notifyGuestInventoryChanged = React.useCallback(() => {
+    for (const publication of publicationsRef.current.values()) {
+      publication.historicalArtifactLookup = undefined;
+    }
     setGuestInventoryRevision(value => value + 1);
   }, []);
 
@@ -437,6 +452,7 @@ export function AccountDataProviderCore({
             if (!isClaimCurrent()) {
               return;
             }
+            publication.historicalArtifactLookup = undefined;
             let shouldPublishPresentation =
               publication.hasLiveGuestInventory !== false &&
               publication.zeroInventoryRecoveryToken === undefined;
@@ -1276,6 +1292,54 @@ export function AccountDataProviderCore({
     return () => subscription.remove();
   }, [isOnline, refreshCloudData, resumeClaim]);
 
+  const isHistoricalWatchArtifact = React.useCallback(
+    async (identity: WatchArtifactIdentity): Promise<boolean> => {
+      const publication = publishedRef.current;
+      const generation = publication?.claimGeneration;
+      if (
+        publication?.queryScope !== desiredScope ||
+        publication.principal.kind !== 'user' ||
+        !publication.claimStore ||
+        !publication.guestRepositories ||
+        generation === undefined
+      ) {
+        return false;
+      }
+      while (true) {
+        if (
+          publication.historicalArtifactLookup?.generation !== generation
+        ) {
+          publication.historicalArtifactLookup = {
+            generation,
+            promise: buildHistoricalArtifactLookup(publication),
+          };
+        }
+        const operation = publication.historicalArtifactLookup;
+        let lookup: Set<string>;
+        try {
+          lookup = await operation.promise;
+        } catch (error) {
+          if (publication.historicalArtifactLookup === operation) {
+            publication.historicalArtifactLookup = undefined;
+          }
+          throw error;
+        }
+        if (
+          generationRef.current !== generation ||
+          publishedRef.current !== publication ||
+          publication.claimGeneration !== generation
+        ) {
+          return false;
+        }
+        if (publication.historicalArtifactLookup !== operation) {
+          continue;
+        }
+        return lookup.has(watchArtifactIdentityKey(identity));
+      }
+    },
+    [desiredScope],
+  );
+
   const bootstrap =
     bootstrapPresentation.queryScope === desiredScope
       ? bootstrapPresentation.state
@@ -1315,6 +1379,7 @@ export function AccountDataProviderCore({
             },
           }
         : hiddenClaimController(),
+    isHistoricalWatchArtifact,
     requestSync,
     refreshCloudData,
   };
@@ -1324,6 +1389,70 @@ export function AccountDataProviderCore({
       {children}
     </AccountDataContext.Provider>
   );
+}
+
+async function buildHistoricalArtifactLookup(
+  publication: PublishedAccountData,
+): Promise<Set<string>> {
+  if (!publication.guestRepositories || !publication.claimStore) {
+    return new Set();
+  }
+  const liveGuestIds = new Set(
+    (await publication.guestRepositories.logbook.list()).map(
+      record => record.localId,
+    ),
+  );
+  const snapshot = await publication.claimStore.read();
+  if (snapshot === undefined) {
+    return new Set();
+  }
+
+  const identities = new Set<string>();
+  for (const [index, item] of snapshot.manifest.items.entries()) {
+    if (
+      item.entityKind !== 'log' ||
+      liveGuestIds.has(item.clientRecordId)
+    ) {
+      continue;
+    }
+    const sidecar = snapshot.snapshots[index];
+    if (sidecar === undefined || sidecar.entityKind !== 'log') {
+      continue;
+    }
+    const record = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+    const profile = record.watchCapture?.profile;
+    const artifactSha256 = profile?.artifactSha256 ?? profile?.sha256;
+    if (
+      record.watchCapture === undefined ||
+      profile?.contentRevision === undefined ||
+      artifactSha256 === undefined
+    ) {
+      continue;
+    }
+    const identity: WatchArtifactIdentity = {
+      localSessionId: record.watchCapture.session.localSessionId,
+      contentRevision: profile.contentRevision,
+      artifactSha256,
+    };
+    if (
+      claimSnapshotContainsHistoricalArtifact(
+        snapshot,
+        identity,
+        liveGuestIds,
+      )
+    ) {
+      identities.add(watchArtifactIdentityKey(identity));
+    }
+  }
+  return identities;
+}
+
+function watchArtifactIdentityKey(identity: WatchArtifactIdentity): string {
+  return JSON.stringify([
+    identity.localSessionId,
+    identity.contentRevision,
+    identity.artifactSha256,
+  ]);
 }
 
 export function useAccountData(): AccountDataContextValue {

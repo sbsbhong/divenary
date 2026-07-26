@@ -3977,6 +3977,389 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
+  it('caches historical Watch lookup per publication and invalidates it after a live guest mutation', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const historicalArtifactSha256 = 'a'.repeat(64);
+    const historicalSamples: NonNullable<
+      DiveLogEntry['watchCapture']
+    >['samples'] = [];
+    const historicalEntry: DiveLogEntry = {
+      ...entry,
+      localId: 'historical-watch-log',
+      source: 'watch',
+      watchCapture: {
+        importKey: 'historical-watch-session:100',
+        importedAt: 100,
+        session: {
+          localSessionId: 'historical-watch-session',
+          startedAt: 100,
+          samples: historicalSamples,
+        },
+        measuredValues: {startedAt: 100},
+        samples: historicalSamples,
+        profile: {
+          storageKey: `${dataProfileKeyPrefix({
+            kind: 'guest',
+          })}historical-watch-session:revision-1`,
+          contentRevision: 'revision-1',
+          sampleCount: 0,
+          sha256: createWatchProfileDigest(historicalSamples).sha256,
+          artifactSha256: historicalArtifactSha256,
+        },
+      },
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([historicalEntry]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => historicalSamples),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.errorCode = 'claim_validation_failed';
+    const store = new GuestClaimStore({storage: metadataStorage, userId});
+    await store.write(snapshot);
+    const liveGuest = {...entry, localId: 'live-guest-log'};
+    const guestLogbook = new LocalDiveLogRepository([liveGuest]);
+    const guestList = jest.spyOn(guestLogbook, 'list');
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const storageRead = jest.spyOn(metadataStorage, 'getString');
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => historicalSamples),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.isHydrated).toBe(true));
+    guestList.mockClear();
+    storageRead.mockClear();
+    const identity = {
+      localSessionId: 'historical-watch-session',
+      contentRevision: 'revision-1',
+      artifactSha256: historicalArtifactSha256,
+    };
+
+    await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
+      true,
+    );
+    await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
+      true,
+    );
+    expect(guestList).toHaveBeenCalledTimes(1);
+    expect(
+      storageRead.mock.calls.filter(([key]) => key === claimKey),
+    ).toHaveLength(1);
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(liveGuest.localId);
+      await flushPromises();
+    });
+    const guestReadsAfterMutation = guestList.mock.calls.length;
+    const claimReadsAfterMutation = storageRead.mock.calls.filter(
+      ([key]) => key === claimKey,
+    ).length;
+    guestList.mockRejectedValueOnce(
+      new Error('guest inventory temporarily unavailable'),
+    );
+    await expect(
+      capture!.isHistoricalWatchArtifact(identity),
+    ).rejects.toThrow('guest inventory temporarily unavailable');
+    const guestReadsAfterFailure = guestList.mock.calls.length;
+    await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
+      true,
+    );
+    expect(guestReadsAfterFailure).toBe(guestReadsAfterMutation + 1);
+    expect(guestList).toHaveBeenCalledTimes(guestReadsAfterFailure + 1);
+    expect(
+      storageRead.mock.calls.filter(([key]) => key === claimKey),
+    ).toHaveLength(claimReadsAfterMutation + 1);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('retries an in-flight historical lookup invalidated by a live guest mutation', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const historicalArtifactSha256 = 'a'.repeat(64);
+    const historicalSamples: NonNullable<
+      DiveLogEntry['watchCapture']
+    >['samples'] = [];
+    const historicalEntry: DiveLogEntry = {
+      ...entry,
+      localId: 'historical-watch-log',
+      source: 'watch',
+      watchCapture: {
+        importKey: 'historical-watch-session:100',
+        importedAt: 100,
+        session: {
+          localSessionId: 'historical-watch-session',
+          startedAt: 100,
+          samples: historicalSamples,
+        },
+        measuredValues: {startedAt: 100},
+        samples: historicalSamples,
+        profile: {
+          storageKey: `${dataProfileKeyPrefix({
+            kind: 'guest',
+          })}historical-watch-session:revision-1`,
+          contentRevision: 'revision-1',
+          sampleCount: 0,
+          sha256: createWatchProfileDigest(historicalSamples).sha256,
+          artifactSha256: historicalArtifactSha256,
+        },
+      },
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([historicalEntry]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => historicalSamples),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.errorCode = 'claim_validation_failed';
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      snapshot,
+    );
+    const liveGuest = {...entry, localId: 'live-guest-log'};
+    const guestLogbook = new LocalDiveLogRepository([liveGuest]);
+    const guestList = jest.spyOn(guestLogbook, 'list');
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => historicalSamples),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.isHydrated).toBe(true));
+    guestList.mockClear();
+    const staleInventory = deferred<DiveLogEntry[]>();
+    guestList.mockImplementationOnce(() => staleInventory.promise);
+    const identity = {
+      localSessionId: 'historical-watch-session',
+      contentRevision: 'revision-1',
+      artifactSha256: historicalArtifactSha256,
+    };
+    const lookup = capture!.isHistoricalWatchArtifact(identity);
+    await waitFor(() => expect(guestList).toHaveBeenCalledTimes(1));
+
+    await guestLogbook.save(historicalEntry);
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(liveGuest.localId);
+      await flushPromises();
+    });
+    staleInventory.resolve([liveGuest]);
+
+    await expect(lookup).resolves.toBe(false);
+    expect(guestList.mock.calls.length).toBeGreaterThan(1);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('invalidates historical Watch lookup when the claim snapshot changes', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const historicalArtifactSha256 = 'a'.repeat(64);
+    const historicalSamples: NonNullable<
+      DiveLogEntry['watchCapture']
+    >['samples'] = [];
+    const historicalEntry: DiveLogEntry = {
+      ...entry,
+      localId: 'historical-watch-log',
+      source: 'watch',
+      watchCapture: {
+        importKey: 'historical-watch-session:100',
+        importedAt: 100,
+        session: {
+          localSessionId: 'historical-watch-session',
+          startedAt: 100,
+          samples: historicalSamples,
+        },
+        measuredValues: {startedAt: 100},
+        samples: historicalSamples,
+        profile: {
+          storageKey: `${dataProfileKeyPrefix({
+            kind: 'guest',
+          })}historical-watch-session:revision-1`,
+          contentRevision: 'revision-1',
+          sampleCount: 0,
+          sha256: createWatchProfileDigest(historicalSamples).sha256,
+          artifactSha256: historicalArtifactSha256,
+        },
+      },
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([historicalEntry]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => historicalSamples),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.errorCode = 'claim_validation_failed';
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      snapshot,
+    );
+    const guestLogbook = new LocalDiveLogRepository([
+      {...entry, localId: 'live-guest-log'},
+    ]);
+    const guestList = jest.spyOn(guestLogbook, 'list');
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: guestClaimRepository(),
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => historicalSamples),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.isHydrated).toBe(true));
+    guestList.mockClear();
+    const identity = {
+      localSessionId: 'historical-watch-session',
+      contentRevision: 'revision-1',
+      artifactSha256: historicalArtifactSha256,
+    };
+    await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
+      true,
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.claim.keepOnDevice();
+      await flushPromises();
+    });
+    const readsAfterSnapshotChange = guestList.mock.calls.length;
+    await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
+      true,
+    );
+    expect(guestList).toHaveBeenCalledTimes(readsAfterSnapshotChange + 1);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
   it('refreshes live claim eligibility after deleting the final deferred guest row', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const guestLogbook = new LocalDiveLogRepository([entry]);
