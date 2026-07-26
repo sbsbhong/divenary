@@ -6,7 +6,7 @@ Updated: 2026-07-26
 
 ## 요약
 
-현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote finalize/readback과 account local publication/readback을 마친 뒤 `cleanupPending`을 저장하고 guest reconciliation을 시작한다. Durable local validation이 실패하면 cloud 작업을 막고, 자동 Watch/account 작업은 첫 상호작용 뒤 cooperative yield와 함께 실행한다.
+현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote finalize/readback과 account local publication/readback을 마친 뒤 `cleanupPending`을 저장하고 guest reconciliation을 시작한다. Durable local validation이 실패하면 cloud 작업을 막는다. 검증 뒤 outbox reconciliation은 즉시 실행하고, 자동 Watch drain과 account hydration/drain은 interaction scheduler를 거쳐 cooperative yield와 함께 실행한다.
 
 ## 현재 상태
 
@@ -25,7 +25,7 @@ Generated output은 다음과 같다.
 
 모바일 local data는 `guest`와 `user:<uuid>` principal로 분리된다. Account 저장은 durable outbox를 통해 typed Supabase repository로 전달되고, guest claim은 separate persistent manifest로 재개된다. 두 cloud 흐름 모두 현재 authenticated user에 묶이며 user 전환 뒤 stale callback을 publish하지 않는다.
 
-Logbook/Planbook durable JSON은 selected principal별로 fail-closed 검증한다. Parse/schema/journal 오류는 빈 목록으로 바꾸지 않고 exact raw bytes를 quarantine에 보존하며 `recoveryRequired`를 publish한다. Recovery journal, quarantine과 inactive claim snapshot은 transaction/recovery evidence일 뿐 live device inventory가 아니다. Local 검증이 끝나기 전에는 remote hydration, outbox reconciliation과 claim cleanup을 시작하지 않는다.
+Logbook/Planbook durable JSON은 selected principal별로 fail-closed 검증한다. Parse/schema 오류는 빈 목록으로 바꾸지 않고 main value의 exact raw bytes를 quarantine에 보존한다. Journal validation/recovery 오류도 default 목록으로 fallback하지 않으며, 두 경로 모두 `recoveryRequired`를 publish한다. Recovery journal, quarantine과 inactive claim snapshot은 transaction/recovery evidence일 뿐 live device inventory가 아니다. Local 검증이 끝나기 전에는 remote hydration, outbox reconciliation과 claim cleanup을 시작하지 않는다.
 
 ## 상세
 
