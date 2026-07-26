@@ -113,8 +113,15 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
   }, [accountData, deleteEntryMutation, options.repository]);
 
   const refresh = React.useCallback(async () => {
+    if (!options.repository) {
+      try {
+        await accountData?.refreshCloudData();
+      } catch {
+        // Account state retains local rows and exposes the retryable cloud issue.
+      }
+    }
     await entriesQuery.refetch();
-  }, [entriesQuery]);
+  }, [accountData, entriesQuery, options.repository]);
   const loadWatchProfile = React.useCallback(
     (localId: string) => repository.getWatchProfile(localId),
     [repository],

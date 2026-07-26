@@ -938,3 +938,12 @@
 - Updated: Knowledge Base Index
 - Corrected: zero-inventory 경로는 full snapshot을 inline으로 읽지 않지만, recoverable hint와 deferred legacy audit로 active transaction 복구를 유지한다.
 - Recorded: checkpoint hint는 advisory이며 live count나 authoritative transaction status로 사용하지 않는다.
+
+## [2026-07-26] ingest | Account sync and claim recovery
+- Added: Account sync and claim recovery evidence raw source
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: PostgREST timestamp 표현 차이는 timestamp field에만 canonical instant로 비교하며 claim committed readback도 normal remote parser를 재사용한다.
+- Corrected: relation UUID와 `/claims/` profile path를 가진 finalized claim row를 generic account hydration이 검증 후 수용한다.
+- Corrected: foreground pull은 엄격히 재검증한 unchanged Watch profile cache만 재사용하고 누락·손상 cache는 remote download로 복구한다.
+- Recorded: foreground와 explicit refresh는 coalesced remote pull을 수행하고, equivalent historical conflict만 자동 복구하며 divergent conflict는 보존한다.

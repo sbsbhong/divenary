@@ -41,8 +41,15 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
   );
   const [plannedWatchSyncStatus, setPlannedWatchSyncStatus] = React.useState<PlannedWatchDivesUpdateStatus | undefined>();
   const refresh = React.useCallback(async () => {
+    if (!options.repository) {
+      try {
+        await accountData?.refreshCloudData();
+      } catch {
+        // Account state retains local rows and exposes the retryable cloud issue.
+      }
+    }
     await plansQuery.refetch();
-  }, [plansQuery]);
+  }, [accountData, options.repository, plansQuery]);
   const savePlan = React.useCallback(async (plan: DivePlan) => {
     const saved = await savePlanMutation.mutateAsync(plan);
     if (!options.repository) {

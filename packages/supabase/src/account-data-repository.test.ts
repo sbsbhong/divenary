@@ -12,6 +12,7 @@ const LOG_ID = '00000000-0000-4000-8000-000000000010';
 const PLAN_ID = '00000000-0000-4000-8000-000000000020';
 const STARTED_AT = '2026-07-19T10:00:00.000Z';
 const UPDATED_AT = '2026-07-19T11:00:00.000Z';
+const MICROSECOND_STARTED_AT = '2026-07-19T10:00:00.123Z';
 
 type QueryResponse = {data: unknown; error?: unknown; status?: number};
 
@@ -341,6 +342,137 @@ describe('AccountDataRepository', () => {
     const repository = createAccountDataRepository(client as never, {userId: USER_ID});
 
     assert.equal((await repository.savePlan(remotePlan({revision: 4}), 4)).status, 'saved');
+  });
+
+  test('accepts equivalent PostgREST log timestamp readback as saved', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          started_at: '2026-07-19T19:00:00.123000+09:00',
+          ended_at: '2026-07-19T10:00:01.987000+00:00',
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    const result = await repository.saveLog(
+      remoteLog({
+        payload: {
+          source: 'manual',
+          started_at: MICROSECOND_STARTED_AT,
+          ended_at: '2026-07-19T10:00:01.987Z',
+          manual_data: {},
+          mobile_data: {},
+          provenance: {},
+        },
+      }),
+    );
+
+    assert.equal(result.status, 'saved');
+    if (result.status === 'saved') {
+      assert.equal(result.value.payload.started_at, MICROSECOND_STARTED_AT);
+      assert.equal(
+        result.value.payload.ended_at,
+        '2026-07-19T10:00:01.987Z',
+      );
+    }
+  });
+
+  test('accepts equivalent PostgREST plan timestamp readback as saved', async () => {
+    const {client} = createClient([
+      {
+        data: planRow({
+          revision: 1,
+          planned_at: '2026-07-19T19:00:00.123000+09:00',
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    const result = await repository.savePlan(
+      remotePlan({
+        payload: {
+          status: 'planned',
+          planned_at: MICROSECOND_STARTED_AT,
+          plan_data: {},
+        },
+      }),
+    );
+
+    assert.equal(result.status, 'saved');
+    if (result.status === 'saved') {
+      assert.equal(result.value.payload.planned_at, MICROSECOND_STARTED_AT);
+    }
+  });
+
+  test('keeps a genuinely different persisted timestamp in conflict', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          started_at: '2026-07-19T10:00:00.124000+00:00',
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    assert.equal(
+      (
+        await repository.saveLog(
+          remoteLog({
+            payload: {
+              source: 'manual',
+              started_at: MICROSECOND_STARTED_AT,
+              manual_data: {},
+              mobile_data: {},
+              provenance: {},
+            },
+          }),
+        )
+      ).status,
+      'conflict',
+    );
+  });
+
+  test('fails closed for timestamp precision that cannot be represented', async () => {
+    const {client} = createClient([
+      {
+        data: logRow({
+          revision: 1,
+          started_at: '2026-07-19T10:00:00.123456+00:00',
+        }),
+        error: null,
+      },
+    ]);
+    const repository = createAccountDataRepository(client as never, {
+      userId: USER_ID,
+    });
+
+    await rejectsWithOperation(
+      () =>
+        repository.saveLog(
+          remoteLog({
+            payload: {
+              source: 'manual',
+              started_at: MICROSECOND_STARTED_AT,
+              manual_data: {},
+              mobile_data: {},
+              provenance: {},
+            },
+          }),
+        ),
+      'save',
+    );
   });
 
   test('excludes soft-deleted rows from log and plan update predicates', async () => {

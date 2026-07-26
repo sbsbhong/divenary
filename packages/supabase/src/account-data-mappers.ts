@@ -6,8 +6,81 @@ export type DivePlanRow = Database['public']['Tables']['dive_plans']['Row'];
 
 type JsonRecord = {[key: string]: Json | undefined};
 
+const ACCOUNT_TIMESTAMP_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|([+-])(\d{2}):(\d{2}))$/;
+
 function invalidPayload(): never {
   throw new TypeError('Invalid account data payload');
+}
+
+function canonicalAccountTimestamp(value: string): string {
+  const match = ACCOUNT_TIMESTAMP_PATTERN.exec(value);
+  if (!match) {
+    return invalidPayload();
+  }
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  const offsetHour = match[10] === undefined ? 0 : Number(match[10]);
+  const offsetMinute = match[11] === undefined ? 0 : Number(match[11]);
+  if (
+    year < 1 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > daysInMonth(year, month) ||
+    hour > 23 ||
+    minute > 59 ||
+    second > 59 ||
+    offsetHour > 14 ||
+    offsetMinute > 59 ||
+    (offsetHour === 14 && offsetMinute !== 0)
+  ) {
+    return invalidPayload();
+  }
+  const rawFraction = match[7] ?? '';
+  if (/[1-9]/.test(rawFraction.slice(3))) {
+    return invalidPayload();
+  }
+  const fraction = rawFraction.padEnd(3, '0').slice(0, 3);
+  const zone = match[8]!;
+  const milliseconds = Date.parse(
+    `${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:${match[6]}.${fraction}${zone}`,
+  );
+  if (!Number.isFinite(milliseconds)) {
+    return invalidPayload();
+  }
+  return new Date(milliseconds).toISOString();
+}
+
+function daysInMonth(year: number, month: number): number {
+  if (month === 2) {
+    return isLeapYear(year) ? 29 : 28;
+  }
+  return [4, 6, 9, 11].includes(month) ? 30 : 31;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+}
+
+export function sameAccountTimestamp(left: unknown, right: unknown): boolean {
+  if (left === null || right === null) {
+    return left === right;
+  }
+  if (typeof left !== 'string' || typeof right !== 'string') {
+    return false;
+  }
+  try {
+    return (
+      canonicalAccountTimestamp(left) === canonicalAccountTimestamp(right)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -96,8 +169,11 @@ export function boundProfilePreview(payload: Record<string, unknown>): Record<st
 export function fromDiveLogRow(row: DiveLogRow): RemoteDiveLog {
   const payload: Record<string, unknown> = {
     source: row.source,
-    started_at: row.started_at,
-    ended_at: row.ended_at,
+    started_at: canonicalAccountTimestamp(row.started_at),
+    ended_at:
+      row.ended_at === null
+        ? null
+        : canonicalAccountTimestamp(row.ended_at),
     duration_seconds: row.duration_seconds,
     max_depth_meters: row.max_depth_meters,
     site_name: row.site_name,
@@ -138,7 +214,10 @@ export function fromDivePlanRow(row: DivePlanRow): RemoteDivePlan {
     payloadSha256: row.payload_sha256,
     payload: {
       status: row.status,
-      planned_at: row.planned_at,
+      planned_at:
+        row.planned_at === null
+          ? null
+          : canonicalAccountTimestamp(row.planned_at),
       dive_mode: row.dive_mode,
       site_name: row.site_name,
       plan_data: row.plan_data,

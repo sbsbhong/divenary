@@ -4,6 +4,7 @@ import type {Database} from './database.types.ts';
 import {
   fromDiveLogRow,
   fromDivePlanRow,
+  sameAccountTimestamp,
   toDiveLogFields,
   toDivePlanFields,
   type DiveLogRow,
@@ -157,7 +158,9 @@ function hasPersistedFields(
   fields: Record<string, unknown>,
 ): boolean {
   return Object.entries(fields).every(([key, value]) => (
-    samePersistedValue(row[key], value)
+    key === 'started_at' || key === 'ended_at' || key === 'planned_at'
+      ? sameAccountTimestamp(row[key], value)
+      : samePersistedValue(row[key], value)
   ));
 }
 

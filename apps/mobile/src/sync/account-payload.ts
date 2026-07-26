@@ -40,6 +40,8 @@ const PLAN_PAYLOAD_KEYS = [
 
 const ACCOUNT_TIMESTAMP_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(?:Z|[+-](\d{2}):(\d{2}))$/;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function createAccountRemoteLog(
   entry: DiveLogEntry,
@@ -177,7 +179,13 @@ export function parseAccountRemoteLog(value: unknown): RemoteDiveLog {
     'log ended_at',
   );
   assertLogPayload(payload);
-  if (canonicalAccountPayloadSha256(payload) !== value.payloadSha256) {
+  if (
+    !matchesPayloadDigest(
+      payload,
+      value.payloadSha256,
+      'source_plan_id',
+    )
+  ) {
     throw new Error('Malformed remote log payload digest');
   }
   return {
@@ -217,7 +225,13 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
     'plan planned_at',
   );
   assertPlanPayload(payload);
-  if (canonicalAccountPayloadSha256(payload) !== value.payloadSha256) {
+  if (
+    !matchesPayloadDigest(
+      payload,
+      value.payloadSha256,
+      'converted_log_id',
+    )
+  ) {
     throw new Error('Malformed remote plan payload digest');
   }
   return {
@@ -231,6 +245,27 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
 
 export function canonicalAccountPayloadSha256(value: unknown): string {
   return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
+}
+
+function matchesPayloadDigest(
+  payload: Record<string, unknown>,
+  digest: string,
+  relationKey: 'source_plan_id' | 'converted_log_id',
+): boolean {
+  if (canonicalAccountPayloadSha256(payload) === digest) {
+    return true;
+  }
+  // Finalized rows do not retain claim provenance. The only durable legacy
+  // shape is one designated relation changing from null to a real UUID, so
+  // every other payload field must still match the stored digest exactly.
+  const relationId = payload[relationKey];
+  if (typeof relationId !== 'string' || !UUID_PATTERN.test(relationId)) {
+    return false;
+  }
+  return (
+    canonicalAccountPayloadSha256({...payload, [relationKey]: null}) ===
+    digest
+  );
 }
 
 function remoteWatchMetadata(
@@ -317,6 +352,7 @@ function normalizeTimestamp(value: unknown, label: string): string {
   const hour = Number(match[4]);
   const minute = Number(match[5]);
   const second = Number(match[6]);
+  const fractionalSeconds = match[7] ?? '';
   const offsetHour = match[8] === undefined ? 0 : Number(match[8]);
   const offsetMinute = match[9] === undefined ? 0 : Number(match[9]);
   if (
@@ -328,6 +364,8 @@ function normalizeTimestamp(value: unknown, label: string): string {
     hour > 23 ||
     minute > 59 ||
     second > 59 ||
+    (fractionalSeconds.length > 3 &&
+      /[1-9]/.test(fractionalSeconds.slice(3))) ||
     offsetHour > 14 ||
     offsetMinute > 59 ||
     (offsetHour === 14 && offsetMinute !== 0)

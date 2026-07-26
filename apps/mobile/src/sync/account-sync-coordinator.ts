@@ -78,6 +78,12 @@ type DrainOptions = {
 
 type AssertCanCommit = () => void;
 
+type AccountHydrationFailure = {
+  entityKind: AccountOutboxItem['entityKind'];
+  phase: 'listing' | 'row';
+  error: unknown;
+};
+
 type UserDrainState = {
   active?: Promise<AccountSyncDrainResult>;
   rerunRequested: boolean;
@@ -88,6 +94,8 @@ type UserDrainState = {
 
 const MAXIMUM_OPERATIONS_PER_PASS = 10;
 const PAGE_SIZE = 100;
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const drainStateByUser = new Map<string, UserDrainState>();
 const entityMutationQueues = new Map<string, Promise<void>>();
 
@@ -102,6 +110,25 @@ export function isStaleAccountSyncCommitError(
   error: unknown,
 ): error is StaleAccountSyncCommitError {
   return error instanceof StaleAccountSyncCommitError;
+}
+
+export class AccountHydrationError extends Error {
+  readonly changed: number;
+  readonly failureCount: number;
+
+  constructor(
+    changed: number,
+    failureCount: number,
+    firstFailureLabel: string,
+  ) {
+    super(
+      `Account hydration incomplete after ${changed} updates: ` +
+        `${firstFailureLabel} (${failureCount} failures)`,
+    );
+    this.name = 'AccountHydrationError';
+    this.changed = changed;
+    this.failureCount = failureCount;
+  }
 }
 
 export class AccountSyncCoordinator {
@@ -219,91 +246,195 @@ export class AccountSyncCoordinator {
 
     const assertCanCommit = this.captureCommitGuard();
     assertCanCommit();
-    const [logs, plans] = await Promise.all([
-      collectPages(
-        cursor =>
-          this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
-        assertCanCommit,
+    const [logsResult, plansResult] = await Promise.all([
+      settleHydrationCollection(
+        collectPages(
+          cursor =>
+            this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+          assertCanCommit,
+        ),
       ),
-      collectPages(
-        cursor =>
-          this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
-        assertCanCommit,
+      settleHydrationCollection(
+        collectPages(
+          cursor =>
+            this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+          assertCanCommit,
+        ),
       ),
     ]);
     assertCanCommit();
+    const failures: AccountHydrationFailure[] = [];
+    const logs =
+      logsResult.status === 'fulfilled'
+        ? logsResult.value
+        : (failures.push({
+            entityKind: 'log',
+            phase: 'listing',
+            error: logsResult.reason,
+          }),
+          []);
+    const plans =
+      plansResult.status === 'fulfilled'
+        ? plansResult.value
+        : (failures.push({
+            entityKind: 'plan',
+            phase: 'listing',
+            error: plansResult.reason,
+          }),
+          []);
     let changed = 0;
 
     for (const remoteValue of plans) {
-      const remote = parseRemotePlan(remoteValue);
-      changed += await withAccountEntityMutationLock(
-        this.userId,
-        'plan',
-        remote.localId,
-        async () => {
-          assertCanCommit();
-          if (
-            (await this.outbox.listEntity(
-              this.userId,
-              'plan',
-              remote.localId,
-            )).length > 0
-          ) {
-            return 0;
-          }
-          const current = await this.planRepository.get(remote.localId);
-          if (isLocallyAuthoritative(current)) {
-            return 0;
-          }
-          const local = remotePlanToLocal(remote, this.userId);
-          if (sameJsonValue(current, local)) {
-            return 0;
-          }
-          await this.commitPlanSave(current, local, assertCanCommit);
-          return 1;
-        },
-      );
+      try {
+        const remote = parseRemotePlan(remoteValue);
+        changed += await withAccountEntityMutationLock(
+          this.userId,
+          'plan',
+          remote.localId,
+          async () => {
+            assertCanCommit();
+            if (
+              (await this.outbox.listEntity(
+                this.userId,
+                'plan',
+                remote.localId,
+              )).length > 0
+            ) {
+              return 0;
+            }
+            const current = await this.planRepository.get(remote.localId);
+            if (current?.cloudSyncStatus === 'pending') {
+              return 0;
+            }
+            const local = remotePlanToLocal(remote, this.userId);
+            const recoveringConflict =
+              current?.cloudSyncStatus === 'conflict';
+            if (
+              recoveringConflict &&
+              !isEquivalentHistoricalConflict(current, local, this.userId)
+            ) {
+              return 0;
+            }
+            if (sameJsonValue(current, local)) {
+              return 0;
+            }
+            try {
+              await this.commitPlanSave(
+                current,
+                local,
+                assertCanCommit,
+                recoveringConflict
+                  ? () =>
+                      this.outbox.removeEntityConflicts(
+                        this.userId,
+                        'plan',
+                        remote.localId,
+                        {assertCanCommit},
+                      )
+                  : undefined,
+              );
+            } catch (error) {
+              if (
+                recoveringConflict &&
+                !isStaleAccountSyncCommitError(error)
+              ) {
+                await this.restorePlan(current, remote.localId);
+              }
+              throw error;
+            }
+            return 1;
+          },
+        );
+      } catch (error) {
+        if (isStaleAccountSyncCommitError(error)) {
+          throw error;
+        }
+        failures.push({entityKind: 'plan', phase: 'row', error});
+      }
     }
     for (const remoteValue of logs) {
-      const remote = parseRemoteLog(remoteValue);
-      changed += await withAccountEntityMutationLock(
-        this.userId,
-        'log',
-        remote.localId,
-        async () => {
-          assertCanCommit();
-          if (
-            (await this.outbox.listEntity(
-              this.userId,
-              'log',
-              remote.localId,
-            )).length > 0
-          ) {
-            return 0;
-          }
-          const current = await this.logbookRepository.get(remote.localId);
-          if (isLocallyAuthoritative(current)) {
-            return 0;
-          }
-          const prepared = await this.prepareHydratedLog(
-            remote,
-            assertCanCommit,
-          );
-          if (sameJsonValue(current, prepared.local)) {
-            return 0;
-          }
-          try {
-            await this.commitLogSave(
+      try {
+        const remote = parseRemoteLog(remoteValue);
+        changed += await withAccountEntityMutationLock(
+          this.userId,
+          'log',
+          remote.localId,
+          async () => {
+            assertCanCommit();
+            if (
+              (await this.outbox.listEntity(
+                this.userId,
+                'log',
+                remote.localId,
+              )).length > 0
+            ) {
+              return 0;
+            }
+            const current = await this.logbookRepository.get(remote.localId);
+            if (current?.cloudSyncStatus === 'pending') {
+              return 0;
+            }
+            const prepared = await this.prepareHydratedLog(
+              remote,
               current,
-              prepared.local,
               assertCanCommit,
             );
-          } catch (error) {
-            await prepared.rollbackProfile?.();
-            throw error;
-          }
-          return 1;
-        },
+            const recoveringConflict =
+              current?.cloudSyncStatus === 'conflict';
+            if (
+              recoveringConflict &&
+              !isEquivalentHistoricalConflict(
+                current,
+                prepared.local,
+                this.userId,
+              )
+            ) {
+              await prepared.rollbackProfile?.();
+              return 0;
+            }
+            if (sameJsonValue(current, prepared.local)) {
+              return 0;
+            }
+            try {
+              await this.commitLogSave(
+                current,
+                prepared.local,
+                assertCanCommit,
+                recoveringConflict
+                  ? () =>
+                      this.outbox.removeEntityConflicts(
+                        this.userId,
+                        'log',
+                        remote.localId,
+                        {assertCanCommit},
+                      )
+                  : undefined,
+              );
+            } catch (error) {
+              if (
+                recoveringConflict &&
+                !isStaleAccountSyncCommitError(error)
+              ) {
+                await this.restoreLog(current, remote.localId);
+              }
+              await prepared.rollbackProfile?.();
+              throw error;
+            }
+            return 1;
+          },
+        );
+      } catch (error) {
+        if (isStaleAccountSyncCommitError(error)) {
+          throw error;
+        }
+        failures.push({entityKind: 'log', phase: 'row', error});
+      }
+    }
+    if (failures.length > 0) {
+      throw new AccountHydrationError(
+        changed,
+        failures.length,
+        safeHydrationFailureLabel(failures[0]),
       );
     }
     return changed;
@@ -712,6 +843,7 @@ export class AccountSyncCoordinator {
 
   private async prepareHydratedLog(
     remote: RemoteDiveLog,
+    current: DiveLogEntry | undefined,
     assertCanCommit: AssertCanCommit,
   ): Promise<{
     local: DiveLogEntry;
@@ -723,20 +855,18 @@ export class AccountSyncCoordinator {
     if (!this.profileDownloader || !this.profileStorage) {
       throw new Error('Remote profile hydration is unavailable');
     }
-    if (!remote.profilePath.startsWith(`${this.userId}/logs/${remote.id}/`)) {
+    const descriptor = remoteProfileDescriptor(remote);
+    if (
+      !isCanonicalRemoteProfilePath(
+        remote.profilePath,
+        this.userId,
+        remote.id,
+        descriptor.contentRevision,
+      )
+    ) {
       throw new Error('Malformed remote log profile path');
     }
 
-    const descriptor = remoteProfileDescriptor(remote);
-    assertCanCommit();
-    const bytes = await this.profileDownloader.downloadProfile(remote.profilePath);
-    assertCanCommit();
-    if (bytes.length !== descriptor.byteCount) {
-      throw new Error('Malformed remote log profile byte count');
-    }
-    if (bytesToHex(sha256(bytes)) !== descriptor.sha256) {
-      throw new Error('Malformed remote log profile digest');
-    }
     const watchMetadata = requiredRecord(
       remote.payload.watch_metadata,
       'watch_metadata',
@@ -746,11 +876,6 @@ export class AccountSyncCoordinator {
       session.localSessionId,
       'watch localSessionId',
     );
-    const samples = parseProfileSamples(bytesToUtf8(bytes), localSessionId);
-    if (samples.length !== descriptor.sampleCount) {
-      throw new Error('Malformed remote log profile sample count');
-    }
-
     const storageKey = `${dataProfileKeyPrefix({
       kind: 'user',
       userId: this.userId,
@@ -763,6 +888,43 @@ export class AccountSyncCoordinator {
       sampleCount: descriptor.sampleCount,
       sha256: descriptor.sha256,
     });
+    if (
+      current?.cloudSyncStatus === 'synced' &&
+      sameJsonValue(current, local)
+    ) {
+      try {
+        assertCanCommit();
+        const cachedSamples = await this.profileStorage.read(storageKey);
+        assertCanCommit();
+        if (cachedSamples !== undefined) {
+          validateSerializedProfile(
+            JSON.stringify(cachedSamples),
+            remote,
+            localSessionId,
+          );
+          return {local};
+        }
+      } catch (error) {
+        if (isStaleAccountSyncCommitError(error)) {
+          throw error;
+        }
+      }
+    }
+
+    assertCanCommit();
+    const bytes = await this.profileDownloader.downloadProfile(remote.profilePath);
+    assertCanCommit();
+    if (bytes.length !== descriptor.byteCount) {
+      throw new Error('Malformed remote log profile byte count');
+    }
+    if (bytesToHex(sha256(bytes)) !== descriptor.sha256) {
+      throw new Error('Malformed remote log profile digest');
+    }
+    const samples = parseProfileSamples(bytesToUtf8(bytes), localSessionId);
+    if (samples.length !== descriptor.sampleCount) {
+      throw new Error('Malformed remote log profile sample count');
+    }
+
     const previousProfile = await this.profileStorage.read(storageKey);
     assertCanCommit();
     const rollbackProfile = async () => {
@@ -923,6 +1085,22 @@ async function collectPages<T>(
     cursor = page.nextCursor;
   } while (cursor !== undefined);
   return items;
+}
+
+async function settleHydrationCollection<T>(
+  collection: Promise<T>,
+): Promise<
+  | {status: 'fulfilled'; value: T}
+  | {status: 'rejected'; reason: unknown}
+> {
+  try {
+    return {status: 'fulfilled', value: await collection};
+  } catch (error) {
+    if (isStaleAccountSyncCommitError(error)) {
+      throw error;
+    }
+    return {status: 'rejected', reason: error};
+  }
 }
 
 function requiredLocalLog(payload: Record<string, unknown>): DiveLogEntry {
@@ -1141,6 +1319,45 @@ function remoteProfileDescriptor(remote: RemoteDiveLog): {
   return {contentRevision, sha256: profileSha256, byteCount, sampleCount};
 }
 
+function isCanonicalRemoteProfilePath(
+  profilePath: string,
+  userId: string,
+  remoteId: string,
+  contentRevision: string,
+): boolean {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(profilePath);
+  } catch {
+    return false;
+  }
+  const decodedSegments = decodedPath.split('/');
+  if (
+    /%(?:2e|2f|5c)/i.test(profilePath) ||
+    /%(?:2e|2f|5c)/i.test(decodedPath) ||
+    decodedPath.includes('\\') ||
+    decodedSegments.some(segment => segment === '.' || segment === '..')
+  ) {
+    return false;
+  }
+
+  const encodedRevision = `${encodeURIComponent(contentRevision)}.json`;
+  const logPath = `${userId}/logs/${remoteId}/${encodedRevision}`;
+  if (profilePath === logPath) {
+    return true;
+  }
+
+  const segments = profilePath.split('/');
+  return (
+    segments.length === 5 &&
+    segments[0] === userId &&
+    segments[1] === 'claims' &&
+    UUID_PATTERN.test(segments[2] ?? '') &&
+    segments[3] === remoteId &&
+    segments[4] === encodedRevision
+  );
+}
+
 function validateSerializedProfile(
   serialized: string,
   remote: RemoteDiveLog,
@@ -1240,13 +1457,39 @@ function entityHeads(items: readonly AccountOutboxItem[]): AccountOutboxItem[] {
   });
 }
 
-function isLocallyAuthoritative(
-  value: DiveLogEntry | DivePlan | undefined,
+function isEquivalentHistoricalConflict(
+  current: DiveLogEntry | DivePlan | undefined,
+  remote: DiveLogEntry | DivePlan,
+  userId: string,
 ): boolean {
   return (
-    value?.cloudSyncStatus === 'pending' ||
-    value?.cloudSyncStatus === 'conflict'
+    current !== undefined &&
+    current.cloudSyncStatus === 'conflict' &&
+    current.ownerUserId === userId &&
+    current.localId === remote.localId &&
+    current.remoteId === remote.remoteId &&
+    sameJsonValue(accountDomainValue(current), accountDomainValue(remote))
   );
+}
+
+function accountDomainValue(
+  value: DiveLogEntry | DivePlan,
+): Record<string, unknown> {
+  const result = cloneRecord(value as unknown as Record<string, unknown>);
+  delete result.remoteId;
+  delete result.remoteRevision;
+  delete result.ownerUserId;
+  delete result.cloudSyncStatus;
+  if (isRecord(result.watchCapture)) {
+    const watchCapture = cloneRecord(result.watchCapture);
+    if (isRecord(watchCapture.profile)) {
+      const profile = cloneRecord(watchCapture.profile);
+      delete profile.storageKey;
+      watchCapture.profile = profile;
+    }
+    result.watchCapture = watchCapture;
+  }
+  return result;
 }
 
 function sameRemoteLogMutation(
@@ -1363,6 +1606,34 @@ function defaultSchedule(
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function safeHydrationFailureLabel(
+  failure: AccountHydrationFailure,
+): string {
+  if (failure.phase === 'listing') {
+    return failure.entityKind === 'log'
+      ? 'Remote log listing failed'
+      : 'Remote plan listing failed';
+  }
+  const message = errorMessage(failure.error);
+  const knownLabels = [
+    'Malformed remote log profile path',
+    'Malformed remote log profile byte count',
+    'Malformed remote log profile digest',
+    'Malformed remote log profile sample count',
+    'Malformed remote log',
+    'Malformed remote plan',
+    'Remote profile hydration is unavailable',
+    'Malformed account profile JSON',
+    'Malformed account profile samples',
+  ];
+  return (
+    knownLabels.find(label => message.startsWith(label)) ??
+    (failure.entityKind === 'log'
+      ? 'Remote log hydration failed'
+      : 'Remote plan hydration failed')
+  );
 }
 
 function hasExactKeys(

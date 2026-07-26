@@ -8,7 +8,11 @@ import { GuestClaimRepositoryError } from '@repo/supabase';
 import type { PrincipalRepositories } from '../repositories/principal-repositories';
 import { dataProfileKeyPrefix } from '../storage/data-principal';
 import type { WatchProfileStorage } from '../storage/watch-profile-storage';
-import { canonicalAccountPayloadSha256 } from '../sync/account-payload';
+import {
+  canonicalAccountPayloadSha256,
+  parseAccountRemoteLog,
+  parseAccountRemotePlan,
+} from '../sync/account-payload';
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
@@ -1534,11 +1538,30 @@ function verifyCommittedBatch(
         throw new GuestClaimServiceError('remote_conflict');
       }
     }
+    let verifiedRemote: RemoteDiveLog | RemoteDivePlan;
+    try {
+      verifiedRemote =
+        item.entityKind === 'plan'
+          ? parseAccountRemotePlan({
+              ...remote,
+              payload: normalizedPayload,
+            })
+          : parseAccountRemoteLog({
+              ...remote,
+              payload: normalizedPayload,
+            });
+    } catch {
+      throw new GuestClaimServiceError('remote_conflict');
+    }
     if (
-      canonicalAccountPayloadSha256(normalizedPayload) !== item.payloadSha256 ||
       canonicalAccountPayloadSha256(expectedPayload) !== item.payloadSha256
     ) {
       throw new GuestClaimServiceError('remote_conflict');
+    }
+    if (item.entityKind === 'plan') {
+      plans.set(item.clientRecordId, verifiedRemote as RemoteDivePlan);
+    } else {
+      logs.set(item.clientRecordId, verifiedRemote as RemoteDiveLog);
     }
   }
   return { plans, logs };

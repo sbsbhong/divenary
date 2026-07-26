@@ -14,7 +14,10 @@ import {
   parseAccountRemoteLog,
   parseAccountRemotePlan,
 } from '../src/sync/account-payload';
-import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
+import {
+  AccountHydrationError,
+  AccountSyncCoordinator,
+} from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
 import {mobileStorageKeys} from '../src/storage/storage-keys';
@@ -296,6 +299,98 @@ describe('AccountSyncCoordinator', () => {
 
     expect(parsed.payload.planned_at).toBe('2024-02-29T10:00:00.000Z');
     expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+  });
+
+  it('rejects log timestamp precision that Date would silently truncate', () => {
+    const canonical = remoteLog({
+      payload: {
+        ...remoteLog().payload,
+        started_at: '1970-01-01T00:01:40.123Z',
+      },
+    });
+    const overPrecise = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        started_at: '1970-01-01T00:01:40.123456Z',
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(overPrecise)).toThrow(/timestamp/i);
+  });
+
+  it('rejects plan timestamp precision that Date would silently truncate', () => {
+    const canonical = remotePlan({
+      payload: {
+        ...remotePlan().payload,
+        planned_at: '2024-02-29T10:00:00.123Z',
+      },
+    });
+    const overPrecise = {
+      ...canonical,
+      payload: {
+        ...canonical.payload,
+        planned_at: '2024-02-29T10:00:00.123001Z',
+      },
+    };
+
+    expect(() => parseAccountRemotePlan(overPrecise)).toThrow(/timestamp/i);
+  });
+
+  it('accepts a finalizer-shaped log whose digest predates its source plan UUID', () => {
+    const sourcePlanId = '20000000-0000-4000-8000-000000000001';
+    const staged = remoteLog();
+    const finalized = {
+      ...staged,
+      payload: {
+        ...staged.payload,
+        source_plan_id: sourcePlanId,
+      },
+    };
+
+    const parsed = parseAccountRemoteLog(finalized);
+
+    expect(parsed.payload.source_plan_id).toBe(sourcePlanId);
+    expect(parsed.payloadSha256).toBe(staged.payloadSha256);
+  });
+
+  it('accepts a finalizer-shaped plan whose digest predates its converted log UUID', () => {
+    const convertedLogId = '20000000-0000-4000-8000-000000000002';
+    const staged = remotePlan();
+    const finalized = {
+      ...staged,
+      payload: {
+        ...staged.payload,
+        converted_log_id: convertedLogId,
+      },
+    };
+
+    const parsed = parseAccountRemotePlan(finalized);
+
+    expect(parsed.payload.converted_log_id).toBe(convertedLogId);
+    expect(parsed.payloadSha256).toBe(staged.payloadSha256);
+  });
+
+  it('does not use legacy relation fallback for a non-UUID relation or divergent content', () => {
+    const staged = remoteLog();
+    const nonUuidRelation = {
+      ...staged,
+      payload: {
+        ...staged.payload,
+        source_plan_id: 'local-plan-1',
+      },
+    };
+    const divergent = {
+      ...staged,
+      payload: {
+        ...staged.payload,
+        source_plan_id: '20000000-0000-4000-8000-000000000001',
+        site_name: 'Divergent Reef',
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(nonUuidRelation)).toThrow(/digest/i);
+    expect(() => parseAccountRemoteLog(divergent)).toThrow(/digest/i);
   });
 
   it.each([
@@ -1134,6 +1229,321 @@ describe('AccountSyncCoordinator', () => {
     });
   });
 
+  it('recovers an equivalent historical log conflict during hydration', async () => {
+    const current = localLog({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: undefined,
+    });
+    const remoteValue = remoteLog();
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    await outbox.recordConflict(
+      operation(),
+      {...current},
+      {...remoteValue},
+    );
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(logbook.get(current.localId)).resolves.toEqual(
+      localLog({cloudSyncStatus: 'synced'}),
+    );
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('recovers an equivalent historical plan conflict during hydration', async () => {
+    const current = localPlan({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: undefined,
+    });
+    const remoteValue = remotePlan();
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    const conflictItem: AccountOutboxItem = {
+      ...operation(),
+      operationId: 'plan-conflict',
+      entityKind: 'plan',
+      entityLocalId: current.localId,
+      payload: {local: current, remote: remoteValue},
+    };
+    await outbox.recordConflict(
+      conflictItem,
+      {...current},
+      {...remoteValue},
+    );
+    const planbook = new LocalDivePlanRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listPlans: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(planbook.get(current.localId)).resolves.toEqual(localPlan());
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('preserves a divergent historical conflict during hydration', async () => {
+    const current = localLog({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: undefined,
+      manual: {...localLog().manual, notes: 'Keep divergent local edit'},
+    });
+    const remoteValue = remoteLog();
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+    });
+    await outbox.recordConflict(
+      operation(),
+      {...current},
+      {...remoteValue},
+    );
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(0);
+    await expect(logbook.get(current.localId)).resolves.toEqual(current);
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([
+      expect.objectContaining({operationId: 'operation-1'}),
+    ]);
+  });
+
+  it('rolls back conflict recovery when conflict metadata removal fails', async () => {
+    const current = localLog({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: undefined,
+    });
+    const remoteValue = remoteLog();
+    const storage = new FailNextWriteStore();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'outbox',
+    });
+    await outbox.recordConflict(
+      operation(),
+      {...current},
+      {...remoteValue},
+    );
+    storage.failNextWrite();
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({changed: 0, failureCount: 1});
+    await expect(logbook.get(current.localId)).resolves.toEqual(current);
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([
+      expect.objectContaining({operationId: 'operation-1'}),
+    ]);
+  });
+
+  it('restores the exact prior plan when equivalent conflict metadata removal fails', async () => {
+    const current = localPlan({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: undefined,
+    });
+    const remoteValue = remotePlan();
+    const storage = new FailNextWriteStore();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'outbox',
+    });
+    const conflictItem: AccountOutboxItem = {
+      ...operation(),
+      operationId: 'plan-conflict',
+      entityKind: 'plan',
+      entityLocalId: current.localId,
+      payload: {local: current, remote: remoteValue},
+    };
+    await outbox.recordConflict(
+      conflictItem,
+      {...current},
+      {...remoteValue},
+    );
+    const conflictsBeforeHydration = await outbox.listConflicts(userId);
+    storage.failNextWrite();
+    const planbook = new LocalDivePlanRepository([current]);
+    const planBeforeHydration = await planbook.get(current.localId);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listPlans: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({changed: 0, failureCount: 1});
+    await expect(planbook.get(current.localId)).resolves.toStrictEqual(
+      planBeforeHydration,
+    );
+    await expect(outbox.listConflicts(userId)).resolves.toStrictEqual(
+      conflictsBeforeHydration,
+    );
+  });
+
+  it('restores the exact prior log and profile when equivalent conflict metadata removal fails', async () => {
+    const remoteSamples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+      {localSessionId: 'watch-remote', timestamp: 101, depthMeters: 7},
+    ];
+    const remoteBytes = utf8ToBytes(JSON.stringify(remoteSamples));
+    const digest = bytesToHex(sha256(remoteBytes));
+    const remoteValue = watchRemoteLog({
+      profilePath: `${userId}/logs/${remoteId}/revision-1.json`,
+      digest,
+      byteCount: remoteBytes.length,
+      samples: remoteSamples,
+    });
+    const profileBackingStore = new InMemoryKeyValueStore();
+    const profileStorage = createWatchProfileStorage(profileBackingStore);
+    const fixtureLogbook = new LocalDiveLogRepository();
+    const fixtureCoordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'fixture-outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {
+        downloadProfile: jest.fn(async () => remoteBytes),
+      },
+      profileStorage,
+      logbookRepository: fixtureLogbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+    await fixtureCoordinator.hydrate({online: true});
+    const hydrated = await fixtureLogbook.get(remoteValue.localId);
+    const hydratedWatchCapture = hydrated?.watchCapture;
+    const hydratedProfile = hydratedWatchCapture?.profile;
+    if (!hydrated || !hydratedWatchCapture || !hydratedProfile) {
+      throw new Error('Equivalent conflict fixture is missing its profile');
+    }
+
+    const preparedProfileKey = hydratedProfile.storageKey;
+    const priorProfileKey = 'prior-conflict-profile';
+    const priorProfile: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 99, depthMeters: 1},
+    ];
+    await profileStorage.remove(preparedProfileKey);
+    await profileStorage.write(priorProfileKey, priorProfile);
+    const current: DiveLogEntry = {
+      ...hydrated,
+      remoteRevision: undefined,
+      cloudSyncStatus: 'conflict',
+      watchCapture: {
+        ...hydratedWatchCapture,
+        profile: {
+          ...hydratedProfile,
+          storageKey: priorProfileKey,
+        },
+      },
+    };
+    const storage = new FailNextWriteStore();
+    const outbox = new AccountOutbox({
+      storage,
+      storageKey: 'outbox',
+    });
+    const conflictItem = operation(0, {
+      entityLocalId: current.localId,
+      payload: {local: current, remote: remoteValue},
+    });
+    await outbox.recordConflict(
+      conflictItem,
+      {...current},
+      {...remoteValue},
+    );
+    const conflictsBeforeHydration = await outbox.listConflicts(userId);
+    storage.failNextWrite();
+    const logbook = new LocalDiveLogRepository([current]);
+    const logBeforeHydration = await logbook.get(current.localId);
+    const writeProfile = jest.spyOn(profileStorage, 'write');
+    const removeProfile = jest.spyOn(profileStorage, 'remove');
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {
+        downloadProfile: jest.fn(async () => remoteBytes),
+      },
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({changed: 0, failureCount: 1});
+    expect(writeProfile).toHaveBeenCalledWith(
+      preparedProfileKey,
+      remoteSamples,
+    );
+    expect(removeProfile).toHaveBeenCalledWith(preparedProfileKey);
+    await expect(logbook.get(current.localId)).resolves.toStrictEqual(
+      logBeforeHydration,
+    );
+    await expect(profileStorage.read(priorProfileKey)).resolves.toStrictEqual(
+      priorProfile,
+    );
+    await expect(profileStorage.read(preparedProfileKey)).resolves.toBeUndefined();
+    await expect(outbox.listConflicts(userId)).resolves.toStrictEqual(
+      conflictsBeforeHydration,
+    );
+  });
+
   it('hydrates a canonical versioned plan payload', async () => {
     const planbook = new LocalDivePlanRepository();
     const coordinator = new AccountSyncCoordinator({
@@ -1185,6 +1595,96 @@ describe('AccountSyncCoordinator', () => {
       manual: {notes: 'Retain until delete succeeds'},
       cloudSyncStatus: 'synced',
     });
+  });
+
+  it('hydrates valid rows after another row fails validation', async () => {
+    const malformed = remoteLog({payloadSha256: 'f'.repeat(64)});
+    const valid = remoteLog({
+      id: '10000000-0000-4000-8000-000000000002',
+      localId: 'remote-only',
+      payload: {
+        ...remoteLog().payload,
+        manual_data: {
+          ...localLog().manual,
+          _local_record: {
+            schemaVersion: 1,
+            createdAt: 17,
+            updatedAt: 29,
+          },
+        },
+      },
+    });
+    const logbook = new LocalDiveLogRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [malformed, valid]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({
+      changed: 1,
+      failureCount: 1,
+    });
+    expect((hydrationError as Error).message).toContain(
+      'Malformed remote log',
+    );
+    await expect(logbook.get('remote-only')).resolves.toMatchObject({
+      localId: 'remote-only',
+      remoteId: valid.id,
+      cloudSyncStatus: 'synced',
+      createdAt: 17,
+      updatedAt: 29,
+    });
+  });
+
+  it('hydrates one remote entity type when listing the other type fails', async () => {
+    const planbook = new LocalDivePlanRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => {
+          throw new Error(
+            'remote log listing failed: secret-server-detail',
+          );
+        }),
+        listPlans: jest.fn(async () => ({items: [remotePlan()]})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    let hydrationError: unknown;
+    await coordinator.hydrate({online: true}).catch(error => {
+      hydrationError = error;
+    });
+    expect(hydrationError).toBeInstanceOf(AccountHydrationError);
+    expect(hydrationError).toMatchObject({
+      changed: 1,
+      failureCount: 1,
+    });
+    expect((hydrationError as Error).message).toContain(
+      'Remote log listing failed',
+    );
+    expect((hydrationError as Error).message).not.toContain(
+      'secret-server-detail',
+    );
+    await expect(planbook.get('local-plan-1')).resolves.toEqual(localPlan());
   });
 
   it('downloads, verifies, and writes a full remote profile before log metadata', async () => {
@@ -1248,6 +1748,233 @@ describe('AccountSyncCoordinator', () => {
         }),
       }),
     );
+  });
+
+  it('hydrates a canonical finalized-claim profile path', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const digest = bytesToHex(sha256(bytes));
+    const batchId = '30000000-0000-4000-8000-000000000001';
+    const profilePath = `${userId}/claims/${batchId}/${remoteId}/revision-1.json`;
+    const remoteValue = watchRemoteLog({
+      profilePath,
+      digest,
+      byteCount: bytes.length,
+      samples,
+    });
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const logbook = new LocalDiveLogRepository();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile: jest.fn(async () => bytes)},
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(logbook.get('local-log-1')).resolves.toMatchObject({
+      watchCapture: {
+        profile: {
+          contentRevision: 'revision-1',
+          sampleCount: 1,
+          sha256: digest,
+        },
+      },
+    });
+  });
+
+  it('reuses a verified canonical claimed profile cache on repeated hydration', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+      {localSessionId: 'watch-remote', timestamp: 101, depthMeters: 7},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const batchId = '30000000-0000-4000-8000-000000000001';
+    const remoteValue = watchRemoteLog({
+      profilePath: `${userId}/claims/${batchId}/${remoteId}/revision-1.json`,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const cache = createHydrationProfileCache();
+    const downloadProfile = jest.fn(async () => bytes);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile},
+      profileStorage: cache.storage,
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(0);
+
+    expect(downloadProfile).toHaveBeenCalledTimes(1);
+    expect(cache.write).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-downloads an unchanged claimed profile when its local cache is missing', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const batchId = '30000000-0000-4000-8000-000000000001';
+    const remoteValue = watchRemoteLog({
+      profilePath: `${userId}/claims/${batchId}/${remoteId}/revision-1.json`,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const cache = createHydrationProfileCache();
+    const downloadProfile = jest.fn(async () => bytes);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile},
+      profileStorage: cache.storage,
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    cache.clear();
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(0);
+
+    expect(downloadProfile).toHaveBeenCalledTimes(2);
+    expect(cache.write).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-downloads an unchanged claimed profile when cached bytes have a wrong digest', async () => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const batchId = '30000000-0000-4000-8000-000000000001';
+    const remoteValue = watchRemoteLog({
+      profilePath: `${userId}/claims/${batchId}/${remoteId}/revision-1.json`,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const cache = createHydrationProfileCache();
+    const downloadProfile = jest.fn(async () => bytes);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile},
+      profileStorage: cache.storage,
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(1);
+    cache.replace([
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 9},
+    ]);
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(0);
+
+    expect(downloadProfile).toHaveBeenCalledTimes(2);
+    expect(cache.write).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      'foreign owner',
+      `00000000-0000-4000-8000-000000000099/claims/30000000-0000-4000-8000-000000000001/${remoteId}/revision-1.json`,
+    ],
+    [
+      'wrong remote id',
+      `${userId}/claims/30000000-0000-4000-8000-000000000001/10000000-0000-4000-8000-000000000099/revision-1.json`,
+    ],
+    [
+      'invalid batch id',
+      `${userId}/claims/not-a-uuid/${remoteId}/revision-1.json`,
+    ],
+    [
+      'wrong revision',
+      `${userId}/claims/30000000-0000-4000-8000-000000000001/${remoteId}/revision-2.json`,
+    ],
+    [
+      'traversal segment',
+      `${userId}/claims/30000000-0000-4000-8000-000000000001/../${remoteId}/revision-1.json`,
+    ],
+    [
+      'encoded traversal separator',
+      `${userId}/claims/30000000-0000-4000-8000-000000000001%2F../${remoteId}/revision-1.json`,
+    ],
+  ])('rejects a finalized-claim profile path with %s', async (_name, profilePath) => {
+    const samples: WatchDepthSample[] = [
+      {localSessionId: 'watch-remote', timestamp: 100, depthMeters: 2},
+    ];
+    const bytes = utf8ToBytes(JSON.stringify(samples));
+    const remoteValue = watchRemoteLog({
+      profilePath,
+      digest: bytesToHex(sha256(bytes)),
+      byteCount: bytes.length,
+      samples,
+    });
+    const downloadProfile = jest.fn(async () => bytes);
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const logbook = new LocalDiveLogRepository();
+    const save = jest.spyOn(logbook, 'save');
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs: jest.fn(async () => ({items: [remoteValue]})),
+      }),
+      profileDownloader: {downloadProfile},
+      profileStorage,
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await expect(coordinator.hydrate({online: true})).rejects.toThrow(
+      'Malformed remote log profile path',
+    );
+    expect(downloadProfile).not.toHaveBeenCalled();
+    expect(profileStorage.write).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
   });
 
   it('aborts stale hydration after a remote profile await without local persistence', async () => {
@@ -1596,6 +2323,41 @@ function watchRemoteLog(input: {
   });
 }
 
+function createHydrationProfileCache(): {
+  storage: {
+    write(key: string, samples: WatchDepthSample[]): Promise<void>;
+    read(key: string): Promise<WatchDepthSample[] | undefined>;
+    remove(key: string): Promise<void>;
+  };
+  write: jest.Mock;
+  clear(): void;
+  replace(samples: WatchDepthSample[]): void;
+} {
+  let cachedSamples: WatchDepthSample[] | undefined;
+  const write = jest.fn(
+    async (_key: string, samples: WatchDepthSample[]): Promise<void> => {
+      cachedSamples = samples.map(sample => ({...sample}));
+    },
+  );
+  const read = jest.fn(
+    async (_key: string): Promise<WatchDepthSample[] | undefined> =>
+      cachedSamples?.map(sample => ({...sample})),
+  );
+  const remove = jest.fn(async (_key: string): Promise<void> => {
+    cachedSamples = undefined;
+  });
+  return {
+    storage: {write, read, remove},
+    write,
+    clear() {
+      cachedSamples = undefined;
+    },
+    replace(samples) {
+      cachedSamples = samples.map(sample => ({...sample}));
+    },
+  };
+}
+
 function canonicalSha256(value: unknown): string {
   return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
 }
@@ -1667,5 +2429,30 @@ class PausedNextWriteStore implements PersistentKeyValueStore {
     });
     this.nextPause = {resolveStarted, release};
     return {started, release: resolveRelease};
+  }
+}
+
+class FailNextWriteStore implements PersistentKeyValueStore {
+  private readonly values = new Map<string, string>();
+  private shouldFailNextWrite = false;
+
+  async getString(key: string): Promise<string | undefined> {
+    return this.values.get(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (this.shouldFailNextWrite) {
+      this.shouldFailNextWrite = false;
+      throw new Error('outbox write failed');
+    }
+    this.values.set(key, value);
+  }
+
+  async remove(key: string): Promise<void> {
+    this.values.delete(key);
+  }
+
+  failNextWrite(): void {
+    this.shouldFailNextWrite = true;
   }
 }

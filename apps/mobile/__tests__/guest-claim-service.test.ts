@@ -142,6 +142,55 @@ describe('guest claim service', () => {
     ).resolves.toHaveLength(200);
   });
 
+  it('publishes and cleans up claim rows with equivalent PostgREST timestamps', async () => {
+    const guestPlan = {
+      ...divePlan('plan-a'),
+      plannedAt: 10,
+    };
+    const guest = repositories([diveLog('log-a')], [guestPlan]);
+    const account = repositories([], [], [], 'account');
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.payload.started_at =
+          '1970-01-01T09:00:10.000000+09:00';
+        committed.plans[0]!.payload.planned_at =
+          '1970-01-01T09:00:10.000000+09:00';
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result?.manifest.status).toBe('committed');
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      ownerUserId: userId,
+      cloudSyncStatus: 'synced',
+    });
+    await expect(account.planbook.get('plan-a')).resolves.toMatchObject({
+      ownerUserId: userId,
+      cloudSyncStatus: 'synced',
+    });
+    await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
+    await expect(guest.planbook.get('plan-a')).resolves.toBeUndefined();
+  });
+
   it('publishes a recovered legacy artifact digest only in the account-local profile reference', async () => {
     const profile = profileStorage();
     const fullSamples = depthSamples(2);

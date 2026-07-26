@@ -275,6 +275,22 @@ export class AccountOutbox {
     await this.removeSnapshotsBestEffort(removedProfileKeys);
   }
 
+  async removeEntityConflicts(
+    userId: string,
+    entityKind: AccountOutboxItem['entityKind'],
+    entityLocalId: string,
+    options?: AccountOutboxMutationOptions,
+  ): Promise<void> {
+    await this.mutate(async state => {
+      state.conflicts = state.conflicts.filter(
+        conflict =>
+          conflict.userId !== userId ||
+          conflict.entityKind !== entityKind ||
+          conflict.entityLocalId !== entityLocalId,
+      );
+    }, options);
+  }
+
   profileSnapshotKey(userId: string, operationId: string): string {
     return `${this.storageKey}:profile:${encodeURIComponent(
       userId,

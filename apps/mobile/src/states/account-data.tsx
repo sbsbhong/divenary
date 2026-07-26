@@ -49,6 +49,7 @@ import {
   createAccountRemotePlan,
 } from '../sync/account-payload';
 import {
+  AccountHydrationError,
   AccountSyncCoordinator,
   StaleAccountSyncCommitError,
   isStaleAccountSyncCommitError,
@@ -75,6 +76,7 @@ export type AccountDataContextValue = {
   retryBootstrap(): void;
   claim: AccountClaimController;
   requestSync(): Promise<AccountSyncDrainResult>;
+  refreshCloudData(): Promise<void>;
 };
 
 export type AccountClaimController = {
@@ -163,6 +165,11 @@ type PublishedAccountData = PrincipalRepositories & {
   coordinator?: AccountSyncCoordinator;
   coordinatorAccountRepository?: AccountDataRepository;
   coordinatorProfileRepository?: GuestClaimRemoteRepository;
+  cloudRefresh?: {
+    generation: number | undefined;
+    coordinator: AccountSyncCoordinator;
+    promise: Promise<void>;
+  };
 };
 
 type HiddenGuestIds = {
@@ -562,15 +569,38 @@ export function AccountDataProviderCore({
         });
 
         if (isOnline && nextPublication.coordinator) {
+          const coordinator = nextPublication.coordinator;
+          const refreshGeneration = nextPublication.claimGeneration;
           let hydrated = 0;
-          try {
-            hydrated =
-              (await nextPublication.coordinator.hydrate({online: true})) ?? 0;
+          const promise = (async () => {
+            hydrated = (await coordinator.hydrate({online: true})) ?? 0;
             if (!isCurrent()) {
               return;
             }
-            await nextPublication.coordinator.drain({online: true});
+            await coordinator.drain({online: true});
+            if (!isCurrent()) {
+              return;
+            }
+            if (hydrated > 0) {
+              await invalidatePrincipalQueries(queryClient, desiredScope);
+            }
+          })();
+          const operation = {
+            generation: refreshGeneration,
+            coordinator,
+            promise,
+          };
+          nextPublication.cloudRefresh = operation;
+          try {
+            await promise;
           } catch (error) {
+            if (
+              isCurrent() &&
+              error instanceof AccountHydrationError &&
+              error.changed > 0
+            ) {
+              await invalidatePrincipalQueries(queryClient, desiredScope);
+            }
             if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
               setBootstrapPresentation({
                 queryScope: desiredScope,
@@ -582,12 +612,13 @@ export function AccountDataProviderCore({
               console.warn('Failed to hydrate remote account data', error);
             }
             return;
+          } finally {
+            if (nextPublication.cloudRefresh === operation) {
+              nextPublication.cloudRefresh = undefined;
+            }
           }
           if (!isCurrent()) {
             return;
-          }
-          if (hydrated > 0) {
-            await invalidatePrincipalQueries(queryClient, desiredScope);
           }
         } else {
           nextPublication.coordinator?.pause();
@@ -706,6 +737,19 @@ export function AccountDataProviderCore({
     [dependencies],
   );
 
+  const recoverBootstrapStage = React.useCallback(
+    (queryScope: string, stage: AccountDataBootstrapStage) => {
+      setBootstrapPresentation(current =>
+        current.queryScope === queryScope &&
+        current.state.status === 'degraded' &&
+        current.state.issue.stage === stage
+          ? {queryScope, state: {status: 'ready'}}
+          : current,
+      );
+    },
+    [],
+  );
+
   const refreshClaim = React.useCallback(
     async (
       publication: PublishedAccountData,
@@ -760,169 +804,187 @@ export function AccountDataProviderCore({
           throw error;
         }
       };
-      if (
-        publication.queryScope !== desiredScope ||
-        publication.principal.kind !== 'user' ||
-        !publication.claimStore ||
-        !publication.guestRepositories ||
-        !navigationReady
-      ) {
-        setClaimPresentation(hiddenClaimPresentation(desiredScope));
-        return;
-      }
-
-      const inventory = await readCurrentGuestInventory();
-      if (!inventory || !isClaimCurrent()) {
-        return;
-      }
-      if (inventory.logs.length + inventory.plans.length === 0) {
-        clearHiddenGuestIds(publication);
-        if (isClaimCurrent()) {
-          setClaimPresentation(hiddenClaimPresentation(desiredScope));
-        }
-        if (
-          !options.resumeActive ||
-          !isOnline ||
-          AppState.currentState !== 'active' ||
-          !publication.claimService
-        ) {
-          return;
-        }
-        let checkpointHint: Awaited<
-          ReturnType<GuestClaimStore['readCheckpointHint']>
-        >;
-        try {
-          checkpointHint =
-            await publication.claimStore.readCheckpointHint();
-        } catch {
-          return;
-        }
-        if (
-          !isClaimCurrent() ||
-          publication.hasLiveGuestInventory !== false
-        ) {
-          return;
-        }
-        if (checkpointHint.state === 'recoverable') {
-          await resumeZeroInventoryClaim(publication, isClaimCurrent);
-          return;
-        }
-        if (
-          checkpointHint.state === 'unknown' &&
-          claimGeneration !== undefined
-        ) {
-          scheduleZeroInventoryAudit(publication, claimGeneration);
-        }
-        return;
-      }
-
-      let snapshot: GuestClaimSnapshot | undefined;
+      let inspectionStarted = false;
+      let inspectionFailed = false;
       try {
-        snapshot = await publication.claimStore.read();
-      } catch {
-        if (isClaimCurrent()) {
-          setClaimPresentation({
-            queryScope: desiredScope,
-            eligible: { logCount: 0, planCount: 0 },
-            state: {
-              status: 'failed',
-              completed: 0,
-              total: 0,
-              errorCode: 'claim_validation_failed',
-            },
-          });
-        }
-        return;
-      }
-      if (
-        !isClaimCurrent() ||
-        (snapshot?.userId !== undefined &&
-          snapshot.userId !== publication.principal.userId)
-      ) {
-        return;
-      }
-      const appliedSnapshot = await awaitCurrentClaimStep(() =>
-        applyHiddenGuestIds(
-          publication,
-          snapshot,
-          inventory,
-          dependencies.profileStorage,
-          isClaimCurrent,
-        ),
-      );
-      if (!appliedSnapshot.current) {
-        return;
-      }
-      const eligible = eligibleGuestCounts(publication, inventory);
-      setClaimPresentation(
-        presentationForSnapshot(desiredScope, snapshot, eligible, isOnline),
-      );
-
-      if (
-        options.resumeActive &&
-        isOnline &&
-        AppState.currentState === 'active' &&
-        publication.claimService &&
-          snapshot !== undefined &&
-          (snapshot.manifest.status === 'running' ||
-            snapshot.manifest.status === 'finalizing' ||
-            snapshot.manifest.status === 'cleanupPending' ||
-            (snapshot.manifest.status === 'committed' &&
-              hasHiddenGuestIds(publication)) ||
-            (snapshot.manifest.status === 'failed' &&
-              snapshot.errorCode === 'network_unavailable'))
-      ) {
-        const resumed = await awaitCurrentClaimStep(() =>
-          publication.claimService!.resume(),
-        );
-        if (!resumed.current) {
-          return;
-        }
-        const refreshedInventory = await readCurrentGuestInventory();
-        if (!refreshedInventory || !isClaimCurrent()) {
-          return;
-        }
         if (
-          refreshedInventory.logs.length + refreshedInventory.plans.length ===
-          0
+          publication.queryScope !== desiredScope ||
+          publication.principal.kind !== 'user' ||
+          !publication.claimStore ||
+          !publication.guestRepositories ||
+          !navigationReady
         ) {
+          setClaimPresentation(hiddenClaimPresentation(desiredScope));
+          return;
+        }
+        inspectionStarted = true;
+
+        const inventory = await readCurrentGuestInventory();
+        if (!inventory || !isClaimCurrent()) {
+          return;
+        }
+        if (inventory.logs.length + inventory.plans.length === 0) {
           clearHiddenGuestIds(publication);
           if (isClaimCurrent()) {
             setClaimPresentation(hiddenClaimPresentation(desiredScope));
           }
+          if (
+            !options.resumeActive ||
+            !isOnline ||
+            AppState.currentState !== 'active' ||
+            !publication.claimService
+          ) {
+            return;
+          }
+          let checkpointHint: Awaited<
+            ReturnType<GuestClaimStore['readCheckpointHint']>
+          >;
+          try {
+            checkpointHint =
+              await publication.claimStore.readCheckpointHint();
+          } catch {
+            inspectionFailed = true;
+            return;
+          }
+          if (
+            !isClaimCurrent() ||
+            publication.hasLiveGuestInventory !== false
+          ) {
+            return;
+          }
+          if (checkpointHint.state === 'recoverable') {
+            await resumeZeroInventoryClaim(publication, isClaimCurrent);
+            return;
+          }
+          if (
+            checkpointHint.state === 'unknown' &&
+            claimGeneration !== undefined
+          ) {
+            scheduleZeroInventoryAudit(publication, claimGeneration);
+          }
           return;
         }
-        const refreshedSnapshotRead = await awaitCurrentClaimStep(() =>
-          publication.claimStore!.read(),
-        );
-        if (!refreshedSnapshotRead.current) {
+
+        let snapshot: GuestClaimSnapshot | undefined;
+        try {
+          snapshot = await publication.claimStore.read();
+        } catch {
+          inspectionFailed = true;
+          if (isClaimCurrent()) {
+            setClaimPresentation({
+              queryScope: desiredScope,
+              eligible: {logCount: 0, planCount: 0},
+              state: {
+                status: 'failed',
+                completed: 0,
+                total: 0,
+                errorCode: 'claim_validation_failed',
+              },
+            });
+          }
           return;
         }
-        const refreshedSnapshot = refreshedSnapshotRead.value;
-        const appliedRefreshedSnapshot = await awaitCurrentClaimStep(() =>
+        if (
+          !isClaimCurrent() ||
+          (snapshot?.userId !== undefined &&
+            snapshot.userId !== publication.principal.userId)
+        ) {
+          if (isClaimCurrent()) {
+            inspectionFailed = true;
+          }
+          return;
+        }
+        const appliedSnapshot = await awaitCurrentClaimStep(() =>
           applyHiddenGuestIds(
             publication,
-            refreshedSnapshot,
-            refreshedInventory,
+            snapshot,
+            inventory,
             dependencies.profileStorage,
             isClaimCurrent,
           ),
         );
-        if (!appliedRefreshedSnapshot.current) {
+        if (!appliedSnapshot.current) {
           return;
         }
-        const refreshedEligible = eligibleGuestCounts(
-          publication,
-          refreshedInventory,
-        );
+        const eligible = eligibleGuestCounts(publication, inventory);
         setClaimPresentation(
-          presentationForSnapshot(
-            desiredScope,
-            refreshedSnapshot,
-            refreshedEligible,
-            isOnline,
-          ),
+          presentationForSnapshot(desiredScope, snapshot, eligible, isOnline),
         );
+
+        if (
+          options.resumeActive &&
+          isOnline &&
+          AppState.currentState === 'active' &&
+          publication.claimService &&
+            snapshot !== undefined &&
+            (snapshot.manifest.status === 'running' ||
+              snapshot.manifest.status === 'finalizing' ||
+              snapshot.manifest.status === 'cleanupPending' ||
+              (snapshot.manifest.status === 'committed' &&
+                hasHiddenGuestIds(publication)) ||
+              (snapshot.manifest.status === 'failed' &&
+                snapshot.errorCode === 'network_unavailable'))
+        ) {
+          const resumed = await awaitCurrentClaimStep(() =>
+            publication.claimService!.resume(),
+          );
+          if (!resumed.current) {
+            return;
+          }
+          const refreshedInventory = await readCurrentGuestInventory();
+          if (!refreshedInventory || !isClaimCurrent()) {
+            return;
+          }
+          if (
+            refreshedInventory.logs.length +
+              refreshedInventory.plans.length ===
+            0
+          ) {
+            clearHiddenGuestIds(publication);
+            if (isClaimCurrent()) {
+              setClaimPresentation(hiddenClaimPresentation(desiredScope));
+            }
+            return;
+          }
+          const refreshedSnapshotRead = await awaitCurrentClaimStep(() =>
+            publication.claimStore!.read(),
+          );
+          if (!refreshedSnapshotRead.current) {
+            return;
+          }
+          const refreshedSnapshot = refreshedSnapshotRead.value;
+          const appliedRefreshedSnapshot = await awaitCurrentClaimStep(() =>
+            applyHiddenGuestIds(
+              publication,
+              refreshedSnapshot,
+              refreshedInventory,
+              dependencies.profileStorage,
+              isClaimCurrent,
+            ),
+          );
+          if (!appliedRefreshedSnapshot.current) {
+            return;
+          }
+          const refreshedEligible = eligibleGuestCounts(
+            publication,
+            refreshedInventory,
+          );
+          setClaimPresentation(
+            presentationForSnapshot(
+              desiredScope,
+              refreshedSnapshot,
+              refreshedEligible,
+              isOnline,
+            ),
+          );
+        }
+      } catch (error) {
+        inspectionFailed = true;
+        throw error;
+      } finally {
+        if (inspectionStarted && !inspectionFailed && isClaimCurrent()) {
+          recoverBootstrapStage(desiredScope, 'claimInspection');
+        }
       }
     },
     [
@@ -930,6 +992,7 @@ export function AccountDataProviderCore({
       desiredScope,
       isOnline,
       navigationReady,
+      recoverBootstrapStage,
       scheduleZeroInventoryAudit,
     ],
   );
@@ -1002,6 +1065,84 @@ export function AccountDataProviderCore({
     const result = await published.coordinator.drain({ online: isOnline });
     return result;
   }, [isOnline, published]);
+
+  const refreshCloudData = React.useCallback(async () => {
+    const publication = publishedRef.current;
+    const generation = publication?.claimGeneration;
+    const coordinator = publication?.coordinator;
+    const isCurrent = () =>
+      publication !== undefined &&
+      publication.principal.kind === 'user' &&
+      publication.queryScope === desiredScope &&
+      publication.claimGeneration === generation &&
+      generationRef.current === generation &&
+      publishedRef.current === publication;
+    if (!isOnline || !coordinator || !isCurrent()) {
+      return;
+    }
+    const activeRefresh = publication.cloudRefresh;
+    if (
+      activeRefresh &&
+      activeRefresh.generation === generation &&
+      activeRefresh.coordinator === coordinator
+    ) {
+      return activeRefresh.promise;
+    }
+
+    const promise = (async () => {
+      try {
+        await coordinator.drain({online: true});
+        const hydrated = await coordinator.hydrate({online: true});
+        if (!isCurrent()) {
+          return;
+        }
+        if (hydrated > 0) {
+          await invalidatePrincipalQueries(queryClient, publication.queryScope);
+          if (!isCurrent()) {
+            return;
+          }
+        }
+        setBootstrapPresentation(current =>
+          current.queryScope === publication.queryScope &&
+          current.state.status === 'degraded' &&
+          current.state.issue.stage === 'remoteHydration'
+            ? {queryScope: publication.queryScope, state: {status: 'ready'}}
+            : current,
+        );
+      } catch (error) {
+        if (
+          isCurrent() &&
+          error instanceof AccountHydrationError &&
+          error.changed > 0
+        ) {
+          await invalidatePrincipalQueries(
+            queryClient,
+            publication.queryScope,
+          );
+        }
+        if (isCurrent() && !isStaleAccountSyncCommitError(error)) {
+          setBootstrapPresentation({
+            queryScope: publication.queryScope,
+            state: {
+              status: 'degraded',
+              issue: {stage: 'remoteHydration', retryable: true},
+            },
+          });
+          console.warn('Failed to refresh remote account data', error);
+        }
+        throw error;
+      }
+    })();
+    const operation = {generation, coordinator, promise};
+    publication.cloudRefresh = operation;
+    try {
+      await promise;
+    } finally {
+      if (publication.cloudRefresh === operation) {
+        publication.cloudRefresh = undefined;
+      }
+    }
+  }, [desiredScope, isOnline, queryClient]);
 
   const runClaim = React.useCallback(
     async (operation: 'start' | 'retry' | 'recheckRetained' | 'defer') => {
@@ -1120,12 +1261,12 @@ export function AccountDataProviderCore({
       const becameActive = previousState !== 'active' && nextState === 'active';
       previousState = nextState;
       if (becameActive && isOnline) {
-        void requestSync();
+        void refreshCloudData().catch(() => undefined);
         resumeClaim().catch(() => undefined);
       }
     });
     return () => subscription.remove();
-  }, [isOnline, requestSync, resumeClaim]);
+  }, [isOnline, refreshCloudData, resumeClaim]);
 
   const bootstrap =
     bootstrapPresentation.queryScope === desiredScope
@@ -1167,6 +1308,7 @@ export function AccountDataProviderCore({
           }
         : hiddenClaimController(),
     requestSync,
+    refreshCloudData,
   };
 
   return (

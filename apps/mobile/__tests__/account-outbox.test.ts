@@ -194,6 +194,39 @@ describe('AccountOutbox', () => {
     ]);
   });
 
+  it('removes conflict metadata only for the selected account entity', async () => {
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'account-outbox',
+      now: () => 200,
+    });
+    const otherUserId = '00000000-0000-4000-8000-000000000002';
+    const conflicts = [
+      item({operationId: 'target', entityKind: 'log'}),
+      item({operationId: 'same-local-plan', entityKind: 'plan'}),
+      item({operationId: 'other-user', userId: otherUserId}),
+      item({
+        operationId: 'other-local',
+        entityLocalId: 'local-log-2',
+      }),
+    ];
+    for (const conflict of conflicts) {
+      await outbox.recordConflict(
+        conflict,
+        {localId: conflict.entityLocalId},
+        {id: `${conflict.operationId}-remote`},
+      );
+    }
+
+    await outbox.removeEntityConflicts(userId, 'log', 'local-log-1');
+
+    await expect(outbox.listConflicts()).resolves.toEqual([
+      expect.objectContaining({operationId: 'same-local-plan'}),
+      expect.objectContaining({operationId: 'other-user'}),
+      expect.objectContaining({operationId: 'other-local'}),
+    ]);
+  });
+
   it('restores the exact envelope and retained snapshot when a guarded rebase becomes stale during persistence', async () => {
     const storage = new PausedNextWriteStorage();
     const outbox = new AccountOutbox({
