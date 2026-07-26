@@ -151,6 +151,18 @@ export function resolveAccountClaimAutoRoute({
   };
 }
 
+export function resolveHomeClaimRecoveryVisibility({
+  status,
+  eligibleCount,
+}: {
+  status: GuestClaimViewState['status'];
+  eligibleCount: number;
+}): boolean {
+  return (
+    eligibleCount > 0 && (status === 'failed' || status === 'deferred')
+  );
+}
+
 export function resolveAuthLoginSheetAllowedDetents(
   platformOS: string,
   platformVersion: number | string,
@@ -468,10 +480,12 @@ export default function RootNavigation(): React.JSX.Element {
         onPress: accountData.retryBootstrap,
       };
     }
-    if (
-      accountData.claim.state.status === 'failed' ||
-      accountData.claim.state.status === 'deferred'
-    ) {
+    if (resolveHomeClaimRecoveryVisibility({
+      status: accountData.claim.state.status,
+      eligibleCount:
+        accountData.claim.eligible.logCount +
+        accountData.claim.eligible.planCount,
+    })) {
       return {
         title: t('home.recovery.claimTitle'),
         description: t('home.recovery.claimDescription'),
@@ -482,6 +496,8 @@ export default function RootNavigation(): React.JSX.Element {
     return undefined;
   }, [
     accountData.bootstrap.status,
+    accountData.claim.eligible.logCount,
+    accountData.claim.eligible.planCount,
     accountData.claim.state.status,
     accountData.retryBootstrap,
     openAccountClaim,

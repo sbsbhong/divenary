@@ -4,6 +4,7 @@ import {
   guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
+  type GuestClaimSnapshot,
 } from '../src/claim/guest-claim-store';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
@@ -450,6 +451,612 @@ describe('guest claim store', () => {
     });
   });
 
+  it.each([
+    [
+      'running',
+      'running',
+      undefined,
+      {state: 'recoverable', status: 'running'},
+    ],
+    [
+      'finalizing',
+      'finalizing',
+      undefined,
+      {state: 'recoverable', status: 'finalizing'},
+    ],
+    [
+      'cleanup pending',
+      'cleanupPending',
+      undefined,
+      {state: 'recoverable', status: 'cleanupPending'},
+    ],
+    [
+      'retryable network failure',
+      'failed',
+      'network_unavailable',
+      {
+        state: 'recoverable',
+        status: 'failed',
+        errorCode: 'network_unavailable',
+      },
+    ],
+    ['prepared', 'prepared', undefined, {state: 'inactive'}],
+    [
+      'non-retryable failure',
+      'failed',
+      'session_expired',
+      {state: 'inactive'},
+    ],
+  ] as const)(
+    'persists a lightweight checkpoint hint for %s snapshots',
+    async (_name, status, errorCode, expected) => {
+      const storage = new InMemoryKeyValueStore();
+      const snapshot = await createGuestClaimSnapshot({
+        userId,
+        logbookRepository: repository([diveLog({localId: 'log-a'})]),
+        planRepository: repository([]),
+        profileStorage: profileStorage(),
+        now: () => 100,
+      });
+      const persisted = snapshotWithStatus(snapshot, status, errorCode);
+
+      await new GuestClaimStore({storage, userId}).write(persisted);
+
+      await expect(
+        new GuestClaimStore({storage, userId}).readCheckpointHint(),
+      ).resolves.toEqual(expected);
+    },
+  );
+
+  it('does not rewrite an unchanged successfully persisted hint on item progress writes', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const setString = jest.spyOn(storage, 'setString');
+    const remove = jest.spyOn(storage, 'remove');
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const running = snapshotWithStatus(snapshot, 'running');
+    const store = new GuestClaimStore({storage, userId});
+
+    await store.write(running);
+    remove.mockClear();
+    const progressed = structuredClone(running);
+    progressed.manifest.items[0] = {
+      ...progressed.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      completedAt: 101,
+    };
+    progressed.manifest.updatedAt = 101;
+    await store.write(progressed);
+
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintWrites = setString.mock.calls.filter(
+      ([key]) => key !== claimKey,
+    );
+    expect(setString).toHaveBeenCalledTimes(3);
+    expect(hintWrites).toHaveLength(1);
+    expect(remove).not.toHaveBeenCalled();
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'recoverable', status: 'running'});
+  });
+
+  it('invalidates a stale inactive hint before writing a recoverable snapshot', async () => {
+    const values = new Map<string, string>();
+    const events: string[] = [];
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintKey = `${claimKey}:checkpoint-hint`;
+    let rejectRecoverableHint = false;
+    const storage = {
+      getString: jest.fn(async (key: string) => {
+        events.push(`get:${key}`);
+        return values.get(key);
+      }),
+      setString: jest.fn(async (key: string, value: string) => {
+        events.push(`set:${key}`);
+        if (
+          key === hintKey &&
+          rejectRecoverableHint &&
+          JSON.parse(value).state === 'recoverable'
+        ) {
+          throw new Error('recoverable hint unavailable');
+        }
+        values.set(key, value);
+      }),
+      remove: jest.fn(async (key: string) => {
+        events.push(`remove:${key}`);
+        values.delete(key);
+      }),
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    await new GuestClaimStore({storage, userId}).write(snapshot);
+    events.length = 0;
+    rejectRecoverableHint = true;
+
+    const recoverableStore = new GuestClaimStore({storage, userId});
+    await expect(
+      recoverableStore.write(snapshotWithStatus(snapshot, 'running')),
+    ).resolves.toBeUndefined();
+
+    expect(events).toEqual([
+      `get:${hintKey}`,
+      `remove:${hintKey}`,
+      `set:${claimKey}`,
+      `set:${hintKey}`,
+    ]);
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'unknown'});
+    await expect(
+      new GuestClaimStore({storage, userId}).read(),
+    ).resolves.toMatchObject({manifest: {status: 'running'}});
+
+    events.length = 0;
+    rejectRecoverableHint = false;
+    await recoverableStore.write(snapshotWithStatus(snapshot, 'running'));
+    expect(events.slice(0, 2)).toEqual([
+      `get:${hintKey}`,
+      `remove:${hintKey}`,
+    ]);
+  });
+
+  it('aborts a recoverable snapshot write when pre-write hint invalidation fails', async () => {
+    const values = new Map<string, string>();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintKey = `${claimKey}:checkpoint-hint`;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    values.set(claimKey, JSON.stringify(snapshot));
+    values.set(
+      hintKey,
+      JSON.stringify({
+        schemaVersion: 1,
+        userId,
+        state: 'inactive',
+      }),
+    );
+    const storage = {
+      getString: jest.fn(async (key: string) => values.get(key)),
+      setString: jest.fn(async (key: string, value: string) => {
+        values.set(key, value);
+      }),
+      remove: jest.fn(async () => {
+        throw new Error('hint invalidation unavailable');
+      }),
+    };
+
+    await expect(
+      new GuestClaimStore({storage, userId}).write(
+        snapshotWithStatus(snapshot, 'running'),
+      ),
+    ).rejects.toThrow('hint invalidation unavailable');
+    expect(JSON.parse(values.get(claimKey)!).manifest.status).toBe('prepared');
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', '{'],
+  ])(
+    'clears a %s hint before writing a recoverable snapshot',
+    async (_name, existingHint) => {
+      const values = new Map<string, string>();
+      const events: string[] = [];
+      const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+      const hintKey = `${claimKey}:checkpoint-hint`;
+      if (existingHint !== undefined) {
+        values.set(hintKey, existingHint);
+      }
+      const storage = {
+        getString: jest.fn(async (key: string) => {
+          events.push(`get:${key}`);
+          return values.get(key);
+        }),
+        setString: jest.fn(async (key: string, value: string) => {
+          events.push(`set:${key}`);
+          values.set(key, value);
+        }),
+        remove: jest.fn(async (key: string) => {
+          events.push(`remove:${key}`);
+          values.delete(key);
+        }),
+      };
+      const snapshot = await createGuestClaimSnapshot({
+        userId,
+        logbookRepository: repository([diveLog({localId: 'log-a'})]),
+        planRepository: repository([]),
+        profileStorage: profileStorage(),
+        now: () => 100,
+      });
+
+      await new GuestClaimStore({storage, userId}).write(
+        snapshotWithStatus(snapshot, 'running'),
+      );
+
+      expect(events).toEqual([
+        `get:${hintKey}`,
+        `remove:${hintKey}`,
+        `set:${claimKey}`,
+        `set:${hintKey}`,
+      ]);
+    },
+  );
+
+  it.each([
+    ['missing', undefined],
+    [
+      'stale',
+      JSON.stringify({
+        schemaVersion: 1,
+        userId,
+        state: 'inactive',
+      }),
+    ],
+  ])(
+    'backfills a %s checkpoint hint after an authoritative legacy snapshot read',
+    async (_name, existingHint) => {
+      const storage = new InMemoryKeyValueStore();
+      const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+      const hintKey = `${claimKey}:checkpoint-hint`;
+      const snapshot = await createGuestClaimSnapshot({
+        userId,
+        logbookRepository: repository([diveLog({localId: 'log-a'})]),
+        planRepository: repository([]),
+        profileStorage: profileStorage(),
+        now: () => 100,
+      });
+      const running = snapshotWithStatus(snapshot, 'running');
+      await storage.setString(claimKey, JSON.stringify(running));
+      if (existingHint !== undefined) {
+        await storage.setString(hintKey, existingHint);
+      }
+      const setString = jest.spyOn(storage, 'setString');
+
+      await expect(
+        new GuestClaimStore({storage, userId}).read(),
+      ).resolves.toEqual(running);
+
+      expect(setString).toHaveBeenCalledTimes(1);
+      expect(setString.mock.calls[0]?.[0]).toBe(hintKey);
+      await expect(
+        new GuestClaimStore({storage, userId}).readCheckpointHint(),
+      ).resolves.toEqual({state: 'recoverable', status: 'running'});
+    },
+  );
+
+  it('does not fail an authoritative snapshot read when advisory hint backfill fails', async () => {
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const running = snapshotWithStatus(snapshot, 'running');
+    const storage = {
+      getString: jest.fn(async (key: string) =>
+        key === claimKey ? JSON.stringify(running) : undefined,
+      ),
+      setString: jest.fn(async () => {
+        throw new Error('hint unavailable');
+      }),
+      remove: jest.fn(async () => undefined),
+    };
+
+    await expect(
+      new GuestClaimStore({storage, userId}).read(),
+    ).resolves.toEqual(running);
+    expect(storage.setString).toHaveBeenCalledTimes(1);
+  });
+
+  it('invalidates a stale inactive hint before best-effort recoverable backfill', async () => {
+    const values = new Map<string, string>();
+    const events: string[] = [];
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintKey = `${claimKey}:checkpoint-hint`;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const running = snapshotWithStatus(snapshot, 'running');
+    values.set(claimKey, JSON.stringify(running));
+    values.set(
+      hintKey,
+      JSON.stringify({
+        schemaVersion: 1,
+        userId,
+        state: 'inactive',
+      }),
+    );
+    const storage = {
+      getString: jest.fn(async (key: string) => {
+        events.push(`get:${key}`);
+        return values.get(key);
+      }),
+      setString: jest.fn(async (key: string) => {
+        events.push(`set:${key}`);
+        throw new Error('recoverable hint unavailable');
+      }),
+      remove: jest.fn(async (key: string) => {
+        events.push(`remove:${key}`);
+        values.delete(key);
+      }),
+    };
+
+    await expect(
+      new GuestClaimStore({storage, userId}).read(),
+    ).resolves.toEqual(running);
+
+    expect(events).toEqual([
+      `get:${claimKey}`,
+      `get:${hintKey}`,
+      `remove:${hintKey}`,
+      `set:${hintKey}`,
+    ]);
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'unknown'});
+  });
+
+  it('serializes cross-instance reads so stale backfill cannot overwrite a newer recoverable hint', async () => {
+    const values = new Map<string, string>();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintKey = `${claimKey}:checkpoint-hint`;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    values.set(claimKey, JSON.stringify(snapshot));
+    values.set(
+      hintKey,
+      JSON.stringify({
+        schemaVersion: 1,
+        userId,
+        state: 'inactive',
+      }),
+    );
+    let releaseStaleRead!: () => void;
+    const staleReadReleased = new Promise<void>(resolve => {
+      releaseStaleRead = resolve;
+    });
+    let markStaleReadStarted!: () => void;
+    const staleReadStarted = new Promise<void>(resolve => {
+      markStaleReadStarted = resolve;
+    });
+    let blockNextClaimRead = true;
+    const setString = jest.fn(async (key: string, value: string) => {
+      values.set(key, value);
+    });
+    const storage = {
+      getString: jest.fn(async (key: string) => {
+        const captured = values.get(key);
+        if (key === claimKey && blockNextClaimRead) {
+          blockNextClaimRead = false;
+          markStaleReadStarted();
+          await staleReadReleased;
+        }
+        return captured;
+      }),
+      setString,
+      remove: jest.fn(async (key: string) => {
+        values.delete(key);
+      }),
+    };
+    const staleRead = new GuestClaimStore({storage, userId}).read();
+    await staleReadStarted;
+
+    const recoverableWrite = new GuestClaimStore({storage, userId}).write(
+      snapshotWithStatus(snapshot, 'running'),
+    );
+    await Promise.resolve();
+    expect(setString).not.toHaveBeenCalled();
+
+    releaseStaleRead();
+    await expect(staleRead).resolves.toEqual(snapshot);
+    await expect(recoverableWrite).resolves.toBeUndefined();
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'recoverable', status: 'running'});
+  });
+
+  it('continues same-key operations after a queued operation rejects', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const malformed = structuredClone(snapshot);
+    malformed.snapshots[0]!.payloadBytes = '{}';
+    const store = new GuestClaimStore({storage, userId});
+
+    await expect(store.write(malformed)).rejects.toThrow('guest claim');
+    await expect(store.write(snapshot)).resolves.toBeUndefined();
+    await expect(store.readCheckpointHint()).resolves.toEqual({
+      state: 'inactive',
+    });
+  });
+
+  it('refreshes a cross-instance hint before reusing a recoverable instance cache', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const running = snapshotWithStatus(snapshot, 'running');
+    const storeA = new GuestClaimStore({storage, userId});
+    const storeB = new GuestClaimStore({storage, userId});
+
+    await storeA.write(running);
+    await storeB.write(snapshot);
+    await expect(storeB.readCheckpointHint()).resolves.toEqual({
+      state: 'inactive',
+    });
+
+    await storeA.write(running);
+
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'recoverable', status: 'running'});
+  });
+
+  it('validates before writing the snapshot and writes the full snapshot before the hint', async () => {
+    const values = new Map<string, string>();
+    const calls: string[] = [];
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const storage = {
+      getString: jest.fn(async (key: string) => values.get(key)),
+      setString: jest.fn(async (key: string, value: string) => {
+        calls.push(key);
+        if (key !== claimKey) {
+          throw new Error('hint unavailable');
+        }
+        values.set(key, value);
+      }),
+      remove: jest.fn(async (key: string) => {
+        values.delete(key);
+      }),
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const malformed = structuredClone(snapshot);
+    malformed.snapshots[0]!.payloadBytes = '{}';
+    const store = new GuestClaimStore({storage, userId});
+
+    await expect(store.write(malformed)).rejects.toThrow('guest claim');
+    expect(calls).toEqual([]);
+
+    await expect(store.write(snapshot)).resolves.toBeUndefined();
+    expect(calls[0]).toBe(claimKey);
+    expect(calls[1]).not.toBe(claimKey);
+    await expect(store.read()).resolves.toEqual(snapshot);
+  });
+
+  it('removes the full snapshot before its checkpoint hint', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const remove = jest.spyOn(storage, 'remove');
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const store = new GuestClaimStore({storage, userId});
+    await store.write(snapshotWithStatus(snapshot, 'running'));
+    remove.mockClear();
+
+    await store.remove();
+
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    expect(remove.mock.calls[0]?.[0]).toBe(claimKey);
+    expect(remove.mock.calls[1]?.[0]).not.toBe(claimKey);
+    await expect(store.read()).resolves.toBeUndefined();
+    await expect(store.readCheckpointHint()).resolves.toEqual({
+      state: 'unknown',
+    });
+  });
+
+  it('leaves a stale hint safely advisory when hint removal fails after snapshot removal', async () => {
+    const values = new Map<string, string>();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    let rejectHintRemoval = false;
+    const storage = {
+      getString: jest.fn(async (key: string) => values.get(key)),
+      setString: jest.fn(async (key: string, value: string) => {
+        values.set(key, value);
+      }),
+      remove: jest.fn(async (key: string) => {
+        if (key !== claimKey && rejectHintRemoval) {
+          throw new Error('hint remove unavailable');
+        }
+        values.delete(key);
+      }),
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({localId: 'log-a'})]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const store = new GuestClaimStore({storage, userId});
+    await store.write(snapshotWithStatus(snapshot, 'running'));
+    rejectHintRemoval = true;
+
+    await expect(store.remove()).resolves.toBeUndefined();
+
+    const resumed = new GuestClaimStore({storage, userId});
+    await expect(resumed.read()).resolves.toBeUndefined();
+    await expect(resumed.readCheckpointHint()).resolves.toEqual({
+      state: 'recoverable',
+      status: 'running',
+    });
+
+    rejectHintRemoval = false;
+    await resumed.remove();
+    await expect(resumed.readCheckpointHint()).resolves.toEqual({
+      state: 'unknown',
+    });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['malformed', '{'],
+    [
+      'user mismatched',
+      JSON.stringify({
+        schemaVersion: 1,
+        userId: otherUserId,
+        state: 'recoverable',
+        status: 'running',
+      }),
+    ],
+  ])('treats a %s checkpoint hint as unknown', async (_name, raw) => {
+    const storage = new InMemoryKeyValueStore();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const hintKey = `${claimKey}:checkpoint-hint`;
+    if (raw !== undefined) {
+      await storage.setString(hintKey, raw);
+    }
+
+    await expect(
+      new GuestClaimStore({storage, userId}).readCheckpointHint(),
+    ).resolves.toEqual({state: 'unknown'});
+  });
+
   it('reads legacy claim sidecars without source evidence or retained metadata', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({
@@ -844,6 +1451,36 @@ function divePlan(input: {
     plannedValues: {},
     checklistItems: [],
   };
+}
+
+function snapshotWithStatus(
+  source: GuestClaimSnapshot,
+  status: GuestClaimSnapshot['manifest']['status'],
+  errorCode?: GuestClaimSnapshot['errorCode'],
+): GuestClaimSnapshot {
+  const snapshot = structuredClone(source);
+  snapshot.manifest.status = status;
+  snapshot.manifest.updatedAt = 101;
+  if (
+    status === 'running' ||
+    status === 'finalizing' ||
+    status === 'cleanupPending'
+  ) {
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+  }
+  if (status === 'finalizing' || status === 'cleanupPending') {
+    snapshot.manifest.items = snapshot.manifest.items.map((item, index) => ({
+      ...item,
+      stagingRecordId: `20000000-0000-4000-8000-00000000000${index + 1}`,
+      targetRecordId: `30000000-0000-4000-8000-00000000000${index + 1}`,
+      completedAt: 101,
+    }));
+  }
+  if (status === 'failed' && errorCode !== undefined) {
+    snapshot.errorCode = errorCode;
+  }
+  return snapshot;
 }
 
 function depthSamples(count: number): WatchDepthSample[] {

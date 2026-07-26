@@ -6,6 +6,7 @@ import { AppPreferencesProvider } from '../src/states/app-preferences';
 import type { AppPreferencesStorage } from '../src/states/app-preferences-storage';
 import type { HomeConditionsProvider, HomeConditionsSnapshot } from '../src/conditions/home-conditions';
 import type { LocationService } from '../src/conditions/location-service';
+import { resetHomeConditionsCacheForTests } from '../src/conditions/use-home-conditions';
 
 const flushPromises = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 const mountedRenderers: ReactTestRenderer.ReactTestRenderer[] = [];
@@ -104,6 +105,8 @@ describe('Home conditions interface', () => {
   });
 
   beforeEach(async () => {
+    resetHomeConditionsCacheForTests();
+
     const asyncStorageMock = jest.requireMock('@react-native-async-storage/async-storage') as {
       __resetAsyncStorageMock: () => void;
     };

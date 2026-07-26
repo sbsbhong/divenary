@@ -1,6 +1,7 @@
 import {
   createAccountClaimSheetOptions,
   resolveAccountClaimAutoRoute,
+  resolveHomeClaimRecoveryVisibility,
 } from '../src/components/navigation';
 
 describe('account claim automatic navigation', () => {
@@ -103,6 +104,22 @@ describe('account claim automatic navigation', () => {
           currentRoute: 'tabs',
         }),
       ).toBeUndefined();
+    },
+  );
+});
+
+describe('Home claim recovery visibility', () => {
+  test.each([
+    [false, 'failed', 0],
+    [true, 'failed', 1],
+    [false, 'deferred', 0],
+    [true, 'deferred', 1],
+  ] as const)(
+    'returns %s for %s recovery with %i eligible rows',
+    (expected, status, eligibleCount) => {
+      expect(
+        resolveHomeClaimRecoveryVisibility({status, eligibleCount}),
+      ).toBe(expected);
     },
   );
 });

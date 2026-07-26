@@ -23,10 +23,14 @@ import {
 import { AccountOutbox } from '../src/sync/account-outbox';
 import { AccountSyncCoordinator } from '../src/sync/account-sync-coordinator';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
-import { dataProfileKeyPrefix } from '../src/storage/data-principal';
+import {
+  dataProfileKeyPrefix,
+  dataStorageKeys,
+} from '../src/storage/data-principal';
 import type { PersistentKeyValueStore } from '../src/storage/persistent-key-value-store';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { DivePlan } from '../src/types/dive-plan';
+import {GuestClaimService} from '../src/claim/guest-claim-service';
 import {
   createGuestClaimSnapshot,
   GuestClaimStore,
@@ -1526,6 +1530,1308 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
+  it('does not read a stale claim snapshot when live guest inventory is empty', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const staleLogs = Array.from({length: 32}, (_, index) => ({
+      ...entry,
+      localId: `stale-log-${index}`,
+    }));
+    const staleSnapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository(staleLogs),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    staleSnapshot.manifest.status = 'deferred';
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      staleSnapshot,
+    );
+    const claimStorageKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const storageRead = jest.spyOn(metadataStorage, 'getString');
+    const guestLogbook = new LocalDiveLogRepository();
+    const guestPlanbook = new LocalDivePlanRepository();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      }),
+    );
+
+    const finalClaim = capture!.claim;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+
+    expect(finalClaim.eligible).toEqual({logCount: 0, planCount: 0});
+    expect(finalClaim.state).toEqual({status: 'hidden'});
+    expect(storageRead).not.toHaveBeenCalledWith(claimStorageKey);
+  });
+
+  it('uses bulk guest inventory instead of per-item reads for a multi-item snapshot', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogs = Array.from({length: 24}, (_, index) => ({
+      ...entry,
+      localId: `bulk-log-${index}`,
+    }));
+    const guestPlans = Array.from({length: 8}, (_, index) => ({
+      ...plan,
+      localId: `bulk-plan-${index}`,
+    }));
+    const guestLogbook = new LocalDiveLogRepository(guestLogs);
+    const guestPlanbook = new LocalDivePlanRepository(guestPlans);
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'deferred';
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      snapshot,
+    );
+    const logGet = jest.spyOn(guestLogbook, 'get');
+    const planGet = jest.spyOn(guestPlanbook, 'get');
+    profileStorage.read.mockClear();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticatedOffline', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage,
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 24, planCount: 8},
+        state: {status: 'deferred', logCount: 24, planCount: 8},
+      }),
+    );
+
+    const finalClaim = capture!.claim;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+
+    expect(finalClaim.eligible).toEqual({logCount: 24, planCount: 8});
+    expect(logGet).not.toHaveBeenCalled();
+    expect(planGet).not.toHaveBeenCalled();
+    expect(profileStorage.read).not.toHaveBeenCalled();
+  });
+
+  it('keeps the latest zero inventory when overlapping refreshes finish out of order', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticated', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 1, planCount: 0},
+        state: {status: 'choice', logCount: 1, planCount: 0},
+      }),
+    );
+
+    const staleInventory = deferred<DiveLogEntry[]>();
+    const list = jest
+      .spyOn(guestLogbook, 'list')
+      .mockImplementationOnce(() => staleInventory.promise)
+      .mockResolvedValueOnce([]);
+    let staleRefresh!: Promise<void>;
+    await ReactTestRenderer.act(async () => {
+      staleRefresh = capture!.claim.refresh();
+      await waitFor(() => expect(list).toHaveBeenCalledTimes(1));
+    });
+    await ReactTestRenderer.act(async () => {
+      await capture!.claim.refresh();
+    });
+    expect(capture?.claim).toMatchObject({
+      eligible: {logCount: 0, planCount: 0},
+      state: {status: 'hidden'},
+    });
+
+    await ReactTestRenderer.act(async () => {
+      staleInventory.resolve([entry]);
+      await staleRefresh;
+    });
+    const finalClaim = capture!.claim;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+
+    expect(finalClaim.eligible).toEqual({logCount: 0, planCount: 0});
+    expect(finalClaim.state).toEqual({status: 'hidden'});
+  });
+
+  it('keeps a known zero inventory hidden while the same claim service continues in the background', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const stalledStage = deferred<{
+      stagingRecordId: string;
+      targetRecordId: string;
+    }>();
+    const stalledFinalize = deferred<
+      ReturnType<GuestClaimRemoteRepository['finalize']>
+    >();
+    const remote = guestClaimRepository();
+    remote.stageRecord.mockImplementation(() => stalledStage.promise);
+    remote.finalize.mockImplementation(() => stalledFinalize.promise);
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    let start!: Promise<void>;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim.state).toMatchObject({status: 'choice'}),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      start = capture!.claim.start();
+      await waitFor(() => expect(remote.stageRecord).toHaveBeenCalled());
+    });
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(entry.localId);
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      }),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      stalledStage.resolve({
+        stagingRecordId: '20000000-0000-4000-8000-000000000001',
+        targetRecordId: '30000000-0000-4000-8000-000000000001',
+      });
+      await waitFor(() => expect(remote.finalize).toHaveBeenCalled());
+    });
+    const presentationAfterLateCallbacks = capture!.claim;
+
+    stalledFinalize.reject(new Error('finalize failed after local deletion'));
+    await ReactTestRenderer.act(async () => {
+      await start;
+      await flushPromises();
+    });
+    const finalClaim = capture!.claim;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+
+    expect(remote.finalize).toHaveBeenCalled();
+    expect(presentationAfterLateCallbacks).toMatchObject({
+      eligible: {logCount: 0, planCount: 0},
+      state: {status: 'hidden'},
+    });
+    expect(finalClaim).toMatchObject({
+      eligible: {logCount: 0, planCount: 0},
+      state: {status: 'hidden'},
+    });
+  });
+
+  it('does not degrade bootstrap when an older resume rejects after a newer zero refresh', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'running';
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      snapshot,
+    );
+    const stalledResume =
+      deferred<ReturnType<GuestClaimService['resume']>>();
+    const resume = jest
+      .spyOn(GuestClaimService.prototype, 'resume')
+      .mockImplementation(() => stalledResume.promise);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: guestClaimRepository(),
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(resume).toHaveBeenCalled());
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(entry.localId);
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      }),
+    );
+
+    stalledResume.reject(new Error('stale resume failed'));
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await flushPromises();
+    });
+    const finalBootstrap = capture!.bootstrap;
+    const finalClaim = capture!.claim;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    resume.mockRestore();
+    warn.mockRestore();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+    expect(finalBootstrap).toEqual({status: 'ready'});
+    expect(finalClaim).toMatchObject({
+      eligible: {logCount: 0, planCount: 0},
+      state: {status: 'hidden'},
+    });
+  });
+
+  it('re-enables claim presentation when live inventory becomes nonzero again', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'authenticated', userId}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim.state).toMatchObject({status: 'choice'}),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await capture!.logbookRepository.delete(entry.localId);
+      await flushPromises();
+    });
+    await waitFor(() =>
+      expect(capture?.claim.state).toEqual({status: 'hidden'}),
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await guestLogbook.save({
+        ...entry,
+        localId: 'new-live-guest',
+      });
+      await capture!.claim.refresh();
+    });
+    await waitFor(() =>
+      expect(capture?.claim).toMatchObject({
+        eligible: {logCount: 1, planCount: 0},
+        state: {status: 'choice', logCount: 1, planCount: 0},
+      }),
+    );
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('uses an inactive checkpoint hint without reading the full claim at zero inventory', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const sourceLogbook = new LocalDiveLogRepository([entry]);
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: sourceLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    await new GuestClaimStore({storage: metadataStorage, userId}).write(
+      snapshot,
+    );
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const storageRead = jest.spyOn(metadataStorage, 'getString');
+    const resume = jest.spyOn(GuestClaimService.prototype, 'resume');
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: guestClaimRepository(),
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook: new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+            scheduleAfterInteractions: afterInteractions.schedule,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    const finalClaim = capture!.claim;
+    const resumeCalls = resume.mock.calls.length;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    resume.mockRestore();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+    expect(finalClaim).toMatchObject({
+      eligible: {logCount: 0, planCount: 0},
+      state: {status: 'hidden'},
+    });
+    expect(storageRead).toHaveBeenCalledWith(`${claimKey}:checkpoint-hint`);
+    expect(storageRead).not.toHaveBeenCalledWith(claimKey);
+    expect(resumeCalls).toBe(0);
+    expect(afterInteractions.schedule).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['running', {status: 'running'}],
+    ['finalizing', {status: 'finalizing'}],
+    ['cleanup pending', {status: 'cleanupPending'}],
+    [
+      'retryable failure',
+      {status: 'failed', errorCode: 'network_unavailable'},
+    ],
+  ] as const)(
+    'resumes a %s checkpoint hint at zero inventory without exposing recovery UI',
+    async (_name, recovery) => {
+      const appStateDescriptor = Object.getOwnPropertyDescriptor(
+        AppState,
+        'currentState',
+      );
+      Object.defineProperty(AppState, 'currentState', {
+        configurable: true,
+        value: 'active',
+      });
+      const metadataStorage = new InMemoryKeyValueStore();
+      const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+      await metadataStorage.setString(
+        `${claimKey}:checkpoint-hint`,
+        JSON.stringify({
+          schemaVersion: 1,
+          userId,
+          state: 'recoverable',
+          ...recovery,
+        }),
+      );
+      const storageRead = jest.spyOn(metadataStorage, 'getString');
+      const resume = jest
+        .spyOn(GuestClaimService.prototype, 'resume')
+        .mockResolvedValue(undefined);
+      let capture: ReturnType<typeof useAccountData> | undefined;
+      const Capture = () => {
+        capture = useAccountData();
+        return null;
+      };
+      const queryClient = new QueryClient();
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            navigationReady
+            auth={{
+              state: {status: 'authenticated', userId},
+              guestClaimRemoteRepository: guestClaimRepository(),
+            }}
+            dependencies={{
+              metadataStorage,
+              profileStorage: {
+                write: jest.fn(async () => undefined),
+                read: jest.fn(async () => undefined),
+                remove: jest.fn(async () => undefined),
+              },
+              migrateLegacyData: jest.fn(async () => undefined),
+              createRepositories: principal => ({
+                principal,
+                queryScope:
+                  principal.kind === 'guest'
+                    ? 'guest'
+                    : `user:${principal.userId}`,
+                logbook: new LocalDiveLogRepository(),
+                planbook: new LocalDivePlanRepository(),
+              }),
+              createId: () => '10000000-0000-4000-8000-000000000001',
+              now: () => 100,
+              jitter: () => 0,
+            }}>
+            <Capture />
+          </AccountDataProviderCore>,
+        );
+        await flushPromises();
+        await flushPromises();
+      });
+      const finalClaim = capture!.claim;
+      const healedHint = await new GuestClaimStore({
+        storage: metadataStorage,
+        userId,
+      }).readCheckpointHint();
+      const resumeCalls = resume.mock.calls.length;
+      await ReactTestRenderer.act(async () => renderer!.unmount());
+      queryClient.clear();
+      resume.mockRestore();
+      Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+      expect(resumeCalls).toBe(1);
+      expect(finalClaim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      });
+      expect(storageRead).not.toHaveBeenCalledWith(claimKey);
+      expect(healedHint).toEqual({state: 'unknown'});
+    },
+  );
+
+  it('starts zero-inventory recovery with a fresh token after the same-user claim service changes', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    await metadataStorage.setString(
+      `${claimKey}:checkpoint-hint`,
+      JSON.stringify({
+        schemaVersion: 1,
+        userId,
+        state: 'recoverable',
+        status: 'running',
+      }),
+    );
+    const stalledResume =
+      deferred<ReturnType<GuestClaimService['resume']>>();
+    const resume = jest
+      .spyOn(GuestClaimService.prototype, 'resume')
+      .mockImplementationOnce(() => stalledResume.promise)
+      .mockResolvedValue(undefined);
+    const dependencies = {
+      metadataStorage,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      })),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+    };
+    const queryClient = new QueryClient();
+    const firstRemote = guestClaimRepository();
+    const secondRemote = guestClaimRepository();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: firstRemote,
+          }}
+          dependencies={dependencies}
+        />,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    await waitFor(() => expect(resume).toHaveBeenCalledTimes(1));
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: secondRemote,
+          }}
+          dependencies={dependencies}
+        />,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    await waitFor(() => expect(resume).toHaveBeenCalledTimes(2));
+
+    stalledResume.resolve(undefined);
+    await ReactTestRenderer.act(async () => {
+      await flushPromises();
+      await new GuestClaimStore({
+        storage: metadataStorage,
+        userId,
+      }).readCheckpointHint();
+      await flushPromises();
+    });
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    resume.mockRestore();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+  });
+
+  it.each([
+    ['recoverable', 'running', true],
+    ['inactive', 'prepared', false],
+  ] as const)(
+    'defers a legacy %s full checkpoint audit and resumes only when recoverable',
+    async (_name, status, shouldResume) => {
+      const appStateDescriptor = Object.getOwnPropertyDescriptor(
+        AppState,
+        'currentState',
+      );
+      Object.defineProperty(AppState, 'currentState', {
+        configurable: true,
+        value: 'active',
+      });
+      const metadataStorage = new InMemoryKeyValueStore();
+      const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+      const snapshot = await createGuestClaimSnapshot({
+        userId,
+        logbookRepository: new LocalDiveLogRepository([entry]),
+        planRepository: new LocalDivePlanRepository(),
+        profileStorage: {
+          write: jest.fn(async () => undefined),
+          read: jest.fn(async () => undefined),
+          remove: jest.fn(async () => undefined),
+        },
+        now: () => 100,
+      });
+      snapshot.manifest.status = status;
+      if (status === 'running') {
+        snapshot.manifest.remoteBatchId =
+          '10000000-0000-4000-8000-000000000001';
+      }
+      await metadataStorage.setString(claimKey, JSON.stringify(snapshot));
+      const storageRead = jest.spyOn(metadataStorage, 'getString');
+      const resume = jest
+        .spyOn(GuestClaimService.prototype, 'resume')
+        .mockResolvedValue(snapshot);
+      const afterInteractions = controlledAfterInteractionsScheduler();
+      let capture: ReturnType<typeof useAccountData> | undefined;
+      const Capture = () => {
+        capture = useAccountData();
+        return null;
+      };
+      const queryClient = new QueryClient();
+      let renderer: ReactTestRenderer.ReactTestRenderer;
+
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            navigationReady
+            auth={{
+              state: {status: 'authenticated', userId},
+              guestClaimRemoteRepository: guestClaimRepository(),
+            }}
+            dependencies={{
+              metadataStorage,
+              profileStorage: {
+                write: jest.fn(async () => undefined),
+                read: jest.fn(async () => undefined),
+                remove: jest.fn(async () => undefined),
+              },
+              migrateLegacyData: jest.fn(async () => undefined),
+              createRepositories: principal => ({
+                principal,
+                queryScope:
+                  principal.kind === 'guest'
+                    ? 'guest'
+                    : `user:${principal.userId}`,
+                logbook: new LocalDiveLogRepository(),
+                planbook: new LocalDivePlanRepository(),
+              }),
+              createId: () => '10000000-0000-4000-8000-000000000001',
+              now: () => 100,
+              jitter: () => 0,
+              scheduleAfterInteractions: afterInteractions.schedule,
+            }}>
+            <Capture />
+          </AccountDataProviderCore>,
+        );
+        await flushPromises();
+        await flushPromises();
+      });
+      const immediateClaim = capture!.claim;
+      const fullReadsBeforeAudit = storageRead.mock.calls.filter(
+        ([key]) => key === claimKey,
+      ).length;
+      const audit = afterInteractions.tasks[0];
+      if (audit) {
+        await ReactTestRenderer.act(async () => {
+          await audit();
+          await flushPromises();
+        });
+      }
+      const finalClaim = capture!.claim;
+      const finalHint = await new GuestClaimStore({
+        storage: metadataStorage,
+        userId,
+      }).readCheckpointHint();
+      const resumeCalls = resume.mock.calls.length;
+      await ReactTestRenderer.act(async () => renderer!.unmount());
+      queryClient.clear();
+      resume.mockRestore();
+      Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+      expect(immediateClaim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      });
+      expect(fullReadsBeforeAudit).toBe(0);
+      expect(afterInteractions.schedule).toHaveBeenCalledTimes(1);
+      expect(resumeCalls).toBe(shouldResume ? 1 : 0);
+      expect(finalClaim).toMatchObject({
+        eligible: {logCount: 0, planCount: 0},
+        state: {status: 'hidden'},
+      });
+      expect(finalHint.state).toBe(
+        shouldResume ? 'recoverable' : 'inactive',
+      );
+    },
+  );
+
+  it.each([
+    ['missing snapshot', false],
+    ['snapshot read failure', true],
+  ] as const)(
+    'runs an unknown zero-inventory legacy audit only once per publication after %s',
+    async (_scenario, rejectFullRead) => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const originalGetString = metadataStorage.getString.bind(metadataStorage);
+    const storageRead = jest
+      .spyOn(metadataStorage, 'getString')
+      .mockImplementation(async key => {
+        if (rejectFullRead && key === claimKey) {
+          throw new Error('claim snapshot read failed');
+        }
+        return originalGetString(key);
+      });
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    const queryClient = new QueryClient();
+    const remote = guestClaimRepository();
+    const authState = {status: 'authenticated', userId} as const;
+    const dependencies = {
+      metadataStorage,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      })),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+      scheduleAfterInteractions: afterInteractions.schedule,
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: authState,
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        />,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    expect(afterInteractions.schedule).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      await afterInteractions.tasks[0]?.();
+      await flushPromises();
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady={false}
+          auth={{
+            state: authState,
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        />,
+      );
+      await flushPromises();
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: authState,
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={dependencies}
+        />,
+      );
+      await flushPromises();
+    });
+
+    const fullClaimReads = storageRead.mock.calls.filter(
+      ([key]) => key === claimKey,
+    ).length;
+    expect(afterInteractions.schedule).toHaveBeenCalledTimes(1);
+    expect(fullClaimReads).toBe(1);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+    },
+  );
+
+  it('ignores a deferred legacy audit after a later nonzero refresh', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([entry]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'running';
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+    await metadataStorage.setString(claimKey, JSON.stringify(snapshot));
+    const guestLogbook = new LocalDiveLogRepository();
+    const resume = jest.spyOn(GuestClaimService.prototype, 'resume');
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: guestClaimRepository(),
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook: new LocalDivePlanRepository(),
+            }),
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 100,
+            jitter: () => 0,
+            scheduleAfterInteractions: afterInteractions.schedule,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    await guestLogbook.save({...entry, localId: 'later-live-guest'});
+    await ReactTestRenderer.act(async () => {
+      await capture!.claim.refresh();
+    });
+    const presentationBeforeAudit = capture!.claim;
+    const audit = afterInteractions.tasks[0];
+    if (audit) {
+      await ReactTestRenderer.act(async () => {
+        await audit();
+        await flushPromises();
+      });
+    }
+    const finalClaim = capture!.claim;
+    const resumeCalls = resume.mock.calls.length;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    resume.mockRestore();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+    expect(afterInteractions.schedule).toHaveBeenCalledTimes(1);
+    expect(presentationBeforeAudit).toMatchObject({
+      eligible: {logCount: 1, planCount: 0},
+      state: {status: 'running'},
+    });
+    expect(resumeCalls).toBe(0);
+    expect(finalClaim).toEqual(presentationBeforeAudit);
+  });
+
+  it('cancels and ignores a deferred legacy audit after the principal changes', async () => {
+    const appStateDescriptor = Object.getOwnPropertyDescriptor(
+      AppState,
+      'currentState',
+    );
+    Object.defineProperty(AppState, 'currentState', {
+      configurable: true,
+      value: 'active',
+    });
+    const metadataStorage = new InMemoryKeyValueStore();
+    const claimKey = dataStorageKeys({kind: 'user', userId}).claim;
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: new LocalDiveLogRepository([entry]),
+      planRepository: new LocalDivePlanRepository(),
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'running';
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+    await metadataStorage.setString(claimKey, JSON.stringify(snapshot));
+    const storageRead = jest.spyOn(metadataStorage, 'getString');
+    const resume = jest.spyOn(GuestClaimService.prototype, 'resume');
+    const afterInteractions = controlledAfterInteractionsScheduler();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    const dependencies = {
+      metadataStorage,
+      profileStorage: {
+        write: jest.fn(async () => undefined),
+        read: jest.fn(async () => undefined),
+        remove: jest.fn(async () => undefined),
+      },
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: jest.fn(principal => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`,
+        logbook: new LocalDiveLogRepository(),
+        planbook: new LocalDivePlanRepository(),
+      })),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 100,
+      jitter: () => 0,
+      scheduleAfterInteractions: afterInteractions.schedule,
+    };
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: guestClaimRepository(),
+          }}
+          dependencies={dependencies}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+      await flushPromises();
+    });
+    const audit = afterInteractions.tasks[0];
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady
+          auth={{state: {status: 'guest'}}}
+          dependencies={dependencies}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    if (audit) {
+      await ReactTestRenderer.act(async () => {
+        await audit();
+        await flushPromises();
+      });
+    }
+    const finalPrincipal = capture!.principal;
+    const fullClaimReads = storageRead.mock.calls.filter(
+      ([key]) => key === claimKey,
+    ).length;
+    const resumeCalls = resume.mock.calls.length;
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+    resume.mockRestore();
+    Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
+
+    expect(afterInteractions.schedule).toHaveBeenCalledTimes(1);
+    expect(afterInteractions.cancels[0]).toHaveBeenCalledTimes(1);
+    expect(fullClaimReads).toBe(0);
+    expect(resumeCalls).toBe(0);
+    expect(finalPrincipal).toEqual({kind: 'guest'});
+  });
+
   it('publishes retained profile items without remote work or an automatic retry loop', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const profileLog: DiveLogEntry = {
@@ -2676,6 +3982,28 @@ function deferred<T>(): {
     }),
     resolve,
     reject,
+  };
+}
+
+function controlledAfterInteractionsScheduler(): {
+  schedule: jest.Mock<
+    {cancel(): void},
+    [() => void | Promise<void>]
+  >;
+  tasks: Array<() => void | Promise<void>>;
+  cancels: jest.Mock[];
+} {
+  const tasks: Array<() => void | Promise<void>> = [];
+  const cancels: jest.Mock[] = [];
+  return {
+    tasks,
+    cancels,
+    schedule: jest.fn(task => {
+      tasks.push(task);
+      const cancel = jest.fn();
+      cancels.push(cancel);
+      return {cancel};
+    }),
   };
 }
 

@@ -22,21 +22,53 @@ export default function AccountClaimScreen(): React.JSX.Element {
   const navigation = useNavigation();
   const {claim, isOnline = true} = useAccountData();
   const [busyAction, setBusyAction] = React.useState<ClaimAction>();
+  const [isMountRefreshPending, setIsMountRefreshPending] =
+    React.useState(true);
   const announcedCompletion = React.useRef(false);
-  const requestedRefresh = React.useRef(false);
+  const isMounted = React.useRef(true);
+  const claimRef = React.useRef(claim);
+  const mountRefreshPromise = React.useRef<Promise<boolean> | undefined>(
+    undefined,
+  );
+  claimRef.current = claim;
   const isPreparing =
     (busyAction === 'start' ||
       busyAction === 'retry' ||
       busyAction === 'recheck') &&
     claim.state.status !== 'running';
+  const isRefreshingStaleActionState =
+    isMountRefreshPending &&
+    (claim.state.status === 'choice' ||
+      claim.state.status === 'deferred' ||
+      claim.state.status === 'failed' ||
+      claim.state.status === 'retained' ||
+      claim.state.status === 'complete');
 
   React.useEffect(() => {
-    if (requestedRefresh.current) {
-      return;
-    }
-    requestedRefresh.current = true;
-    void claim.refresh().catch(() => undefined);
-  }, [claim]);
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+    };
+  }, []);
+
+  React.useEffect(() => {
+    let isActive = true;
+    mountRefreshPromise.current ??= claimRef.current
+      .refresh()
+      .then(
+        () => true,
+        () => false,
+      );
+    const refresh = mountRefreshPromise.current;
+    void refresh.then(succeeded => {
+      if (succeeded && isActive && isMounted.current) {
+        setIsMountRefreshPending(false);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   React.useEffect(() => {
     if (
@@ -49,7 +81,11 @@ export default function AccountClaimScreen(): React.JSX.Element {
   }, [busyAction, claim.eligible, claim.state.status, navigation]);
 
   React.useEffect(() => {
-    if (claim.state.status !== 'complete' || announcedCompletion.current) {
+    if (
+      isMountRefreshPending ||
+      claim.state.status !== 'complete' ||
+      announcedCompletion.current
+    ) {
       return;
     }
 
@@ -68,7 +104,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
     if (retainedCount === 0) {
       navigation.goBack();
     }
-  }, [claim.state, navigation, t]);
+  }, [claim.state, isMountRefreshPending, navigation, t]);
 
   const runAction = React.useCallback(
     async (action: ClaimAction) => {
@@ -94,7 +130,9 @@ export default function AccountClaimScreen(): React.JSX.Element {
       } catch {
         await claim.refresh().catch(() => undefined);
       } finally {
-        setBusyAction(undefined);
+        if (isMounted.current) {
+          setBusyAction(undefined);
+        }
       }
     },
     [busyAction, claim, navigation],
@@ -108,7 +146,8 @@ export default function AccountClaimScreen(): React.JSX.Element {
         className="px-6 pb-5 pt-5"
       >
         {(claim.state.status === 'choice' || claim.state.status === 'deferred') &&
-        !isPreparing ? (
+        !isPreparing &&
+        !isRefreshingStaleActionState ? (
           <ChoiceContent
             logCount={claim.state.logCount}
             planCount={claim.state.planCount}
@@ -121,7 +160,9 @@ export default function AccountClaimScreen(): React.JSX.Element {
           />
         ) : null}
 
-        {claim.state.status === 'hidden' || isPreparing ? (
+        {claim.state.status === 'hidden' ||
+        isPreparing ||
+        isRefreshingStaleActionState ? (
           <PreparingContent onClose={() => navigation.goBack()} />
         ) : null}
 
@@ -141,7 +182,9 @@ export default function AccountClaimScreen(): React.JSX.Element {
           />
         ) : null}
 
-        {claim.state.status === 'failed' && !isPreparing ? (
+        {claim.state.status === 'failed' &&
+        !isPreparing &&
+        !isRefreshingStaleActionState ? (
           <FailureContent
             completed={claim.state.completed}
             total={claim.state.total}
@@ -154,7 +197,8 @@ export default function AccountClaimScreen(): React.JSX.Element {
 
         {claim.state.status === 'complete' &&
         claim.state.retainedItems.length > 0 &&
-        !isPreparing ? (
+        !isPreparing &&
+        !isRefreshingStaleActionState ? (
           <RetainedResultContent
             imported={claim.state.imported}
             retainedItems={claim.state.retainedItems}
@@ -165,7 +209,9 @@ export default function AccountClaimScreen(): React.JSX.Element {
           />
         ) : null}
 
-        {claim.state.status === 'retained' && !isPreparing ? (
+        {claim.state.status === 'retained' &&
+        !isPreparing &&
+        !isRefreshingStaleActionState ? (
           <RetainedResultContent
             retainedItems={claim.state.retainedItems}
             busyAction={busyAction}

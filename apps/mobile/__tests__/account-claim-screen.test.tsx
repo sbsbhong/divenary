@@ -204,13 +204,149 @@ describe('AccountClaimScreen', () => {
       completed: 0,
       total: 5,
       errorCode: 'claim_validation_failed',
-    } as const,
+    } satisfies AccountClaimController['state'],
     {status: 'hidden'} as const,
   ])('refreshes current inventory from an initial $status state', async state => {
     mockClaim = claimFixture(state, {logCount: 3, planCount: 2});
     await renderScreen();
 
     expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test('hides stale choice actions and allows closing while the mount refresh is pending', async () => {
+    const pendingRefresh = deferred<void>();
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.refresh = jest.fn(() => pendingRefresh.promise);
+    const renderer = await renderScreen();
+
+    expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-import'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-keep'}),
+    ).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({testID: 'account-claim-close'}).props.onPress();
+    });
+
+    expect(mockGoBack).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      pendingRefresh.resolve();
+      await pendingRefresh.promise;
+    });
+  });
+
+  test('finishes the single mount refresh when the claim controller identity changes', async () => {
+    const pendingRefresh = deferred<void>();
+    const initialClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    initialClaim.refresh = jest.fn(() => pendingRefresh.promise);
+    mockClaim = initialClaim;
+    const renderer = await renderScreen();
+
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<AccountClaimScreen />);
+      await Promise.resolve();
+    });
+
+    expect(initialClaim.refresh).toHaveBeenCalledTimes(1);
+    expect(mockClaim.refresh).not.toHaveBeenCalled();
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-import'}),
+    ).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      pendingRefresh.resolve();
+      await pendingRefresh.promise;
+    });
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-import'}),
+    ).toBeTruthy();
+  });
+
+  test('keeps stale actions unavailable when the mount refresh fails', async () => {
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.refresh = jest.fn(async () => {
+      throw new Error('inventory unavailable');
+    });
+    const renderer = await renderScreen();
+
+    expect(mockClaim.refresh).toHaveBeenCalledTimes(1);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-import'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-keep'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-close'}),
+    ).toBeTruthy();
+  });
+
+  test.each([
+    {
+      status: 'retained',
+      retainedItems: [
+        {
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          localRecordSha256: 'a'.repeat(64),
+          reason: 'profile_corrupt',
+        },
+      ],
+    } satisfies AccountClaimController['state'],
+    {
+      status: 'complete',
+      imported: 1,
+      retainedItems: [
+        {
+          entityKind: 'log',
+          clientRecordId: 'log-a',
+          localRecordSha256: 'a'.repeat(64),
+          reason: 'profile_missing',
+        },
+      ],
+    } satisfies AccountClaimController['state'],
+  ])('hides stale $status result actions while the mount refresh is pending', async state => {
+    const pendingRefresh = deferred<void>();
+    mockClaim = claimFixture(state);
+    mockClaim.refresh = jest.fn(() => pendingRefresh.promise);
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-recheck'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-done'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-close'}),
+    ).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      pendingRefresh.resolve();
+      await pendingRefresh.promise;
+    });
   });
 
   test('allows closing while claim preparation is still pending', async () => {
@@ -241,6 +377,35 @@ describe('AccountClaimScreen', () => {
       pending.resolve();
       await pending.promise;
     });
+  });
+
+  test('does not publish local action state after a pending claim outlives the sheet', async () => {
+    const pending = deferred<void>();
+    const consoleError = jest
+      .spyOn(console, 'error')
+      .mockImplementation(() => undefined);
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.start = jest.fn(() => pending.promise);
+    const renderer = await renderScreen();
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({
+        testID: 'account-claim-import',
+      }).props.onPress();
+      await Promise.resolve();
+      renderer.unmount();
+    });
+
+    await ReactTestRenderer.act(async () => {
+      pending.resolve();
+      await pending.promise;
+    });
+
+    expect(consoleError).not.toHaveBeenCalled();
   });
 
   test('closes immediately when keep-on-device persistence is pending', async () => {

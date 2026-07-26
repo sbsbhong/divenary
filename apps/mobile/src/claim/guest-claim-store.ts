@@ -41,6 +41,8 @@ import type {
 } from './guest-claim-types';
 
 const SIDECAR_SCHEMA_VERSION = 1;
+const CHECKPOINT_HINT_SCHEMA_VERSION = 1;
+const CHECKPOINT_HINT_KEY_SUFFIX = ':checkpoint-hint';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -91,6 +93,48 @@ export type GuestClaimStoreLike = {
   remove?(): Promise<void>;
 };
 
+export type GuestClaimCheckpointHint =
+  | {
+      state: 'recoverable';
+      status: 'running' | 'finalizing' | 'cleanupPending';
+    }
+  | {
+      state: 'recoverable';
+      status: 'failed';
+      errorCode: 'network_unavailable';
+    }
+  | {state: 'inactive'}
+  | {state: 'unknown'};
+
+type StoredGuestClaimCheckpointHint = Exclude<
+  GuestClaimCheckpointHint,
+  {state: 'unknown'}
+> & {
+  schemaVersion: 1;
+  userId: string;
+};
+
+const claimOperationTails = new Map<string, Promise<void>>();
+
+function serializeClaimOperation<T>(
+  key: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const preceding = claimOperationTails.get(key) ?? Promise.resolve();
+  const result = preceding.then(operation);
+  const tail = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  claimOperationTails.set(key, tail);
+  void tail.then(() => {
+    if (claimOperationTails.get(key) === tail) {
+      claimOperationTails.delete(key);
+    }
+  });
+  return result;
+}
+
 export class GuestClaimStorageError extends Error {
   constructor(message = 'Malformed guest claim storage') {
     super(message);
@@ -110,6 +154,13 @@ export class GuestClaimPreparationError extends Error {
 
 export class GuestClaimStore implements GuestClaimStoreLike {
   private readonly key: string;
+  private readonly checkpointHintKey: string;
+  private persistedCheckpointHint?: string;
+  private checkpointHintLoaded = false;
+  private persistedCheckpointHintState:
+    | 'recoverable'
+    | 'inactive'
+    | 'unknown' = 'unknown';
 
   constructor(
     private readonly options: {
@@ -119,17 +170,57 @@ export class GuestClaimStore implements GuestClaimStoreLike {
     },
   ) {
     this.key = dataStorageKeys({ kind: 'user', userId: options.userId }).claim;
+    this.checkpointHintKey = `${this.key}${CHECKPOINT_HINT_KEY_SUFFIX}`;
   }
 
-  async read(): Promise<GuestClaimSnapshot | undefined> {
+  read(): Promise<GuestClaimSnapshot | undefined> {
+    return serializeClaimOperation(this.key, () => this.readUnlocked());
+  }
+
+  readCheckpointHint(): Promise<GuestClaimCheckpointHint> {
+    return serializeClaimOperation(this.key, () =>
+      this.readCheckpointHintUnlocked(),
+    );
+  }
+
+  write(snapshot: GuestClaimSnapshot): Promise<void> {
+    return serializeClaimOperation(this.key, () =>
+      this.writeUnlocked(snapshot),
+    );
+  }
+
+  remove(): Promise<void> {
+    return serializeClaimOperation(this.key, () => this.removeUnlocked());
+  }
+
+  private async readUnlocked(): Promise<GuestClaimSnapshot | undefined> {
     const raw = await this.options.storage.getString(this.key);
     if (raw === undefined) {
       return undefined;
     }
-    return parseStoredSnapshot(raw, this.options.userId);
+    const snapshot = parseStoredSnapshot(raw, this.options.userId);
+    await this.backfillCheckpointHint(snapshot);
+    return snapshot;
   }
 
-  async write(snapshot: GuestClaimSnapshot): Promise<void> {
+  private async readCheckpointHintUnlocked(): Promise<GuestClaimCheckpointHint> {
+    const raw = await this.options.storage.getString(this.checkpointHintKey);
+    if (raw === undefined) {
+      this.markCheckpointHintUnknown();
+      return {state: 'unknown'};
+    }
+    const parsed = parseStoredCheckpointHint(raw, this.options.userId);
+    if (parsed === undefined) {
+      this.markCheckpointHintUnknown();
+      return {state: 'unknown'};
+    }
+    this.persistedCheckpointHint = JSON.stringify(parsed);
+    this.checkpointHintLoaded = true;
+    this.persistedCheckpointHintState = parsed.state;
+    return publicCheckpointHint(parsed);
+  }
+
+  private async writeUnlocked(snapshot: GuestClaimSnapshot): Promise<void> {
     if (snapshot.userId !== this.options.userId) {
       throw new GuestClaimStorageError('Guest claim user mismatch');
     }
@@ -137,12 +228,190 @@ export class GuestClaimStore implements GuestClaimStoreLike {
       JSON.stringify(snapshot),
       this.options.userId,
     );
+    await this.readCheckpointHintUnlocked();
+    await this.invalidateNonRecoverableHintBeforeRecoverableWrite(parsed);
     await this.options.storage.setString(this.key, JSON.stringify(parsed));
+    try {
+      await this.persistCheckpointHint(parsed);
+    } catch {
+      this.markCheckpointHintUnknown();
+    }
   }
 
-  async remove(): Promise<void> {
+  private async removeUnlocked(): Promise<void> {
     await this.options.storage.remove(this.key);
+    try {
+      await this.options.storage.remove(this.checkpointHintKey);
+    } catch {
+      this.markCheckpointHintUnknown();
+      return;
+    }
+    this.markCheckpointHintUnknown();
   }
+
+  private async invalidateNonRecoverableHintBeforeRecoverableWrite(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<void> {
+    if (storedCheckpointHint(snapshot).state !== 'recoverable') {
+      return;
+    }
+    if (!this.checkpointHintLoaded) {
+      await this.readCheckpointHintUnlocked();
+    }
+    if (this.persistedCheckpointHintState === 'recoverable') {
+      return;
+    }
+    await this.options.storage.remove(this.checkpointHintKey);
+    this.markCheckpointHintUnknown();
+  }
+
+  private async persistCheckpointHint(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<void> {
+    const hint = storedCheckpointHint(snapshot);
+    const serialized = JSON.stringify(hint);
+    if (this.persistedCheckpointHint === serialized) {
+      return;
+    }
+    await this.options.storage.setString(this.checkpointHintKey, serialized);
+    this.persistedCheckpointHint = serialized;
+    this.checkpointHintLoaded = true;
+    this.persistedCheckpointHintState = hint.state;
+  }
+
+  private async backfillCheckpointHint(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<void> {
+    try {
+      await this.readCheckpointHintUnlocked();
+      await this.invalidateNonRecoverableHintBeforeRecoverableWrite(snapshot);
+      await this.persistCheckpointHint(snapshot);
+    } catch {
+      this.markCheckpointHintUnknown();
+      // The validated full snapshot remains authoritative; this hint is advisory.
+    }
+  }
+
+  private markCheckpointHintUnknown(): void {
+    this.persistedCheckpointHint = undefined;
+    this.checkpointHintLoaded = true;
+    this.persistedCheckpointHintState = 'unknown';
+  }
+}
+
+function storedCheckpointHint(
+  snapshot: GuestClaimSnapshot,
+): StoredGuestClaimCheckpointHint {
+  const base = {
+    schemaVersion: CHECKPOINT_HINT_SCHEMA_VERSION,
+    userId: snapshot.userId,
+  } as const;
+  if (
+    snapshot.manifest.status === 'running' ||
+    snapshot.manifest.status === 'finalizing' ||
+    snapshot.manifest.status === 'cleanupPending'
+  ) {
+    return {
+      ...base,
+      state: 'recoverable',
+      status: snapshot.manifest.status,
+    };
+  }
+  if (
+    snapshot.manifest.status === 'failed' &&
+    snapshot.errorCode === 'network_unavailable'
+  ) {
+    return {
+      ...base,
+      state: 'recoverable',
+      status: 'failed',
+      errorCode: 'network_unavailable',
+    };
+  }
+  return {...base, state: 'inactive'};
+}
+
+function parseStoredCheckpointHint(
+  raw: string,
+  expectedUserId: string,
+): StoredGuestClaimCheckpointHint | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+  if (
+    !isRecord(value) ||
+    value.schemaVersion !== CHECKPOINT_HINT_SCHEMA_VERSION ||
+    value.userId !== expectedUserId ||
+    (value.state !== 'recoverable' && value.state !== 'inactive')
+  ) {
+    return undefined;
+  }
+  if (value.state === 'inactive') {
+    if (!hasExactKeys(value, ['schemaVersion', 'userId', 'state'])) {
+      return undefined;
+    }
+    return {
+      schemaVersion: 1,
+      userId: expectedUserId,
+      state: 'inactive',
+    };
+  }
+  if (
+    value.status === 'running' ||
+    value.status === 'finalizing' ||
+    value.status === 'cleanupPending'
+  ) {
+    if (
+      !hasExactKeys(value, ['schemaVersion', 'userId', 'state', 'status'])
+    ) {
+      return undefined;
+    }
+    return {
+      schemaVersion: 1,
+      userId: expectedUserId,
+      state: 'recoverable',
+      status: value.status,
+    };
+  }
+  if (
+    value.status === 'failed' &&
+    value.errorCode === 'network_unavailable' &&
+    hasExactKeys(value, [
+      'schemaVersion',
+      'userId',
+      'state',
+      'status',
+      'errorCode',
+    ])
+  ) {
+    return {
+      schemaVersion: 1,
+      userId: expectedUserId,
+      state: 'recoverable',
+      status: 'failed',
+      errorCode: 'network_unavailable',
+    };
+  }
+  return undefined;
+}
+
+function publicCheckpointHint(
+  hint: StoredGuestClaimCheckpointHint,
+): GuestClaimCheckpointHint {
+  if (hint.state === 'inactive') {
+    return {state: 'inactive'};
+  }
+  if (hint.status === 'failed') {
+    return {
+      state: 'recoverable',
+      status: 'failed',
+      errorCode: 'network_unavailable',
+    };
+  }
+  return {state: 'recoverable', status: hint.status};
 }
 
 export async function createGuestClaimSnapshot(options: {

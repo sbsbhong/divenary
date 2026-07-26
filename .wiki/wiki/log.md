@@ -926,3 +926,15 @@
 
 ## [2026-07-26] ingest | Device claim live inventory
 - Updated: 동기화 흐름 구조
+
+## [2026-07-26] ingest | Home conditions and device inventory performance hardening
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: live guest inventory가 0이면 과거 claim snapshot을 읽지 않으며, 겹친 refresh는 최신 결과만 publish한다.
+- Recorded: Home conditions는 locale별 ready cache, in-flight 공유, 병렬 enrichment와 bounded deadline을 사용한다.
+
+## [2026-07-26] ingest | Device inventory checkpoint hint hardening
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: zero-inventory 경로는 full snapshot을 inline으로 읽지 않지만, recoverable hint와 deferred legacy audit로 active transaction 복구를 유지한다.
+- Recorded: checkpoint hint는 advisory이며 live count나 authoritative transaction status로 사용하지 않는다.

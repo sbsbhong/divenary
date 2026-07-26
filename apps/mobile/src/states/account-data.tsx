@@ -6,7 +6,11 @@ import type {
 } from '@repo/supabase';
 import type { QueryClient } from '@tanstack/react-query';
 import React from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import {
+  AppState,
+  InteractionManager,
+  type AppStateStatus,
+} from 'react-native';
 
 import {
   GuestClaimService,
@@ -122,6 +126,9 @@ type AccountDataProviderCoreProps = AccountDataProviderProps & {
 export type AccountDataDependencies = PrincipalRepositoryDependencies & {
   createRepositories: typeof createPrincipalRepositories;
   migrateLegacyData: typeof migrateLegacyGuestData;
+  scheduleAfterInteractions(
+    task: () => void | Promise<void>,
+  ): {cancel(): void};
   createId: () => string;
   now: () => number;
   jitter: () => number;
@@ -142,6 +149,15 @@ type PublishedAccountData = PrincipalRepositories & {
   claimStore?: GuestClaimStore;
   claimService?: GuestClaimService;
   claimGeneration?: number;
+  claimInventoryObservationSequence?: number;
+  hasLiveGuestInventory?: boolean;
+  zeroInventoryAudit?: {
+    token: object;
+    generation: number;
+    cancel(): void;
+  };
+  zeroInventoryAuditAttempted?: boolean;
+  zeroInventoryRecoveryToken?: object;
   hiddenGuestIds?: HiddenGuestIds;
   outbox?: AccountOutbox;
   coordinator?: AccountSyncCoordinator;
@@ -154,6 +170,11 @@ type HiddenGuestIds = {
   planIds: Set<string>;
   guestPriorityLogIds: Set<string>;
   guestPriorityPlanIds: Set<string>;
+};
+
+type GuestInventory = {
+  logs: DiveLogEntry[];
+  plans: DivePlan[];
 };
 
 type AccountClaimPresentation = {
@@ -235,6 +256,7 @@ export function AccountDataProviderCore({
   );
   const publicationsRef = React.useRef(new Map<string, PublishedAccountData>());
   const generationRef = React.useRef(0);
+  const claimRefreshSequenceRef = React.useRef(0);
   const migrationPromiseRef = React.useRef<Promise<void> | undefined>(
     undefined,
   );
@@ -344,7 +366,12 @@ export function AccountDataProviderCore({
         }
         publications.set(desiredScope, nextPublication);
       } else {
-        nextPublication = { ...nextPublication };
+        nextPublication = {
+          ...nextPublication,
+          zeroInventoryAudit: undefined,
+          zeroInventoryAuditAttempted: undefined,
+          zeroInventoryRecoveryToken: undefined,
+        };
         publications.set(desiredScope, nextPublication);
       }
 
@@ -381,7 +408,11 @@ export function AccountDataProviderCore({
             }
           },
           onProgress: progress => {
-            if (isClaimCurrent()) {
+            if (
+              isClaimCurrent() &&
+              publication.hasLiveGuestInventory !== false &&
+              publication.zeroInventoryRecoveryToken === undefined
+            ) {
               setClaimPresentation(
                 runningClaimPresentation(desiredScope, progress),
               );
@@ -391,18 +422,56 @@ export function AccountDataProviderCore({
             if (!isClaimCurrent()) {
               return;
             }
-            await applyHiddenGuestIds(
-              publication,
-              snapshot,
-              dependencies.profileStorage,
-              isClaimCurrent,
-            );
-            if (!isClaimCurrent()) {
-              return;
+            let shouldPublishPresentation =
+              publication.hasLiveGuestInventory !== false &&
+              publication.zeroInventoryRecoveryToken === undefined;
+            if (
+              snapshot.manifest.status !== 'running' &&
+              snapshot.manifest.status !== 'finalizing'
+            ) {
+              const observationSequence =
+                beginClaimInventoryObservation(publication);
+              const inventory = await readGuestInventory(publication);
+              if (!isClaimCurrent()) {
+                return;
+              }
+              const observationCommitted =
+                commitClaimInventoryObservation(
+                  publication,
+                  observationSequence,
+                  inventory,
+                );
+              if (!observationCommitted) {
+                shouldPublishPresentation = false;
+              } else {
+                shouldPublishPresentation =
+                  publication.hasLiveGuestInventory !== false &&
+                  publication.zeroInventoryRecoveryToken === undefined;
+                await applyHiddenGuestIds(
+                  publication,
+                  snapshot,
+                  inventory,
+                  dependencies.profileStorage,
+                  isClaimCurrent,
+                );
+                if (!isClaimCurrent()) {
+                  return;
+                }
+                if (
+                  !shouldPublishPresentation &&
+                  publication.zeroInventoryRecoveryToken === undefined
+                ) {
+                  setClaimPresentation(
+                    hiddenClaimPresentation(desiredScope),
+                  );
+                }
+              }
             }
-            setClaimPresentation(
-              presentationForSnapshot(desiredScope, snapshot),
-            );
+            if (shouldPublishPresentation) {
+              setClaimPresentation(
+                presentationForSnapshot(desiredScope, snapshot),
+              );
+            }
             if (
               snapshot.manifest.status === 'committed' ||
               snapshot.manifest.status === 'cleanupPending'
@@ -554,7 +623,11 @@ export function AccountDataProviderCore({
     return () => {
       if (generationRef.current === generation) {
         generationRef.current += 1;
-        publications.get(desiredScope)?.coordinator?.pause();
+        const publication = publications.get(desiredScope);
+        publication?.coordinator?.pause();
+        if (publication) {
+          cancelZeroInventoryAudit(publication);
+        }
       }
     };
   }, [
@@ -569,23 +642,121 @@ export function AccountDataProviderCore({
     queryClient,
   ]);
 
+  const scheduleZeroInventoryAudit = React.useCallback(
+    (publication: PublishedAccountData, generation: number) => {
+      if (
+        publication.zeroInventoryAudit ||
+        publication.zeroInventoryAuditAttempted ||
+        !publication.claimStore ||
+        !publication.claimService
+      ) {
+        return;
+      }
+      const token = {};
+      const isAuditCurrent = () =>
+        publication.zeroInventoryAudit?.token === token &&
+        publication.zeroInventoryAudit.generation === generation &&
+        generationRef.current === generation &&
+        publishedRef.current === publication &&
+        publication.claimGeneration === generation &&
+        publication.hasLiveGuestInventory === false;
+      const finish = () => {
+        if (publication.zeroInventoryAudit?.token === token) {
+          publication.zeroInventoryAudit = undefined;
+        }
+      };
+      publication.zeroInventoryAuditAttempted = true;
+      publication.zeroInventoryAudit = {
+        token,
+        generation,
+        cancel: () => undefined,
+      };
+      try {
+        const handle = dependencies.scheduleAfterInteractions(async () => {
+          try {
+            if (!isAuditCurrent()) {
+              return;
+            }
+            let snapshot: GuestClaimSnapshot | undefined;
+            try {
+              snapshot = await publication.claimStore!.read();
+            } catch {
+              return;
+            }
+            if (
+              !isAuditCurrent() ||
+              !isRecoverableClaimSnapshot(snapshot)
+            ) {
+              return;
+            }
+            await resumeZeroInventoryClaim(publication, isAuditCurrent);
+          } finally {
+            finish();
+          }
+        });
+        if (publication.zeroInventoryAudit?.token === token) {
+          publication.zeroInventoryAudit.cancel = () => handle.cancel();
+        } else {
+          handle.cancel();
+        }
+      } catch {
+        finish();
+      }
+    },
+    [dependencies],
+  );
+
   const refreshClaim = React.useCallback(
     async (
       publication: PublishedAccountData,
       options: { resumeActive: boolean },
     ) => {
+      const refreshSequence = claimRefreshSequenceRef.current + 1;
+      claimRefreshSequenceRef.current = refreshSequence;
       const claimGeneration = publication.claimGeneration;
       const isClaimCurrent = () =>
+        claimRefreshSequenceRef.current === refreshSequence &&
         generationRef.current === claimGeneration &&
         publishedRef.current === publication &&
         publication.claimGeneration === claimGeneration;
-      const readEligibleGuestCounts = async () => {
+      const awaitCurrentClaimStep = async <T,>(
+        operation: () => Promise<T>,
+      ): Promise<
+        {current: false} | {current: true; value: T}
+      > => {
         try {
-          return await eligibleGuestCounts(publication);
+          const value = await operation();
+          return isClaimCurrent()
+            ? {current: true, value}
+            : {current: false};
         } catch (error) {
-          if (isClaimCurrent()) {
-            setClaimPresentation(hiddenClaimPresentation(desiredScope));
+          if (!isClaimCurrent()) {
+            return {current: false};
           }
+          throw error;
+        }
+      };
+      const readCurrentGuestInventory = async () => {
+        const observationSequence =
+          beginClaimInventoryObservation(publication);
+        try {
+          const inventory = await readGuestInventory(publication);
+          if (
+            !isClaimCurrent() ||
+            !commitClaimInventoryObservation(
+              publication,
+              observationSequence,
+              inventory,
+            )
+          ) {
+            return undefined;
+          }
+          return inventory;
+        } catch (error) {
+          if (!isClaimCurrent()) {
+            return undefined;
+          }
+          setClaimPresentation(hiddenClaimPresentation(desiredScope));
           throw error;
         }
       };
@@ -597,6 +768,51 @@ export function AccountDataProviderCore({
         !navigationReady
       ) {
         setClaimPresentation(hiddenClaimPresentation(desiredScope));
+        return;
+      }
+
+      const inventory = await readCurrentGuestInventory();
+      if (!inventory || !isClaimCurrent()) {
+        return;
+      }
+      if (inventory.logs.length + inventory.plans.length === 0) {
+        clearHiddenGuestIds(publication);
+        if (isClaimCurrent()) {
+          setClaimPresentation(hiddenClaimPresentation(desiredScope));
+        }
+        if (
+          !options.resumeActive ||
+          !isOnline ||
+          AppState.currentState !== 'active' ||
+          !publication.claimService
+        ) {
+          return;
+        }
+        let checkpointHint: Awaited<
+          ReturnType<GuestClaimStore['readCheckpointHint']>
+        >;
+        try {
+          checkpointHint =
+            await publication.claimStore.readCheckpointHint();
+        } catch {
+          return;
+        }
+        if (
+          !isClaimCurrent() ||
+          publication.hasLiveGuestInventory !== false
+        ) {
+          return;
+        }
+        if (checkpointHint.state === 'recoverable') {
+          await resumeZeroInventoryClaim(publication, isClaimCurrent);
+          return;
+        }
+        if (
+          checkpointHint.state === 'unknown' &&
+          claimGeneration !== undefined
+        ) {
+          scheduleZeroInventoryAudit(publication, claimGeneration);
+        }
         return;
       }
 
@@ -625,16 +841,19 @@ export function AccountDataProviderCore({
       ) {
         return;
       }
-      await applyHiddenGuestIds(
-        publication,
-        snapshot,
-        dependencies.profileStorage,
-        isClaimCurrent,
+      const appliedSnapshot = await awaitCurrentClaimStep(() =>
+        applyHiddenGuestIds(
+          publication,
+          snapshot,
+          inventory,
+          dependencies.profileStorage,
+          isClaimCurrent,
+        ),
       );
-      const eligible = await readEligibleGuestCounts();
-      if (!isClaimCurrent()) {
+      if (!appliedSnapshot.current) {
         return;
       }
+      const eligible = eligibleGuestCounts(publication, inventory);
       setClaimPresentation(
         presentationForSnapshot(desiredScope, snapshot, eligible, isOnline),
       );
@@ -653,30 +872,66 @@ export function AccountDataProviderCore({
             (snapshot.manifest.status === 'failed' &&
               snapshot.errorCode === 'network_unavailable'))
       ) {
-        await publication.claimService.resume();
-        if (isClaimCurrent()) {
-          const refreshedSnapshot = await publication.claimStore.read();
-          await applyHiddenGuestIds(
+        const resumed = await awaitCurrentClaimStep(() =>
+          publication.claimService!.resume(),
+        );
+        if (!resumed.current) {
+          return;
+        }
+        const refreshedInventory = await readCurrentGuestInventory();
+        if (!refreshedInventory || !isClaimCurrent()) {
+          return;
+        }
+        if (
+          refreshedInventory.logs.length + refreshedInventory.plans.length ===
+          0
+        ) {
+          clearHiddenGuestIds(publication);
+          if (isClaimCurrent()) {
+            setClaimPresentation(hiddenClaimPresentation(desiredScope));
+          }
+          return;
+        }
+        const refreshedSnapshotRead = await awaitCurrentClaimStep(() =>
+          publication.claimStore!.read(),
+        );
+        if (!refreshedSnapshotRead.current) {
+          return;
+        }
+        const refreshedSnapshot = refreshedSnapshotRead.value;
+        const appliedRefreshedSnapshot = await awaitCurrentClaimStep(() =>
+          applyHiddenGuestIds(
             publication,
             refreshedSnapshot,
+            refreshedInventory,
             dependencies.profileStorage,
             isClaimCurrent,
-          );
-          const refreshedEligible = await readEligibleGuestCounts();
-          if (isClaimCurrent()) {
-            setClaimPresentation(
-              presentationForSnapshot(
-                desiredScope,
-                refreshedSnapshot,
-                refreshedEligible,
-                isOnline,
-              ),
-            );
-          }
+          ),
+        );
+        if (!appliedRefreshedSnapshot.current) {
+          return;
         }
+        const refreshedEligible = eligibleGuestCounts(
+          publication,
+          refreshedInventory,
+        );
+        setClaimPresentation(
+          presentationForSnapshot(
+            desiredScope,
+            refreshedSnapshot,
+            refreshedEligible,
+            isOnline,
+          ),
+        );
       }
     },
-    [dependencies.profileStorage, desiredScope, isOnline, navigationReady],
+    [
+      dependencies.profileStorage,
+      desiredScope,
+      isOnline,
+      navigationReady,
+      scheduleZeroInventoryAudit,
+    ],
   );
 
   React.useEffect(() => {
@@ -781,10 +1036,11 @@ export function AccountDataProviderCore({
         if (!isClaimCurrent()) {
           return;
         }
-        const eligible = await eligibleGuestCounts(publication);
+        const inventory = await readGuestInventory(publication);
         if (!isClaimCurrent()) {
           return;
         }
+        const eligible = eligibleGuestCounts(publication, inventory);
         if (operation === 'defer' || operation === 'recheckRetained') {
           let snapshot: GuestClaimSnapshot | undefined;
           try {
@@ -1251,21 +1507,111 @@ function createComposedAccountRepositories(options: {
   };
 }
 
-async function eligibleGuestCounts(
+async function readGuestInventory(
   publication: PublishedAccountData,
-): Promise<{ logCount: number; planCount: number }> {
+): Promise<GuestInventory> {
   if (!publication.guestRepositories) {
-    return { logCount: 0, planCount: 0 };
+    return {logs: [], plans: []};
   }
   const [logs, plans] = await Promise.all([
     publication.guestRepositories.logbook.list(),
     publication.guestRepositories.planbook.list(),
   ]);
+  return {logs, plans};
+}
+
+function isRecoverableClaimSnapshot(
+  snapshot: GuestClaimSnapshot | undefined,
+): boolean {
+  return (
+    snapshot?.manifest.status === 'running' ||
+    snapshot?.manifest.status === 'finalizing' ||
+    snapshot?.manifest.status === 'cleanupPending' ||
+    (snapshot?.manifest.status === 'failed' &&
+      snapshot.errorCode === 'network_unavailable')
+  );
+}
+
+async function resumeZeroInventoryClaim(
+  publication: PublishedAccountData,
+  isCurrent: () => boolean,
+): Promise<void> {
+  if (
+    !publication.claimService ||
+    !publication.claimStore ||
+    publication.zeroInventoryRecoveryToken ||
+    !isCurrent()
+  ) {
+    return;
+  }
+  const token = {};
+  publication.zeroInventoryRecoveryToken = token;
+  try {
+    const snapshot = await publication.claimService.resume();
+    if (
+      publication.zeroInventoryRecoveryToken !== token ||
+      !isCurrent()
+    ) {
+      return;
+    }
+    if (snapshot === undefined) {
+      try {
+        await publication.claimStore.remove();
+      } catch {
+        // The advisory hint can be retried on a later foreground refresh.
+      }
+    }
+  } catch {
+    // Zero-inventory recovery is advisory and must not expose stale UI.
+  } finally {
+    if (publication.zeroInventoryRecoveryToken === token) {
+      publication.zeroInventoryRecoveryToken = undefined;
+    }
+  }
+}
+
+function beginClaimInventoryObservation(
+  publication: PublishedAccountData,
+): number {
+  const sequence = (publication.claimInventoryObservationSequence ?? 0) + 1;
+  publication.claimInventoryObservationSequence = sequence;
+  return sequence;
+}
+
+function commitClaimInventoryObservation(
+  publication: PublishedAccountData,
+  sequence: number,
+  inventory: GuestInventory,
+): boolean {
+  if (publication.claimInventoryObservationSequence !== sequence) {
+    return false;
+  }
+  publication.hasLiveGuestInventory =
+    inventory.logs.length + inventory.plans.length > 0;
+  if (publication.hasLiveGuestInventory) {
+    publication.zeroInventoryAuditAttempted = undefined;
+    cancelZeroInventoryAudit(publication);
+  }
+  return true;
+}
+
+function cancelZeroInventoryAudit(
+  publication: PublishedAccountData,
+): void {
+  const audit = publication.zeroInventoryAudit;
+  publication.zeroInventoryAudit = undefined;
+  audit?.cancel();
+}
+
+function eligibleGuestCounts(
+  publication: PublishedAccountData,
+  inventory: GuestInventory,
+): {logCount: number; planCount: number} {
   return {
-    logCount: logs.filter(
+    logCount: inventory.logs.filter(
       value => !publication.hiddenGuestIds?.logIds.has(value.localId),
     ).length,
-    planCount: plans.filter(
+    planCount: inventory.plans.filter(
       value => !publication.hiddenGuestIds?.planIds.has(value.localId),
     ).length,
   };
@@ -1274,6 +1620,7 @@ async function eligibleGuestCounts(
 async function applyHiddenGuestIds(
   publication: PublishedAccountData,
   snapshot: GuestClaimSnapshot | undefined,
+  inventory: GuestInventory,
   profileStorage: AccountDataDependencies['profileStorage'],
   shouldApply: () => boolean = () => true,
 ): Promise<void> {
@@ -1296,12 +1643,36 @@ async function applyHiddenGuestIds(
   const published =
     snapshot.manifest.status === 'committed' ||
     snapshot.manifest.status === 'cleanupPending';
+  const logsById = new Map(
+    inventory.logs.map(value => [value.localId, value] as const),
+  );
+  const plansById = new Map(
+    inventory.plans.map(value => [value.localId, value] as const),
+  );
+  if (!published) {
+    for (const item of snapshot.manifest.items) {
+      const exists = (
+        item.entityKind === 'log' ? logsById : plansById
+      ).has(item.clientRecordId);
+      if (exists) {
+        (item.entityKind === 'log'
+          ? next.guestPriorityLogIds
+          : next.guestPriorityPlanIds
+        ).add(item.clientRecordId);
+      }
+    }
+    if (shouldApply()) {
+      replaceHiddenGuestIds(hidden, next);
+    }
+    return;
+  }
   for (const [index, item] of snapshot.manifest.items.entries()) {
-    const repository =
-      item.entityKind === 'log'
-        ? publication.guestRepositories.logbook
-        : publication.guestRepositories.planbook;
-    const current = await repository.get(item.clientRecordId);
+    if (!shouldApply()) {
+      return;
+    }
+    const current = (
+      item.entityKind === 'log' ? logsById : plansById
+    ).get(item.clientRecordId);
     if (current === undefined) {
       continue;
     }
@@ -1311,6 +1682,9 @@ async function applyHiddenGuestIds(
       record: current,
       profileStorage,
     });
+    if (!shouldApply()) {
+      return;
+    }
     if (published && matches) {
       (item.entityKind === 'log' ? next.logIds : next.planIds).add(
         item.clientRecordId,
@@ -1325,6 +1699,19 @@ async function applyHiddenGuestIds(
   if (shouldApply()) {
     replaceHiddenGuestIds(hidden, next);
   }
+}
+
+function clearHiddenGuestIds(publication: PublishedAccountData): void {
+  const hidden = publication.hiddenGuestIds;
+  if (!hidden) {
+    return;
+  }
+  replaceHiddenGuestIds(hidden, {
+    logIds: new Set(),
+    planIds: new Set(),
+    guestPriorityLogIds: new Set(),
+    guestPriorityPlanIds: new Set(),
+  });
 }
 
 function replaceHiddenGuestIds(
@@ -2187,6 +2574,10 @@ function getDefaultDependencies(): AccountDataDependencies {
     profileStorage: createWatchProfileStorage(metadataStorage),
     createRepositories: createPrincipalRepositories,
     migrateLegacyData: migrateLegacyGuestData,
+    scheduleAfterInteractions: task => {
+      const handle = InteractionManager.runAfterInteractions(task);
+      return {cancel: () => handle.cancel()};
+    },
     createId: createUuid,
     now: () => Date.now() / 1_000,
     jitter: Math.random,

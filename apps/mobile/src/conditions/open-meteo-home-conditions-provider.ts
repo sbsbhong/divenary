@@ -36,6 +36,8 @@ const freeWeatherBaseUrl = 'https://api.open-meteo.com/v1/forecast';
 const customerWeatherBaseUrl = 'https://customer-api.open-meteo.com/v1/forecast';
 const freeMarineBaseUrl = 'https://marine-api.open-meteo.com/v1/marine';
 const customerMarineBaseUrl = 'https://customer-marine-api.open-meteo.com/v1/marine';
+const weatherRequestTimeoutMs = 8000;
+const optionalEnrichmentTimeoutMs = 2500;
 
 export function createOpenMeteoHomeConditionsProvider(
   options: OpenMeteoProviderOptions = {},
@@ -52,10 +54,26 @@ export function createOpenMeteoHomeConditionsProvider(
       }
 
       try {
-        const weather = await fetchJson<OpenMeteoWeatherResponse>(
-          fetcher,
-          buildWeatherUrl(input, apiKey),
+        const weatherRequest = rejectOnAbortableTimeout(
+          signal => fetchJson<OpenMeteoWeatherResponse>(
+            fetcher,
+            buildWeatherUrl(input, apiKey),
+            signal,
+          ),
+          weatherRequestTimeoutMs,
+          'Open-Meteo weather request timed out.',
         );
+        const marineRequest = fallbackOnAbortableTimeout(
+          signal => fetchMarine(fetcher, buildMarineUrl(input, apiKey), signal),
+          optionalEnrichmentTimeoutMs,
+          { ok: false } as const,
+        );
+        const reverseGeocodeRequest = fallbackOnTimeout(
+          fetchReverseGeocodedPlace(reverseGeocode, input),
+          optionalEnrichmentTimeoutMs,
+          undefined,
+        );
+        const weather = await weatherRequest;
         const airTemperatureCelsius = weather.current?.temperature_2m;
 
         if (!isFiniteNumber(airTemperatureCelsius)) {
@@ -66,9 +84,11 @@ export function createOpenMeteoHomeConditionsProvider(
           };
         }
 
-        const marine = await fetchMarine(fetcher, buildMarineUrl(input, apiKey));
+        const [marine, reverseGeocodedPlace] = await Promise.all([
+          marineRequest,
+          reverseGeocodeRequest,
+        ]);
         const waterTemperatureCelsius = marine.ok ? marine.waterTemperatureCelsius : undefined;
-        const reverseGeocodedPlace = await fetchReverseGeocodedPlace(reverseGeocode, input);
         const timestamp = now();
 
         return {
@@ -94,6 +114,65 @@ export function createOpenMeteoHomeConditionsProvider(
   };
 }
 
+function rejectOnAbortableTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      reject(new Error(message));
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation(controller.signal), deadline]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+function fallbackOnTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<T>(resolve => {
+    timeout = setTimeout(() => resolve(fallback), timeoutMs);
+  });
+
+  return Promise.race([operation, deadline]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
+function fallbackOnAbortableTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<T>(resolve => {
+    timeout = setTimeout(() => {
+      controller.abort();
+      resolve(fallback);
+    }, timeoutMs);
+  });
+
+  return Promise.race([operation(controller.signal), deadline]).finally(() => {
+    if (timeout !== undefined) {
+      clearTimeout(timeout);
+    }
+  });
+}
+
 async function fetchReverseGeocodedPlace(
   reverseGeocode: (input: ReverseGeocodeCoordinatesInput) => Promise<ReverseGeocodedPlace | undefined>,
   input: HomeConditionsInput,
@@ -113,8 +192,14 @@ async function fetchReverseGeocodedPlace(
   }
 }
 
-async function fetchJson<T>(fetcher: typeof fetch, url: string): Promise<T> {
-  const response = await fetcher(url);
+async function fetchJson<T>(
+  fetcher: typeof fetch,
+  url: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = signal
+    ? await fetcher(url, { signal })
+    : await fetcher(url);
 
   if (!response.ok) {
     throw new Error(`Open-Meteo request failed with HTTP ${response.status}`);
@@ -123,9 +208,13 @@ async function fetchJson<T>(fetcher: typeof fetch, url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function fetchMarine(fetcher: typeof fetch, url: string): Promise<MarineFetchResult> {
+async function fetchMarine(
+  fetcher: typeof fetch,
+  url: string,
+  signal: AbortSignal,
+): Promise<MarineFetchResult> {
   try {
-    const marine = await fetchJson<OpenMeteoMarineResponse>(fetcher, url);
+    const marine = await fetchJson<OpenMeteoMarineResponse>(fetcher, url, signal);
     const waterTemperatureCelsius = marine.current?.sea_surface_temperature;
 
     return isFiniteNumber(waterTemperatureCelsius)
