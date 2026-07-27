@@ -34,7 +34,7 @@
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch artifact를 exact identity로 제한 없이 처리하고 historical retransmission은 삭제된 row를 복구하지 않은 채 acknowledge한다. | 2026-07-26 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage와 target ID 재사용을 rollback하는 claim finalizer를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Fail-closed local 검증, exact Watch artifact 재조정과 interaction-first scheduling으로 local acknowledgement와 cloud sync 경계를 유지한다. | 2026-07-26 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Fail-closed local 검증, 제한된 typed float readback 복구와 interaction-first scheduling으로 local acknowledgement와 cloud sync 경계를 유지한다. | 2026-07-27 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains

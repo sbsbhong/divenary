@@ -23,7 +23,10 @@ export {
   AccountDataRepositoryError,
   type AccountDataRepositoryOperation,
 } from './account-data-repository.ts';
-export {sameAccountFloat} from './account-data-numbers.ts';
+export {
+  sameAccountFloat,
+  sameAccountFloatReadback,
+} from './account-data-numbers.ts';
 export {
   createGuestClaimRemoteRepository,
   GuestClaimRepositoryError,

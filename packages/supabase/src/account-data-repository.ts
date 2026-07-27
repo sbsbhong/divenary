@@ -1,7 +1,7 @@
 import type {SupabaseClient} from '@supabase/supabase-js';
 
 import type {Database} from './database.types.ts';
-import {sameAccountFloat} from './account-data-numbers.ts';
+import {sameAccountFloatReadback} from './account-data-numbers.ts';
 import {
   fromDiveLogRow,
   fromDivePlanRow,
@@ -171,7 +171,7 @@ function hasPersistedFields(
       && typeof row[key] === 'number'
       && typeof value === 'number'
     ) {
-      return sameAccountFloat(row[key], value);
+      return sameAccountFloatReadback(row[key], value);
     }
     return samePersistedValue(row[key], value);
   });

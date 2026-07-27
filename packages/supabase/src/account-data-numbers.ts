@@ -1,5 +1,6 @@
 const FLOAT64_BYTES = 8;
 const FLOAT64_LOW_WORD_OFFSET = 4;
+const ACCOUNT_FLOAT_READBACK_SIGNIFICANT_DIGITS = 15;
 
 const float64Buffer = new ArrayBuffer(FLOAT64_BYTES);
 const float64View = new DataView(float64Buffer);
@@ -48,5 +49,24 @@ export function sameAccountFloat(left: number, right: number): boolean {
   return (
     adjacentFloat(left, 'down') === right
     || adjacentFloat(left, 'up') === right
+  );
+}
+
+/**
+ * Compares a typed REST readback with its outgoing or embedded source value.
+ * Parameter order is intentional because decimal compatibility is directional.
+ */
+export function sameAccountFloatReadback(
+  typedValue: number,
+  sourceValue: number,
+): boolean {
+  if (!Number.isFinite(typedValue) || !Number.isFinite(sourceValue)) {
+    return false;
+  }
+  return (
+    sameAccountFloat(typedValue, sourceValue)
+    || Number(
+      sourceValue.toPrecision(ACCOUNT_FLOAT_READBACK_SIGNIFICANT_DIGITS),
+    ) === typedValue
   );
 }

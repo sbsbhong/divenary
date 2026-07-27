@@ -1,7 +1,7 @@
 import {sha256} from '@noble/hashes/sha256';
 import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
 import {
-  sameAccountFloat,
+  sameAccountFloatReadback,
   type RemoteDiveLog,
   type RemoteDivePlan,
 } from '@repo/supabase';
@@ -296,7 +296,7 @@ function sourceDerivedLogFloatPayload(
       isFiniteNumber(typedValue) &&
       isFiniteNumber(sourceValue) &&
       typedValue !== sourceValue &&
-      sameAccountFloat(typedValue, sourceValue)
+      sameAccountFloatReadback(typedValue, sourceValue)
     ) {
       candidate[payloadKey] = sourceValue;
       changed = true;

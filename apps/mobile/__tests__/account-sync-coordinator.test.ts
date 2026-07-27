@@ -338,6 +338,83 @@ describe('AccountSyncCoordinator', () => {
     expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
   });
 
+  it.each([
+    {
+      label: 'duration and max depth',
+      sourceDuration: 13.890705108642578,
+      typedDuration: 13.8907051086426,
+      sourceDepth: 6.917554998405613,
+      typedDepth: 6.91755499840561,
+    },
+    {
+      label: 'duration with an exact max depth',
+      sourceDuration: 18.46345806121826,
+      typedDuration: 18.4634580612183,
+      sourceDepth: 12,
+      typedDepth: 12,
+    },
+  ])(
+    'accepts the observed 15-significant-digit Watch $label readback',
+    ({
+      sourceDuration,
+      typedDuration,
+      sourceDepth,
+      typedDepth,
+    }) => {
+      const {canonical, mapperValue} =
+        observedWatchDecimalReadbackRoundtrip({
+          sourceDuration,
+          typedDuration,
+          sourceDepth,
+          typedDepth,
+        });
+
+      expect(canonical.payloadSha256).not.toBe(
+        canonicalSha256(mapperValue.payload),
+      );
+
+      const parsed = parseAccountRemoteLog(mapperValue);
+
+      expect(parsed.payload.duration_seconds).toBe(sourceDuration);
+      expect(parsed.payload.max_depth_meters).toBe(sourceDepth);
+      expect(parsed.payloadSha256).toBe(canonical.payloadSha256);
+      expect(canonicalSha256(parsed.payload)).toBe(parsed.payloadSha256);
+    },
+  );
+
+  it('rejects an observed Watch decimal readback when the stored digest differs', () => {
+    const {mapperValue} = observedWatchDecimalReadbackRoundtrip({
+      sourceDuration: 13.890705108642578,
+      typedDuration: 13.8907051086426,
+      sourceDepth: 6.917554998405613,
+      typedDepth: 6.91755499840561,
+    });
+    const wrongDigest = {
+      ...mapperValue,
+      payloadSha256: 'f'.repeat(64),
+    };
+
+    expect(() => parseAccountRemoteLog(wrongDigest)).toThrow(/digest/i);
+  });
+
+  it('rejects unrelated payload drift after observed Watch decimal recovery', () => {
+    const {mapperValue} = observedWatchDecimalReadbackRoundtrip({
+      sourceDuration: 18.46345806121826,
+      typedDuration: 18.4634580612183,
+      sourceDepth: 12,
+      typedDepth: 12,
+    });
+    const divergent = {
+      ...mapperValue,
+      payload: {
+        ...mapperValue.payload,
+        site_name: 'Divergent Reef',
+      },
+    };
+
+    expect(() => parseAccountRemoteLog(divergent)).toThrow(/digest/i);
+  });
+
   it('recovers an adjacent manual duration while keeping its integer rating exact', () => {
     const base = localLog();
     const canonical = createAccountRemoteLog(
@@ -2610,6 +2687,49 @@ function observedWatchFloatRoundtrip(): {
     payload: {
       ...canonical.payload,
       max_depth_meters: 11.6,
+    },
+  };
+  return {canonical, mapperValue};
+}
+
+function observedWatchDecimalReadbackRoundtrip(input: {
+  sourceDuration: number;
+  typedDuration: number;
+  sourceDepth: number;
+  typedDepth: number;
+}): {
+  canonical: RemoteDiveLog;
+  mapperValue: RemoteDiveLog;
+} {
+  const entry = localLog({
+    localId: 'watch:decimal-readback',
+    source: 'watch',
+    watchCapture: {
+      importKey: 'decimal-readback',
+      importedAt: 1785146088,
+      session: {
+        localSessionId: 'decimal-readback',
+        startedAt: 1785146065,
+        endedAt: 1785146079,
+        maxDepthMeters: input.sourceDepth,
+        samples: [],
+      },
+      measuredValues: {
+        startedAt: 1785146065,
+        endedAt: 1785146079,
+        durationSeconds: input.sourceDuration,
+        maxDepthMeters: input.sourceDepth,
+      },
+      samples: [],
+    },
+  });
+  const canonical = createAccountRemoteLog(entry, userId);
+  const mapperValue = {
+    ...canonical,
+    payload: {
+      ...canonical.payload,
+      duration_seconds: input.typedDuration,
+      max_depth_meters: input.typedDepth,
     },
   };
   return {canonical, mapperValue};
