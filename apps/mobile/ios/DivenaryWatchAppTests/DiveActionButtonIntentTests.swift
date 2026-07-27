@@ -42,6 +42,26 @@ final class DiveActionButtonIntentTests: XCTestCase {
         XCTAssertTrue(coordinator.isRecording)
     }
 
+    func testBridgeRoutesEndToActiveOverrideBeforeRealCoordinator() {
+        let coordinator = FakeRealDiveActionController(acceptsEndRequest: false)
+        let bridge = DiveActionButtonBridge(controller: coordinator)
+        var overrideCallCount = 0
+
+        let token = bridge.installEndOverride {
+            overrideCallCount += 1
+            return true
+        }
+
+        XCTAssertTrue(bridge.requestEndDive())
+
+        XCTAssertEqual(overrideCallCount, 1)
+        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 0)
+
+        bridge.removeEndOverride(token)
+        XCTAssertFalse(bridge.requestEndDive())
+        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
+    }
+
     func testStartIntentRoutesToActionButtonBridgeOnce() async throws {
         let coordinator = FakeRealDiveActionController()
         let intent = DivenaryStartDiveIntent(

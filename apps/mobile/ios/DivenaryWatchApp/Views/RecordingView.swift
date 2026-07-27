@@ -42,6 +42,17 @@ enum WatchRecordingMode: Equatable {
         }
     }
 
+    var endControl: RecordingEndControl {
+        switch self {
+        case .real:
+            return .crownHint
+        case .demo:
+            return .demoButton
+        case .debugTest:
+            return .hidden
+        }
+    }
+
     func prepare(plan: PreDivePlan) -> PreDivePlan {
         guard self == .debugTest, !plan.userTags.contains(DiveSessionRecord.debugTestTag) else {
             return plan
@@ -53,6 +64,12 @@ enum WatchRecordingMode: Equatable {
     }
 }
 
+enum RecordingEndControl: Equatable {
+    case crownHint
+    case demoButton
+    case hidden
+}
+
 enum RecordingControlPolicy: Equatable {
     case real
     case simulated
@@ -60,12 +77,6 @@ enum RecordingControlPolicy: Equatable {
     var usesCrownDepthControl: Bool {
         self == .simulated
     }
-}
-
-enum RecordingControlRowLayout {
-    static let leadingReservedWidth = DepthGaugeRail.layoutWidth + 9
-    static let minimumHeight: CGFloat = 30
-    static let maximumHeight: CGFloat = 36
 }
 
 enum RecordingDepthPolicy {
@@ -77,114 +88,47 @@ enum RecordingDepthPolicy {
     }
 }
 
-struct SurfaceEndDiveGate {
-    private(set) var isVisible = false
-    private var surfaceStartedAt: Date?
-    private let showDepthMeters = 1.0
-    private let hideDepthMeters = 1.2
-    private let stableSurfaceSeconds: TimeInterval = 3
-
-    mutating func update(depthMeters: Double, at timestamp: Date) {
-        let currentDepthMeters = depthMeters.isFinite ? max(0, depthMeters) : 0
-
-        if currentDepthMeters >= hideDepthMeters {
-            surfaceStartedAt = nil
-            isVisible = false
-            return
-        }
-
-        guard currentDepthMeters <= showDepthMeters else {
-            if !isVisible {
-                surfaceStartedAt = nil
-            }
-            return
-        }
-
-        if surfaceStartedAt == nil {
-            surfaceStartedAt = timestamp
-        }
-
-        if let surfaceStartedAt,
-           timestamp.timeIntervalSince(surfaceStartedAt) >= stableSurfaceSeconds {
-            isVisible = true
-        }
-    }
-}
-
 struct RecordingInstrumentView: View {
     @ObservedObject var recorder: DiveSessionRecorder
     let plan: PreDivePlan
-    let controlPolicy: RecordingControlPolicy
     let maximumDepthMeters: Double?
-    let showsTouchEndControl: Bool
-    let onTouchEnd: () -> Void
+    let endControl: RecordingEndControl
+    let onEndDive: (() -> Void)?
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 6) {
+            VStack(spacing: 4) {
                 liveInstrument
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .layoutPriority(1)
 
-                recordingControlRow
+                recordingErrorFooter
 
-                recordingFooter
+                if endControl != .hidden {
+                    RecordingEndControlFooter(
+                        endControl: endControl,
+                        onEndDive: onEndDive
+                    )
+                }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .padding(.horizontal, 4)
-        .padding(.bottom, 5)
+        .padding(.bottom, 3)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
     }
 
-    private var recordingControlRow: some View {
-        HStack(spacing: 0) {
-            Color.clear
-                .frame(width: RecordingControlRowLayout.leadingReservedWidth)
-
-            Group {
-                switch controlPolicy {
-                case .real:
-                    Text("To end the dive immediately, press and hold the Digital Crown while out of the water.")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                        .multilineTextAlignment(.leading)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                case .simulated:
-                    Button(role: .destructive, action: onTouchEnd) {
-                        Label("End Dive", systemImage: "stop.fill")
-                    }
-                    .buttonStyle(CompactDiveEndButtonStyle())
-                    .opacity(showsTouchEndControl ? 1 : 0)
-                    .allowsHitTesting(showsTouchEndControl)
-                    .accessibilityHidden(!showsTouchEndControl)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+    @ViewBuilder
+    private var recordingErrorFooter: some View {
+        if recorder.recordingPersistenceError != nil {
+            Label("Storage retry pending", systemImage: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .frame(maxWidth: .infinity)
         }
-        .frame(
-            minHeight: RecordingControlRowLayout.minimumHeight,
-            idealHeight: 33,
-            maxHeight: RecordingControlRowLayout.maximumHeight
-        )
-    }
-
-    private var recordingFooter: some View {
-        VStack(spacing: 2) {
-            if recorder.recordingPersistenceError != nil {
-                Label("Storage retry pending", systemImage: "externaldrive.badge.exclamationmark")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.danger)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-            }
-
-            DiveDisclaimer(text: String(localized: "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER."))
-        }
-        .frame(maxWidth: .infinity)
     }
 
     private var sensorDisplayLimitMeters: Double {
@@ -285,6 +229,60 @@ struct RecordingInstrumentView: View {
     }
 }
 
+private struct RecordingEndControlFooter: View {
+    let endControl: RecordingEndControl
+    let onEndDive: (() -> Void)?
+
+    var body: some View {
+        switch endControl {
+        case .crownHint:
+            footerHint(
+                String(localized: "To end the dive immediately, press and hold the Digital Crown while out of the water.")
+            )
+        case .demoButton:
+            VStack(spacing: 1) {
+                Button {
+                    onEndDive?()
+                } label: {
+                    Label("End Dive", systemImage: "xmark.circle.fill")
+                }
+                .buttonStyle(CompactRecordingEndButtonStyle())
+
+                footerHint(String(localized: "Use the button to end the demo session."))
+            }
+        case .hidden:
+            EmptyView()
+        }
+    }
+
+    private func footerHint(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.72)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+private struct CompactRecordingEndButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(DiveWatchTheme.danger)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .padding(.horizontal, 10)
+            .frame(minHeight: 28)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(DiveWatchTheme.danger.opacity(configuration.isPressed ? 0.28 : 0.16))
+            )
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+    }
+}
+
 #if DEBUG
 enum RecordingLayoutFixture: String {
     case real
@@ -326,10 +324,9 @@ struct RecordingLayoutFixtureView: View {
         RecordingInstrumentView(
             recorder: recorder,
             plan: plan,
-            controlPolicy: fixture.recordingMode.controlPolicy,
             maximumDepthMeters: fixture == .real ? 6 : nil,
-            showsTouchEndControl: fixture != .real,
-            onTouchEnd: {}
+            endControl: fixture.recordingMode.endControl,
+            onEndDive: nil
         )
         .onAppear {
             recorder.startSession(plan: plan)
@@ -368,7 +365,7 @@ private struct FreeSurfaceReadyInstrument: View {
             Spacer(minLength: 2)
 
             Text(DiveFormatters.duration(sessionTime))
-                .font(DiveWatchTheme.metricFont(size: 44, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -412,14 +409,14 @@ private struct FreeDiveActiveInstrument: View {
             StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
             Text(DiveFormatters.depth(currentDepthMeters))
-                .font(DiveWatchTheme.metricFont(size: 38, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.primary)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.38)
 
             Text(DiveFormatters.duration(activeDiveTime))
-                .font(DiveWatchTheme.metricFont(size: 23, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 27, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.text)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -452,7 +449,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
+        HStack(alignment: .top, spacing: 10) {
             DepthGaugeRail(
                 depthMeters: currentDepthMeters,
                 maxScaleMeters: maxScaleMeters,
@@ -460,7 +457,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
                 targetDepthMeters: targetDepthMeters
             )
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 9) {
                 UnsupportedDepthWarning(
                     currentDepthMeters: currentDepthMeters,
                     sensorDisplayLimitMeters: sensorDisplayLimitMeters
@@ -468,7 +465,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
 
                 content
             }
-            .padding(.top, 24)
+            .padding(.top, 8)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -515,7 +512,7 @@ private struct FreeSurfaceIntervalInstrument: View {
             StatusPill(title: String(localized: "Surface interval"), color: DiveWatchTheme.secondary)
 
             Text(DiveFormatters.duration(surfaceRestTime))
-                .font(DiveWatchTheme.metricFont(size: 42, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 46, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -569,7 +566,7 @@ private struct FreeDiveSummaryInstrument: View {
             StatusPill(title: String(localized: "Summary"), color: DiveWatchTheme.secondary)
 
             Text(DiveFormatters.duration(surfaceRestTime))
-                .font(DiveWatchTheme.metricFont(size: 42, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 46, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.secondary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -621,7 +618,7 @@ private struct ScubaLiveInstrument: View {
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             Text(DiveFormatters.depth(currentDepthMeters))
-                .font(DiveWatchTheme.metricFont(size: 40, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 50, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.primary)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -662,7 +659,7 @@ private struct SafetyStopInstrument: View {
             StatusPill(title: String(localized: "Safety stop"), color: statusColor)
 
             Text(DiveFormatters.duration(safetyStop.remainingSeconds))
-                .font(DiveWatchTheme.metricFont(size: 38, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
                 .foregroundStyle(statusColor)
                 .monospacedDigit()
                 .lineLimit(1)
@@ -714,37 +711,20 @@ private struct LiveInstrumentMetric: View {
         VStack(alignment: .leading, spacing: 2) {
             if !title.isEmpty {
                 Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
             }
 
             Text(value)
-                .font(DiveWatchTheme.metricFont(size: 15, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 18, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.text)
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.48)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-}
-
-private struct CompactDiveEndButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .semibold))
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .foregroundStyle(DiveWatchTheme.danger)
-            .padding(.horizontal, 10)
-            .frame(minWidth: 92, minHeight: 28)
-            .background(
-                Capsule()
-                    .fill(DiveWatchTheme.danger.opacity(configuration.isPressed ? 0.28 : 0.18))
-            )
-            .scaleEffect(configuration.isPressed ? 0.96 : 1)
     }
 }
 

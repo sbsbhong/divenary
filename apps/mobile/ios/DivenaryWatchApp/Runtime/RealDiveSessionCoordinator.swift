@@ -28,6 +28,7 @@ enum RealDivePhase {
 @MainActor
 protocol DiveSessionRecording: AnyObject {
     var elapsedTime: TimeInterval { get }
+    var currentDepth: Double { get }
     var hasCapturedDepthSample: Bool { get }
 
     @discardableResult
@@ -52,6 +53,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let recorder: DiveSessionRecording
     private let water: WaterSubmersionStateReading
     private let actionButtonDonor: DiveActionButtonDonating
+    private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
+    private let surfaceEndDepthMeters = 1.0
 
     init(
         preferredMode: @escaping () -> DiveMode,
@@ -107,8 +110,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     func requestActionButtonEnd() -> Bool {
         guard case .recording = phase,
-              water.latestState == .notSubmerged,
-              recorder.elapsedTime >= 180
+              recorder.elapsedTime >= minimumHardwareEndElapsedSeconds,
+              canEndFromCurrentSurfaceState
         else {
             return false
         }
@@ -189,6 +192,17 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     private func preferredPlan() -> PreDivePlan {
         PreDivePlan(diveMode: preferredMode())
+    }
+
+    private var canEndFromCurrentSurfaceState: Bool {
+        switch water.latestState {
+        case .notSubmerged:
+            return true
+        case .unknown:
+            return recorder.currentDepth <= surfaceEndDepthMeters
+        case .submerged:
+            return false
+        }
     }
 
     private func acquireManualRuntime(source: RealDiveStartSource) -> Bool {

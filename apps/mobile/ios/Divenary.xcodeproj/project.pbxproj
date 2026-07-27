@@ -39,10 +39,24 @@
 		C00000000000000000000003 /* WatchConnectivityModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000003 /* WatchConnectivityModuleBridge.m */; };
 		C00000000000000000000004 /* WatchProfileStorageModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000004 /* WatchProfileStorageModule.swift */; };
 		C00000000000000000000005 /* WatchProfileStorageModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */; };
+		C20000000000000000000002 /* WaterSubmersionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */; };
 		C20000000000000000000004 /* WaterSubmersionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000003 /* WaterSubmersionCoordinator.swift */; };
+		C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */; };
+		C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000003 /* DiveRuntimeSessionController.swift */; };
 		C3413FC7FF3D843EBB171978 /* DiveSessionRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = F0BF0DB4ED7C81D414F61DB5 /* DiveSessionRecorder.swift */; };
+		C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */; };
+		C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000003 /* RealDiveSessionCoordinator.swift */; };
+		C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000001 /* DiveActionButtonIntentTests.swift */; };
+		C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003 /* DiveActionButtonIntents.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
+		D60000000000000000000001 /* DiveAppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002 /* DiveAppServices.swift */; };
+		D60000000000000000000003 /* DivenaryWatchApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */; };
+		D60000000000000000000005 /* RealRecordingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000006 /* RealRecordingFlowView.swift */; };
+		D60000000000000000000007 /* SimulatedRecordingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000008 /* SimulatedRecordingFlowView.swift */; };
+		D70000000000000000000002 /* DisplayAscentRateEstimatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */; };
+		D70000000000000000000003 /* DisplayAscentRateEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000004 /* DisplayAscentRateEstimator.swift */; };
+		D80000000000000000000002 /* DiveSessionRecorderAscentRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */; };
 		D905DC1DE35C97E43DD60078 /* DivenaryWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 6359F0F795514043D38F67FB /* DivenaryWatchApp.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		E00000000000000000000001 /* ReverseGeocoderModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000001 /* ReverseGeocoderModule.swift */; };
 		E00000000000000000000002 /* ReverseGeocoderModuleBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */; };
@@ -58,20 +72,6 @@
 		FA100000000000000000000A /* ScubaDiveEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000A /* ScubaDiveEngine.swift */; };
 		FA100000000000000000000B /* OneHertzProfileSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */; };
 		FA100000000000000000000C /* DiveProfileArtifactStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */; };
-		C20000000000000000000002 /* WaterSubmersionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */; };
-		C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */; };
-		C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C30000000000000000000003 /* DiveRuntimeSessionController.swift */; };
-		C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */; };
-		C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000003 /* RealDiveSessionCoordinator.swift */; };
-		C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000001 /* DiveActionButtonIntentTests.swift */; };
-		C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003 /* DiveActionButtonIntents.swift */; };
-		D60000000000000000000001 /* DiveAppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002 /* DiveAppServices.swift */; };
-		D60000000000000000000003 /* DivenaryWatchApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */; };
-		D60000000000000000000005 /* RealRecordingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000006 /* RealRecordingFlowView.swift */; };
-		D60000000000000000000007 /* SimulatedRecordingFlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000008 /* SimulatedRecordingFlowView.swift */; };
-		D70000000000000000000003 /* DisplayAscentRateEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000004 /* DisplayAscentRateEstimator.swift */; };
-		D70000000000000000000002 /* DisplayAscentRateEstimatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */; };
-		D80000000000000000000002 /* DiveSessionRecorderAscentRateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */; };
 		FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */; };
 /* End PBXBuildFile section */
 
@@ -142,12 +142,27 @@
 		B20000000000000000000002 /* DepthSensorAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorAvailability.swift; sourceTree = "<group>"; };
 		B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthAutoLaunchAuthorization.swift; sourceTree = "<group>"; };
 		B20000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaterSubmersionCoordinatorTests.swift; sourceTree = "<group>"; };
+		C20000000000000000000003 /* WaterSubmersionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaterSubmersionCoordinator.swift; sourceTree = "<group>"; };
+		C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionControllerTests.swift; sourceTree = "<group>"; };
+		C30000000000000000000003 /* DiveRuntimeSessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionController.swift; sourceTree = "<group>"; };
+		C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinatorTests.swift; sourceTree = "<group>"; };
+		C40000000000000000000003 /* RealDiveSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinator.swift; sourceTree = "<group>"; };
+		C50000000000000000000001 /* DiveActionButtonIntentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntentTests.swift; sourceTree = "<group>"; };
+		C50000000000000000000003 /* DiveActionButtonIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntents.swift; sourceTree = "<group>"; };
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = Divenary/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = Divenary/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = Divenary/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
 		D00000000000000000000004 /* WatchProfileStorageModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchProfileStorageModule.swift; path = Divenary/WatchProfileStorageModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000005 /* WatchProfileStorageModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchProfileStorageModuleBridge.m; path = Divenary/WatchProfileStorageModuleBridge.m; sourceTree = "<group>"; };
 		D5B5388708193690CDCF20BB /* DiveSessionStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionStore.swift; sourceTree = "<group>"; };
+		D60000000000000000000002 /* DiveAppServices.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveAppServices.swift; sourceTree = "<group>"; };
+		D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DivenaryWatchApplicationDelegate.swift; sourceTree = "<group>"; };
+		D60000000000000000000006 /* RealRecordingFlowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealRecordingFlowView.swift; sourceTree = "<group>"; };
+		D60000000000000000000008 /* SimulatedRecordingFlowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SimulatedRecordingFlowView.swift; sourceTree = "<group>"; };
+		D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimatorTests.swift; sourceTree = "<group>"; };
+		D70000000000000000000004 /* DisplayAscentRateEstimator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimator.swift; sourceTree = "<group>"; };
+		D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecorderAscentRateTests.swift; sourceTree = "<group>"; };
 		E10000000000000000000001 /* ReverseGeocoderModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ReverseGeocoderModule.swift; path = Divenary/ReverseGeocoderModule.swift; sourceTree = "<group>"; };
 		E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ReverseGeocoderModuleBridge.m; path = Divenary/ReverseGeocoderModuleBridge.m; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
@@ -164,21 +179,6 @@
 		FA200000000000000000000A /* ScubaDiveEngine.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScubaDiveEngine.swift; sourceTree = "<group>"; };
 		FA200000000000000000000B /* OneHertzProfileSamplerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSamplerTests.swift; sourceTree = "<group>"; };
 		FA200000000000000000000C /* DiveProfileArtifactStoreTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStoreTests.swift; sourceTree = "<group>"; };
-		C20000000000000000000001 /* WaterSubmersionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaterSubmersionCoordinatorTests.swift; sourceTree = "<group>"; };
-		C20000000000000000000003 /* WaterSubmersionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WaterSubmersionCoordinator.swift; sourceTree = "<group>"; };
-		C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionControllerTests.swift; sourceTree = "<group>"; };
-		C30000000000000000000003 /* DiveRuntimeSessionController.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveRuntimeSessionController.swift; sourceTree = "<group>"; };
-		C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinatorTests.swift; sourceTree = "<group>"; };
-		C40000000000000000000003 /* RealDiveSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinator.swift; sourceTree = "<group>"; };
-		C50000000000000000000001 /* DiveActionButtonIntentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntentTests.swift; sourceTree = "<group>"; };
-		C50000000000000000000003 /* DiveActionButtonIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntents.swift; sourceTree = "<group>"; };
-		D60000000000000000000002 /* DiveAppServices.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveAppServices.swift; sourceTree = "<group>"; };
-		D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DivenaryWatchApplicationDelegate.swift; sourceTree = "<group>"; };
-		D60000000000000000000006 /* RealRecordingFlowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealRecordingFlowView.swift; sourceTree = "<group>"; };
-		D60000000000000000000008 /* SimulatedRecordingFlowView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SimulatedRecordingFlowView.swift; sourceTree = "<group>"; };
-		D70000000000000000000001 /* DisplayAscentRateEstimatorTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimatorTests.swift; sourceTree = "<group>"; };
-		D70000000000000000000004 /* DisplayAscentRateEstimator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DisplayAscentRateEstimator.swift; sourceTree = "<group>"; };
-		D80000000000000000000001 /* DiveSessionRecorderAscentRateTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveSessionRecorderAscentRateTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -952,8 +952,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = CXSWPUW5XA;
@@ -982,8 +982,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_STYLE = Automatic;
 				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "";
 				DEVELOPMENT_TEAM = CXSWPUW5XA;

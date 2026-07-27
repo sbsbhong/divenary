@@ -180,32 +180,6 @@ final class DepthSensorAvailabilityTests: XCTestCase {
     }
 }
 
-final class SurfaceEndDiveGateTests: XCTestCase {
-    func testEndButtonStaysHiddenUntilSurfaceDepthIsStableForThreeSeconds() {
-        var gate = SurfaceEndDiveGate()
-
-        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(0))
-        XCTAssertFalse(gate.isVisible)
-
-        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(2.9))
-        XCTAssertFalse(gate.isVisible)
-
-        gate.update(depthMeters: 1.0, at: EngineTestFixtures.date(3))
-        XCTAssertTrue(gate.isVisible)
-    }
-
-    func testEndButtonHidesWhenDepthReturnsPastHysteresis() {
-        var gate = SurfaceEndDiveGate()
-
-        gate.update(depthMeters: 0.8, at: EngineTestFixtures.date(0))
-        gate.update(depthMeters: 0.8, at: EngineTestFixtures.date(3))
-        XCTAssertTrue(gate.isVisible)
-
-        gate.update(depthMeters: 1.2, at: EngineTestFixtures.date(4))
-        XCTAssertFalse(gate.isVisible)
-    }
-}
-
 @MainActor
 final class WatchRecordingModeTests: XCTestCase {
     func testDebugTestUsesDemoCaptureModeForExistingSyncContract() {
@@ -222,6 +196,12 @@ final class WatchRecordingModeTests: XCTestCase {
             XCTAssertTrue(mode.makeSimulatedSensorProvider() is DemoDepthSensorProvider)
             XCTAssertTrue(mode.controlPolicy.usesCrownDepthControl)
         }
+    }
+
+    func testRecordingEndControlsMatchSessionType() {
+        XCTAssertEqual(WatchRecordingMode.real.endControl, .crownHint)
+        XCTAssertEqual(WatchRecordingMode.demo.endControl, .demoButton)
+        XCTAssertEqual(WatchRecordingMode.debugTest.endControl, .hidden)
     }
 
     func testDebugTestAddsDurableTestProvenanceWithoutChangingTheSyncContract() {
@@ -241,14 +221,8 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertTrue(RealDivePhase.persistenceError(source: .manual).presentsRecordingFlow)
     }
 
-    func testControlRowReservesRailColumnAndStaysWithinBoundedHeight() {
-        XCTAssertEqual(DepthGaugeRail.layoutWidth, 62)
-        XCTAssertEqual(
-            RecordingControlRowLayout.leadingReservedWidth,
-            DepthGaugeRail.layoutWidth + 9
-        )
-        XCTAssertEqual(RecordingControlRowLayout.minimumHeight, 30)
-        XCTAssertEqual(RecordingControlRowLayout.maximumHeight, 36)
+    func testDepthGaugeRailUsesReadableSessionLayoutWidth() {
+        XCTAssertEqual(DepthGaugeRail.layoutWidth, 72)
     }
 
     func testSensorDisplayLimitUsesSignedMaximumWithoutExceedingProductBoundary() {
@@ -297,13 +271,22 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         let (controller, recorder, _) = makeSystem(session: session)
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
 
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
 
         XCTAssertEqual(recorder.stopCount, 1)
         XCTAssertEqual(recorder.cancelCount, 0)
         XCTAssertEqual(recorder.startCount, 1)
         assertSummary(controller.phase, sessionID: session.id)
+    }
+
+    func testFinishRecordingRejectsEndWhenNotRecording() {
+        let (controller, recorder, _) = makeSystem()
+
+        XCTAssertFalse(controller.finishRecording())
+
+        XCTAssertEqual(recorder.stopCount, 0)
+        assertReady(controller.phase)
     }
 
     func testSummaryBackNavigationStaysManagedUntilDiscardCleanupSucceeds() {
@@ -316,7 +299,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         XCTAssertFalse(controller.hidesSystemBackButton)
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
         XCTAssertTrue(controller.hidesSystemBackButton)
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
         XCTAssertTrue(controller.hidesSystemBackButton)
 
         controller.handleFlowDisappearance()
@@ -368,7 +351,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
         let (controller, recorder, _) = makeSystem(session: session)
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         controller.handleFlowDisappearance()
 
@@ -384,7 +367,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
             cancelResults: [false, true]
         )
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         controller.handleFlowDisappearance()
 
@@ -421,7 +404,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
         let (controller, recorder, store) = makeSystem(session: session)
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         XCTAssertTrue(controller.saveSummary(session))
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
@@ -436,7 +419,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
         let (controller, recorder, _) = makeSystem(session: session)
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         XCTAssertTrue(controller.discardSummary())
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
@@ -453,7 +436,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
             saveResults: [false, true]
         )
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         XCTAssertFalse(controller.saveSummary(session))
         assertSummary(controller.phase, sessionID: session.id)
@@ -475,7 +458,7 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
             cancelResults: [false, true]
         )
         controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
-        controller.finishRecording()
+        XCTAssertTrue(controller.finishRecording())
 
         XCTAssertFalse(controller.discardSummary())
         XCTAssertEqual(recorder.cancelCount, 1)
@@ -493,6 +476,16 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
     ) {
         guard case .recording = phase else {
             return XCTFail("Expected recording phase", file: file, line: line)
+        }
+    }
+
+    private func assertReady(
+        _ phase: SimulatedRecordingLifecyclePhase,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case .ready = phase else {
+            return XCTFail("Expected ready phase", file: file, line: line)
         }
     }
 

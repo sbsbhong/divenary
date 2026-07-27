@@ -8,6 +8,17 @@ Simulator XCTest와 `yarn watch:build`는 코드 통합의 근거일 뿐 실제 
 
 15cm bag/tank test는 수동으로 시작한 real session에서 얕은 sample이 들어오는지만 검증한다. 약 `0.1 m` 표시는 `When Submerged` automatic launch 통과가 아니다. Xcode Easy Submersion 결과는 simulator integration evidence로만 기록한다. physical automatic launch는 지원 hardware에서 안전하게 통제된 `>1 m` 환경으로 별도 검증한다.
 
+## 실측 기록
+
+### 2026-07-19: 15cm 비닐봉지 테스트
+
+- 확인: 실제 수심과 수온 sample 수신.
+- 확인: 수심 감지 시 Divenary 자동 실행.
+- 미확인: `submergedDeep` 진입과 watchOS 자동 `WKExtendedRuntimeSession` 전달. 테스트 수심이 1m 미만이므로 자동 다이빙 세션이 시작되지 않은 결과는 실패로 판정하지 않는다.
+- `D4b`: **NOT RUN**. 수영장 등 안전하게 통제된 `>1 m` 환경에서 `handle(_:)`, `systemAutoLaunch`, local session ID를 확인한다.
+- `D5`: **NOT RUN**. D4b 통과 후 preferred mode를 스쿠버와 프리다이빙으로 각각 바꾸어 자동 기록 mode를 확인한다.
+- 미기록 evidence: build/version, Watch model/watchOS, authorization status, local session ID, 사진 또는 screen recording. 다음 실행 때 사전 기록 항목과 함께 보완한다.
+
 ## 사전 기록
 
 각 실행에 다음을 남긴다.

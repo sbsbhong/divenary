@@ -5,6 +5,8 @@ struct HomeView: View {
     @ObservedObject var water: WaterSubmersionCoordinator
     @ObservedObject var realRecorder: DiveSessionRecorder
     @ObservedObject var realCoordinator: RealDiveSessionCoordinator
+    let actionButtonBridge: DiveActionButtonBridge
+    let actionButtonDonor: DiveActionButtonDonating
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
     @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
@@ -13,11 +15,12 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    HomeHeader(
-                        sessionCount: store.sessions.count,
-                        sensorReadiness: sensorAvailability.readiness,
-                        autoLaunchStatus: autoLaunchAuthorization.statusText
-                    )
+                    if sensorAvailability.readiness != .ready {
+                        HomeSensorError(
+                            sensorReadiness: sensorAvailability.readiness,
+                            autoLaunchStatus: autoLaunchAuthorization.statusText
+                        )
+                    }
 
                     Button {
                         startRealDive(mode: .freedive)
@@ -59,7 +62,9 @@ struct HomeView: View {
                         SimulatedRecordingFlowView(
                             store: store,
                             plan: explicitStartPlan(for: .scuba),
-                            recordingMode: .demo
+                            recordingMode: .demo,
+                            actionButtonBridge: actionButtonBridge,
+                            actionButtonDonor: actionButtonDonor
                         )
                     } label: {
                         StartSessionCard(
@@ -77,7 +82,9 @@ struct HomeView: View {
                             SimulatedRecordingFlowView(
                                 store: store,
                                 plan: explicitStartPlan(for: .freedive),
-                                recordingMode: .debugTest
+                                recordingMode: .debugTest,
+                                actionButtonBridge: actionButtonBridge,
+                                actionButtonDonor: actionButtonDonor
                             )
                         } label: {
                             StartSessionCard(
@@ -93,7 +100,9 @@ struct HomeView: View {
                             SimulatedRecordingFlowView(
                                 store: store,
                                 plan: explicitStartPlan(for: .scuba),
-                                recordingMode: .debugTest
+                                recordingMode: .debugTest,
+                                actionButtonBridge: actionButtonBridge,
+                                actionButtonDonor: actionButtonDonor
                             )
                         } label: {
                             StartSessionCard(
@@ -125,7 +134,7 @@ struct HomeView: View {
                     }
                     .buttonStyle(DiveActionButtonStyle(kind: .secondary))
 
-                    DiveDisclaimer()
+                    HomeSafetyFooter()
                 }
                 .padding(.horizontal, DiveWatchTheme.edgeMargin)
                 .padding(.vertical, 10)
@@ -290,31 +299,39 @@ private struct PlannedDiveMetric: View {
     }
 }
 
-private struct HomeHeader: View {
-    let sessionCount: Int
+private struct HomeSensorError: View {
     let sensorReadiness: DepthSensorReadiness
     let autoLaunchStatus: String
 
     var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.primary) {
+        InstrumentCard(accent: DiveWatchTheme.danger) {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    StatusPill(
-                        title: sensorReadiness.statusTitle,
-                        color: sensorReadiness == .ready ? DiveWatchTheme.secondary : DiveWatchTheme.danger
-                    )
-                    StatusPill(title: "\(sessionCount)", color: DiveWatchTheme.primary)
-                }
+                StatusPill(
+                    title: sensorReadiness.statusTitle,
+                    color: DiveWatchTheme.danger
+                )
 
-                if sensorReadiness == .ready {
-                    Text(autoLaunchStatus)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.68)
-                }
+                Text(autoLaunchStatus)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.68)
             }
         }
+    }
+}
+
+private struct HomeSafetyFooter: View {
+    var body: some View {
+        Text(String(localized: "Recreational capture and review. Not a certified dive computer."))
+            .font(.system(size: 8, weight: .medium))
+            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.72))
+            .multilineTextAlignment(.center)
+            .lineLimit(2)
+            .minimumScaleFactor(0.72)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 2)
+            .padding(.horizontal, 8)
     }
 }
 
@@ -322,7 +339,7 @@ private extension DepthSensorReadiness {
     var statusTitle: String {
         switch self {
         case .ready:
-            return String(localized: "Sensor ready")
+            return ""
         case .simulatorRequiresRealWatch:
             return String(localized: "Real Watch required")
         case .unsupportedDevice:

@@ -1,4 +1,5 @@
 import AppIntents
+import Foundation
 import OSLog
 
 @MainActor
@@ -12,7 +13,11 @@ extension RealDiveSessionCoordinator: RealDiveActionControlling {}
 
 @MainActor
 final class DiveActionButtonBridge: Sendable {
+    typealias EndOverride = @MainActor () -> Bool
+
     private let controller: any RealDiveActionControlling
+    private var endOverrideID: UUID?
+    private var endOverride: EndOverride?
 
     init(controller: some RealDiveActionControlling) {
         self.controller = controller
@@ -24,7 +29,25 @@ final class DiveActionButtonBridge: Sendable {
     }
 
     func requestEndDive() -> Bool {
-        controller.requestActionButtonEnd()
+        if let endOverride {
+            return endOverride()
+        }
+        return controller.requestActionButtonEnd()
+    }
+
+    func installEndOverride(_ handler: @escaping EndOverride) -> UUID {
+        let token = UUID()
+        endOverrideID = token
+        endOverride = handler
+        return token
+    }
+
+    func removeEndOverride(_ token: UUID) {
+        guard endOverrideID == token else {
+            return
+        }
+        endOverrideID = nil
+        endOverride = nil
     }
 }
 

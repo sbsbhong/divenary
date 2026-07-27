@@ -19,7 +19,9 @@ struct SessionListView: View {
                     }
                 }
 
-                DiveDisclaimer(text: String(localized: "LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT."))
+                DiveDisclaimer(
+                    text: String(localized: "This app is a log review aid, not certified dive equipment.")
+                )
             }
             .padding(.horizontal, DiveWatchTheme.edgeMargin)
             .padding(.vertical, 10)

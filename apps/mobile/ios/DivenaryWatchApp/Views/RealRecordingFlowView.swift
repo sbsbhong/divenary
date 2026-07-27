@@ -15,10 +15,9 @@ struct RealRecordingFlowView: View {
                 RecordingInstrumentView(
                     recorder: recorder,
                     plan: PreDivePlan(diveMode: store.preferredDiveMode),
-                    controlPolicy: .real,
                     maximumDepthMeters: water.maximumDepthMeters,
-                    showsTouchEndControl: false,
-                    onTouchEnd: {}
+                    endControl: WatchRecordingMode.real.endControl,
+                    onEndDive: nil
                 )
             case .summary(let session):
                 SummaryView(

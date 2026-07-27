@@ -4,7 +4,7 @@ import { join } from 'node:path';
 const root = process.cwd();
 const projectPath = join(root, 'ios/Divenary.xcodeproj/project.pbxproj');
 const stringCatalogPath = join(root, 'ios/DivenaryWatchApp/Localizable.xcstrings');
-const source = [
+const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/DepthGaugeRail.swift',
   'ios/DivenaryWatchApp/Views/DiveFormatters.swift',
   'ios/DivenaryWatchApp/Views/RecordingView.swift',
@@ -12,9 +12,23 @@ const source = [
   'ios/DivenaryWatchApp/Views/SessionDetailView.swift',
   'ios/DivenaryWatchApp/Views/SessionListView.swift',
   'ios/DivenaryWatchApp/Views/HomeView.swift',
-]
+];
+const source = watchSourceFiles
   .map(file => readFileSync(join(root, file), 'utf8'))
   .join('\n');
+const recordingViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/RecordingView.swift'),
+  'utf8',
+);
+const sessionListViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/SessionListView.swift'),
+  'utf8',
+);
+const sessionDetailViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/SessionDetailView.swift'),
+  'utf8',
+);
+const savedSessionSource = `${sessionListViewSource}\n${sessionDetailViewSource}`;
 const project = readFileSync(projectPath, 'utf8');
 const stringCatalogSource = existsSync(stringCatalogPath) ? readFileSync(stringCatalogPath, 'utf8') : '';
 const stringCatalog = stringCatalogSource ? JSON.parse(stringCatalogSource) : undefined;
@@ -39,6 +53,19 @@ const checks = [
   {
     name: 'recording keeps one prominent live metric',
     pattern: /MetricCard\(\s*title:\s*"Bottom Time"[\s\S]*prominent:\s*true/,
+  },
+  {
+    name: 'recording footer guidance stays readable at 9pt',
+    failed: !/private func footerHint[\s\S]*\.font\(\.system\(size: 9, weight: \.medium\)\)/.test(
+      recordingViewSource,
+    ),
+  },
+  {
+    name: 'saved-session disclaimer uses sentence-style copy',
+    failed:
+      !savedSessionSource.includes(
+        'This app is a log review aid, not certified dive equipment.',
+      ) || savedSessionSource.includes('LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT.'),
   },
   {
     name: 'ascent copy stays reminder/review-only, not an instruction',

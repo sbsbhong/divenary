@@ -247,6 +247,7 @@
       }
     },
     "ASSISTANT ONLY. FOLLOW TRAINING AND A CERTIFIED DIVE COMPUTER." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1191,18 +1192,18 @@
         }
       }
     },
-    "LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT." : {
+    "This app is a log review aid, not certified dive equipment." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT."
+            "value" : "This app is a log review aid, not certified dive equipment."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "로그 리뷰 전용. 인증된 장비가 아닌 보조 도구."
+            "value" : "이 앱은 로그 리뷰를 위한 보조 도구이며, 인증된 다이빙 장비가 아닙니다."
           }
         }
       }
@@ -1774,7 +1775,6 @@
       }
     },
     "Recreational capture and review. Not a certified dive computer." : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1873,6 +1873,22 @@
         }
       }
     },
+    "Retry" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "재시도"
+          }
+        }
+      }
+    },
     "REVIEW" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1886,22 +1902,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "리뷰"
-          }
-        }
-      }
-    },
-    "Retry" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Retry"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "재시도"
           }
         }
       }
@@ -2132,6 +2132,7 @@
       }
     },
     "Sensor ready" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2841,6 +2842,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "계획 사용"
+          }
+        }
+      }
+    },
+    "Use the button to end the demo session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Use the button to end the demo session."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데모 세션은 버튼으로 종료하세요."
           }
         }
       }

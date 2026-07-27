@@ -1,25 +1,25 @@
 import SwiftUI
 
 struct DepthGaugeRail: View {
-    static let layoutWidth: CGFloat = 62
+    static let layoutWidth: CGFloat = 72
 
     let depthMeters: Double
     let maxScaleMeters: Double
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
 
-    private let railX: CGFloat = 32
-    private let railWidth: CGFloat = 20
+    private let railX: CGFloat = 40
+    private let railWidth: CGFloat = 24
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             GeometryReader { proxy in
                 let height = proxy.size.height
 
-                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .fill(deepBlueGradient)
                     .overlay(
-                        RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .stroke(Color.white.opacity(0.18), lineWidth: 1)
                     )
                     .frame(width: railWidth, height: height)
@@ -86,17 +86,17 @@ struct DepthGaugeRail: View {
 
         return HStack(spacing: 3) {
             Text(tickLabel(for: depth))
-                .font(.system(size: 8, weight: .semibold, design: .monospaced))
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: 20, alignment: .trailing)
+                .frame(width: 25, alignment: .trailing)
 
             Rectangle()
                 .fill(Color.white.opacity(0.55))
-                .frame(width: 6, height: 1)
+                .frame(width: 8, height: 1.4)
         }
-        .position(x: 14, y: y)
+        .position(x: 17, y: y)
     }
 
     private func tickLabel(for depth: Double) -> String {
@@ -139,15 +139,15 @@ struct DepthGaugeRail: View {
     private func currentDepthMarker(height: CGFloat) -> some View {
         HStack(spacing: -1) {
             Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .bold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.white)
 
             Circle()
                 .fill(Color.white)
-                .frame(width: 8, height: 8)
+                .frame(width: 10, height: 10)
                 .overlay(
                     Circle()
-                        .stroke(DiveWatchTheme.primary, lineWidth: 2)
+                        .stroke(DiveWatchTheme.primary, lineWidth: 2.2)
                 )
         }
         .shadow(color: Color.black.opacity(0.35), radius: 2, x: 0, y: 1)

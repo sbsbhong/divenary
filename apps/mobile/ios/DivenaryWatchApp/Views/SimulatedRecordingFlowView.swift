@@ -83,14 +83,16 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         return true
     }
 
-    func finishRecording() {
+    @discardableResult
+    func finishRecording() -> Bool {
         guard case .recording = phase,
               let session = recorder.stopSession()
         else {
-            return
+            return false
         }
 
         phase = .summary(session)
+        return true
     }
 
     @discardableResult
@@ -169,17 +171,23 @@ struct SimulatedRecordingFlowView: View {
     @ObservedObject var store: DiveSessionStore
     let plan: PreDivePlan
     let recordingMode: WatchRecordingMode
+    let actionButtonBridge: DiveActionButtonBridge
+    let actionButtonDonor: DiveActionButtonDonating
 
     @StateObject private var recorder: DiveSessionRecorder
     @StateObject private var lifecycle: SimulatedRecordingLifecycleController
     @State private var controlledDepthMeters: Double = 0
-    @State private var surfaceEndGate = SurfaceEndDiveGate()
+    @State private var actionButtonEndOverrideToken: UUID?
     @FocusState private var crownDepthControlFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
-    private let surfaceGateTimer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-
-    init(store: DiveSessionStore, plan: PreDivePlan, recordingMode: WatchRecordingMode) {
+    init(
+        store: DiveSessionStore,
+        plan: PreDivePlan,
+        recordingMode: WatchRecordingMode,
+        actionButtonBridge: DiveActionButtonBridge,
+        actionButtonDonor: DiveActionButtonDonating
+    ) {
         precondition(recordingMode != .real, "Real recording must use the app-scoped service graph")
         guard let sensorProvider = recordingMode.makeSimulatedSensorProvider() else {
             preconditionFailure("Simulated recording requires a demo depth provider")
@@ -188,6 +196,8 @@ struct SimulatedRecordingFlowView: View {
         self.store = store
         self.plan = plan
         self.recordingMode = recordingMode
+        self.actionButtonBridge = actionButtonBridge
+        self.actionButtonDonor = actionButtonDonor
         let recorder = DiveSessionRecorder(
             sensorProvider: sensorProvider,
             captureMode: recordingMode.captureMode
@@ -212,17 +222,15 @@ struct SimulatedRecordingFlowView: View {
                 return
             }
             recorder.setDemoDepthMeters(controlledDepthMeters)
+            installActionButtonEndOverride()
             crownDepthControlFocused = true
         }
         .onDisappear {
+            removeActionButtonEndOverride()
             lifecycle.handleFlowDisappearance()
         }
         .onChange(of: recorder.currentDepth) { _, _ in
-            updateSurfaceEndGate()
-        }
-        .onReceive(surfaceGateTimer) { timestamp in
-            guard case .recording = lifecycle.phase else { return }
-            updateSurfaceEndGate(at: timestamp)
+            crownDepthControlFocused = true
         }
     }
 
@@ -250,10 +258,11 @@ struct SimulatedRecordingFlowView: View {
         RecordingInstrumentView(
             recorder: recorder,
             plan: preparedPlan,
-            controlPolicy: recordingMode.controlPolicy,
             maximumDepthMeters: nil,
-            showsTouchEndControl: surfaceEndGate.isVisible,
-            onTouchEnd: endDive
+            endControl: recordingMode.endControl,
+            onEndDive: {
+                _ = endDive()
+            }
         )
         .focusable(recordingMode.controlPolicy.usesCrownDepthControl)
         .focused($crownDepthControlFocused)
@@ -291,6 +300,7 @@ struct SimulatedRecordingFlowView: View {
                 Button("Retry") {
                     if lifecycle.retryStart(plan: preparedPlan) {
                         recorder.setDemoDepthMeters(controlledDepthMeters)
+                        installActionButtonEndOverride()
                         crownDepthControlFocused = true
                     }
                 }
@@ -331,21 +341,38 @@ struct SimulatedRecordingFlowView: View {
         .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
-    private func endDive() {
+    @discardableResult
+    private func endDive() -> Bool {
         lifecycle.finishRecording()
     }
 
     private func save(_ session: DiveSessionRecord) {
         guard lifecycle.saveSummary(session) else { return }
+        removeActionButtonEndOverride()
         dismiss()
     }
 
     private func discard() {
         guard lifecycle.discardSummary() else { return }
+        removeActionButtonEndOverride()
         dismiss()
     }
 
-    private func updateSurfaceEndGate(at timestamp: Date = Date()) {
-        surfaceEndGate.update(depthMeters: recorder.currentDepth, at: timestamp)
+    private func installActionButtonEndOverride() {
+        guard actionButtonEndOverrideToken == nil else {
+            return
+        }
+        actionButtonEndOverrideToken = actionButtonBridge.installEndOverride {
+            endDive()
+        }
+        actionButtonDonor.donateEndAction()
+    }
+
+    private func removeActionButtonEndOverride() {
+        guard let actionButtonEndOverrideToken else {
+            return
+        }
+        actionButtonBridge.removeEndOverride(actionButtonEndOverrideToken)
+        self.actionButtonEndOverrideToken = nil
     }
 }

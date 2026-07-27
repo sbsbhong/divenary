@@ -353,6 +353,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.requestActionButtonEnd())
 
         water.latestState = .unknown
+        recorder.currentDepth = 4
         XCTAssertFalse(coordinator.requestActionButtonEnd())
 
         water.latestState = .notSubmerged
@@ -360,6 +361,21 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.requestActionButtonEnd())
 
         XCTAssertEqual(runtime.invalidateCallCount, 0)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+        assertRecording(coordinator, source: .actionButton)
+    }
+
+    func testActionButtonEndAllowsLongSurfaceDepthWhenWaterStateIsUnknown() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 600)
+        let water = FakeWaterStateReader(latestState: .unknown)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water)
+        coordinator.startFromActionButton()
+
+        XCTAssertTrue(coordinator.requestActionButtonEnd())
+
+        XCTAssertEqual(runtime.invalidateCallCount, 1)
         XCTAssertEqual(recorder.stopCallCount, 0)
         assertRecording(coordinator, source: .actionButton)
     }
@@ -859,6 +875,7 @@ private final class CoordinatorRuntimeAdapter: DiveRuntimeSessionAdapter {
 @MainActor
 private final class FakeDiveRecorder: DiveSessionRecording {
     var elapsedTime: TimeInterval
+    var currentDepth: Double
     var hasCapturedDepthSample: Bool
 
     private let calls: LifecycleCallLog
@@ -873,6 +890,7 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     init(
         calls: LifecycleCallLog,
         elapsedTime: TimeInterval = 0,
+        currentDepth: Double = 0,
         hasCapturedDepthSample: Bool = false,
         stopResult: DiveSessionRecord? = DiveSessionRecord.largeDebugFixture(sampleCount: 1),
         startResults: [Bool] = [true],
@@ -880,6 +898,7 @@ private final class FakeDiveRecorder: DiveSessionRecording {
     ) {
         self.calls = calls
         self.elapsedTime = elapsedTime
+        self.currentDepth = currentDepth
         self.hasCapturedDepthSample = hasCapturedDepthSample
         self.stopResult = stopResult
         self.startResults = startResults

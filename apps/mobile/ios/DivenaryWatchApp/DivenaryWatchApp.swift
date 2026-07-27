@@ -46,7 +46,9 @@ struct DivenaryWatchApp: App {
             store: sessionStore,
             water: water,
             realRecorder: realRecorder,
-            realCoordinator: realCoordinator
+            realCoordinator: realCoordinator,
+            actionButtonBridge: DiveAppServices.shared.actionButtonBridge,
+            actionButtonDonor: DiveAppServices.shared.actionButtonDonor
         )
     }
 }
