@@ -19,6 +19,10 @@ import type {
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
 import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 import {
   cloneDiveLogEntry,
   compareDiveLogEntries,
@@ -173,6 +177,109 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         throw error;
       }
       return 'deleted';
+    });
+  }
+
+  async deleteManyIf(
+    requests: readonly ConditionalDeleteRequest<DiveLogEntry>[],
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteManyResult> {
+    return this.enqueueMutation(async () => {
+      options?.assertCanCommit?.();
+      const entries = await this.readEntries();
+      options?.assertCanCommit?.();
+      const entriesByLocalId = new Map(
+        entries.map(current => [current.localId, current]),
+      );
+      const deletedLocalIds = new Set<string>();
+      const results = new Map<string, ConditionalDeleteResult>();
+
+      for (const request of requests) {
+        const current = entriesByLocalId.get(request.localId);
+        if (current === undefined || deletedLocalIds.has(request.localId)) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(cloneDiveLogEntry(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          deletedLocalIds.add(request.localId);
+          results.set(request.localId, 'deleted');
+        }
+      }
+
+      if (deletedLocalIds.size === 0) {
+        options?.assertCanCommit?.();
+        return results;
+      }
+
+      const nextEntries = entries.filter(
+        current => !deletedLocalIds.has(current.localId),
+      );
+      const profileKeysToRemove =
+        options?.retainProfileAfterDelete === true
+          ? []
+          : Array.from(
+              new Set(
+                entries
+                  .filter(current => deletedLocalIds.has(current.localId))
+                  .map(current => current.watchCapture?.profile?.storageKey)
+                  .filter((key): key is string => key !== undefined),
+              ),
+            ).filter(key => !referencesProfile(nextEntries, key));
+      const needsRollbackSnapshot =
+        options?.assertCanCommit !== undefined || profileKeysToRemove.length > 0;
+      const metadataSnapshot = needsRollbackSnapshot
+        ? await this.metadataStorage.getString(this.storageKey)
+        : undefined;
+      const profileSnapshots: ProfileWriteSnapshot[] = [];
+      for (const key of profileKeysToRemove) {
+        options?.assertCanCommit?.();
+        profileSnapshots.push({
+          key,
+          previous: await this.profileStorage.read(key),
+        });
+      }
+
+      let metadataWriteAttempted = false;
+      const removedProfileKeys: string[] = [];
+      try {
+        options?.assertCanCommit?.();
+        metadataWriteAttempted = true;
+        await this.writeEntries(nextEntries);
+        options?.assertCanCommit?.();
+        for (const key of profileKeysToRemove) {
+          await this.profileStorage.remove(key);
+          removedProfileKeys.push(key);
+          options?.assertCanCommit?.();
+        }
+      } catch (error) {
+        const writeCommitted =
+          error instanceof PersistentJsonCommittedWriteError;
+        let rollbackError: unknown;
+        if (!writeCommitted) {
+          for (const key of [...removedProfileKeys].reverse()) {
+            const snapshot = profileSnapshots.find(current => current.key === key);
+            if (snapshot !== undefined) {
+              try {
+                await this.restoreProfileSnapshot(snapshot);
+              } catch (profileError) {
+                rollbackError ??= profileError;
+              }
+            }
+          }
+          if (metadataWriteAttempted && needsRollbackSnapshot) {
+            try {
+              await this.restoreMetadataSnapshot(metadataSnapshot);
+            } catch (metadataError) {
+              rollbackError ??= metadataError;
+            }
+          }
+        }
+        if (rollbackError !== undefined) {
+          throw rollbackError;
+        }
+        throw error;
+      }
+      return results;
     });
   }
 

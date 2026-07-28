@@ -8,6 +8,10 @@ import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lo
 import { mobileStorageKeys } from '../storage/storage-keys';
 import type { DivePlan } from '../types/dive-plan';
 import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 import type { DivePlanRepository } from './dive-plan-repository';
 import { cloneDivePlan, compareDivePlans } from './local-dive-plan-repository';
 
@@ -88,6 +92,38 @@ export class PersistentDivePlanRepository implements DivePlanRepository {
       }
       await this.writePlans(plans.filter(plan => plan.localId !== localId));
       return 'deleted';
+    });
+  }
+
+  async deleteManyIf(
+    requests: readonly ConditionalDeleteRequest<DivePlan>[],
+  ): Promise<ConditionalDeleteManyResult> {
+    return this.enqueueMutation(async () => {
+      const plans = await this.readPlans();
+      const plansByLocalId = new Map(
+        plans.map(current => [current.localId, current]),
+      );
+      const deletedLocalIds = new Set<string>();
+      const results = new Map<string, ConditionalDeleteResult>();
+
+      for (const request of requests) {
+        const current = plansByLocalId.get(request.localId);
+        if (current === undefined || deletedLocalIds.has(request.localId)) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(cloneDivePlan(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          deletedLocalIds.add(request.localId);
+          results.set(request.localId, 'deleted');
+        }
+      }
+
+      if (deletedLocalIds.size > 0) {
+        await this.writePlans(
+          plans.filter(current => !deletedLocalIds.has(current.localId)),
+        );
+      }
+      return results;
     });
   }
 

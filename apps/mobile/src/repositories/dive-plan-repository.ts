@@ -3,6 +3,10 @@ import type {
   ConditionalDeleteResult,
   DeletePredicate,
 } from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 
 export type DivePlanRepository = {
   list(): Promise<DivePlan[]>;
@@ -13,4 +17,7 @@ export type DivePlanRepository = {
     localId: string,
     predicate: DeletePredicate<DivePlan>,
   ): Promise<ConditionalDeleteResult>;
+  deleteManyIf?(
+    requests: readonly ConditionalDeleteRequest<DivePlan>[],
+  ): Promise<ConditionalDeleteManyResult>;
 };

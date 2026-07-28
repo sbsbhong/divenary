@@ -45,6 +45,37 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
   }
 }
 
+class CountingMainEnvelopeStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  mainReads = 0;
+  mainWrites = 0;
+
+  constructor(private readonly mainKey: string) {}
+
+  async getString(key: string): Promise<string | undefined> {
+    if (key === this.mainKey) {
+      this.mainReads += 1;
+    }
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (key === this.mainKey) {
+      this.mainWrites += 1;
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+
+  resetCounts(): void {
+    this.mainReads = 0;
+    this.mainWrites = 0;
+  }
+}
+
 class PausedWriteStore implements PersistentKeyValueStore {
   private readonly delegate = new InMemoryKeyValueStore();
   private shouldPause = false;
@@ -152,6 +183,53 @@ describe('PersistentDivePlanRepository', () => {
     await expect(repository.save(plan({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
 
     expect((await repository.list()).map(currentPlan => currentPlan.localId)).toEqual(['accepted']);
+  });
+
+  it('conditionally deletes many plans with one metadata read and write', async () => {
+    const storage = new CountingMainEnvelopeStore(mobileStorageKeys.planbook);
+    const repository = new PersistentDivePlanRepository({storage, now: () => 350});
+    const plans = Array.from({length: 15}, (_, index) =>
+      plan({localId: `bulk-plan-${index}`, updatedAt: index}),
+    );
+    for (const current of plans) {
+      await repository.save(current);
+    }
+    storage.resetCounts();
+
+    const result = await repository.deleteManyIf?.(
+      plans.map(current => ({
+        localId: current.localId,
+        predicate: stored => stored.updatedAt === current.updatedAt,
+      })),
+    );
+
+    expect(result && [...result.values()]).toEqual(
+      Array.from({length: 15}, () => 'deleted'),
+    );
+    expect(storage.mainWrites).toBe(1);
+    expect(await repository.list()).toEqual([]);
+  });
+
+  it('preserves plans that no longer match a bulk delete snapshot', async () => {
+    const repository = new PersistentDivePlanRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 350,
+    });
+    const exact = plan({localId: 'exact', updatedAt: 100});
+    const changed = plan({localId: 'changed', updatedAt: 200});
+    await repository.save(exact);
+    await repository.save(changed);
+
+    const result = await repository.deleteManyIf?.([
+      {localId: exact.localId, predicate: current => current.updatedAt === 100},
+      {localId: changed.localId, predicate: current => current.updatedAt === 100},
+    ]);
+
+    expect(result?.get('exact')).toBe('deleted');
+    expect(result?.get('changed')).toBe('conditionFailed');
+    expect((await repository.list()).map(value => value.localId)).toEqual([
+      'changed',
+    ]);
   });
 
   it('serializes conditional delete behind a queued save and preserves the changed plan', async () => {

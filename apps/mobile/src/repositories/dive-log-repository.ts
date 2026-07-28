@@ -4,6 +4,10 @@ import type {
   ConditionalDeleteResult,
   DeletePredicate,
 } from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 
 export type ImportWatchMessagesOptions = {
   artifactDigests?: Array<string | undefined>;
@@ -25,6 +29,10 @@ export type DiveLogRepository = {
     predicate: DeletePredicate<DiveLogEntry>,
     options?: DeleteDiveLogOptions,
   ): Promise<ConditionalDeleteResult>;
+  deleteManyIf?(
+    requests: readonly ConditionalDeleteRequest<DiveLogEntry>[],
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteManyResult>;
   removeWatchProfileIfUnreferenced(storageKey: string): Promise<void>;
   importWatchMessages(
     messages: WatchSyncMessage[],

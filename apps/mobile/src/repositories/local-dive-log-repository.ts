@@ -8,6 +8,10 @@ import type {
   ImportWatchMessagesOptions,
 } from './dive-log-repository';
 import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 
 export type LocalDiveLogRepositoryOptions = {
   now?: () => number;
@@ -71,6 +75,40 @@ export class LocalDiveLogRepository implements DiveLogRepository {
         throw error;
       }
       return 'deleted';
+    });
+  }
+
+  async deleteManyIf(
+    requests: readonly ConditionalDeleteRequest<DiveLogEntry>[],
+    options?: DeleteDiveLogOptions,
+  ): Promise<ConditionalDeleteManyResult> {
+    return this.enqueueMutation(async () => {
+      options?.assertCanCommit?.();
+      const nextEntries = new Map(this.entriesByLocalId);
+      const results = new Map<string, ConditionalDeleteResult>();
+
+      for (const request of requests) {
+        const current = nextEntries.get(request.localId);
+        if (current === undefined) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(cloneDiveLogEntry(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          nextEntries.delete(request.localId);
+          results.set(request.localId, 'deleted');
+        }
+      }
+
+      options?.assertCanCommit?.();
+      const previousEntries = this.entriesByLocalId;
+      this.entriesByLocalId = nextEntries;
+      try {
+        options?.assertCanCommit?.();
+      } catch (error) {
+        this.entriesByLocalId = previousEntries;
+        throw error;
+      }
+      return results;
     });
   }
 

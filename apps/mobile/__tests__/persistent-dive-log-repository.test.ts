@@ -82,6 +82,37 @@ class FailFirstWriteStore implements PersistentKeyValueStore {
 
 }
 
+class CountingMainEnvelopeStore implements PersistentKeyValueStore {
+  private readonly delegate = new InMemoryKeyValueStore();
+  mainReads = 0;
+  mainWrites = 0;
+
+  constructor(private readonly mainKey: string) {}
+
+  async getString(key: string): Promise<string | undefined> {
+    if (key === this.mainKey) {
+      this.mainReads += 1;
+    }
+    return this.delegate.getString(key);
+  }
+
+  async setString(key: string, value: string): Promise<void> {
+    if (key === this.mainKey) {
+      this.mainWrites += 1;
+    }
+    await this.delegate.setString(key, value);
+  }
+
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
+  }
+
+  resetCounts(): void {
+    this.mainReads = 0;
+    this.mainWrites = 0;
+  }
+}
+
 class FailingPostCommitMainReadStore implements PersistentKeyValueStore {
   private readonly delegate = new InMemoryKeyValueStore();
   private readonly commitKey = `${mobileStorageKeys.logbook}:journal:commit:v1`;
@@ -302,6 +333,54 @@ describe('PersistentDiveLogRepository', () => {
     await expect(repository.save(manualEntry({ localId: 'accepted' }))).resolves.toMatchObject({ localId: 'accepted' });
 
     expect((await repository.list()).map(entry => entry.localId)).toEqual(['accepted']);
+  });
+
+  it('conditionally deletes many logs with one metadata read and write', async () => {
+    const storage = new CountingMainEnvelopeStore(mobileStorageKeys.logbook);
+    const repository = new PersistentDiveLogRepository({storage, now: () => 500});
+    const entries = Array.from({length: 15}, (_, index) =>
+      manualEntry({localId: `bulk-log-${index}`, updatedAt: index}),
+    );
+    for (const entry of entries) {
+      await repository.save(entry);
+    }
+    storage.resetCounts();
+
+    const result = await repository.deleteManyIf?.(
+      entries.map(entry => ({
+        localId: entry.localId,
+        predicate: current => current.updatedAt === entry.updatedAt,
+      })),
+      {retainProfileAfterDelete: true},
+    );
+
+    expect(result && [...result.values()]).toEqual(
+      Array.from({length: 15}, () => 'deleted'),
+    );
+    expect(storage.mainWrites).toBe(1);
+    expect(await repository.list()).toEqual([]);
+  });
+
+  it('preserves logs that no longer match a bulk delete snapshot', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 500,
+    });
+    const exact = manualEntry({localId: 'exact', updatedAt: 100});
+    const changed = manualEntry({localId: 'changed', updatedAt: 200});
+    await repository.save(exact);
+    await repository.save(changed);
+
+    const result = await repository.deleteManyIf?.([
+      {localId: exact.localId, predicate: current => current.updatedAt === 100},
+      {localId: changed.localId, predicate: current => current.updatedAt === 100},
+    ]);
+
+    expect(result?.get('exact')).toBe('deleted');
+    expect(result?.get('changed')).toBe('conditionFailed');
+    expect((await repository.list()).map(value => value.localId)).toEqual([
+      'changed',
+    ]);
   });
 
   it('serializes conditional delete behind a queued save without removing the changed log profile', async () => {

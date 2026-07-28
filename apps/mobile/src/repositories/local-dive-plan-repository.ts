@@ -1,5 +1,9 @@
 import type { DivePlan } from '../types/dive-plan';
 import type {ConditionalDeleteResult, DeletePredicate} from './conditional-delete';
+import type {
+  ConditionalDeleteManyResult,
+  ConditionalDeleteRequest,
+} from './bulk-conditional-delete';
 import type { DivePlanRepository } from './dive-plan-repository';
 
 export type LocalDivePlanRepositoryOptions = {
@@ -52,6 +56,30 @@ export class LocalDivePlanRepository implements DivePlanRepository {
       }
       this.plansByLocalId.delete(localId);
       return 'deleted';
+    });
+  }
+
+  async deleteManyIf(
+    requests: readonly ConditionalDeleteRequest<DivePlan>[],
+  ): Promise<ConditionalDeleteManyResult> {
+    return this.enqueueMutation(async () => {
+      const nextPlans = new Map(this.plansByLocalId);
+      const results = new Map<string, ConditionalDeleteResult>();
+
+      for (const request of requests) {
+        const current = nextPlans.get(request.localId);
+        if (current === undefined) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(cloneDivePlan(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          nextPlans.delete(request.localId);
+          results.set(request.localId, 'deleted');
+        }
+      }
+
+      this.plansByLocalId = nextPlans;
+      return results;
     });
   }
 
