@@ -164,14 +164,16 @@ Apple Watch regression은 iPhone에서 guest와 account A 상태로 각각 수�
 8. [ ] `PENDING` 처리할 수 없는 artifact 다음에 정상 artifact를 같은 inbox batch에 두고, 첫 실패가 두 번째 local import와 ACK를 막지 않는지 확인한다.
 9. [ ] `PENDING` prepared profile 채택 중 I/O 실패를 재현할 수 있으면 원본 inbox artifact가 drop-ACK되지 않고 재실행 뒤 같은 payload로 성공하는지 확인한다. 지원되는 fault setup이 없으면 자동 gate를 authoritative 결과로 기록한다.
 10. [ ] `PENDING` Watch import 도중 background/foreground와 force-quit/relaunch를 각각 수행해 원본 또는 prepared source가 ACK 전에 사라지지 않는지 확인한다.
+11. [ ] `PENDING` 같은 8,000 sample 가져오기를 Release configuration에서도 반복하고, 부팅 직후·수동 가져오기 중 탭 전환과 버튼 반응이 막히지 않는지 Debug 관찰과 구분해 기록한다.
 
 ## 완료 Claim 압축과 재실행 Regression
 
 1. [ ] `PENDING` profile을 포함한 guest claim을 완료하고 local guest row/profile과 claim sidecar가 정리되는지 확인한다.
-2. [ ] `PENDING` 완료 뒤 앱을 두 번 재실행해 과거 전체 항목 수가 `15 / 15` 같은 새 가져오기 진행률로 다시 표시되지 않는지 확인한다.
-3. [ ] `PENDING` 완료 영수증에는 historical Watch identity만 남고 full snapshot/profile bytes가 local metadata envelope에 남지 않는지 확인한다.
-4. [ ] `PENDING` 같은 Watch artifact를 재전송해 새 Logbook row나 toast 없이 historical acknowledgement만 수행하는지 확인한다.
-5. [ ] `PENDING` schema 1 committed fixture를 사용할 수 있는 내부 build에서는 첫 read 뒤 schema 2 compact receipt로 전환되고 account row 재업로드가 발생하지 않는지 확인한다. 공개 UI에서 fixture를 만들 수 없으면 자동 gate를 authoritative 결과로 기록한다.
+2. [ ] `PENDING` historical claim identity 15개가 있는 완료 영수증과 새 eligible guest row 1개를 함께 준비하고, 가져오기 UI가 과거 15개가 아니라 현재 1개만 대상으로 표시하는지 확인한다.
+3. [ ] `PENDING` 완료 뒤 앱을 완전히 종료해 세 번 cold launch하고, 과거 전체 항목 수가 `15 / 15` 같은 새 가져오기 진행률로 다시 표시되지 않는지 확인한다.
+4. [ ] `PENDING` 완료 영수증에는 historical Watch identity만 남고 full snapshot/profile bytes가 local metadata envelope에 남지 않는지 확인한다.
+5. [ ] `PENDING` 같은 Watch artifact를 재전송해 새 Logbook row나 toast 없이 historical acknowledgement만 수행하는지 확인한다.
+6. [ ] `PENDING` schema 1 committed fixture를 사용할 수 있는 내부 build에서는 첫 read 뒤 schema 2 compact receipt로 전환되고 account row 재업로드가 발생하지 않는지 확인한다. 공개 UI에서 fixture를 만들 수 없으면 자동 gate를 authoritative 결과로 기록한다.
 
 ## 종료 판정
 
