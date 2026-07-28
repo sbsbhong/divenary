@@ -330,6 +330,43 @@ describe('WatchConnectivitySyncProvider', () => {
     await expect(repository.list()).resolves.toEqual([]);
   });
 
+  it('keeps a raw inbox artifact retryable when prepared profile I/O fails', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const descriptor: WatchConnectivityPayload = {
+      payloadId: 'corrupt-derived-profile',
+      localSessionId: 'retryable-native-session',
+      receivedAt: 1781355000,
+    };
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    const acknowledgeImportedPayloads = jest
+      .fn()
+      .mockResolvedValue(undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: jest
+          .fn()
+          .mockResolvedValueOnce([descriptor])
+          .mockResolvedValue([]),
+        preparePendingPayload: jest
+          .fn()
+          .mockRejectedValue(new WatchPayloadPreparationError('io')),
+        acknowledgePayloads,
+        acknowledgeImportedPayloads,
+      }),
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 1,
+    });
+    expect(acknowledgePayloads).not.toHaveBeenCalled();
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
+    await expect(repository.list()).resolves.toEqual([]);
+  });
+
   it('drop-acknowledges prepared metadata that disagrees with the validated preview', async () => {
     const repository = new PersistentDiveLogRepository({
       storage: new InMemoryKeyValueStore(),

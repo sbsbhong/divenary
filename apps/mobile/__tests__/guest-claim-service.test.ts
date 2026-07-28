@@ -1432,6 +1432,93 @@ describe('guest claim service', () => {
     );
   });
 
+  it('compacts a legacy committed snapshot and removes its claim profile evidence', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const profile = profileStorage();
+    const fullSamples = depthSamples(200);
+    await profile.write(guestProfileKey, fullSamples);
+    const current = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repositories(
+        [watchLog('log-a', fullSamples.slice(0, 160))],
+        [],
+      ).logbook,
+      planRepository: repositories([], []).planbook,
+      profileStorage: profile,
+      now: () => 100,
+    });
+    const claimProfileKey =
+      current.snapshots[0]!.profileSidecarStorageKey!;
+    const profileBytes = (await readClaimProfileBytes(
+      current.snapshots[0]!,
+      profile,
+    ))!;
+    const committedItems = current.manifest.items.map((item, index) => ({
+      ...item,
+      stagingRecordId: uuid('2', index + 1),
+      targetRecordId: uuid('3', index + 1),
+      completedAt: 101,
+    }));
+    const legacy: GuestClaimSnapshot = {
+      ...structuredClone(current),
+      schemaVersion: 1,
+      manifest: {
+        ...structuredClone(current.manifest),
+        status: 'committed',
+        remoteBatchId: batchId,
+        items: committedItems,
+      },
+      snapshots: current.snapshots.map((sidecar, index) => {
+        const {
+          profileSidecarStorageKey: _sidecarKey,
+          ...withoutSidecarKey
+        } = sidecar;
+        const item = committedItems[index]!;
+        return {
+          ...withoutSidecarKey,
+          profileBytes,
+          profileReadback: {
+            path: `${userId}/claims/${batchId}/${item.targetRecordId}/revision-1.json`,
+            byteCount: new TextEncoder().encode(profileBytes).length,
+            sha256: item.profile!.sha256,
+            sampleCount: item.profile!.sampleCount,
+            verifiedAt: 101,
+          },
+        };
+      }),
+    };
+    const store = new GuestClaimStore({
+      storage: metadataStorage,
+      userId,
+      now: clock(),
+    });
+    await store.write(legacy);
+    const service = claimService({
+      store,
+      guest: repositories([], []),
+      account: repositories([], [], [], 'account'),
+      profile,
+      remote: remoteRepository(store),
+    });
+
+    const result = await service.resume();
+
+    expect(result).toMatchObject({
+      schemaVersion: 2,
+      manifest: {status: 'committed'},
+      snapshots: [],
+      historicalArtifacts: [
+        {
+          localSessionId: 'session-log-a',
+          contentRevision: 'revision-1',
+        },
+      ],
+    });
+    await expect(store.read()).resolves.toEqual(result);
+    expect(profile.remove).toHaveBeenCalledWith(claimProfileKey);
+    await expect(profile.read(claimProfileKey)).resolves.toBeUndefined();
+  });
+
   it('persists cleanupPending, hides claimed ids, and retries cleanup without finalizing twice', async () => {
     const order: string[] = [];
     const guest = repositories([diveLog('log-a')], [], order);
@@ -1830,7 +1917,7 @@ describe('guest claim service', () => {
     });
   });
 
-  it.each(['running', 'finalizing', 'cleanupPending', 'committed'] as const)(
+  it.each(['running', 'finalizing', 'cleanupPending'] as const)(
     'does not defer or replace a %s manifest',
     async status => {
       const guest = repositories([diveLog('log-a')], []);
@@ -1870,6 +1957,54 @@ describe('guest claim service', () => {
       expect(remove).not.toHaveBeenCalled();
     },
   );
+
+  it('does not defer a committed manifest while compacting its local receipt', async () => {
+    const guest = repositories([diveLog('log-a')], []);
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'committed';
+    let persisted = structuredClone(snapshot);
+    const write = jest.fn(async (next: GuestClaimSnapshot) => {
+      persisted = structuredClone(next);
+    });
+    const remove = jest.fn(async () => undefined);
+    const service = new GuestClaimService({
+      userId,
+      store: {
+        read: async () => structuredClone(persisted),
+        write,
+        remove,
+      },
+      guestRepositories: guest,
+      accountRepositories: repositories([], []),
+      accountMutationRepositories: repositories([], []),
+      profileStorage: profileStorage(),
+      remoteRepository: remoteRepository(
+        new GuestClaimStore({
+          storage: new InMemoryKeyValueStore(),
+          userId,
+        }),
+      ),
+    });
+
+    await expect(service.defer()).rejects.toMatchObject({
+      code: 'claim_validation_failed',
+    });
+    expect(write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        schemaVersion: 2,
+        snapshots: [],
+        manifest: expect.objectContaining({status: 'committed'}),
+      }),
+    );
+    expect(remove).not.toHaveBeenCalled();
+    await expect(guest.logbook.list()).resolves.toHaveLength(1);
+  });
 
   it('fails closed for a second user or mismatched committed readback', async () => {
     const storage = new InMemoryKeyValueStore();

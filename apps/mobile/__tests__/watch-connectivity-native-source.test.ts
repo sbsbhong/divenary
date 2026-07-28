@@ -63,24 +63,26 @@ describe('WatchConnectivity native source contract', () => {
     expect(inbox).toContain('makePeakPreservingPreview');
     expect(inbox).toContain('preparedProfileFilePath');
     expect(inbox).toContain('canonicalProfileData');
+    expect(inbox).toContain('import JavaScriptCore');
+    expect(inbox).toContain('JSON.stringify(samples.map');
+    expect(inbox).not.toContain('canonicalJSONNumber');
     expect(inbox).toContain(
       'Set(sample.keys).isSubset(of: allowedSampleKeys)',
     );
     expect(inbox).toContain('guard number >= 0 else');
-    expect(inbox).toContain(
-      '"\\"localSessionId\\":\\(try canonicalJSONString(localSessionId))"',
-    );
-    expect(inbox).toContain(
-      '"\\"timestamp\\":\\(try canonicalJSONNumber(timestamp))"',
-    );
-    expect(inbox).toContain(
-      '"\\"depthMeters\\":\\(try canonicalJSONNumber(depthMeters))"',
-    );
     const descriptorBlock = inbox.slice(
       inbox.indexOf('var descriptorDictionary:'),
       inbox.indexOf('func preparedDictionary('),
     );
+    const adoptionBlock = inbox.slice(
+      inbox.indexOf('func adoptPreparedProfile('),
+      inbox.indexOf('func acknowledge('),
+    );
     expect(descriptorBlock).not.toContain('payloadJson');
+    expect(adoptionBlock).not.toContain(
+      'WatchPayloadPreparationError.invalidPayload',
+    );
+    expect(adoptionBlock).toContain('WatchPayloadPreparationError.io');
     expect(module).toContain(
       '@objc(preparePendingPayload:resolver:rejecter:)',
     );

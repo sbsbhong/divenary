@@ -711,6 +711,88 @@ export function sourceRecordSha256(sidecar: GuestClaimSnapshotItem): string {
   return sidecar.sourceRecordSha256 ?? sidecar.localRecordSha256;
 }
 
+export function compactCommittedGuestClaimSnapshot(
+  snapshot: GuestClaimSnapshot,
+): GuestClaimSnapshot {
+  if (snapshot.manifest.status !== 'committed') {
+    throw new GuestClaimStorageError();
+  }
+  if (
+    snapshot.schemaVersion === SIDECAR_SCHEMA_VERSION &&
+    snapshot.snapshots.length === 0 &&
+    snapshot.historicalArtifacts !== undefined
+  ) {
+    return snapshot;
+  }
+  return {
+    ...snapshot,
+    schemaVersion: SIDECAR_SCHEMA_VERSION,
+    snapshots: [],
+    historicalArtifacts: historicalArtifactsFromSnapshot(snapshot),
+  };
+}
+
+export function claimProfileEvidenceStorageKeys(
+  snapshot: GuestClaimSnapshot,
+): string[] {
+  return snapshot.manifest.items.flatMap(item =>
+    item.entityKind === 'log' && item.profile !== undefined
+      ? [
+          claimProfileSidecarKey(
+            snapshot.userId,
+            item.clientRecordId,
+            item.profile.contentRevision,
+            item.profile.sha256,
+          ),
+        ]
+      : [],
+  );
+}
+
+export function historicalArtifactsFromSnapshot(
+  snapshot: GuestClaimSnapshot,
+): GuestClaimHistoricalArtifact[] {
+  if (snapshot.historicalArtifacts !== undefined) {
+    return snapshot.historicalArtifacts.map(value => ({...value}));
+  }
+  const identities = new Map<string, GuestClaimHistoricalArtifact>();
+  for (const [index, item] of snapshot.manifest.items.entries()) {
+    if (item.entityKind !== 'log') {
+      continue;
+    }
+    const sidecar = snapshot.snapshots[index];
+    if (sidecar === undefined || sidecar.entityKind !== 'log') {
+      continue;
+    }
+    const record = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+    const profile = record.watchCapture?.profile;
+    const localSessionId = record.watchCapture?.session.localSessionId;
+    const artifactSha256 = profile?.artifactSha256 ?? profile?.sha256;
+    if (
+      localSessionId === undefined ||
+      profile?.contentRevision === undefined ||
+      artifactSha256 === undefined
+    ) {
+      continue;
+    }
+    const identity = {
+      localSessionId,
+      contentRevision: profile.contentRevision,
+      artifactSha256,
+    };
+    identities.set(
+      `${identity.localSessionId}\u0000${identity.contentRevision}\u0000${identity.artifactSha256}`,
+      identity,
+    );
+  }
+  return [...identities.values()].sort(
+    (left, right) =>
+      left.localSessionId.localeCompare(right.localSessionId) ||
+      left.contentRevision.localeCompare(right.contentRevision) ||
+      left.artifactSha256.localeCompare(right.artifactSha256),
+  );
+}
+
 export function guestRecordsContainClaimSnapshotSources(options: {
   snapshot: GuestClaimSnapshot;
   logs: DiveLogEntry[];

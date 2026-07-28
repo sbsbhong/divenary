@@ -18,11 +18,14 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import {
+  claimProfileEvidenceStorageKeys,
+  compactCommittedGuestClaimSnapshot,
   createGuestClaimSnapshot,
   guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimPreparationError,
   GuestClaimStorageError,
+  historicalArtifactsFromSnapshot,
   isGuestProfileStorageKey,
   migrateGuestClaimSnapshotProfileSidecars,
   parseSnapshotLocalRecord,
@@ -37,7 +40,6 @@ import {
 import type {
   GuestClaimErrorCode,
   GuestClaimFailureDetail,
-  GuestClaimHistoricalArtifact,
   GuestClaimItem,
   GuestClaimProgress,
 } from './guest-claim-types';
@@ -1500,7 +1502,39 @@ export class GuestClaimService {
     if (snapshot !== undefined && snapshot.userId !== this.options.userId) {
       throw new GuestClaimServiceError('claim_validation_failed');
     }
-    if (snapshot?.schemaVersion === 1) {
+    if (snapshot?.manifest.status === 'committed') {
+      try {
+        const compact = compactCommittedGuestClaimSnapshot(snapshot);
+        if (compact !== snapshot) {
+          await this.options.store.write(compact);
+          const readback = await this.options.store.read();
+          if (
+            readback === undefined ||
+            readback.schemaVersion !== 2 ||
+            readback.userId !== compact.userId ||
+            readback.manifest.status !== 'committed' ||
+            readback.manifest.clientBatchId !==
+              compact.manifest.clientBatchId ||
+            readback.manifest.manifestSha256 !==
+              compact.manifest.manifestSha256 ||
+            readback.snapshots.length !== 0 ||
+            JSON.stringify(readback.historicalArtifacts) !==
+              JSON.stringify(compact.historicalArtifacts)
+          ) {
+            throw new GuestClaimStorageError();
+          }
+          snapshot = readback;
+        }
+        await Promise.allSettled(
+          claimProfileEvidenceStorageKeys(snapshot).map(storageKey =>
+            this.options.profileStorage.remove(storageKey),
+          ),
+        );
+      } catch {
+        // A validated committed snapshot remains authoritative until compact
+        // receipt publication and semantic readback both succeed.
+      }
+    } else if (snapshot?.schemaVersion === 1) {
       try {
         const migrated = await migrateGuestClaimSnapshotProfileSidecars(
           snapshot,
@@ -1623,47 +1657,6 @@ function cleanupItemError(
       ? {}
       : {label: sidecar.label.slice(0, 200)}),
   });
-}
-
-function historicalArtifactsFromSnapshot(
-  snapshot: GuestClaimSnapshot,
-): GuestClaimHistoricalArtifact[] {
-  const identities = new Map<string, GuestClaimHistoricalArtifact>();
-  for (const [index, item] of snapshot.manifest.items.entries()) {
-    if (item.entityKind !== 'log') {
-      continue;
-    }
-    const sidecar = snapshot.snapshots[index];
-    if (sidecar === undefined || sidecar.entityKind !== 'log') {
-      continue;
-    }
-    const record = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
-    const profile = record.watchCapture?.profile;
-    const localSessionId = record.watchCapture?.session.localSessionId;
-    const artifactSha256 = profile?.artifactSha256 ?? profile?.sha256;
-    if (
-      localSessionId === undefined ||
-      profile?.contentRevision === undefined ||
-      artifactSha256 === undefined
-    ) {
-      continue;
-    }
-    const identity = {
-      localSessionId,
-      contentRevision: profile.contentRevision,
-      artifactSha256,
-    };
-    identities.set(
-      `${identity.localSessionId}\u0000${identity.contentRevision}\u0000${identity.artifactSha256}`,
-      identity,
-    );
-  }
-  return [...identities.values()].sort(
-    (left, right) =>
-      left.localSessionId.localeCompare(right.localSessionId) ||
-      left.contentRevision.localeCompare(right.contentRevision) ||
-      left.artifactSha256.localeCompare(right.artifactSha256),
-  );
 }
 
 function isTransientClaimError(

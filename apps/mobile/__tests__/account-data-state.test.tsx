@@ -4282,8 +4282,22 @@ describe('account data state', () => {
       },
       now: () => 100,
     });
-    snapshot.manifest.status = 'failed';
-    snapshot.errorCode = 'claim_validation_failed';
+    const identity = {
+      localSessionId: 'historical-watch-session',
+      contentRevision: 'revision-1',
+      artifactSha256: historicalArtifactSha256,
+    };
+    snapshot.manifest.status = 'committed';
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.items = snapshot.manifest.items.map((item, index) => ({
+      ...item,
+      stagingRecordId: `20000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      targetRecordId: `30000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      completedAt: 101,
+    }));
+    snapshot.snapshots = [];
+    snapshot.historicalArtifacts = [identity];
     const store = new GuestClaimStore({storage: metadataStorage, userId});
     await store.write(snapshot);
     const liveGuest = {...entry, localId: 'live-guest-log'};
@@ -4337,11 +4351,6 @@ describe('account data state', () => {
     await waitFor(() => expect(capture?.isHydrated).toBe(true));
     guestList.mockClear();
     storageRead.mockClear();
-    const identity = {
-      localSessionId: 'historical-watch-session',
-      contentRevision: 'revision-1',
-      artifactSha256: historicalArtifactSha256,
-    };
 
     await expect(capture!.isHistoricalWatchArtifact(identity)).resolves.toBe(
       true,

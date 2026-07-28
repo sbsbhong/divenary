@@ -1468,7 +1468,9 @@ async function buildHistoricalArtifactLookup(
     return new Set();
   }
 
-  const identities = new Set<string>();
+  const identities = new Set(
+    (snapshot.historicalArtifacts ?? []).map(watchArtifactIdentityKey),
+  );
   for (const [index, item] of snapshot.manifest.items.entries()) {
     if (
       item.entityKind !== 'log' ||

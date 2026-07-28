@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import JavaScriptCore
 import WatchConnectivity
 
 extension Notification.Name {
@@ -106,7 +107,9 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
           guard data.count == preparedProfileByteCount,
                 Self.sha256Hex(data) == preparedProfileSha256,
                 try JSONSerialization.jsonObject(with: data) is [Any] else {
-            throw WatchPayloadPreparationError.invalidPayload
+            throw WatchPayloadPreparationError.io(
+              CocoaError(.fileReadCorruptFile)
+            )
           }
           let destinationURL = try WatchProfileStorageModule.profileURL(
             for: destinationKey
@@ -466,53 +469,46 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   private static func canonicalProfileData(
     _ samples: [[String: Any]]
   ) throws -> Data {
-    let encodedSamples = try samples.map { sample -> String in
-      guard let localSessionId = sample["localSessionId"] as? String,
-            let timestamp = numericValue(sample["timestamp"]),
-            let depthMeters = numericValue(sample["depthMeters"]) else {
-        throw WatchPayloadPreparationError.invalidPayload
-      }
-      var fields = [
-        "\"localSessionId\":\(try canonicalJSONString(localSessionId))",
-        "\"timestamp\":\(try canonicalJSONNumber(timestamp))",
-        "\"depthMeters\":\(try canonicalJSONNumber(depthMeters))"
-      ]
-      for key in [
-        "pressureKPa",
-        "bucketMinDepthMeters",
-        "bucketMaxDepthMeters",
-        "waterTemperatureCelsius"
-      ] {
-        if let value = sample[key] {
-          guard let number = numericValue(value) else {
-            throw WatchPayloadPreparationError.invalidPayload
-          }
-          fields.append("\"\(key)\":\(try canonicalJSONNumber(number))")
-        }
-      }
-      return "{\(fields.joined(separator: ","))}"
+    let sourceData = try JSONSerialization.data(withJSONObject: samples)
+    guard let sourceJSON = String(data: sourceData, encoding: .utf8),
+          let context = JSContext() else {
+      throw CocoaError(.fileReadCorruptFile)
     }
-    guard let data = "[\(encodedSamples.joined(separator: ","))]"
-      .data(using: .utf8) else {
-      throw WatchPayloadPreparationError.invalidPayload
+    context.setObject(
+      sourceJSON,
+      forKeyedSubscript: "profileJSON" as NSString
+    )
+    let result = context.evaluateScript(
+      """
+      (() => {
+        const samples = JSON.parse(profileJSON);
+        return JSON.stringify(samples.map(sample => {
+          const canonical = {
+            localSessionId: sample.localSessionId,
+            timestamp: sample.timestamp,
+            depthMeters: sample.depthMeters,
+          };
+          for (const key of [
+            "pressureKPa",
+            "bucketMinDepthMeters",
+            "bucketMaxDepthMeters",
+            "waterTemperatureCelsius",
+          ]) {
+            if (Object.prototype.hasOwnProperty.call(sample, key)) {
+              canonical[key] = sample[key];
+            }
+          }
+          return canonical;
+        }));
+      })()
+      """
+    )
+    guard context.exception == nil,
+          let encoded = result?.toString(),
+          let data = encoded.data(using: .utf8) else {
+      throw CocoaError(.fileReadCorruptFile)
     }
     return data
-  }
-
-  private static func canonicalJSONString(_ value: String) throws -> String {
-    let encoded = try JSONEncoder().encode([value])
-    guard let wrapped = String(data: encoded, encoding: .utf8) else {
-      throw WatchPayloadPreparationError.invalidPayload
-    }
-    return String(wrapped.dropFirst().dropLast())
-  }
-
-  private static func canonicalJSONNumber(_ value: Double) throws -> String {
-    let encoded = try JSONEncoder().encode([value])
-    guard let wrapped = String(data: encoded, encoding: .utf8) else {
-      throw WatchPayloadPreparationError.invalidPayload
-    }
-    return String(wrapped.dropFirst().dropLast())
   }
 
   private static func numericValue(_ value: Any?) -> Double? {
