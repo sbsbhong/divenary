@@ -166,14 +166,18 @@ export default function AccountClaimScreen(): React.JSX.Element {
           <PreparingContent onClose={() => navigation.goBack()} />
         ) : null}
 
-        {claim.state.status === 'running' ? (
+        {claim.state.status === 'running' &&
+        claim.state.phase === 'cleanup' ? (
+          <CleanupContent onClose={() => navigation.goBack()} />
+        ) : null}
+
+        {claim.state.status === 'running' &&
+        claim.state.phase !== 'cleanup' ? (
           <ProgressContent
             title={t(
               claim.state.phase === 'finalizing'
                 ? 'accountClaim.finalizingTitle'
-                : claim.state.phase === 'cleanup'
-                  ? 'accountClaim.cleanupTitle'
-                  : 'accountClaim.progressTitle',
+                : 'accountClaim.progressTitle',
             )}
             completed={claim.state.completed}
             total={claim.state.total}
@@ -506,6 +510,40 @@ function ProgressContent({
   );
 }
 
+function CleanupContent({
+  onClose,
+}: {
+  onClose(): void;
+}): React.JSX.Element {
+  const {t} = useTranslation();
+
+  return (
+    <VStack space="lg" className="items-center py-8">
+      <Spinner
+        testID="account-claim-cleanup-spinner"
+        size="large"
+        className="text-primary"
+      />
+      <VStack space="xs" className="items-center">
+        <Text
+          testID="account-claim-title"
+          accessibilityRole="header"
+          maxFontSizeMultiplier={1.5}
+          className="text-center text-xl font-semibold leading-7 text-foreground">
+          {t('accountClaim.cleanupTitle')}
+        </Text>
+        <Text
+          testID="account-claim-cleanup-description"
+          size="sm"
+          className="text-center text-muted-foreground">
+          {t('accountClaim.cleanupDescription')}
+        </Text>
+      </VStack>
+      <CloseButton onPress={onClose} />
+    </VStack>
+  );
+}
+
 function CloseButton({onPress}: {onPress(): void}): React.JSX.Element {
   const {t} = useTranslation();
 
@@ -539,21 +577,34 @@ function FailureContent({
   onRetry(): void;
   onKeep(): void;
 }): React.JSX.Element {
-  const { t } = useTranslation();
+  const {t} = useTranslation();
   const disabled = busyAction !== undefined;
+  const isCleanupFailure = failure?.phase === 'cleanup';
 
   return (
     <>
-      <ProgressContent
-        title={t('accountClaim.failureTitle')}
-        completed={completed}
-        total={total}
-      />
+      {isCleanupFailure ? (
+        <Text
+          testID="account-claim-title"
+          accessibilityRole="header"
+          maxFontSizeMultiplier={1.5}
+          className="text-xl font-semibold leading-7 text-foreground">
+          {t('accountClaim.failureTitle')}
+        </Text>
+      ) : (
+        <ProgressContent
+          title={t('accountClaim.failureTitle')}
+          completed={completed}
+          total={total}
+        />
+      )}
       <Text
         testID="account-claim-failure-detail"
         size="sm"
         className="leading-5 text-muted-foreground">
-        {failure?.label
+        {isCleanupFailure
+          ? t('accountClaim.cleanupFailureDescription')
+          : failure?.label
           ? t('accountClaim.failureItemDescription', {label: failure.label})
           : t('accountClaim.failureDescription')}
       </Text>

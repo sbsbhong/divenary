@@ -196,6 +196,27 @@ describe('AccountClaimScreen', () => {
     expect(mockPreventRemove).not.toHaveBeenCalled();
   });
 
+  test('shows cleanup as an indeterminate step without stale item counts', async () => {
+    mockClaim = claimFixture({
+      status: 'running',
+      phase: 'cleanup',
+    });
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
+    ).toBe('기기 데이터를 정리하는 중');
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-progress-count'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-cleanup-spinner'}),
+    ).toBeTruthy();
+    expect(JSON.stringify(renderer.toJSON())).toContain(
+      '계정 저장은 완료되었습니다.',
+    );
+  });
+
   test.each([
     {status: 'choice', logCount: 3, planCount: 2} as const,
     {status: 'deferred', logCount: 3, planCount: 2} as const,
@@ -536,6 +557,30 @@ describe('AccountClaimScreen', () => {
     ).toContain('Moon Island');
     expect(serialized).not.toContain('profile_missing');
     expect(serialized).not.toContain('log-a');
+  });
+
+  test('shows cleanup failure guidance without stale item counts', async () => {
+    mockClaim = claimFixture({
+      status: 'failed',
+      completed: 15,
+      total: 15,
+      errorCode: 'claim_validation_failed',
+      failure: {phase: 'cleanup'},
+    });
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-progress-count'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-failure-detail'}).props
+        .children,
+    ).toBe(
+      '계정 기록은 보존되어 있습니다. 기기 원본 정리를 다시 시도해 주세요.',
+    );
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-retry'}),
+    ).toBeTruthy();
   });
 
   test('announces completion once and closes the sheet', async () => {

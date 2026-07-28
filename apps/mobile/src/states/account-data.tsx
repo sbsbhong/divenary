@@ -2113,15 +2113,18 @@ function runningClaimPresentation(
   return {
     queryScope,
     eligible: { logCount: 0, planCount: 0 },
-    state: {
-      status: 'running',
-      completed: progress.completed,
-      total: progress.total,
-      phase: progress.phase,
-      ...(progress.currentLabel === undefined
-        ? {}
-        : { currentLabel: progress.currentLabel }),
-    },
+    state:
+      progress.phase === 'cleanup'
+        ? {status: 'running', phase: 'cleanup'}
+        : {
+            status: 'running',
+            completed: progress.completed,
+            total: progress.total,
+            phase: progress.phase,
+            ...(progress.currentLabel === undefined
+              ? {}
+              : {currentLabel: progress.currentLabel}),
+          },
   };
 }
 
@@ -2179,12 +2182,7 @@ function presentationForSnapshot(
       failure: snapshot.failure,
     };
   } else if (snapshot.manifest.status === 'cleanupPending') {
-    state = {
-      status: 'running',
-      completed: total,
-      total,
-      phase: 'cleanup',
-    };
+    state = {status: 'running', phase: 'cleanup'};
   } else if (snapshot.manifest.status === 'failed') {
     state = {
       status: 'failed',

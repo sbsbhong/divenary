@@ -85,12 +85,13 @@ export type GuestClaimViewState =
   | { status: 'hidden' }
   | { status: 'choice'; logCount: number; planCount: number }
   | { status: 'deferred'; logCount: number; planCount: number }
+  | {status: 'running'; phase: 'cleanup'}
   | {
       status: 'running';
       completed: number;
       total: number;
       currentLabel?: string;
-      phase?: GuestClaimProgress['phase'];
+      phase?: Exclude<GuestClaimProgress['phase'], 'cleanup'>;
     }
   | {
       status: 'failed';

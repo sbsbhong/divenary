@@ -116,6 +116,10 @@ const resources = {
         progressTitle: '계정으로 가져오는 중',
         finalizingTitle: '계정 데이터를 확인하는 중',
         cleanupTitle: '기기 데이터를 정리하는 중',
+        cleanupDescription:
+          '계정 저장은 완료되었습니다. 이 기기에 남은 원본을 안전하게 정리하고 있습니다.',
+        cleanupFailureDescription:
+          '계정 기록은 보존되어 있습니다. 기기 원본 정리를 다시 시도해 주세요.',
         preparingTitle: '가져올 데이터를 확인하는 중',
         preparingDescription: '기기에 저장된 기록을 안전하게 확인하고 있습니다.',
         progressCount: '{{completed}} / {{total}}',
@@ -572,6 +576,10 @@ const resources = {
         progressTitle: 'Importing to your account',
         finalizingTitle: 'Verifying account data',
         cleanupTitle: 'Finishing device cleanup',
+        cleanupDescription:
+          'Your account copy is saved. Safely cleaning up the originals left on this device.',
+        cleanupFailureDescription:
+          'Your account records are preserved. Try cleaning up the device originals again.',
         preparingTitle: 'Checking device data',
         preparingDescription: 'Safely checking the records stored on this device.',
         progressCount: '{{completed}} / {{total}}',

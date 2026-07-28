@@ -5364,8 +5364,6 @@ describe('account data state', () => {
     });
     expect(capture?.claim.state).toEqual({
       status: 'running',
-      completed: 1,
-      total: 1,
       phase: 'cleanup',
     });
     await expect(store.read()).resolves.toMatchObject({
