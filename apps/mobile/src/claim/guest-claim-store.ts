@@ -38,6 +38,7 @@ import {
 import type {
   GuestClaimErrorCode,
   GuestClaimFailureDetail,
+  GuestClaimHistoricalArtifact,
   GuestClaimItem,
   GuestClaimManifest,
   GuestClaimRetainedItem,
@@ -88,6 +89,7 @@ export type GuestClaimSnapshot = {
   userId: string;
   manifest: GuestClaimManifest;
   snapshots: GuestClaimSnapshotItem[];
+  historicalArtifacts?: GuestClaimHistoricalArtifact[];
   retainedItems: GuestClaimRetainedItem[];
   errorCode?: GuestClaimErrorCode;
   failure?: GuestClaimFailureDetail;
@@ -315,7 +317,8 @@ function storedCheckpointHint(
   if (
     snapshot.manifest.status === 'running' ||
     snapshot.manifest.status === 'finalizing' ||
-    snapshot.manifest.status === 'cleanupPending'
+    (snapshot.manifest.status === 'cleanupPending' &&
+      snapshot.failure === undefined)
   ) {
     return {
       ...base,
@@ -1060,6 +1063,7 @@ function parseStoredSnapshot(
       'userId',
       'manifest',
       'snapshots',
+      'historicalArtifacts',
       'retainedItems',
       'errorCode',
       'failure',
@@ -1079,6 +1083,22 @@ function parseStoredSnapshot(
   const snapshots = value.snapshots.map(sidecar =>
     parseSidecar(sidecar, schemaVersion),
   );
+  const historicalArtifacts =
+    value.historicalArtifacts === undefined
+      ? undefined
+      : Array.isArray(value.historicalArtifacts)
+        ? value.historicalArtifacts.map(parseHistoricalArtifact)
+        : undefined;
+  if (
+    value.historicalArtifacts !== undefined &&
+    historicalArtifacts === undefined
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  const compactCommittedReceipt =
+    schemaVersion === SIDECAR_SCHEMA_VERSION &&
+    snapshots.length === 0 &&
+    historicalArtifacts !== undefined;
   if (
     snapshots.some(
       sidecar =>
@@ -1090,7 +1110,12 @@ function parseStoredSnapshot(
   ) {
     throw new GuestClaimStorageError();
   }
-  const manifest = parseManifest(value.manifest, expectedUserId, snapshots);
+  const manifest = parseManifest(
+    value.manifest,
+    expectedUserId,
+    snapshots,
+    compactCommittedReceipt,
+  );
   const retainedItems =
     value.retainedItems === undefined
       ? []
@@ -1102,25 +1127,92 @@ function parseStoredSnapshot(
   }
   const failure =
     value.failure === undefined ? undefined : parseFailure(value.failure);
+  const hasError = value.errorCode !== undefined;
   if (
-    (manifest.status === 'failed') !== (value.errorCode !== undefined) ||
-    (failure !== undefined && manifest.status !== 'failed')
+    (manifest.status === 'failed' && !hasError) ||
+    (manifest.status !== 'failed' &&
+      manifest.status !== 'cleanupPending' &&
+      hasError) ||
+    (failure !== undefined &&
+      manifest.status !== 'failed' &&
+      manifest.status !== 'cleanupPending') ||
+    (manifest.status === 'cleanupPending' &&
+      hasError !== (failure !== undefined))
   ) {
     throw new GuestClaimStorageError();
   }
-  validateSnapshotSet(manifest, snapshots, schemaVersion);
+  validateSnapshotSet(
+    manifest,
+    snapshots,
+    schemaVersion,
+    compactCommittedReceipt,
+  );
+  validateHistoricalArtifacts(
+    manifest,
+    historicalArtifacts,
+    compactCommittedReceipt,
+  );
   validateRetainedSet(manifest, retainedItems);
   return {
     schemaVersion,
     userId: expectedUserId,
     manifest,
     snapshots,
+    ...(historicalArtifacts === undefined ? {} : {historicalArtifacts}),
     retainedItems,
     ...(value.errorCode === undefined
       ? {}
       : { errorCode: value.errorCode as GuestClaimErrorCode }),
     ...(failure === undefined ? {} : { failure }),
   };
+}
+
+function parseHistoricalArtifact(
+  value: unknown,
+): GuestClaimHistoricalArtifact {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      'localSessionId',
+      'contentRevision',
+      'artifactSha256',
+    ]) ||
+    !isNonEmptyString(value.localSessionId) ||
+    !isNonEmptyString(value.contentRevision) ||
+    !SHA256_PATTERN.test(String(value.artifactSha256))
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  return {
+    localSessionId: value.localSessionId,
+    contentRevision: value.contentRevision,
+    artifactSha256: value.artifactSha256 as string,
+  };
+}
+
+function validateHistoricalArtifacts(
+  manifest: GuestClaimManifest,
+  historicalArtifacts: GuestClaimHistoricalArtifact[] | undefined,
+  compactCommittedReceipt: boolean,
+): void {
+  if (
+    compactCommittedReceipt !==
+      (manifest.status === 'committed' &&
+        historicalArtifacts !== undefined) ||
+    (!compactCommittedReceipt && historicalArtifacts !== undefined)
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  if (historicalArtifacts === undefined) {
+    return;
+  }
+  const keys = historicalArtifacts.map(
+    value =>
+      `${value.localSessionId}\u0000${value.contentRevision}\u0000${value.artifactSha256}`,
+  );
+  if (new Set(keys).size !== keys.length) {
+    throw new GuestClaimStorageError();
+  }
 }
 
 function parseRetainedItem(value: unknown): GuestClaimRetainedItem {
@@ -1216,6 +1308,7 @@ function parseManifest(
   value: Record<string, unknown>,
   userId: string,
   snapshots: GuestClaimSnapshotItem[],
+  compactCommittedReceipt: boolean,
 ): GuestClaimManifest {
   if (
     !hasOnlyKeys(value, [
@@ -1266,7 +1359,7 @@ function parseManifest(
   };
   const digest = manifestDigest({ ...manifest, snapshots });
   if (
-    digest !== manifest.manifestSha256 ||
+    (!compactCommittedReceipt && digest !== manifest.manifestSha256) ||
     manifest.clientBatchId !==
       `claim:${manifest.createdAt}:${manifest.manifestSha256.slice(0, 16)}` ||
     manifest.planCount + manifest.logCount !== manifest.items.length
@@ -1278,6 +1371,7 @@ function parseManifest(
     item => item.completedAt !== undefined,
   );
   if (
+    (compactCommittedReceipt && manifest.status !== 'committed') ||
     (manifest.status === 'prepared' && manifest.remoteBatchId !== undefined) ||
     (['finalizing', 'committed', 'cleanupPending'].includes(manifest.status) &&
       manifest.remoteBatchId === undefined) ||
@@ -1473,7 +1567,11 @@ function validateSnapshotSet(
   manifest: GuestClaimManifest,
   snapshots: GuestClaimSnapshotItem[],
   schemaVersion: GuestClaimSnapshot['schemaVersion'],
+  compactCommittedReceipt = false,
 ): void {
+  if (compactCommittedReceipt) {
+    return;
+  }
   if (snapshots.length !== manifest.items.length) {
     throw new GuestClaimStorageError();
   }
@@ -1766,7 +1864,7 @@ function digestUtf8(value: string): string {
   return sha256BytesHex(encodeUtf8(value));
 }
 
-function isGuestProfileStorageKey(storageKey: string): boolean {
+export function isGuestProfileStorageKey(storageKey: string): boolean {
   return storageKey.startsWith(dataProfileKeyPrefix({ kind: 'guest' }));
 }
 

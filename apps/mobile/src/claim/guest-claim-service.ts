@@ -5,6 +5,7 @@ import type {
 } from '@repo/supabase';
 import { GuestClaimRepositoryError } from '@repo/supabase';
 
+import type {ConditionalDeleteManyResult} from '../repositories/bulk-conditional-delete';
 import type { PrincipalRepositories } from '../repositories/principal-repositories';
 import { dataProfileKeyPrefix } from '../storage/data-principal';
 import type { WatchProfileStorage } from '../storage/watch-profile-storage';
@@ -18,11 +19,11 @@ import type { DivePlan } from '../types/dive-plan';
 import { getWatchSessionSourcePlanLocalId } from '../utils/enrich-watch-log-with-plan';
 import {
   createGuestClaimSnapshot,
-  claimProfileStillMatches,
   guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimPreparationError,
   GuestClaimStorageError,
+  isGuestProfileStorageKey,
   migrateGuestClaimSnapshotProfileSidecars,
   parseSnapshotLocalRecord,
   parseSnapshotPayload,
@@ -36,6 +37,7 @@ import {
 import type {
   GuestClaimErrorCode,
   GuestClaimFailureDetail,
+  GuestClaimHistoricalArtifact,
   GuestClaimItem,
   GuestClaimProgress,
 } from './guest-claim-types';
@@ -213,10 +215,16 @@ export class GuestClaimService {
         return undefined;
       }
       if (
+        snapshot.manifest.status === 'cleanupPending' &&
+        snapshot.failure === undefined
+      ) {
+        return this.cleanup(snapshot);
+      }
+      if (
         snapshot.manifest.status === 'cleanupPending' ||
         snapshot.manifest.status === 'committed'
       ) {
-        return this.cleanup(snapshot);
+        return snapshot;
       }
       if (
         snapshot.manifest.status === 'failed' &&
@@ -248,6 +256,8 @@ export class GuestClaimService {
         return snapshot;
       }
       if (snapshot.manifest.status === 'cleanupPending') {
+        delete snapshot.errorCode;
+        delete snapshot.failure;
         return this.cleanup(snapshot);
       }
       snapshot.manifest.status = 'running';
@@ -324,6 +334,9 @@ export class GuestClaimService {
     const snapshot = await this.readOwned();
     const logIds = new Set<string>();
     const planIds = new Set<string>();
+    if (snapshot?.snapshots.length === 0) {
+      return {logIds, planIds};
+    }
     if (
       snapshot?.manifest.status === 'committed' ||
       snapshot?.manifest.status === 'cleanupPending'
@@ -706,19 +719,43 @@ export class GuestClaimService {
       await this.persist(snapshot);
     }
     try {
+      const historicalArtifacts = historicalArtifactsFromSnapshot(snapshot);
+      const [logs, plans] = await Promise.all([
+        this.options.guestRepositories.logbook.list(),
+        this.options.guestRepositories.planbook.list(),
+      ]);
+      const logsById = new Map(logs.map(value => [value.localId, value]));
+      const plansById = new Map(plans.map(value => [value.localId, value]));
+      const exactLogs: Array<{
+        item: GuestClaimItem;
+        sidecar: GuestClaimSnapshotItem;
+        expectedRecordBytes: string;
+      }> = [];
+      const exactPlans: Array<{
+        item: GuestClaimItem;
+        sidecar: GuestClaimSnapshotItem;
+        expectedRecordBytes: string;
+      }> = [];
+
       for (const [index, item] of snapshot.manifest.items.entries()) {
         this.assertCanContinue();
-        const repository =
-          item.entityKind === 'plan'
-            ? this.options.guestRepositories.planbook
-            : this.options.guestRepositories.logbook;
-        const current = await repository.get(item.clientRecordId);
+        const sidecar = snapshot.snapshots[index];
+        if (sidecar === undefined) {
+          throw new GuestClaimServiceError('claim_validation_failed', {
+            phase: 'cleanup',
+            entityKind: item.entityKind,
+            clientRecordId: item.clientRecordId,
+          });
+        }
+        const current = (
+          item.entityKind === 'plan' ? plansById : logsById
+        ).get(item.clientRecordId);
         if (current === undefined) {
           continue;
         }
         const matches = await guestRecordMatchesClaimSnapshot({
           item,
-          sidecar: snapshot.snapshots[index]!,
+          sidecar,
           record: current,
           profileStorage: this.options.profileStorage,
         });
@@ -726,10 +763,7 @@ export class GuestClaimService {
           await this.promoteChangedGuest(snapshot, index, current);
           continue;
         }
-        const expectedRecordBytes = sourceRecordBytes(
-          snapshot.snapshots[index]!,
-        );
-        let deleteResult: 'deleted' | 'notFound' | 'conditionFailed';
+        const expectedRecordBytes = sourceRecordBytes(sidecar);
         if (item.entityKind === 'plan') {
           if (
             await this.repairExactGuestPlanFromAccountLog(
@@ -740,43 +774,108 @@ export class GuestClaimService {
           ) {
             continue;
           }
-          deleteResult = await this.options.guestRepositories.planbook.deleteIf(
-            item.clientRecordId,
-            candidate => canonicalLocal(candidate) === expectedRecordBytes,
-          );
+          exactPlans.push({item, sidecar, expectedRecordBytes});
         } else {
-          deleteResult = await this.options.guestRepositories.logbook.deleteIf(
-            item.clientRecordId,
-            candidate => canonicalLocal(candidate) === expectedRecordBytes,
-            { retainProfileAfterDelete: true },
-          );
-        }
-        if (deleteResult === 'conditionFailed') {
-          throw new GuestClaimServiceError('claim_validation_failed');
-        }
-        this.assertCanContinue();
-        if ((await repository.get(item.clientRecordId)) !== undefined) {
-          throw new GuestClaimServiceError('claim_validation_failed');
+          exactLogs.push({item, sidecar, expectedRecordBytes});
         }
       }
+
+      const planRequests = exactPlans.map(value => ({
+        localId: value.item.clientRecordId,
+        predicate: (candidate: DivePlan) =>
+          canonicalLocal(candidate) === value.expectedRecordBytes,
+      }));
+      const planResults =
+        planRequests.length === 0
+          ? new Map()
+          : this.options.guestRepositories.planbook.deleteManyIf !== undefined
+            ? await this.options.guestRepositories.planbook.deleteManyIf(
+                planRequests,
+              )
+            : new Map(
+                await Promise.all(
+                  planRequests.map(async request => [
+                    request.localId,
+                    await this.options.guestRepositories.planbook.deleteIf(
+                      request.localId,
+                      request.predicate,
+                    ),
+                  ] as const),
+                ),
+              );
+      assertBulkCleanupResults(exactPlans, planResults);
+
+      const logRequests = exactLogs.map(value => ({
+        localId: value.item.clientRecordId,
+        predicate: (candidate: DiveLogEntry) =>
+          canonicalLocal(candidate) === value.expectedRecordBytes,
+      }));
+      const logResults =
+        logRequests.length === 0
+          ? new Map()
+          : this.options.guestRepositories.logbook.deleteManyIf !== undefined
+            ? await this.options.guestRepositories.logbook.deleteManyIf(
+                logRequests,
+                {
+                  retainProfileAfterDelete: true,
+                  assertCanCommit: () => this.assertCanContinue(),
+                },
+              )
+            : new Map(
+                await Promise.all(
+                  logRequests.map(async request => [
+                    request.localId,
+                    await this.options.guestRepositories.logbook.deleteIf(
+                      request.localId,
+                      request.predicate,
+                      {retainProfileAfterDelete: true},
+                    ),
+                  ] as const),
+                ),
+              );
+      assertBulkCleanupResults(exactLogs, logResults);
+      this.assertCanContinue();
+
+      const guestProfileKeys = new Set<string>();
+      const claimSidecarKeys = new Set<string>();
       for (const [index, item] of snapshot.manifest.items.entries()) {
-        if (
-          item.profile !== undefined &&
-          (await claimProfileStillMatches(
-            item,
-            snapshot.snapshots[index]!,
-            this.options.profileStorage,
-          ))
-        ) {
-          await this.options.guestRepositories.logbook.removeWatchProfileIfUnreferenced(
-            item.profile.storageKey,
-          );
+        if (item.profile !== undefined) {
+          if (!isGuestProfileStorageKey(item.profile.storageKey)) {
+            throw cleanupItemError(item, snapshot.snapshots[index]);
+          }
+          guestProfileKeys.add(item.profile.storageKey);
+        }
+        const sidecarKey =
+          snapshot.snapshots[index]?.profileSidecarStorageKey;
+        if (sidecarKey !== undefined) {
+          claimSidecarKeys.add(sidecarKey);
         }
       }
-      snapshot.manifest.status = 'committed';
-      await this.persist(snapshot);
-    } catch {
+      for (const storageKey of guestProfileKeys) {
+        await this.options.guestRepositories.logbook.removeWatchProfileIfUnreferenced(
+          storageKey,
+        );
+      }
+      for (const storageKey of claimSidecarKeys) {
+        await this.options.profileStorage.remove(storageKey);
+      }
+
+      const committedSnapshot: GuestClaimSnapshot = {
+        ...snapshot,
+        schemaVersion: 2,
+        manifest: {...snapshot.manifest, status: 'committed'},
+        snapshots: [],
+        historicalArtifacts,
+      };
+      delete committedSnapshot.errorCode;
+      delete committedSnapshot.failure;
+      await this.persist(committedSnapshot);
+      return committedSnapshot;
+    } catch (error) {
+      const failure = this.serviceError(error);
       snapshot.manifest.status = 'cleanupPending';
+      snapshot.errorCode = failure.code;
+      snapshot.failure = failure.failure ?? {phase: 'cleanup'};
       await this.persist(snapshot);
     }
     return snapshot;
@@ -1492,6 +1591,79 @@ export class GuestClaimService {
     );
     return running;
   }
+}
+
+type ExactCleanupItem = {
+  item: GuestClaimItem;
+  sidecar: GuestClaimSnapshotItem;
+};
+
+function assertBulkCleanupResults(
+  items: readonly ExactCleanupItem[],
+  results: ConditionalDeleteManyResult,
+): void {
+  for (const value of items) {
+    const result = results.get(value.item.clientRecordId);
+    if (result === 'deleted' || result === 'notFound') {
+      continue;
+    }
+    throw cleanupItemError(value.item, value.sidecar);
+  }
+}
+
+function cleanupItemError(
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem | undefined,
+): GuestClaimServiceError {
+  return new GuestClaimServiceError('claim_validation_failed', {
+    phase: 'cleanup',
+    entityKind: item.entityKind,
+    clientRecordId: item.clientRecordId.slice(0, 512),
+    ...(sidecar?.label === undefined
+      ? {}
+      : {label: sidecar.label.slice(0, 200)}),
+  });
+}
+
+function historicalArtifactsFromSnapshot(
+  snapshot: GuestClaimSnapshot,
+): GuestClaimHistoricalArtifact[] {
+  const identities = new Map<string, GuestClaimHistoricalArtifact>();
+  for (const [index, item] of snapshot.manifest.items.entries()) {
+    if (item.entityKind !== 'log') {
+      continue;
+    }
+    const sidecar = snapshot.snapshots[index];
+    if (sidecar === undefined || sidecar.entityKind !== 'log') {
+      continue;
+    }
+    const record = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+    const profile = record.watchCapture?.profile;
+    const localSessionId = record.watchCapture?.session.localSessionId;
+    const artifactSha256 = profile?.artifactSha256 ?? profile?.sha256;
+    if (
+      localSessionId === undefined ||
+      profile?.contentRevision === undefined ||
+      artifactSha256 === undefined
+    ) {
+      continue;
+    }
+    const identity = {
+      localSessionId,
+      contentRevision: profile.contentRevision,
+      artifactSha256,
+    };
+    identities.set(
+      `${identity.localSessionId}\u0000${identity.contentRevision}\u0000${identity.artifactSha256}`,
+      identity,
+    );
+  }
+  return [...identities.values()].sort(
+    (left, right) =>
+      left.localSessionId.localeCompare(right.localSessionId) ||
+      left.contentRevision.localeCompare(right.contentRevision) ||
+      left.artifactSha256.localeCompare(right.artifactSha256),
+  );
 }
 
 function isTransientClaimError(

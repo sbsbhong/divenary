@@ -5125,6 +5125,127 @@ describe('account data state', () => {
     Object.defineProperty(AppState, 'currentState', appStateDescriptor!);
   });
 
+  it('does not auto-loop a persisted cleanup failure across remounts and retries explicitly', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const guestLogbook = new LocalDiveLogRepository([entry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const accountLogbook = new LocalDiveLogRepository([
+      {
+        ...entry,
+        ownerUserId: userId,
+        remoteId: '30000000-0000-4000-8000-000000000001',
+        remoteRevision: 1,
+        cloudSyncStatus: 'synced',
+      },
+    ]);
+    const accountPlanbook = new LocalDivePlanRepository();
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const store = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'cleanupPending';
+    snapshot.manifest.remoteBatchId =
+      '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      completedAt: 101,
+    };
+    snapshot.errorCode = 'claim_validation_failed';
+    snapshot.failure = {
+      phase: 'cleanup',
+      entityKind: 'log',
+      clientRecordId: entry.localId,
+    };
+    snapshot.manifest.updatedAt = 101;
+    await store.write(snapshot);
+
+    let latestClaim: ReturnType<typeof useAccountData>['claim'] | undefined;
+    const Capture = () => {
+      latestClaim = useAccountData().claim;
+      return null;
+    };
+    const dependencies = {
+      metadataStorage,
+      profileStorage,
+      migrateLegacyData: jest.fn(async () => undefined),
+      createRepositories: (principal: {kind: 'guest'} | {kind: 'user'; userId: string}) => ({
+        principal,
+        queryScope:
+          principal.kind === 'guest'
+            ? 'guest'
+            : `user:${principal.userId}`,
+        logbook:
+          principal.kind === 'guest' ? guestLogbook : accountLogbook,
+        planbook:
+          principal.kind === 'guest' ? guestPlanbook : accountPlanbook,
+      }),
+      createId: () => '10000000-0000-4000-8000-000000000001',
+      now: () => 102,
+      jitter: () => 0,
+    };
+
+    let activeRenderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    let activeQueryClient: QueryClient | undefined;
+    for (let mount = 0; mount < 2; mount += 1) {
+      const queryClient = new QueryClient();
+      let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(
+          <AccountDataProviderCore
+            queryClient={queryClient}
+            navigationReady
+            auth={{
+              state: {status: 'authenticated', userId},
+              guestClaimRemoteRepository: guestClaimRepository(),
+            }}
+            dependencies={dependencies}
+          >
+            <Capture />
+          </AccountDataProviderCore>,
+        );
+        await flushPromises();
+      });
+      await waitFor(() =>
+        expect(latestClaim?.state).toMatchObject({
+          status: 'failed',
+          failure: {phase: 'cleanup'},
+        }),
+      );
+      await expect(guestLogbook.get(entry.localId)).resolves.toBeDefined();
+      if (mount === 0) {
+        await ReactTestRenderer.act(async () => renderer!.unmount());
+        queryClient.clear();
+      } else {
+        activeRenderer = renderer!;
+        activeQueryClient = queryClient;
+      }
+    }
+
+    await ReactTestRenderer.act(async () => {
+      await latestClaim!.retry();
+      await flushPromises();
+    });
+
+    await expect(guestLogbook.get(entry.localId)).resolves.toBeUndefined();
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: {status: 'committed'},
+      snapshots: [],
+    });
+    await ReactTestRenderer.act(async () => activeRenderer!.unmount());
+    activeQueryClient!.clear();
+  });
+
   it('hides cleanup-pending guest ids before physical cleanup and does not resume offline', async () => {
     const metadataStorage = new InMemoryKeyValueStore();
     const guestClaimed = { ...entry, localId: 'claimed-log' };

@@ -1002,7 +1002,8 @@ export function AccountDataProviderCore({
             snapshot !== undefined &&
             (snapshot.manifest.status === 'running' ||
               snapshot.manifest.status === 'finalizing' ||
-              snapshot.manifest.status === 'cleanupPending' ||
+              (snapshot.manifest.status === 'cleanupPending' &&
+                snapshot.failure === undefined) ||
               (snapshot.manifest.status === 'committed' &&
                 hasHiddenGuestIds(publication)) ||
               (snapshot.manifest.status === 'failed' &&
@@ -1865,7 +1866,8 @@ function isRecoverableClaimSnapshot(
   return (
     snapshot?.manifest.status === 'running' ||
     snapshot?.manifest.status === 'finalizing' ||
-    snapshot?.manifest.status === 'cleanupPending' ||
+    (snapshot?.manifest.status === 'cleanupPending' &&
+      snapshot.failure === undefined) ||
     (snapshot?.manifest.status === 'failed' &&
       snapshot.errorCode === 'network_unavailable')
   );
@@ -2000,6 +2002,12 @@ async function applyHiddenGuestIds(
         ).add(item.clientRecordId);
       }
     }
+    if (shouldApply()) {
+      replaceHiddenGuestIds(hidden, next);
+    }
+    return;
+  }
+  if (snapshot.snapshots.length === 0) {
     if (shouldApply()) {
       replaceHiddenGuestIds(hidden, next);
     }
@@ -2159,6 +2167,17 @@ function presentationForSnapshot(
     state = { status: 'running', completed, total, phase: 'uploading' };
   } else if (snapshot.manifest.status === 'finalizing') {
     state = { status: 'running', completed, total, phase: 'finalizing' };
+  } else if (
+    snapshot.manifest.status === 'cleanupPending' &&
+    snapshot.failure !== undefined
+  ) {
+    state = {
+      status: 'failed',
+      completed,
+      total,
+      errorCode: snapshot.errorCode ?? 'claim_validation_failed',
+      failure: snapshot.failure,
+    };
   } else if (snapshot.manifest.status === 'cleanupPending') {
     state = {
       status: 'running',

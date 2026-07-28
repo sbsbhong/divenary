@@ -157,6 +157,24 @@ describe('claimSnapshotContainsHistoricalArtifact', () => {
     ).toBe(true);
   });
 
+  it('matches a compact committed receipt without immutable payload snapshots', () => {
+    const snapshot = makeFailedClaimSnapshot();
+    snapshot.schemaVersion = 2;
+    snapshot.manifest.status = 'committed';
+    delete snapshot.errorCode;
+    delete snapshot.failure;
+    snapshot.snapshots = [];
+    snapshot.historicalArtifacts = [makeIdentity()];
+
+    expect(
+      claimSnapshotContainsHistoricalArtifact(
+        snapshot,
+        makeIdentity(),
+        new Set(),
+      ),
+    ).toBe(true);
+  });
+
   it('does not match an incomplete identity', () => {
     expect(
       claimSnapshotContainsHistoricalArtifact(

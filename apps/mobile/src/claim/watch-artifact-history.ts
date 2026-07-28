@@ -30,6 +30,15 @@ export function claimSnapshotContainsHistoricalArtifact(
     return false;
   }
 
+  if (snapshot.historicalArtifacts !== undefined) {
+    return snapshot.historicalArtifacts.some(
+      artifact =>
+        artifact.localSessionId === identity.localSessionId &&
+        artifact.contentRevision === identity.contentRevision &&
+        artifact.artifactSha256 === identity.artifactSha256,
+    );
+  }
+
   return snapshot.manifest.items.some((item, index) => {
     if (
       item.entityKind !== 'log' ||

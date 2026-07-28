@@ -247,8 +247,8 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         await this.writeEntries(nextEntries);
         options?.assertCanCommit?.();
         for (const key of profileKeysToRemove) {
-          await this.profileStorage.remove(key);
           removedProfileKeys.push(key);
+          await this.profileStorage.remove(key);
           options?.assertCanCommit?.();
         }
       } catch (error) {

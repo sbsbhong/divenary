@@ -52,6 +52,12 @@ export type GuestClaimRetainedItem = {
   relatedClientRecordId?: string;
 };
 
+export type GuestClaimHistoricalArtifact = {
+  localSessionId: string;
+  contentRevision: string;
+  artifactSha256: string;
+};
+
 export type GuestClaimProgress = {
   completed: number;
   total: number;

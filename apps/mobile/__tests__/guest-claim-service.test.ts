@@ -767,7 +767,7 @@ describe('guest claim service', () => {
       },
     });
 
-    const resumed = await service.resume();
+    const resumed = await service.retry();
 
     expect(resumed?.manifest.status).toBe('committed');
     await expect(guest.logbook.get('log-a')).resolves.toBeUndefined();
@@ -1243,7 +1243,7 @@ describe('guest claim service', () => {
     await expect(guest.logbook.get('log-new')).resolves.toBeDefined();
     await expect(guest.planbook.get('plan-a')).resolves.toBeDefined();
 
-    const result = await service.resume();
+    const result = await service.retry();
 
     expect(result?.manifest.status).toBe('committed');
     const operations = await outbox.list(userId);
@@ -1471,12 +1471,121 @@ describe('guest claim service', () => {
       order.indexOf('forced-exit:log-a'),
     );
 
-    const retried = await service.resume();
+    const retried = await service.retry();
 
     expect(retried?.manifest.status).toBe('committed');
     expect(remote.finalize).toHaveBeenCalledTimes(1);
     expect(remote.listCommittedBatch).toHaveBeenCalledTimes(1);
     expect(guest.logbook.delete).toHaveBeenCalledTimes(2);
+  });
+
+  it('reconciles a full guest inventory with one bulk delete per entity', async () => {
+    const logs = Array.from({length: 15}, (_, index) =>
+      diveLog(`bulk-log-${index}`),
+    );
+    const plans = Array.from({length: 3}, (_, index) =>
+      divePlan(`bulk-plan-${index}`),
+    );
+    const guest = repositories(logs, plans);
+    guest.logbook.deleteManyIf = jest.fn(async requests => {
+      const results = new Map<string, 'deleted' | 'conditionFailed' | 'notFound'>();
+      for (const request of requests) {
+        const current = logs.find(value => value.localId === request.localId);
+        if (current === undefined) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(structuredClone(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          await guest.logbook.delete(request.localId, {
+            retainProfileAfterDelete: true,
+          });
+          results.set(request.localId, 'deleted');
+        }
+      }
+      return results;
+    });
+    guest.planbook.deleteManyIf = jest.fn(async requests => {
+      const results = new Map<string, 'deleted' | 'conditionFailed' | 'notFound'>();
+      for (const request of requests) {
+        const current = plans.find(value => value.localId === request.localId);
+        if (current === undefined) {
+          results.set(request.localId, 'notFound');
+        } else if (!request.predicate(structuredClone(current))) {
+          results.set(request.localId, 'conditionFailed');
+        } else {
+          await guest.planbook.delete(request.localId);
+          results.set(request.localId, 'deleted');
+        }
+      }
+      return results;
+    });
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    let remoteOrdinal = 0;
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => {
+        remoteOrdinal += 1;
+        return {
+          stagingRecordId: uuid('2', remoteOrdinal),
+          targetRecordId: uuid('3', remoteOrdinal),
+        };
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {status: 'committed'},
+      snapshots: [],
+    });
+    expect(guest.logbook.deleteManyIf).toHaveBeenCalledTimes(1);
+    expect(guest.planbook.deleteManyIf).toHaveBeenCalledTimes(1);
+    expect(guest.logbook.get).not.toHaveBeenCalled();
+    expect(guest.planbook.get).not.toHaveBeenCalled();
+    expect(guest.logbook.deleteIf).not.toHaveBeenCalled();
+    expect(guest.planbook.deleteIf).not.toHaveBeenCalled();
+  });
+
+  it('keeps a changed row retryable when its bulk condition fails', async () => {
+    const changedId = 'changed-during-cleanup';
+    const guest = repositories([diveLog(changedId)], []);
+    guest.logbook.deleteManyIf = jest.fn(async () =>
+      new Map([[changedId, 'conditionFailed' as const]]),
+    );
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote: remoteRepository(store),
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {status: 'cleanupPending'},
+      errorCode: 'claim_validation_failed',
+      failure: {
+        phase: 'cleanup',
+        clientRecordId: changedId,
+      },
+    });
+    expect(await guest.logbook.get(changedId)).toBeDefined();
   });
 
   it('resumes cleanup after termination between item deletes', async () => {
@@ -1514,7 +1623,7 @@ describe('guest claim service', () => {
     await expect(guest.logbook.get('log-b')).resolves.toBeDefined();
 
     guest.logbook.delete.mockImplementation(deleteLog);
-    const resumed = await service.resume();
+    const resumed = await service.retry();
 
     expect(resumed?.manifest.status).toBe('committed');
     await expect(guest.logbook.list()).resolves.toEqual([]);
