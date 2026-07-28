@@ -8,6 +8,7 @@ import { GuestClaimRepositoryError } from '@repo/supabase';
 import {
   createGuestClaimSnapshot,
   GuestClaimStore,
+  readClaimProfileBytes,
   type GuestClaimSnapshot,
 } from '../src/claim/guest-claim-store';
 import {
@@ -855,11 +856,13 @@ describe('guest claim service', () => {
       targetRecordId: uuid('3', 2),
       completedAt: 101,
     };
+    const snapshotProfileBytes = (await readClaimProfileBytes(
+      snapshot.snapshots[0]!,
+      profile,
+    ))!;
     snapshot.snapshots[0]!.profileReadback = {
       path: `${userId}/claims/${batchId}/${uuid('3', 2)}/revision-1.json`,
-      byteCount: new TextEncoder().encode(
-        snapshot.snapshots[0]!.profileBytes!,
-      ).length,
+      byteCount: new TextEncoder().encode(snapshotProfileBytes).length,
       sha256: snapshot.manifest.items[0]!.profile!.sha256,
       sampleCount: snapshot.manifest.items[0]!.profile!.sampleCount,
       verifiedAt: 102,

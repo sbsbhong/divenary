@@ -15,7 +15,11 @@ import {
   dataStorageKeys,
 } from '../storage/data-principal';
 import type { PersistentKeyValueStore } from '../storage/persistent-key-value-store';
-import type { WatchProfileStorage } from '../storage/watch-profile-storage';
+import {
+  readWatchProfileRaw,
+  writeWatchProfileRaw,
+  type WatchProfileStorage,
+} from '../storage/watch-profile-storage';
 import {
   canonicalAccountPayloadSha256,
   createAccountRemoteLog,
@@ -40,7 +44,8 @@ import type {
   GuestClaimRetainedReason,
 } from './guest-claim-types';
 
-const SIDECAR_SCHEMA_VERSION = 1;
+const LEGACY_SIDECAR_SCHEMA_VERSION = 1;
+const SIDECAR_SCHEMA_VERSION = 2;
 const CHECKPOINT_HINT_SCHEMA_VERSION = 1;
 const CHECKPOINT_HINT_KEY_SUFFIX = ':checkpoint-hint';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -74,11 +79,12 @@ export type GuestClaimSnapshotItem = {
   sourceRecordSha256?: string;
   label?: string;
   profileBytes?: string;
+  profileSidecarStorageKey?: string;
   profileReadback?: GuestClaimProfileReadback;
 };
 
 export type GuestClaimSnapshot = {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   userId: string;
   manifest: GuestClaimManifest;
   snapshots: GuestClaimSnapshotItem[];
@@ -540,6 +546,19 @@ export async function createGuestClaimSnapshot(options: {
     const localRecordBytes = canonicalJson(prepared.log);
     const sourceRecordBytes = canonicalJson(sourceLog);
     const sourcePlanClientRecordId = relationships.get(prepared.log.localId);
+    const profileSidecarStorageKey =
+      prepared.profile === undefined
+        ? undefined
+        : await persistClaimProfileSidecar({
+            userId: options.userId,
+            localId: prepared.log.localId,
+            contentRevision:
+              prepared.log.watchCapture!.profile!.contentRevision,
+            localSessionId:
+              prepared.log.watchCapture!.session.localSessionId,
+            profile: prepared.profile,
+            profileStorage: options.profileStorage,
+          });
     items.push({
       key,
       entityKind: 'log',
@@ -573,7 +592,7 @@ export async function createGuestClaimSnapshot(options: {
         : { label: claimLabel(prepared.log) }),
       ...(prepared.profile === undefined
         ? {}
-        : { profileBytes: prepared.profile.bytes }),
+        : {profileSidecarStorageKey}),
     });
   }
 
@@ -733,11 +752,18 @@ export async function claimProfileStillMatches(
   sidecar: GuestClaimSnapshotItem,
   profileStorage: WatchProfileStorage,
 ): Promise<boolean> {
-  if (item.profile === undefined || sidecar.profileBytes === undefined) {
-    return item.profile === undefined && sidecar.profileBytes === undefined;
+  if (item.profile === undefined) {
+    return (
+      sidecar.profileBytes === undefined &&
+      sidecar.profileSidecarStorageKey === undefined
+    );
   }
   if (!isGuestProfileStorageKey(item.profile.storageKey)) {
     throw new GuestClaimStorageError();
+  }
+  const snapshotBytes = await readClaimProfileBytes(sidecar, profileStorage);
+  if (snapshotBytes === undefined) {
+    return false;
   }
   try {
     const snapshot = createProfileBytesSnapshot(
@@ -749,10 +775,99 @@ export async function claimProfileStillMatches(
         sha256: item.profile.sha256,
       },
     );
-    return snapshot.bytes === sidecar.profileBytes;
+    return snapshot.bytes === snapshotBytes;
   } catch {
     return false;
   }
+}
+
+export async function readClaimProfileBytes(
+  sidecar: GuestClaimSnapshotItem,
+  profileStorage: WatchProfileStorage,
+): Promise<string | undefined> {
+  if (
+    sidecar.profileBytes !== undefined &&
+    sidecar.profileSidecarStorageKey !== undefined
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  if (sidecar.profileBytes !== undefined) {
+    return sidecar.profileBytes;
+  }
+  if (sidecar.profileSidecarStorageKey === undefined) {
+    return undefined;
+  }
+  return readWatchProfileRaw(
+    profileStorage,
+    sidecar.profileSidecarStorageKey,
+  );
+}
+
+export async function migrateGuestClaimSnapshotProfileSidecars(
+  snapshot: GuestClaimSnapshot,
+  profileStorage: WatchProfileStorage,
+): Promise<GuestClaimSnapshot> {
+  if (snapshot.schemaVersion === SIDECAR_SCHEMA_VERSION) {
+    return snapshot;
+  }
+
+  const nextSnapshots: GuestClaimSnapshotItem[] = [];
+  for (const [index, sidecar] of snapshot.snapshots.entries()) {
+    const item = snapshot.manifest.items[index];
+    if (item?.profile === undefined) {
+      nextSnapshots.push({...sidecar});
+      continue;
+    }
+    if (sidecar.profileBytes === undefined) {
+      throw new GuestClaimStorageError();
+    }
+    const local = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+    const localSessionId = local.watchCapture?.session.localSessionId;
+    if (localSessionId === undefined) {
+      throw new GuestClaimStorageError();
+    }
+    const verified = verifyProfileBytesSnapshot(sidecar.profileBytes, {
+      localSessionId,
+      sampleCount: item.profile.sampleCount,
+      sha256: item.profile.sha256,
+      byteCount: sidecar.profileReadback?.byteCount,
+    });
+    if (verified.bytes !== sidecar.profileBytes) {
+      throw new GuestClaimStorageError();
+    }
+    const profileSidecarStorageKey = claimProfileSidecarKey(
+      snapshot.userId,
+      item.clientRecordId,
+      item.profile.contentRevision,
+      item.profile.sha256,
+    );
+    await writeWatchProfileRaw(
+      profileStorage,
+      profileSidecarStorageKey,
+      sidecar.profileBytes,
+    );
+    const readback = await readWatchProfileRaw(
+      profileStorage,
+      profileSidecarStorageKey,
+    );
+    if (readback !== sidecar.profileBytes) {
+      throw new GuestClaimStorageError();
+    }
+    const {
+      profileBytes: _legacyProfileBytes,
+      ...sidecarWithoutInlineProfile
+    } = sidecar;
+    nextSnapshots.push({
+      ...sidecarWithoutInlineProfile,
+      profileSidecarStorageKey,
+    });
+  }
+
+  return {
+    ...snapshot,
+    schemaVersion: SIDECAR_SCHEMA_VERSION,
+    snapshots: nextSnapshots,
+  };
 }
 
 function mapPlanPayload(plan: DivePlan): RemoteDivePlan {
@@ -824,6 +939,56 @@ async function prepareLogSnapshot(
     },
   };
   return { log, profile, byteCount: profile.byteCount };
+}
+
+async function persistClaimProfileSidecar(options: {
+  userId: string;
+  localId: string;
+  contentRevision: string;
+  localSessionId: string;
+  profile: ReturnType<typeof createStoredProfileBytesSnapshot>;
+  profileStorage: WatchProfileStorage;
+}): Promise<string> {
+  const key = claimProfileSidecarKey(
+    options.userId,
+    options.localId,
+    options.contentRevision,
+    options.profile.sha256,
+  );
+  await writeWatchProfileRaw(
+    options.profileStorage,
+    key,
+    options.profile.bytes,
+  );
+  const stored = await readWatchProfileRaw(options.profileStorage, key);
+  if (stored === undefined || stored !== options.profile.bytes) {
+    throw new GuestClaimPreparationError('claim_validation_failed');
+  }
+  const verified = verifyProfileBytesSnapshot(stored, {
+    localSessionId: options.localSessionId,
+    sampleCount: options.profile.sampleCount,
+    sha256: options.profile.sha256,
+    byteCount: options.profile.byteCount,
+  });
+  if (verified.bytes !== stored) {
+    throw new GuestClaimPreparationError('claim_validation_failed');
+  }
+  return key;
+}
+
+function claimProfileSidecarKey(
+  userId: string,
+  localId: string,
+  contentRevision: string,
+  sha256: string,
+): string {
+  return [
+    'dive-mobile:claim-profile',
+    encodeURIComponent(userId),
+    encodeURIComponent(localId),
+    encodeURIComponent(contentRevision),
+    sha256,
+  ].join(':');
 }
 
 function boundedLogForPayload(log: DiveLogEntry, profileSha256?: string) {
@@ -899,7 +1064,8 @@ function parseStoredSnapshot(
       'errorCode',
       'failure',
     ]) ||
-    value.schemaVersion !== SIDECAR_SCHEMA_VERSION ||
+    (value.schemaVersion !== LEGACY_SIDECAR_SCHEMA_VERSION &&
+      value.schemaVersion !== SIDECAR_SCHEMA_VERSION) ||
     value.userId !== expectedUserId ||
     !isRecord(value.manifest) ||
     !Array.isArray(value.snapshots) ||
@@ -909,7 +1075,10 @@ function parseStoredSnapshot(
   ) {
     throw new GuestClaimStorageError();
   }
-  const snapshots = value.snapshots.map(parseSidecar);
+  const schemaVersion = value.schemaVersion as 1 | 2;
+  const snapshots = value.snapshots.map(sidecar =>
+    parseSidecar(sidecar, schemaVersion),
+  );
   if (
     snapshots.some(
       sidecar =>
@@ -939,10 +1108,10 @@ function parseStoredSnapshot(
   ) {
     throw new GuestClaimStorageError();
   }
-  validateSnapshotSet(manifest, snapshots);
+  validateSnapshotSet(manifest, snapshots, schemaVersion);
   validateRetainedSet(manifest, retainedItems);
   return {
-    schemaVersion: 1,
+    schemaVersion,
     userId: expectedUserId,
     manifest,
     snapshots,
@@ -1205,7 +1374,10 @@ function parseProfile(value: unknown): NonNullable<GuestClaimItem['profile']> {
   };
 }
 
-function parseSidecar(value: unknown): GuestClaimSnapshotItem {
+function parseSidecar(
+  value: unknown,
+  schemaVersion: GuestClaimSnapshot['schemaVersion'],
+): GuestClaimSnapshotItem {
   if (
     !isRecord(value) ||
     !hasOnlyKeys(value, [
@@ -1218,6 +1390,7 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
       'sourceRecordSha256',
       'label',
       'profileBytes',
+      'profileSidecarStorageKey',
       'profileReadback',
     ]) ||
     !isNonEmptyString(value.key) ||
@@ -1231,7 +1404,14 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     (value.sourceRecordSha256 !== undefined &&
       !SHA256_PATTERN.test(String(value.sourceRecordSha256))) ||
     !isOptionalNonEmptyString(value.label) ||
-    !isOptionalString(value.profileBytes)
+    !isOptionalString(value.profileBytes) ||
+    !isOptionalNonEmptyString(value.profileSidecarStorageKey) ||
+    (value.profileBytes !== undefined &&
+      value.profileSidecarStorageKey !== undefined) ||
+    (schemaVersion === LEGACY_SIDECAR_SCHEMA_VERSION &&
+      value.profileSidecarStorageKey !== undefined) ||
+    (schemaVersion === SIDECAR_SCHEMA_VERSION &&
+      value.profileBytes !== undefined)
   ) {
     throw new GuestClaimStorageError();
   }
@@ -1255,6 +1435,9 @@ function parseSidecar(value: unknown): GuestClaimSnapshotItem {
     ...(value.profileBytes === undefined
       ? {}
       : { profileBytes: value.profileBytes }),
+    ...(value.profileSidecarStorageKey === undefined
+      ? {}
+      : {profileSidecarStorageKey: value.profileSidecarStorageKey}),
     ...(profileReadback === undefined ? {} : { profileReadback }),
   };
 }
@@ -1289,6 +1472,7 @@ function parseProfileReadback(value: unknown): GuestClaimProfileReadback {
 function validateSnapshotSet(
   manifest: GuestClaimManifest,
   snapshots: GuestClaimSnapshotItem[],
+  schemaVersion: GuestClaimSnapshot['schemaVersion'],
 ): void {
   if (snapshots.length !== manifest.items.length) {
     throw new GuestClaimStorageError();
@@ -1331,6 +1515,7 @@ function validateSnapshotSet(
         plan.convertedLogLocalId !== item.convertedLogClientRecordId ||
         canonicalJson(mapPlanPayload(plan).payload) !== sidecar.payloadBytes ||
         sidecar.profileBytes !== undefined ||
+        sidecar.profileSidecarStorageKey !== undefined ||
         sidecar.profileReadback !== undefined
       ) {
         throw new GuestClaimStorageError();
@@ -1345,6 +1530,7 @@ function validateSnapshotSet(
     if (item.profile === undefined) {
       if (
         sidecar.profileBytes !== undefined ||
+        sidecar.profileSidecarStorageKey !== undefined ||
         sidecar.profileReadback !== undefined ||
         canonicalJson(mapLogPayload(boundedLogForPayload(log), manifest.userId).payload) !==
           sidecar.payloadBytes
@@ -1354,8 +1540,20 @@ function validateSnapshotSet(
       continue;
     }
     const reference = log.watchCapture?.profile;
+    const hasExpectedProfileSnapshot =
+      schemaVersion === LEGACY_SIDECAR_SCHEMA_VERSION
+        ? sidecar.profileBytes !== undefined &&
+          sidecar.profileSidecarStorageKey === undefined
+        : sidecar.profileBytes === undefined &&
+          sidecar.profileSidecarStorageKey ===
+            claimProfileSidecarKey(
+              manifest.userId,
+              item.clientRecordId,
+              item.profile.contentRevision,
+              item.profile.sha256,
+            );
     if (
-      sidecar.profileBytes === undefined ||
+      !hasExpectedProfileSnapshot ||
       !isGuestProfileStorageKey(item.profile.storageKey) ||
       reference?.storageKey !== item.profile.storageKey ||
       reference.contentRevision !== item.profile.contentRevision ||
@@ -1366,19 +1564,26 @@ function validateSnapshotSet(
     ) {
       throw new GuestClaimStorageError();
     }
-    const verified = verifyProfileBytesSnapshot(sidecar.profileBytes, {
-      localSessionId: log.watchCapture.session.localSessionId,
-      sampleCount: item.profile.sampleCount,
-      sha256: item.profile.sha256,
-      byteCount: sidecar.profileReadback?.byteCount,
-    });
+    const profileByteCount = payload.profile_byte_count;
+    if (!isNonNegativeInteger(profileByteCount)) {
+      throw new GuestClaimStorageError();
+    }
+    const verified =
+      sidecar.profileBytes === undefined
+        ? undefined
+        : verifyProfileBytesSnapshot(sidecar.profileBytes, {
+            localSessionId: log.watchCapture.session.localSessionId,
+            sampleCount: item.profile.sampleCount,
+            sha256: item.profile.sha256,
+            byteCount: sidecar.profileReadback?.byteCount,
+          });
     const payloadLog = boundedLogForPayload(log, item.profile.sha256);
     if (
       canonicalJson(
         mapLogPayload(
           payloadLog,
           manifest.userId,
-          encodeUtf8(sidecar.profileBytes).length,
+          profileByteCount,
         ).payload,
       ) !== sidecar.payloadBytes
     ) {
@@ -1392,8 +1597,12 @@ function validateSnapshotSet(
       sidecar.profileReadback !== undefined &&
       (expectedReadbackPath === undefined ||
         sidecar.profileReadback.path !== expectedReadbackPath ||
-        sidecar.profileReadback.sha256 !== verified.sha256 ||
-        sidecar.profileReadback.sampleCount !== verified.sampleCount ||
+        sidecar.profileReadback.sha256 !== item.profile.sha256 ||
+        sidecar.profileReadback.sampleCount !== item.profile.sampleCount ||
+        sidecar.profileReadback.byteCount !== profileByteCount ||
+        (verified !== undefined &&
+          (sidecar.profileReadback.sha256 !== verified.sha256 ||
+            sidecar.profileReadback.sampleCount !== verified.sampleCount)) ||
         (item.completedAt !== undefined &&
           sidecar.profileReadback.path.length === 0))
     ) {

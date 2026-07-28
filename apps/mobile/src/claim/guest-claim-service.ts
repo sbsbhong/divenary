@@ -23,8 +23,10 @@ import {
   guestRecordMatchesClaimSnapshot,
   GuestClaimPreparationError,
   GuestClaimStorageError,
+  migrateGuestClaimSnapshotProfileSidecars,
   parseSnapshotLocalRecord,
   parseSnapshotPayload,
+  readClaimProfileBytes,
   retainedGuestRecordsMatchClaimSnapshot,
   sourceRecordBytes,
   type GuestClaimSnapshot,
@@ -461,12 +463,16 @@ export class GuestClaimService {
     item: GuestClaimItem,
     sidecar: GuestClaimSnapshotItem,
   ): Promise<void> {
+    const profileBytes = await readClaimProfileBytes(
+      sidecar,
+      this.options.profileStorage,
+    );
     if (
       item.profile === undefined ||
       item.stagingRecordId === undefined ||
       item.targetRecordId === undefined ||
       snapshot.manifest.remoteBatchId === undefined ||
-      sidecar.profileBytes === undefined
+      profileBytes === undefined
     ) {
       throw new GuestClaimServiceError('claim_validation_failed');
     }
@@ -475,7 +481,7 @@ export class GuestClaimService {
     if (localSessionId === undefined) {
       throw new GuestClaimServiceError('profile_corrupt');
     }
-    const verified = verifyProfileBytesSnapshot(sidecar.profileBytes, {
+    const verified = verifyProfileBytesSnapshot(profileBytes, {
       localSessionId,
       sampleCount: item.profile.sampleCount,
       sha256: item.profile.sha256,
@@ -483,7 +489,7 @@ export class GuestClaimService {
     const path = `${this.options.userId}/claims/${snapshot.manifest.remoteBatchId}/${item.targetRecordId}/${encodeURIComponent(item.profile.contentRevision)}.json`;
 
     if (sidecar.profileReadback === undefined) {
-      const bytes = encodeUtf8(sidecar.profileBytes);
+      const bytes = encodeUtf8(profileBytes);
       await this.options.remoteRepository.uploadProfile(path, bytes);
       this.assertCanContinue();
       const downloaded =
@@ -601,6 +607,13 @@ export class GuestClaimService {
 
       const local = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
       const remote = committed.logs.get(item.clientRecordId)!;
+      const profileBytes =
+        item.profile === undefined
+          ? undefined
+          : await readClaimProfileBytes(
+              sidecar,
+              this.options.profileStorage,
+            );
       let accountValue: DiveLogEntry = {
         ...local,
         remoteId: remote.id,
@@ -610,10 +623,16 @@ export class GuestClaimService {
       };
       if (
         item.profile !== undefined &&
-        sidecar.profileBytes !== undefined &&
+        (profileBytes === undefined || local.watchCapture === undefined)
+      ) {
+        throw new GuestClaimServiceError('profile_corrupt');
+      }
+      if (
+        item.profile !== undefined &&
+        profileBytes !== undefined &&
         local.watchCapture !== undefined
       ) {
-        const profile = verifyProfileBytesSnapshot(sidecar.profileBytes, {
+        const profile = verifyProfileBytesSnapshot(profileBytes, {
           localSessionId: local.watchCapture.session.localSessionId,
           sampleCount: item.profile.sampleCount,
           sha256: item.profile.sha256,
@@ -639,7 +658,7 @@ export class GuestClaimService {
             byteCount: profile.byteCount,
           },
         );
-        if (reserialized.bytes !== sidecar.profileBytes) {
+        if (reserialized.bytes !== profileBytes) {
           throw new GuestClaimServiceError('profile_corrupt');
         }
         accountValue = {
@@ -1381,6 +1400,19 @@ export class GuestClaimService {
     }
     if (snapshot !== undefined && snapshot.userId !== this.options.userId) {
       throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    if (snapshot?.schemaVersion === 1) {
+      try {
+        const migrated = await migrateGuestClaimSnapshotProfileSidecars(
+          snapshot,
+          this.options.profileStorage,
+        );
+        await this.options.store.write(migrated);
+        snapshot = migrated;
+      } catch {
+        // A legacy inline snapshot remains authoritative until sidecar
+        // materialization and durable checkpoint write both succeed.
+      }
     }
     return snapshot;
   }

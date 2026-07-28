@@ -140,6 +140,27 @@ describe('WatchConnectivity native source contract', () => {
     );
   });
 
+  it('moves raw watch profiles on a dedicated native utility queue', () => {
+    const module = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchProfileStorageModule.swift',
+    );
+    const bridge = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchProfileStorageModuleBridge.m',
+    );
+
+    expect(module).toMatch(
+      /DispatchQueue\(\s*label: "com\.divenary\.watch-profile-storage"/,
+    );
+    expect(module).toContain('@objc(writeRawProfile:payloadJson:resolver:rejecter:)');
+    expect(module).toContain('@objc(readRawProfile:resolver:rejecter:)');
+    expect(module).toContain(
+      '@objc(copyRawProfile:destinationKey:resolver:rejecter:)',
+    );
+    expect(bridge).toContain('writeRawProfile');
+    expect(bridge).toContain('readRawProfile');
+    expect(bridge).toContain('copyRawProfile');
+  });
+
   it('updates saved watch session sync status when WatchConnectivity finishes a transfer', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
     const envelope = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift');

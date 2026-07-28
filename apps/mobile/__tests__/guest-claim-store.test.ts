@@ -4,6 +4,8 @@ import {
   guestRecordsContainClaimSnapshotSources,
   guestRecordMatchesClaimSnapshot,
   GuestClaimStore,
+  migrateGuestClaimSnapshotProfileSidecars,
+  readClaimProfileBytes,
   type GuestClaimSnapshot,
 } from '../src/claim/guest-claim-store';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
@@ -18,6 +20,7 @@ import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { DivePlan } from '../src/types/dive-plan';
 import type { WatchDepthSample } from '../src/types/dive-session';
 import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
+import {verifyProfileBytesSnapshot} from '../src/claim/profile-bytes';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
@@ -1177,7 +1180,9 @@ describe('guest claim store', () => {
     expect((payload.profile_preview as unknown[]).length).toBeLessThanOrEqual(
       160,
     );
-    expect(JSON.parse(logSnapshot.profileBytes ?? '[]')).toHaveLength(200);
+    expect(
+      JSON.parse((await readClaimProfileBytes(logSnapshot, profiles)) ?? '[]'),
+    ).toHaveLength(200);
     expect(JSON.parse(logSnapshot.localRecordBytes)).toMatchObject({
       localId: 'log-a',
       watchCapture: { profile: { storageKey: guestProfileKey } },
@@ -1205,6 +1210,110 @@ describe('guest claim store', () => {
     expect(resumed?.snapshots[2]?.localRecordBytes).not.toContain(
       'changed after snapshot',
     );
+  });
+
+  it('keeps a large immutable profile in a raw sidecar instead of the claim envelope', async () => {
+    const profiles = profileStorage();
+    const samples = depthSamples(8_000);
+    await profiles.write(guestProfileKey, samples);
+
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples: samples.slice(0, 160),
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: samples.length,
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+
+    expect(snapshot.schemaVersion).toBe(2);
+    expect(snapshot.snapshots[0]?.profileBytes).toBeUndefined();
+    expect(snapshot.snapshots[0]?.profileSidecarStorageKey).toMatch(
+      /^dive-mobile:claim-profile:/,
+    );
+    expect(JSON.stringify(snapshot)).not.toContain('"depthMeters"');
+
+    const stored = await profiles.readRaw?.(
+      snapshot.snapshots[0]!.profileSidecarStorageKey!,
+    );
+    expect(
+      verifyProfileBytesSnapshot(stored!, {
+        localSessionId: 'session-log-a',
+        sampleCount: 8_000,
+        sha256: snapshot.manifest.items[0]!.profile!.sha256,
+      }).sampleCount,
+    ).toBe(8_000);
+  });
+
+  it('migrates a legacy inline profile only after exact raw sidecar readback', async () => {
+    const profiles = profileStorage();
+    const samples = depthSamples(200);
+    await profiles.write(guestProfileKey, samples);
+    const current = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples: samples.slice(0, 160),
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: samples.length,
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+    const profileBytes = (await readClaimProfileBytes(
+      current.snapshots[0]!,
+      profiles,
+    ))!;
+    const legacy: GuestClaimSnapshot = {
+      ...structuredClone(current),
+      schemaVersion: 1,
+      snapshots: current.snapshots.map(sidecar => {
+        const {
+          profileSidecarStorageKey: _sidecarKey,
+          ...withoutSidecarKey
+        } = sidecar;
+        return {...withoutSidecarKey, profileBytes};
+      }),
+    };
+
+    const migrated = await migrateGuestClaimSnapshotProfileSidecars(
+      legacy,
+      profiles,
+    );
+
+    expect(legacy.schemaVersion).toBe(1);
+    expect(legacy.snapshots[0]?.profileBytes).toBe(profileBytes);
+    expect(migrated).toMatchObject({
+      schemaVersion: 2,
+      snapshots: [
+        {
+          profileSidecarStorageKey: expect.stringMatching(
+            /^dive-mobile:claim-profile:/,
+          ),
+        },
+      ],
+    });
+    expect(migrated.snapshots[0]?.profileBytes).toBeUndefined();
+    await expect(
+      profiles.readRaw?.(
+        migrated.snapshots[0]!.profileSidecarStorageKey!,
+      ),
+    ).resolves.toBe(profileBytes);
   });
 
   it('fails closed for malformed or digest-mismatched sidecars', async () => {
@@ -1315,7 +1424,10 @@ describe('guest claim store', () => {
       stagingRecordId: '20000000-0000-4000-8000-000000000001',
       targetRecordId: '30000000-0000-4000-8000-000000000001',
     };
-    const profileBytes = snapshot.snapshots[0]!.profileBytes!;
+    const profileBytes = (await readClaimProfileBytes(
+      snapshot.snapshots[0]!,
+      profiles,
+    ))!;
     snapshot.snapshots[0]!.profileReadback = {
       path: `${userId}/claims/wrong/path.json`,
       byteCount: new TextEncoder().encode(profileBytes).length,
@@ -1508,13 +1620,34 @@ function repository<T extends { localId: string }>(values: T[]) {
 
 function profileStorage(): WatchProfileStorage {
   const values = new Map<string, WatchDepthSample[]>();
+  const rawValues = new Map<string, string>();
   return {
     write: jest.fn(async (key, samples) => {
       values.set(key, structuredClone(samples));
+      rawValues.set(key, JSON.stringify(samples));
     }),
-    read: jest.fn(async key => structuredClone(values.get(key))),
+    read: jest.fn(async key => {
+      const raw = rawValues.get(key);
+      return raw === undefined
+        ? undefined
+        : (JSON.parse(raw) as WatchDepthSample[]);
+    }),
+    writeRaw: jest.fn(async (key, payloadJson) => {
+      rawValues.set(key, payloadJson);
+      values.set(key, JSON.parse(payloadJson) as WatchDepthSample[]);
+    }),
+    readRaw: jest.fn(async key => rawValues.get(key)),
+    copyRaw: jest.fn(async (sourceKey, destinationKey) => {
+      const raw = rawValues.get(sourceKey);
+      if (raw === undefined) {
+        throw new Error('missing source profile');
+      }
+      rawValues.set(destinationKey, raw);
+      values.set(destinationKey, JSON.parse(raw) as WatchDepthSample[]);
+    }),
     remove: jest.fn(async key => {
       values.delete(key);
+      rawValues.delete(key);
     }),
   };
 }
