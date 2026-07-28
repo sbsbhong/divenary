@@ -30,11 +30,11 @@
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Hosted staging 승격 뒤 Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 durable principal data를 fail-closed로 검증하고 자동 Watch drain과 account hydration을 interaction scheduler 뒤에 시작한다. | 2026-07-26 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch artifact를 exact identity로 제한 없이 처리하고 historical retransmission은 삭제된 row를 복구하지 않은 채 acknowledge한다. | 2026-07-26 |
+| [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 durable principal data를 fail-closed로 검증하고, 큰 profile을 파일 sidecar로 분리하며 자동 Watch drain과 account hydration을 interaction scheduler 뒤에 시작한다. | 2026-07-28 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 prepared full profile은 native file로 채택하며 historical retransmission은 삭제된 row를 복구하지 않은 채 acknowledge한다. | 2026-07-28 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | Staging-verified account schema, owner RLS, private profile Storage와 target ID 재사용을 rollback하는 claim finalizer를 정리한다. | 2026-07-20 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Fail-closed local 검증, 제한된 typed float readback 복구와 interaction-first scheduling으로 local acknowledgement와 cloud sync 경계를 유지한다. | 2026-07-27 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Fail-closed local 검증, bounded Watch descriptor, payload별 실패 격리와 bulk claim cleanup으로 local acknowledgement와 cloud sync 경계를 유지한다. | 2026-07-28 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains

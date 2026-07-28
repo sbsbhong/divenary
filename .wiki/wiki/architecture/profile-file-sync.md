@@ -1,8 +1,8 @@
 # 1Hz 프로파일 파일 저장과 동기화
 
-Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20; Physical device cold start and data integrity, 2026-07-26
-Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Physical device cold start and data integrity](../../raw/architecture/2026-07-26-physical-device-cold-start-data-integrity.md)
-Updated: 2026-07-26
+Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20; Physical device cold start and data integrity, 2026-07-26; Local log import performance and reliability evidence, 2026-07-28
+Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Physical device cold start and data integrity](../../raw/architecture/2026-07-26-physical-device-cold-start-data-integrity.md); [Local log import performance and reliability evidence](../../raw/architecture/2026-07-28-local-log-import-reliability.md)
+Updated: 2026-07-28
 
 ## 요약
 
@@ -58,13 +58,15 @@ iPhone native delegate는 `WCSessionFile.fileURL`이 callback 뒤 사라질 수 
 2. JSON 구조가 읽히는지 확인한다.
 3. Application Support의 `Divenary/WatchConnectivityInbox/<payloadId>.json`으로 atomic write한다.
 4. UserDefaults pending index에는 path와 identity만 저장한다.
-5. JS에는 drain 시 한 payload만 문자열로 materialize한다.
+5. Drain과 event는 최대 8개의 bounded descriptor만 JS에 전달한다.
+
+JS가 descriptor를 처리할 때 native utility queue는 원본 artifact를 검증하고 전체 sample을 prepared profile 파일로 분리한다. JS에는 최대 160개의 peak-preserving preview만 포함한 bounded payload를 반환한다. Prepared profile은 기존 `JSON.stringify(samples)` sample digest와 같은 canonical UTF-8 property order/number encoding으로 저장하고 SHA-256과 byte count를 함께 반환한다. Persistent repository는 이 파일을 profile destination key로 native copy하므로 전체 sample을 JS에서 다시 stringify/hash하지 않는다. Prepared source는 ACK 전까지 유지한다.
 
 JS validator와 mobile repository 저장이 모두 성공하면 native layer는 ACK를 persistent outbox에 먼저 추가한다. 그 다음 inbound index와 file을 삭제한다. WCSession activation 전에는 ACK를 보내지 않고, activation 뒤 `transferUserInfo`에 제출한다. ACK는 enqueue 시점이 아니라 `didFinish userInfoTransfer` 성공 callback에서만 outbox에서 제거한다. activation 실패 시 상태를 다시 비활성으로 돌려 다음 activation에서 재시도한다. 자동 drain은 event subscription을 유지한 채 첫 상호작용 뒤 시작하고 payload 사이에 cooperative yield를 둔다. 이 순서가 cold start에서 “모바일에는 저장됐지만 Watch는 계속 pending”인 상태를 막는다.
 
 ## 모바일 metadata와 profile 분리
 
-`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `Divenary/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 local profile file도 같이 삭제한다.
+`PersistentDiveLogRepository`는 전체 profile sample을 session/revision별 immutable 항목으로 한 번 저장한다. iOS 실앱에서는 native `WatchProfileStorageModule`이 Application Support의 `Divenary/WatchProfiles`에 JSON 파일로 저장하고, 테스트와 비-iOS fallback만 key-value adapter를 사용한다. `DiveLogEntry`에는 summary, manual/mobile fields, profile reference, digest, sample count와 최대 160개 preview만 남긴다. Preview는 구간별 가장 깊은 sample을 택해 peak를 보존한다. Log detail은 `getWatchProfile(localId)`로 전체 profile을 지연 로드한다. revision 교체와 로그 삭제 시 더 이상 참조하지 않는 local profile file도 같이 삭제한다. Guest claim의 큰 profile도 claim metadata envelope에 복제하지 않고 deterministic raw sidecar에 두며, 성공 cleanup 뒤 sidecar와 guest profile을 제거한다.
 
 Remote account profile 경계도 코드와 migration에 구현됐다. Private `dive-profiles` bucket은 owner path만 허용하며 normal account object는 `<user_id>/logs/<dive_log_id>/<content_revision>.json`, claim object는 `<user_id>/claims/<batch_id>/<target_record_id>/<content_revision>.json`을 사용한다. List row에는 최대 160개 preview만 두고 full bytes는 detail 또는 claim 검증 때 읽는다. Account-data migrations와 claim Edge Function은 hosted staging에 배포됐고 verifier가 private owner path와 exact profile bytes 경계를 확인했다.
 
@@ -83,7 +85,8 @@ iOS에서 사용자가 알림을 이미 거부했다면 `requestPermission()`은
 - legacy monolithic Watch file은 모든 migrated artifact가 검증된 뒤 삭제한다.
 - 앱이 기록 중 종료되면 다음 launch에서 NDJSON journal을 복원해 `interrupted` profile artifact로 finalize하고 review 가능한 세션으로 남긴다.
 - corrupted/truncated inbound file은 repository에 전달하거나 ACK하지 않는다.
-- repository/profile 저장 실패는 inbound item을 남겨 다음 drain에서 재시도한다.
+- repository/profile/I/O 실패는 inbound item을 남겨 다음 drain에서 재시도하고 같은 batch의 다음 descriptor를 계속 처리한다.
+- contract 또는 prepared metadata가 잘못된 항목은 drop-ACK해 뒤 항목을 영구 차단하지 않는다.
 - duplicate identity는 native inbox와 Watch outstanding transfer에서 합친다.
 - Logbook/Planbook의 fail-closed recovery journal과 exact-byte quarantine은 복구 증거이며 live Watch/profile inventory에 포함하지 않는다.
 - 자동 검증은 3시간 상한, sparse/invalid/temperature sample, large artifact digest, migration, file-only route, mobile import/dedupe와 permission lifecycle을 포함한다.

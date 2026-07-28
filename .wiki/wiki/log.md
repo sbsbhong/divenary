@@ -1,5 +1,21 @@
 # Wiki Log
 
+## [2026-07-28] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-28] ingest | Local log import performance and reliability
+- Added: Local log import performance and reliability evidence raw source
+- Updated: 모바일 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- 근거:
+  - claim inventory 한 번과 entity별 조건부 bulk delete, 성공 guest 원본/profile sidecar cleanup, compact committed receipt
+  - claim upload/finalize count와 indeterminate local cleanup UI 분리
+  - native bounded descriptor 8개, utility-queue prepared profile, 160 sample preview와 JS canonical sample SHA
+  - malformed drop-ACK, I/O/repository 미ACK retry, 첫 실패 뒤 다음 payload 처리와 `failedCount`
+- 요약:
+  - 과거 claim snapshot의 `15 / 15`와 대형 profile 반복 parse가 현재 live inventory/cleanup을 대표하지 않도록 분리했다. Watch full sample은 JS import 경로에서 제거하고 native file로 채택한다. Local ACK와 cloud 완료 경계는 유지하며 paired 8,000 sample과 background/relaunch는 실기기 gate로 남는다.
+
 ## [2026-07-18] ingest | Staging/local Auth fail-closed correction
 - Added: Staging/local Auth fail-closed 보정 raw source
 - Updated: Supabase 구조
