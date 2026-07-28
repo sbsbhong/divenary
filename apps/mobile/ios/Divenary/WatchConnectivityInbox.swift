@@ -428,8 +428,18 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     samples: [[String: Any]],
     localSessionId: String
   ) throws {
+    let allowedSampleKeys = Set([
+      "localSessionId",
+      "timestamp",
+      "depthMeters",
+      "pressureKPa",
+      "bucketMinDepthMeters",
+      "bucketMaxDepthMeters",
+      "waterTemperatureCelsius"
+    ])
     for sample in samples {
-      guard sample["localSessionId"] as? String == localSessionId,
+      guard Set(sample.keys).isSubset(of: allowedSampleKeys),
+            sample["localSessionId"] as? String == localSessionId,
             numericValue(sample["timestamp"]) != nil,
             numericValue(sample["depthMeters"]) != nil else {
         throw WatchPayloadPreparationError.invalidPayload
@@ -440,8 +450,14 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
         "bucketMaxDepthMeters",
         "waterTemperatureCelsius"
       ] where sample[key] != nil {
-        guard numericValue(sample[key]) != nil else {
+        guard let number = numericValue(sample[key]) else {
           throw WatchPayloadPreparationError.invalidPayload
+        }
+        if key == "bucketMinDepthMeters" ||
+          key == "bucketMaxDepthMeters" {
+          guard number >= 0 else {
+            throw WatchPayloadPreparationError.invalidPayload
+          }
         }
       }
     }

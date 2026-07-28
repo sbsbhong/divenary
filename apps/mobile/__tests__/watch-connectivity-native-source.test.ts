@@ -64,6 +64,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(inbox).toContain('preparedProfileFilePath');
     expect(inbox).toContain('canonicalProfileData');
     expect(inbox).toContain(
+      'Set(sample.keys).isSubset(of: allowedSampleKeys)',
+    );
+    expect(inbox).toContain('guard number >= 0 else');
+    expect(inbox).toContain(
       '"\\"localSessionId\\":\\(try canonicalJSONString(localSessionId))"',
     );
     expect(inbox).toContain(
