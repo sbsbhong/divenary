@@ -24,7 +24,10 @@ yarn workspace @repo/mobile test guest-claim-service.test.ts --runInBand -t "per
 yarn workspace @repo/mobile test guest-claim-service.test.ts --runInBand -t "promotes a changed log through account local-first"
 yarn workspace @repo/mobile test guest-claim-service.test.ts --runInBand -t "promotes a changed plan as a pending account update"
 yarn workspace @repo/mobile test guest-claim-service.test.ts --runInBand -t "rejects non-identical downloaded profile bytes before progress increments"
+yarn workspace @repo/mobile test guest-claim-service.test.ts --runInBand -t "compacts a legacy committed snapshot"
 yarn workspace @repo/mobile test guest-claim-store.test.ts --runInBand
+yarn workspace @repo/mobile test watch-connectivity-sync.test.tsx --runInBand -t "keeps a raw inbox artifact retryable"
+yarn workspace @repo/mobile test watch-connectivity-sync.test.tsx --runInBand -t "continues after a failed first payload"
 ```
 
 - [x] `PASS 2026-07-20` candidate `278ddfc`: focused mobile 16 suites, 326 tests; Supabase package 53 tests; staging verifier unit 49 tests; local pgTAP 109 tests. 모든 command exit code 0.
@@ -157,6 +160,18 @@ Apple Watch regression은 iPhone에서 guest와 account A 상태로 각각 수�
 4. [ ] `PENDING` guest import는 guest partition, authenticated import는 account A partition에 저장되는지 확인한다.
 5. [ ] `PENDING` logout 직전/직후 payload가 account B나 잘못된 principal에 publish되지 않는지 확인한다.
 6. [ ] `PENDING` Watch contract/artifact에 account `userId`, Supabase token 또는 remote object path가 추가되지 않았는지 확인한다.
+7. [ ] `PENDING` 8,000 sample artifact 하나를 받은 뒤 수동 가져오기 중 탭 전환과 버튼 입력이 멈추지 않고, JS에 전달되는 preview가 최대 160개인지 진단 로그로 확인한다.
+8. [ ] `PENDING` 처리할 수 없는 artifact 다음에 정상 artifact를 같은 inbox batch에 두고, 첫 실패가 두 번째 local import와 ACK를 막지 않는지 확인한다.
+9. [ ] `PENDING` prepared profile 채택 중 I/O 실패를 재현할 수 있으면 원본 inbox artifact가 drop-ACK되지 않고 재실행 뒤 같은 payload로 성공하는지 확인한다. 지원되는 fault setup이 없으면 자동 gate를 authoritative 결과로 기록한다.
+10. [ ] `PENDING` Watch import 도중 background/foreground와 force-quit/relaunch를 각각 수행해 원본 또는 prepared source가 ACK 전에 사라지지 않는지 확인한다.
+
+## 완료 Claim 압축과 재실행 Regression
+
+1. [ ] `PENDING` profile을 포함한 guest claim을 완료하고 local guest row/profile과 claim sidecar가 정리되는지 확인한다.
+2. [ ] `PENDING` 완료 뒤 앱을 두 번 재실행해 과거 전체 항목 수가 `15 / 15` 같은 새 가져오기 진행률로 다시 표시되지 않는지 확인한다.
+3. [ ] `PENDING` 완료 영수증에는 historical Watch identity만 남고 full snapshot/profile bytes가 local metadata envelope에 남지 않는지 확인한다.
+4. [ ] `PENDING` 같은 Watch artifact를 재전송해 새 Logbook row나 toast 없이 historical acknowledgement만 수행하는지 확인한다.
+5. [ ] `PENDING` schema 1 committed fixture를 사용할 수 있는 내부 build에서는 첫 read 뒤 schema 2 compact receipt로 전환되고 account row 재업로드가 발생하지 않는지 확인한다. 공개 UI에서 fixture를 만들 수 없으면 자동 gate를 authoritative 결과로 기록한다.
 
 ## 종료 판정
 

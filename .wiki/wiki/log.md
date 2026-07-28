@@ -2,6 +2,19 @@
 
 ## [2026-07-28] lint | 0 issues found, 0 auto-fixed
 
+## [2026-07-28] ingest | Local log import review hardening
+
+- Added: Local log import review hardening evidence raw source
+- Updated: 모바일 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: native prepared profile은 JavaScriptCore `JSON.stringify`를 사용해 mobile profile digest와 number encoding을 일치시킨다.
+- Corrected: prepared derived-file 무결성 실패는 raw Watch artifact를 drop-ACK하지 않고 다음 시도에 재생성한다.
+- Corrected: compact receipt의 historical identities를 Watch retransmission lookup에 포함하고 legacy committed snapshot도 재업로드 없이 compact receipt로 전환한다.
+
+## [2026-07-28] lint | 0 issues found, 0 auto-fixed
+
 ## [2026-07-28] ingest | Local log import performance and reliability
 - Added: Local log import performance and reliability evidence raw source
 - Updated: 모바일 구조
