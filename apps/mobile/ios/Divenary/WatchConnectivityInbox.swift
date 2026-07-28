@@ -16,6 +16,10 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   private let connectivitySession: WCSession?
   private let userDefaults: UserDefaults
   private let stateQueue = DispatchQueue(label: "com.divenary.watch-connectivity-inbox", qos: .utility)
+  private let preparationQueue = DispatchQueue(
+    label: "com.divenary.watch-connectivity-preparation",
+    qos: .utility
+  )
   private let stateQueueKey = DispatchSpecificKey<Void>()
   private var isActivated = false
   private var pendingPayloads: [PendingWatchConnectivityPayload] = []
@@ -60,11 +64,61 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       }
       let payloads = self.measureSlowStage("watch-import") {
         self.pendingPayloads
-          .prefix(1)
-          .map(\.dictionary)
-          .filter { !$0.isEmpty }
+          .prefix(8)
+          .map(\.descriptorDictionary)
       }
       completion(payloads)
+    }
+  }
+
+  func preparePendingPayload(
+    payloadId: String,
+    completion: @escaping (Result<[String: Any], Error>) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      self?.preparePendingPayloadOnStateQueue(
+        payloadId: payloadId,
+        completion: completion
+      )
+    }
+  }
+
+  func adoptPreparedProfile(
+    payloadId: String,
+    destinationKey: String,
+    completion: @escaping (Result<String, Error>) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      guard let self,
+            let payload = self.pendingPayloads.first(where: {
+              $0.payloadId == payloadId
+            }),
+            let preparedProfileFilePath = payload.preparedProfileFilePath,
+            let preparedProfileSha256 = payload.preparedProfileSha256,
+            let preparedProfileByteCount = payload.preparedProfileByteCount else {
+        completion(.failure(WatchPayloadPreparationError.unavailable))
+        return
+      }
+
+      self.preparationQueue.async {
+        do {
+          let data = try Data(contentsOf: URL(fileURLWithPath: preparedProfileFilePath))
+          guard data.count == preparedProfileByteCount,
+                Self.sha256Hex(data) == preparedProfileSha256,
+                try JSONSerialization.jsonObject(with: data) is [Any] else {
+            throw WatchPayloadPreparationError.invalidPayload
+          }
+          let destinationURL = try WatchProfileStorageModule.profileURL(
+            for: destinationKey
+          )
+          try data.write(to: destinationURL, options: .atomic)
+          completion(.success(destinationKey))
+        } catch let error as WatchPayloadPreparationError {
+          completion(.failure(error))
+        } catch {
+          completion(.failure(WatchPayloadPreparationError.io(error)))
+        }
+      }
     }
   }
 
@@ -200,18 +254,15 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
         && $0.contentRevision == payload.contentRevision
         && $0.sha256 == payload.sha256
     }) {
-      if let filePath = payload.filePath {
-        try? FileManager.default.removeItem(atPath: filePath)
+      payload.ownedFilePaths.forEach {
+        try? FileManager.default.removeItem(atPath: $0)
       }
       return
     }
     pendingPayloads.append(payload)
     persistPendingPayloads()
     let dictionary = measureSlowStage("watch-import") {
-      payload.dictionary
-    }
-    guard !dictionary.isEmpty else {
-      return
+      payload.descriptorDictionary
     }
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
@@ -241,7 +292,193 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     let removed = pendingPayloads.filter { payloadIdSet.contains($0.payloadId) }
     pendingPayloads.removeAll { payloadIdSet.contains($0.payloadId) }
     persistPendingPayloads()
-    removed.compactMap(\.filePath).forEach { try? FileManager.default.removeItem(atPath: $0) }
+    removed.flatMap(\.ownedFilePaths).forEach {
+      try? FileManager.default.removeItem(atPath: $0)
+    }
+  }
+
+  private func preparePendingPayloadOnStateQueue(
+    payloadId: String,
+    completion: @escaping (Result<[String: Any], Error>) -> Void
+  ) {
+    guard let payload = pendingPayloads.first(where: {
+      $0.payloadId == payloadId
+    }) else {
+      completion(.failure(WatchPayloadPreparationError.unavailable))
+      return
+    }
+
+    preparationQueue.async { [weak self] in
+      guard let self else {
+        completion(.failure(WatchPayloadPreparationError.unavailable))
+        return
+      }
+
+      do {
+        let prepared = try Self.prepare(payload: payload)
+        self.stateQueue.async {
+          guard let index = self.pendingPayloads.firstIndex(where: {
+            $0.payloadId == payloadId
+          }) else {
+            try? FileManager.default.removeItem(
+              atPath: prepared.preparedProfileFilePath
+            )
+            completion(.failure(WatchPayloadPreparationError.unavailable))
+            return
+          }
+
+          self.pendingPayloads[index].preparedProfileFilePath =
+            prepared.preparedProfileFilePath
+          self.pendingPayloads[index].preparedProfileSha256 =
+            prepared.preparedProfileSha256
+          self.pendingPayloads[index].preparedProfileByteCount =
+            prepared.preparedProfileByteCount
+          self.pendingPayloads[index].preparedProfileSampleCount =
+            prepared.preparedProfileSampleCount
+          self.persistPendingPayloads()
+          completion(.success(
+            self.pendingPayloads[index].preparedDictionary(
+              payloadJson: prepared.payloadJson
+            )
+          ))
+        }
+      } catch let error as WatchPayloadPreparationError {
+        completion(.failure(error))
+      } catch {
+        completion(.failure(WatchPayloadPreparationError.io(error)))
+      }
+    }
+  }
+
+  private static func prepare(
+    payload: PendingWatchConnectivityPayload
+  ) throws -> PreparedWatchConnectivityArtifact {
+    let data: Data
+    do {
+      data = try payload.artifactData()
+    } catch {
+      throw WatchPayloadPreparationError.io(error)
+    }
+    let decodedMessage: Any
+    do {
+      decodedMessage = try JSONSerialization.jsonObject(with: data)
+    } catch {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    guard (payload.byteCount == nil || payload.byteCount == data.count),
+          (payload.sha256 == nil || payload.sha256 == sha256Hex(data)),
+          var message = decodedMessage as? [String: Any],
+          var session = message["session"] as? [String: Any],
+          let localSessionId = session["localSessionId"] as? String,
+          let samples = session["samples"] as? [[String: Any]],
+          payload.localSessionId == nil || payload.localSessionId == localSessionId,
+          payload.sampleCount == nil || payload.sampleCount == samples.count else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    let profile = session["profile"] as? [String: Any]
+    guard (profile?["sampleCount"] == nil ||
+            profile?["sampleCount"] as? Int == samples.count),
+          (payload.contentRevision == nil ||
+            payload.contentRevision == profile?["contentRevision"] as? String)
+    else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    try validate(samples: samples, localSessionId: localSessionId)
+
+    let profileData: Data
+    do {
+      profileData = try JSONSerialization.data(withJSONObject: samples)
+    } catch {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    let preparedProfileSha256 = sha256Hex(profileData)
+    let preparedProfileFilePath = preparedProfileURL(
+      payloadId: payload.payloadId
+    ).path
+    do {
+      try FileManager.default.createDirectory(
+        at: inboxDirectoryURL(),
+        withIntermediateDirectories: true
+      )
+      try profileData.write(
+        to: URL(fileURLWithPath: preparedProfileFilePath),
+        options: .atomic
+      )
+    } catch {
+      throw WatchPayloadPreparationError.io(error)
+    }
+
+    session["samples"] = makePeakPreservingPreview(samples, limit: 160)
+    message["session"] = session
+    let previewData: Data
+    do {
+      previewData = try JSONSerialization.data(withJSONObject: message)
+    } catch {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    guard let payloadJson = String(data: previewData, encoding: .utf8) else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+
+    return PreparedWatchConnectivityArtifact(
+      payloadJson: payloadJson,
+      preparedProfileFilePath: preparedProfileFilePath,
+      preparedProfileSha256: preparedProfileSha256,
+      preparedProfileByteCount: profileData.count,
+      preparedProfileSampleCount: samples.count
+    )
+  }
+
+  private static func validate(
+    samples: [[String: Any]],
+    localSessionId: String
+  ) throws {
+    for sample in samples {
+      guard sample["localSessionId"] as? String == localSessionId,
+            sample["timestamp"] is NSNumber,
+            sample["depthMeters"] is NSNumber else {
+        throw WatchPayloadPreparationError.invalidPayload
+      }
+    }
+  }
+
+  private static func makePeakPreservingPreview(
+    _ samples: [[String: Any]],
+    limit: Int
+  ) -> [[String: Any]] {
+    guard limit > 0, samples.count > limit else {
+      return samples
+    }
+    if limit == 1 {
+      return [samples.max(by: {
+        depth(from: $0) < depth(from: $1)
+      }) ?? samples[0]]
+    }
+
+    var preview: [[String: Any]] = [samples[0]]
+    let interiorLimit = limit - 2
+    let interiorCount = samples.count - 2
+    if interiorLimit > 0, interiorCount > 0 {
+      for bucket in 0..<interiorLimit {
+        let start = 1 + (bucket * interiorCount / interiorLimit)
+        let end = 1 + ((bucket + 1) * interiorCount / interiorLimit)
+        guard start < end else { continue }
+        let peak = samples[start..<end].max {
+          depth(from: $0) < depth(from: $1)
+        }
+        if let peak {
+          preview.append(peak)
+        }
+      }
+    }
+    preview.append(samples[samples.count - 1])
+    return Array(preview.prefix(limit))
+  }
+
+  private static func depth(from sample: [String: Any]) -> Double {
+    (sample["bucketMaxDepthMeters"] as? NSNumber)?.doubleValue
+      ?? (sample["depthMeters"] as? NSNumber)?.doubleValue
+      ?? 0
   }
 
   private func acknowledgeImportedOnStateQueue(payloadIds: [String]) {
@@ -555,7 +792,11 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       sha256: expectedDigest,
       byteCount: data.count,
       sampleCount: metadata[WatchConnectivityEnvelopeKey.sampleCount] as? Int,
-      receivedAt: Date().timeIntervalSince1970
+      receivedAt: Date().timeIntervalSince1970,
+      preparedProfileFilePath: nil,
+      preparedProfileSha256: nil,
+      preparedProfileByteCount: nil,
+      preparedProfileSampleCount: nil
     )
   }
 
@@ -589,6 +830,10 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     return base.appendingPathComponent("Divenary/WatchConnectivityInbox", isDirectory: true)
   }
 
+  private static func preparedProfileURL(payloadId: String) -> URL {
+    inboxDirectoryURL().appendingPathComponent("\(payloadId).profile.json")
+  }
+
   private static func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
   }
@@ -604,15 +849,14 @@ private struct PendingWatchConnectivityPayload: Codable {
   let byteCount: Int?
   let sampleCount: Int?
   let receivedAt: TimeInterval
+  var preparedProfileFilePath: String?
+  var preparedProfileSha256: String?
+  var preparedProfileByteCount: Int?
+  var preparedProfileSampleCount: Int?
 
-  var dictionary: [String: Any] {
-    let resolvedPayloadJson = payloadJson ?? filePath.flatMap {
-      try? String(contentsOfFile: $0, encoding: .utf8)
-    }
-    guard let resolvedPayloadJson else { return [:] }
+  var descriptorDictionary: [String: Any] {
     var payload: [String: Any] = [
       "payloadId": payloadId,
-      "payloadJson": resolvedPayloadJson,
       "receivedAt": receivedAt
     ]
 
@@ -624,6 +868,53 @@ private struct PendingWatchConnectivityPayload: Codable {
 
     return payload
   }
+
+  func preparedDictionary(payloadJson: String) -> [String: Any] {
+    var payload = descriptorDictionary
+    payload["payloadJson"] = payloadJson
+    if let preparedProfileSha256,
+       let preparedProfileByteCount,
+       let preparedProfileSampleCount {
+      payload["preparedProfile"] = [
+        "payloadId": payloadId,
+        "sampleCount": preparedProfileSampleCount,
+        "byteCount": preparedProfileByteCount,
+        "sha256": preparedProfileSha256
+      ]
+    }
+    return payload
+  }
+
+  var ownedFilePaths: [String] {
+    [filePath, preparedProfileFilePath].compactMap { $0 }
+  }
+
+  func artifactData() throws -> Data {
+    if let payloadJson {
+      guard let data = payloadJson.data(using: .utf8) else {
+        throw CocoaError(.fileReadInapplicableStringEncoding)
+      }
+      return data
+    }
+    guard let filePath else {
+      throw CocoaError(.fileNoSuchFile)
+    }
+    return try Data(contentsOf: URL(fileURLWithPath: filePath))
+  }
+}
+
+private struct PreparedWatchConnectivityArtifact {
+  let payloadJson: String
+  let preparedProfileFilePath: String
+  let preparedProfileSha256: String
+  let preparedProfileByteCount: Int
+  let preparedProfileSampleCount: Int
+}
+
+enum WatchPayloadPreparationError: Error {
+  case unavailable
+  case invalidPayload
+  case io(Error)
 }
 
 private struct PendingWatchConnectivityAcknowledgement: Codable, Equatable {

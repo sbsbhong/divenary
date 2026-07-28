@@ -13,7 +13,10 @@ import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-r
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
-import type { WatchConnectivityPayload } from '../src/native/watch-connectivity';
+import {
+  preparePendingWatchConnectivityPayload,
+  type WatchConnectivityPayload,
+} from '../src/native/watch-connectivity';
 import {
   createGuestClaimSnapshot,
   GuestClaimStore,
@@ -213,6 +216,36 @@ describe('WatchConnectivitySyncProvider', () => {
     }
 
     jest.restoreAllMocks();
+  });
+
+  it('prepares a descriptor without payload JSON exactly once', async () => {
+    const descriptor: WatchConnectivityPayload = {
+      payloadId: 'pending-large',
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    const preparePendingPayload = jest.fn().mockResolvedValue({
+      ...descriptor,
+      payloadJson: JSON.stringify(metadataRichFixture),
+      preparedProfile: {
+        payloadId: 'pending-large',
+        sampleCount: 8_000,
+        byteCount: 640_000,
+        sha256: 'a'.repeat(64),
+      },
+    });
+
+    await expect(
+      preparePendingWatchConnectivityPayload(
+        descriptor,
+        preparePendingPayload,
+      ),
+    ).resolves.toMatchObject({
+      payloadId: 'pending-large',
+      preparedProfile: {sampleCount: 8_000},
+    });
+    expect(preparePendingPayload).toHaveBeenCalledTimes(1);
+    expect(preparePendingPayload).toHaveBeenCalledWith('pending-large');
   });
 
   it('keeps the Watch artifact digest separate from the stored profile sample digest', async () => {

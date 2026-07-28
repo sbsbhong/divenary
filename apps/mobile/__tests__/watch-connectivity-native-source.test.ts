@@ -46,6 +46,34 @@ describe('WatchConnectivity native source contract', () => {
     expect(bridge).toContain('acknowledgeImportedPayloads');
   });
 
+  it('returns bounded descriptors and prepares large artifacts off the JS thread', () => {
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const module = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityModule.swift',
+    );
+    const bridge = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityModuleBridge.m',
+    );
+
+    expect(inbox).toContain('.prefix(8)');
+    expect(inbox).toContain('func preparePendingPayload(');
+    expect(inbox).toContain('preparePendingPayloadOnStateQueue');
+    expect(inbox).toContain('makePeakPreservingPreview');
+    expect(inbox).toContain('preparedProfileFilePath');
+    const descriptorBlock = inbox.slice(
+      inbox.indexOf('var descriptorDictionary:'),
+      inbox.indexOf('func preparedDictionary('),
+    );
+    expect(descriptorBlock).not.toContain('payloadJson');
+    expect(module).toContain(
+      '@objc(preparePendingPayload:resolver:rejecter:)',
+    );
+    expect(bridge).toContain('preparePendingPayload');
+    expect(bridge).toContain('adoptPreparedProfile');
+  });
+
   it('owns inbox and WCSession state on one deadlock-safe serial queue', () => {
     const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
     const module = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModule.swift');

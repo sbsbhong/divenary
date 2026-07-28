@@ -6,12 +6,42 @@ export const WATCH_CONNECTIVITY_PAYLOAD_EVENT = 'DiveWatchSyncPayloadReceived';
 
 export type WatchConnectivityPayload = {
   payloadId?: string;
-  payloadJson: string;
+  payloadJson?: string;
   localSessionId?: string;
   receivedAt?: number;
   contentRevision?: string;
   sha256?: string;
 };
+
+export type PreparedWatchProfile = {
+  payloadId: string;
+  sampleCount: number;
+  byteCount: number;
+  sha256: string;
+};
+
+export type PreparedWatchConnectivityPayload = WatchConnectivityPayload & {
+  payloadJson: string;
+  preparedProfile?: PreparedWatchProfile;
+};
+
+export type WatchPayloadPreparationErrorCode =
+  | 'unavailable'
+  | 'invalid'
+  | 'io';
+
+export class WatchPayloadPreparationError extends Error {
+  constructor(
+    readonly code: WatchPayloadPreparationErrorCode,
+    options?: {cause?: unknown},
+  ) {
+    super(`Watch payload preparation failed: ${code}`);
+    this.name = 'WatchPayloadPreparationError';
+    if (options?.cause !== undefined) {
+      (this as Error & {cause?: unknown}).cause = options.cause;
+    }
+  }
+}
 
 export type WatchConnectivitySubscription = {
   remove(): void;
@@ -38,6 +68,13 @@ export type PlannedWatchDivesUpdateStatus = LinkedWatchInfo & {
 
 type WatchConnectivityModule = {
   drainPendingPayloads?: () => Promise<WatchConnectivityPayload[]>;
+  preparePendingPayload?: (
+    payloadId: string,
+  ) => Promise<PreparedWatchConnectivityPayload>;
+  adoptPreparedProfile?: (
+    payloadId: string,
+    destinationKey: string,
+  ) => Promise<string>;
   acknowledgePayloads?: (payloadIds: string[]) => Promise<void>;
   acknowledgeImportedPayloads?: (payloadIds: string[]) => Promise<void>;
   updatePlannedDives?: (plannedDivesJson: string) => Promise<PlannedWatchDivesUpdateStatus | undefined>;
@@ -77,6 +114,49 @@ export async function drainPendingWatchConnectivityPayloads(): Promise<WatchConn
   }
 
   return nativeModule.drainPendingPayloads();
+}
+
+export async function preparePendingWatchConnectivityPayload(
+  payload: WatchConnectivityPayload,
+  preparePendingPayload = nativeModule?.preparePendingPayload?.bind(
+    nativeModule,
+  ),
+): Promise<PreparedWatchConnectivityPayload> {
+  if (payload.payloadJson !== undefined) {
+    return {...payload, payloadJson: payload.payloadJson};
+  }
+  if (!payload.payloadId || !preparePendingPayload) {
+    throw new WatchPayloadPreparationError('unavailable');
+  }
+
+  try {
+    return await preparePendingPayload(payload.payloadId);
+  } catch (error) {
+    throw classifyPreparationError(error);
+  }
+}
+
+export async function adoptPreparedWatchConnectivityProfile(
+  payloadId: string,
+  destinationKey: string,
+): Promise<string> {
+  if (!nativeModule?.adoptPreparedProfile) {
+    throw new WatchPayloadPreparationError('unavailable');
+  }
+
+  try {
+    return await nativeModule.adoptPreparedProfile(payloadId, destinationKey);
+  } catch (error) {
+    throw classifyPreparationError(error);
+  }
+}
+
+export function isInvalidPreparedWatchPayloadError(
+  error: unknown,
+): boolean {
+  return (
+    error instanceof WatchPayloadPreparationError && error.code === 'invalid'
+  );
 }
 
 export async function acknowledgeWatchConnectivityPayloads(payloadIds: readonly string[]): Promise<void> {
@@ -170,4 +250,24 @@ function toWatchPlannedDivePayload(plan: DivePlan): WatchPlannedDivePayload {
     tags: plan.tags,
     notes: buildPlanNotes(plan),
   };
+}
+
+function classifyPreparationError(
+  error: unknown,
+): WatchPayloadPreparationError {
+  if (error instanceof WatchPayloadPreparationError) {
+    return error;
+  }
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String(error.code)
+      : undefined;
+  return new WatchPayloadPreparationError(
+    code === 'watch_payload_invalid'
+      ? 'invalid'
+      : code === 'watch_payload_unavailable'
+        ? 'unavailable'
+        : 'io',
+    {cause: error},
+  );
 }

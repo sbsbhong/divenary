@@ -401,6 +401,9 @@ async function importWatchConnectivityPayloadOnce({
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
 }: WatchConnectivityPayloadImportOnceOptions): Promise<DiveLogEntry | undefined> {
+  if (payload.payloadJson === undefined) {
+    throw new Error('Watch payload preparation is required');
+  }
   const result = parseWatchSyncMessageJson(payload.payloadJson);
 
   if (!result.ok) {

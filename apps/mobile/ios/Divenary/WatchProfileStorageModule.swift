@@ -36,7 +36,7 @@ final class WatchProfileStorageModule: NSObject {
     profileQueue.async {
       do {
         let data = try self.validatedProfileData(payloadJson)
-        let url = try self.profileURL(for: key)
+        let url = try Self.profileURL(for: key)
         try data.write(to: url, options: .atomic)
         resolve(key)
       } catch {
@@ -62,7 +62,7 @@ final class WatchProfileStorageModule: NSObject {
   ) {
     profileQueue.async {
       do {
-        resolve(try String(contentsOf: self.profileURL(for: key), encoding: .utf8))
+        resolve(try String(contentsOf: Self.profileURL(for: key), encoding: .utf8))
       } catch {
         reject("watch_profile_read_failed", error.localizedDescription, error)
       }
@@ -78,8 +78,8 @@ final class WatchProfileStorageModule: NSObject {
   ) {
     profileQueue.async {
       do {
-        let sourceURL = try self.profileURL(for: sourceKey)
-        let destinationURL = try self.profileURL(for: destinationKey)
+        let sourceURL = try Self.profileURL(for: sourceKey)
+        let destinationURL = try Self.profileURL(for: destinationKey)
         let data = try Data(contentsOf: sourceURL)
         _ = try self.validatedProfileData(data)
         try data.write(to: destinationURL, options: .atomic)
@@ -98,7 +98,7 @@ final class WatchProfileStorageModule: NSObject {
   ) {
     profileQueue.async {
       do {
-        let url = try self.profileURL(for: key)
+        let url = try Self.profileURL(for: key)
         if FileManager.default.fileExists(atPath: url.path) {
           try FileManager.default.removeItem(at: url)
         }
@@ -123,7 +123,7 @@ final class WatchProfileStorageModule: NSObject {
     return data
   }
 
-  private func profileURL(for key: String) throws -> URL {
+  static func profileURL(for key: String) throws -> URL {
     let directory = Self.profileDirectoryURL()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     let digest = SHA256.hash(data: Data(key.utf8)).map { String(format: "%02x", $0) }.joined()

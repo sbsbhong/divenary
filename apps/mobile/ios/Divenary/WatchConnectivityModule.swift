@@ -55,6 +55,44 @@ final class WatchConnectivityModule: RCTEventEmitter {
     }
   }
 
+  @objc(preparePendingPayload:resolver:rejecter:)
+  func preparePendingPayload(
+    payloadId: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.preparePendingPayload(
+      payloadId: payloadId
+    ) { result in
+      switch result {
+      case .success(let payload):
+        resolve(payload)
+      case .failure(let error):
+        Self.rejectPreparation(error, reject: reject)
+      }
+    }
+  }
+
+  @objc(adoptPreparedProfile:destinationKey:resolver:rejecter:)
+  func adoptPreparedProfile(
+    payloadId: String,
+    destinationKey: String,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.adoptPreparedProfile(
+      payloadId: payloadId,
+      destinationKey: destinationKey
+    ) { result in
+      switch result {
+      case .success(let key):
+        resolve(key)
+      case .failure(let error):
+        Self.rejectPreparation(error, reject: reject)
+      }
+    }
+  }
+
   @objc(acknowledgePayloads:resolver:rejecter:)
   func acknowledgePayloads(
     payloadIds: [String],
@@ -101,4 +139,30 @@ final class WatchConnectivityModule: RCTEventEmitter {
   }
 
   private static let eventName = "DiveWatchSyncPayloadReceived"
+
+  private static func rejectPreparation(
+    _ error: Error,
+    reject: RCTPromiseRejectBlock
+  ) {
+    switch error {
+    case WatchPayloadPreparationError.invalidPayload:
+      reject(
+        "watch_payload_invalid",
+        "The pending Watch payload is invalid.",
+        error
+      )
+    case WatchPayloadPreparationError.unavailable:
+      reject(
+        "watch_payload_unavailable",
+        "The pending Watch payload is no longer available.",
+        error
+      )
+    default:
+      reject(
+        "watch_payload_io_failed",
+        "The pending Watch payload could not be read or written.",
+        error
+      )
+    }
+  }
 }
