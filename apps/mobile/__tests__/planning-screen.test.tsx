@@ -769,6 +769,20 @@ describe('Planning screen planbook flow', () => {
     await press(root, 'planning-plan-row-Complete Reef');
     await press(root, 'planning-detail-complete');
     expect(root.findByProps({ testID: 'planning-complete-dialog' })).toBeTruthy();
+
+    const laterButton = root.findByProps({
+      testID: 'planning-complete-later',
+    });
+    const createLogButton = root.findByProps({
+      testID: 'planning-complete-create-log',
+    });
+
+    for (const button of [laterButton, createLogButton]) {
+      expect(button.props.className).toEqual(
+        expect.stringContaining('flex-1 min-h-11 px-4 py-2'),
+      );
+    }
+
     await press(root, 'planning-complete-later');
 
     const [savedPlan] = await repository.list();

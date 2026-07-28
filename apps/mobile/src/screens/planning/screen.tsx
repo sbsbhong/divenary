@@ -509,10 +509,15 @@ function CompletionPrompt(props: { plan: DivePlan; onLater: () => void; onCreate
           title={t('planning.completedPromptTitle', { defaultValue: 'Create a log draft now?' })}
         />
         <HStack space="sm">
-          <InstrumentButton testID="planning-complete-later" className="flex-1" label={t('planning.later', { defaultValue: 'Later' })} onPress={props.onLater} />
+          <InstrumentButton
+            testID="planning-complete-later"
+            className="flex-1 min-h-11 px-4 py-2"
+            label={t('planning.later', { defaultValue: 'Later' })}
+            onPress={props.onLater}
+          />
           <InstrumentButton
             testID="planning-complete-create-log"
-            className="flex-1"
+            className="flex-1 min-h-11 px-4 py-2"
             label={t('planning.createLogFromPlan', { defaultValue: 'Create log from plan' })}
             variant="primary"
             onPress={props.onCreateLog}
