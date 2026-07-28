@@ -62,6 +62,16 @@ describe('WatchConnectivity native source contract', () => {
     expect(inbox).toContain('preparePendingPayloadOnStateQueue');
     expect(inbox).toContain('makePeakPreservingPreview');
     expect(inbox).toContain('preparedProfileFilePath');
+    expect(inbox).toContain('canonicalProfileData');
+    expect(inbox).toContain(
+      '"\\"localSessionId\\":\\(try canonicalJSONString(localSessionId))"',
+    );
+    expect(inbox).toContain(
+      '"\\"timestamp\\":\\(try canonicalJSONNumber(timestamp))"',
+    );
+    expect(inbox).toContain(
+      '"\\"depthMeters\\":\\(try canonicalJSONNumber(depthMeters))"',
+    );
     const descriptorBlock = inbox.slice(
       inbox.indexOf('var descriptorDictionary:'),
       inbox.indexOf('func preparedDictionary('),

@@ -17,6 +17,7 @@ import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../src/types/dive-session';
 import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
+import * as watchProfileDigest from '../src/utils/watch-profile-digest';
 
 const manualEntry = (overrides: Partial<DiveLogEntry> = {}): DiveLogEntry => ({
   localId: 'manual-1',
@@ -173,6 +174,14 @@ class RecordingProfileStorage implements WatchProfileStorage {
     this.removals.push(key);
     this.values.delete(key);
   }
+}
+
+class PreparedProfileStorage extends RecordingProfileStorage {
+  readonly adoptPrepared = jest.fn(
+    async (payloadId: string, destinationKey: string): Promise<void> => {
+      this.values.set(destinationKey, []);
+    },
+  );
 }
 
 class PausedFirstWriteStore implements PersistentKeyValueStore {
@@ -686,6 +695,62 @@ describe('PersistentDiveLogRepository', () => {
     }));
     expect(saved.watchCapture?.profile?.sha256)
       .not.toBe(saved.watchCapture?.profile?.artifactSha256);
+  });
+
+  it('adopts a prepared native profile without hashing the full sample set in JS', async () => {
+    const profileStorage = new PreparedProfileStorage();
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      profileStorage,
+      now: () => 500,
+    });
+    const previewSamples = Array.from({length: 160}, (_, index) => ({
+      localSessionId: 'prepared-large-session',
+      timestamp: 200 + index,
+      depthMeters: index / 10,
+    }));
+    const message: WatchSyncMessage = {
+      ...watchMessage,
+      session: {
+        ...watchMessage.session,
+        localSessionId: 'prepared-large-session',
+        profile: {
+          formatVersion: 1,
+          contentRevision: 'prepared-large-revision',
+          sampleIntervalSeconds: 1,
+          sampleCount: 8_000,
+          interrupted: false,
+        },
+        samples: previewSamples,
+      },
+    };
+    const digest = 'b'.repeat(64);
+    const digestSpy = jest.spyOn(
+      watchProfileDigest,
+      'createWatchProfileDigest',
+    );
+    digestSpy.mockClear();
+
+    const [saved] = await repository.importWatchMessages([message], {
+      preparedProfiles: [
+        {
+          payloadId: 'payload-large',
+          sampleCount: 8_000,
+          byteCount: 640_000,
+          sha256: digest,
+        },
+      ],
+    });
+
+    expect(profileStorage.adoptPrepared).toHaveBeenCalledWith(
+      'payload-large',
+      expect.stringContaining('prepared-large-session'),
+    );
+    expect(saved.watchCapture?.profile?.sampleCount).toBe(8_000);
+    expect(saved.watchCapture?.profile?.sha256).toBe(digest);
+    expect(saved.watchCapture?.samples).toHaveLength(160);
+    expect(digestSpy).not.toHaveBeenCalled();
+    digestSpy.mockRestore();
   });
 
   it('migrates every schema-2 mobile status to not-configured without rewriting watch provenance', async () => {

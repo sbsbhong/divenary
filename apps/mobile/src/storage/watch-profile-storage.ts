@@ -1,4 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
+import {adoptPreparedWatchConnectivityProfile} from '../native/watch-connectivity';
 import type { WatchDepthSample } from '../types/dive-session';
 import type { PersistentKeyValueStore } from './persistent-key-value-store';
 
@@ -9,6 +10,7 @@ export type WatchProfileStorage = {
   writeRaw?(key: string, payloadJson: string): Promise<void>;
   readRaw?(key: string): Promise<string | undefined>;
   copyRaw?(sourceKey: string, destinationKey: string): Promise<void>;
+  adoptPrepared?(payloadId: string, destinationKey: string): Promise<void>;
 };
 
 export type RawWatchProfileStorage = WatchProfileStorage & {
@@ -74,6 +76,12 @@ export function createWatchProfileStorage(
           throw new Error(`Missing watch profile ${sourceKey}`);
         }
         await writeRaw(destinationKey, stored);
+      },
+      async adoptPrepared(payloadId, destinationKey) {
+        await adoptPreparedWatchConnectivityProfile(
+          payloadId,
+          destinationKey,
+        );
       },
     };
   }

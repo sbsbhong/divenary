@@ -385,12 +385,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     }
     try validate(samples: samples, localSessionId: localSessionId)
 
-    let profileData: Data
-    do {
-      profileData = try JSONSerialization.data(withJSONObject: samples)
-    } catch {
-      throw WatchPayloadPreparationError.invalidPayload
-    }
+    let profileData = try canonicalProfileData(samples)
     let preparedProfileSha256 = sha256Hex(profileData)
     let preparedProfileFilePath = preparedProfileURL(
       payloadId: payload.payloadId
@@ -435,11 +430,82 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   ) throws {
     for sample in samples {
       guard sample["localSessionId"] as? String == localSessionId,
-            sample["timestamp"] is NSNumber,
-            sample["depthMeters"] is NSNumber else {
+            numericValue(sample["timestamp"]) != nil,
+            numericValue(sample["depthMeters"]) != nil else {
         throw WatchPayloadPreparationError.invalidPayload
       }
+      for key in [
+        "pressureKPa",
+        "bucketMinDepthMeters",
+        "bucketMaxDepthMeters",
+        "waterTemperatureCelsius"
+      ] where sample[key] != nil {
+        guard numericValue(sample[key]) != nil else {
+          throw WatchPayloadPreparationError.invalidPayload
+        }
+      }
     }
+  }
+
+  private static func canonicalProfileData(
+    _ samples: [[String: Any]]
+  ) throws -> Data {
+    let encodedSamples = try samples.map { sample -> String in
+      guard let localSessionId = sample["localSessionId"] as? String,
+            let timestamp = numericValue(sample["timestamp"]),
+            let depthMeters = numericValue(sample["depthMeters"]) else {
+        throw WatchPayloadPreparationError.invalidPayload
+      }
+      var fields = [
+        "\"localSessionId\":\(try canonicalJSONString(localSessionId))",
+        "\"timestamp\":\(try canonicalJSONNumber(timestamp))",
+        "\"depthMeters\":\(try canonicalJSONNumber(depthMeters))"
+      ]
+      for key in [
+        "pressureKPa",
+        "bucketMinDepthMeters",
+        "bucketMaxDepthMeters",
+        "waterTemperatureCelsius"
+      ] {
+        if let value = sample[key] {
+          guard let number = numericValue(value) else {
+            throw WatchPayloadPreparationError.invalidPayload
+          }
+          fields.append("\"\(key)\":\(try canonicalJSONNumber(number))")
+        }
+      }
+      return "{\(fields.joined(separator: ","))}"
+    }
+    guard let data = "[\(encodedSamples.joined(separator: ","))]"
+      .data(using: .utf8) else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    return data
+  }
+
+  private static func canonicalJSONString(_ value: String) throws -> String {
+    let encoded = try JSONEncoder().encode([value])
+    guard let wrapped = String(data: encoded, encoding: .utf8) else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    return String(wrapped.dropFirst().dropLast())
+  }
+
+  private static func canonicalJSONNumber(_ value: Double) throws -> String {
+    let encoded = try JSONEncoder().encode([value])
+    guard let wrapped = String(data: encoded, encoding: .utf8) else {
+      throw WatchPayloadPreparationError.invalidPayload
+    }
+    return String(wrapped.dropFirst().dropLast())
+  }
+
+  private static func numericValue(_ value: Any?) -> Double? {
+    guard let number = value as? NSNumber,
+          CFGetTypeID(number) != CFBooleanGetTypeID(),
+          number.doubleValue.isFinite else {
+      return nil
+    }
+    return number.doubleValue
   }
 
   private static func makePeakPreservingPreview(

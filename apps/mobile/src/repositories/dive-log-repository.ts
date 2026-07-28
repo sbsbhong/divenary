@@ -1,5 +1,6 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
+import type {PreparedWatchProfile} from '../native/watch-connectivity';
 import type {
   ConditionalDeleteResult,
   DeletePredicate,
@@ -11,6 +12,7 @@ import type {
 
 export type ImportWatchMessagesOptions = {
   artifactDigests?: Array<string | undefined>;
+  preparedProfiles?: Array<PreparedWatchProfile | undefined>;
   assertCanCommit?: () => void;
 };
 

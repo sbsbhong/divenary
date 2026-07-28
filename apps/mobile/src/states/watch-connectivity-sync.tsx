@@ -5,7 +5,10 @@ import {
   acknowledgeImportedWatchConnectivityPayloads,
   acknowledgeWatchConnectivityPayloads,
   drainPendingWatchConnectivityPayloads,
+  isInvalidPreparedWatchPayloadError,
+  preparePendingWatchConnectivityPayload,
   subscribeToWatchConnectivityPayloads,
+  type PreparedWatchConnectivityPayload,
   type WatchConnectivityPayload,
   type WatchConnectivitySubscription,
 } from '../native/watch-connectivity';
@@ -36,6 +39,9 @@ type WatchConnectivitySyncProviderProps = {
   planRepository?: DivePlanRepository;
   queryScope?: string;
   drainPendingPayloads?: () => Promise<WatchConnectivityPayload[]>;
+  preparePendingPayload?: (
+    payload: WatchConnectivityPayload,
+  ) => Promise<PreparedWatchConnectivityPayload>;
   acknowledgePayloads?: (payloadIds: readonly string[]) => Promise<void>;
   acknowledgeImportedPayloads?: (payloadIds: readonly string[]) => Promise<void>;
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
@@ -59,6 +65,9 @@ type WatchConnectivityImportOptions = {
   queryClient: QueryClient;
   queryScope?: string;
   drainPendingPayloads?: () => Promise<WatchConnectivityPayload[]>;
+  preparePendingPayload?: (
+    payload: WatchConnectivityPayload,
+  ) => Promise<PreparedWatchConnectivityPayload>;
   acknowledgePayloads?: (payloadIds: readonly string[]) => Promise<void>;
   acknowledgeImportedPayloads?: (payloadIds: readonly string[]) => Promise<void>;
   notifyImportedEntry?: (entry: DiveLogEntry) => Promise<void>;
@@ -73,6 +82,7 @@ type WatchConnectivityImportOptions = {
 export type WatchConnectivityImportSummary = {
   receivedCount: number;
   importedCount: number;
+  failedCount: number;
 };
 
 type WatchConnectivityAcknowledgement = (payloadIds: readonly string[]) => Promise<void>;
@@ -85,6 +95,9 @@ type DeferredAccountQueueRepository<T> = {
 
 type WatchConnectivityPayloadImportOptions = {
   payload: WatchConnectivityPayload;
+  preparePendingPayload?: (
+    payload: WatchConnectivityPayload,
+  ) => Promise<PreparedWatchConnectivityPayload>;
   repository: DiveLogRepository;
   planRepository: DivePlanRepository;
   queryClient: QueryClient;
@@ -102,8 +115,9 @@ type WatchConnectivityPayloadImportOptions = {
 
 type WatchConnectivityPayloadImportOnceOptions = Omit<
   WatchConnectivityPayloadImportOptions,
-  'coordinator' | 'scope'
+  'coordinator' | 'scope' | 'preparePendingPayload'
 > & {
+  payload: PreparedWatchConnectivityPayload;
   guard: WatchConnectivityImportGuard;
 };
 
@@ -143,6 +157,8 @@ export function WatchConnectivitySyncProvider(
   const planRepository = props.planRepository ?? accountData?.planRepository ?? defaultDivePlanRepository;
   const queryScope = props.queryScope ?? (props.repository ? undefined : accountData?.queryScope);
   const drainPendingPayloads = props.drainPendingPayloads ?? drainPendingWatchConnectivityPayloads;
+  const preparePendingPayload =
+    props.preparePendingPayload ?? preparePendingWatchConnectivityPayload;
   const acknowledgePayloads = props.acknowledgePayloads ?? acknowledgeWatchConnectivityPayloads;
   const acknowledgeImportedPayloads = props.acknowledgeImportedPayloads ?? acknowledgeImportedWatchConnectivityPayloads;
   const notifyImportedEntry = props.notifyImportedEntry;
@@ -172,6 +188,7 @@ export function WatchConnectivitySyncProvider(
       const importedEntry = await measureSlowStage('watch-import', () =>
         importWatchConnectivityPayload({
           payload,
+          preparePendingPayload,
           repository,
           planRepository,
           queryClient,
@@ -225,10 +242,11 @@ export function WatchConnectivitySyncProvider(
               await importPayload(payload);
               importedPreviousPayload = true;
             } catch (error) {
-              if (!isStaleWatchConnectivityImportError(error)) {
-                console.warn('Failed to import watch sync payload', error);
+              if (isStaleWatchConnectivityImportError(error)) {
+                return;
               }
-              return;
+              console.warn('Failed to import watch sync payload', error);
+              importedPreviousPayload = true;
             }
           }
         }
@@ -280,6 +298,7 @@ export function WatchConnectivitySyncProvider(
     onImportedEntry,
     onLocalWritesCommitted,
     planRepository,
+    preparePendingPayload,
     preferencesHydrated,
     queryClient,
     queryScope,
@@ -298,6 +317,7 @@ export async function importPendingWatchConnectivityPayloads({
   queryClient,
   queryScope,
   drainPendingPayloads = drainPendingWatchConnectivityPayloads,
+  preparePendingPayload = preparePendingWatchConnectivityPayload,
   acknowledgePayloads = acknowledgeWatchConnectivityPayloads,
   acknowledgeImportedPayloads = acknowledgeImportedWatchConnectivityPayloads,
   notifyImportedEntry,
@@ -308,6 +328,7 @@ export async function importPendingWatchConnectivityPayloads({
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
   let importedCount = 0;
   let receivedCount = 0;
+  let failedCount = 0;
   const seenPayloadIds = new Set<string>();
   const scope = coordinator.activateScope(queryScope);
   let importedPreviousPayload = false;
@@ -329,38 +350,48 @@ export async function importPendingWatchConnectivityPayloads({
       if (payload.payloadId) {
         seenPayloadIds.add(payload.payloadId);
       }
-      const importedEntry = await measureSlowStage('watch-import', () =>
-        importWatchConnectivityPayload({
-          payload,
-          repository,
-          planRepository,
-          queryClient,
-          queryScope,
-          acknowledgePayloads,
-          acknowledgeImportedPayloads,
-          notifyImportedEntry,
-          coordinator,
-          scope,
-          onLocalWritesCommitted,
-          isHistoricalWatchArtifact,
-        }),
-      );
-      importedPreviousPayload = true;
-
-      if (importedEntry) {
-        importedCount += 1;
+      try {
+        const importedEntry = await measureSlowStage('watch-import', () =>
+          importWatchConnectivityPayload({
+            payload,
+            preparePendingPayload,
+            repository,
+            planRepository,
+            queryClient,
+            queryScope,
+            acknowledgePayloads,
+            acknowledgeImportedPayloads,
+            notifyImportedEntry,
+            coordinator,
+            scope,
+            onLocalWritesCommitted,
+            isHistoricalWatchArtifact,
+          }),
+        );
+        if (importedEntry) {
+          importedCount += 1;
+        }
+      } catch (error) {
+        if (isStaleWatchConnectivityImportError(error)) {
+          throw error;
+        }
+        failedCount += 1;
+        console.warn('Failed to import watch sync payload', error);
       }
+      importedPreviousPayload = true;
     }
   }
 
   return {
     receivedCount,
     importedCount,
+    failedCount,
   };
 }
 
 async function importWatchConnectivityPayload({
   payload,
+  preparePendingPayload,
   repository,
   planRepository,
   queryClient,
@@ -373,19 +404,38 @@ async function importWatchConnectivityPayload({
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
 }: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
-  return coordinator.run(scope, payload, guard => importWatchConnectivityPayloadOnce({
-    payload,
-    repository,
-    planRepository,
-    queryClient,
-    queryScope,
-    acknowledgePayloads,
-    acknowledgeImportedPayloads,
-    notifyImportedEntry,
-    guard,
-    onLocalWritesCommitted,
-    isHistoricalWatchArtifact,
-  }));
+  return coordinator.run(scope, payload, async guard => {
+    try {
+      const preparedPayload = await preparePayloadForImport(
+        payload,
+        preparePendingPayload,
+      );
+      guard.assertActive();
+      return await importWatchConnectivityPayloadOnce({
+        payload: preparedPayload,
+        repository,
+        planRepository,
+        queryClient,
+        queryScope,
+        acknowledgePayloads,
+        acknowledgeImportedPayloads,
+        notifyImportedEntry,
+        guard,
+        onLocalWritesCommitted,
+        isHistoricalWatchArtifact,
+      });
+    } catch (error) {
+      if (
+        typeof isInvalidPreparedWatchPayloadError === 'function' &&
+        isInvalidPreparedWatchPayloadError(error)
+      ) {
+        guard.assertActive();
+        await acknowledgePayload(payload, acknowledgePayloads);
+        return undefined;
+      }
+      throw error;
+    }
+  });
 }
 
 async function importWatchConnectivityPayloadOnce({
@@ -401,9 +451,6 @@ async function importWatchConnectivityPayloadOnce({
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
 }: WatchConnectivityPayloadImportOnceOptions): Promise<DiveLogEntry | undefined> {
-  if (payload.payloadJson === undefined) {
-    throw new Error('Watch payload preparation is required');
-  }
   const result = parseWatchSyncMessageJson(payload.payloadJson);
 
   if (!result.ok) {
@@ -450,6 +497,7 @@ async function importWatchConnectivityPayloadOnce({
   guard.assertActive();
   const entries = await repository.importWatchMessages([result.message], {
     artifactDigests: [payload.sha256],
+    preparedProfiles: [payload.preparedProfile],
     assertCanCommit: guard.assertActive,
   });
   const { importedEntry, completedPlan, entries: importedEntries } = await markWatchConnectivityImported(
@@ -472,6 +520,23 @@ async function importWatchConnectivityPayloadOnce({
   requestAccountSyncSafely(onLocalWritesCommitted);
   await notifyImportedEntrySafely(importedEntry, notifyImportedEntry);
   return importedEntry;
+}
+
+async function preparePayloadForImport(
+  payload: WatchConnectivityPayload,
+  preparePendingPayload:
+    | ((
+        payload: WatchConnectivityPayload,
+      ) => Promise<PreparedWatchConnectivityPayload>)
+    | undefined,
+): Promise<PreparedWatchConnectivityPayload> {
+  if (payload.payloadJson !== undefined) {
+    return {...payload, payloadJson: payload.payloadJson};
+  }
+  if (preparePendingPayload === undefined) {
+    throw new Error('Watch payload preparation is unavailable');
+  }
+  return preparePendingPayload(payload);
 }
 
 function watchArtifactIdentity(

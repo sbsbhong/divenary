@@ -189,6 +189,8 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
 
       if (result.importedCount > 0) {
         setSyncToastMessage(t('logbook.syncWatchImported', { count: result.importedCount }));
+      } else if (result.failedCount > 0) {
+        setSyncToastMessage(t('logbook.syncWatchFailed'));
       } else if (result.unavailable) {
         setSyncToastMessage(t('logbook.syncWatchUnavailable'));
       } else {

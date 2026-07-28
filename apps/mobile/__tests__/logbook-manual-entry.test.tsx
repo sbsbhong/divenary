@@ -600,7 +600,7 @@ describe('Logbook manual entry flow', () => {
           entries={[]}
           filter={{ query: '' }}
           onFilterChange={jest.fn()}
-          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, unavailable: false })}
+          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, failedCount: 0, unavailable: false })}
           onRefresh={jest.fn()}
           isLoading
           onSaveEntry={jest.fn()}
@@ -625,7 +625,7 @@ describe('Logbook manual entry flow', () => {
           entries={[]}
           filter={{ query: '' }}
           onFilterChange={jest.fn()}
-          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, unavailable: false })}
+          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, failedCount: 0, unavailable: false })}
           onRefresh={onRefresh}
           onSaveEntry={jest.fn()}
           onDeleteEntry={jest.fn()}
@@ -640,7 +640,7 @@ describe('Logbook manual entry flow', () => {
           entries={[]}
           filter={{ query: '' }}
           onFilterChange={jest.fn()}
-          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, unavailable: false })}
+          onSyncWatch={async () => ({ importedCount: 0, receivedCount: 0, failedCount: 0, unavailable: false })}
           onRefresh={onRefresh}
           onSaveEntry={jest.fn()}
           onDeleteEntry={jest.fn()}
@@ -695,6 +695,36 @@ describe('Logbook manual entry flow', () => {
     await press(root, 'logbook-import-action');
 
     expect(root.findByProps({ testID: 'logbook-sync-toast' }).props.children).toBe('No new watch logs.');
+  });
+
+  test('manual watch sync reports a retryable failure when no payload imports', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+      renderer = ReactTestRenderer.create(
+        <LogbookScreen
+          entries={[]}
+          filter={{query: ''}}
+          onFilterChange={jest.fn()}
+          onSyncWatch={async () => ({
+            importedCount: 0,
+            receivedCount: 1,
+            failedCount: 1,
+            unavailable: false,
+          })}
+          onRefresh={jest.fn()}
+          onSaveEntry={jest.fn()}
+          onDeleteEntry={jest.fn()}
+        />,
+      );
+    });
+    renderers.push(renderer!);
+
+    await press(renderer!.root, 'logbook-import-action');
+
+    expect(
+      renderer!.root.findByProps({testID: 'logbook-sync-toast'}).props.children,
+    ).toBe('Could not check watch logs. Try again.');
   });
 
   test('saves manual local-only entries through the repository flow and lists them with watch entries', async () => {

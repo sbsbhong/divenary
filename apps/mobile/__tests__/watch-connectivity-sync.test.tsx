@@ -15,6 +15,7 @@ import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-rep
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
 import {
   preparePendingWatchConnectivityPayload,
+  WatchPayloadPreparationError,
   type WatchConnectivityPayload,
 } from '../src/native/watch-connectivity';
 import {
@@ -246,6 +247,131 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     expect(preparePendingPayload).toHaveBeenCalledTimes(1);
     expect(preparePendingPayload).toHaveBeenCalledWith('pending-large');
+  });
+
+  it('passes prepared profile metadata from a descriptor into the repository import', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const descriptor: WatchConnectivityPayload = {
+      payloadId: 'pending-prepared-import',
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    const preparedProfile = {
+      payloadId: descriptor.payloadId!,
+      sampleCount: metadataRichFixture.session.samples.length,
+      byteCount: 512,
+      sha256: 'e'.repeat(64),
+    };
+    const preparePendingPayload = jest.fn().mockResolvedValue({
+      ...descriptor,
+      payloadJson: JSON.stringify(metadataRichFixture),
+      preparedProfile,
+    });
+    const importWatchMessages = jest.spyOn(
+      repository,
+      'importWatchMessages',
+    );
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: jest
+          .fn()
+          .mockResolvedValueOnce([descriptor])
+          .mockResolvedValue([]),
+        preparePendingPayload,
+        acknowledgeImportedPayloads: jest.fn().mockResolvedValue(undefined),
+      }),
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 1,
+      failedCount: 0,
+    });
+    expect(preparePendingPayload).toHaveBeenCalledTimes(1);
+    expect(importWatchMessages).toHaveBeenCalledWith(
+      [expect.objectContaining({type: metadataRichFixture.type})],
+      expect.objectContaining({preparedProfiles: [preparedProfile]}),
+    );
+  });
+
+  it('drop-acknowledges an invalid native artifact without counting an I/O failure', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const descriptor: WatchConnectivityPayload = {
+      payloadId: 'invalid-native-artifact',
+      localSessionId: 'invalid-native-session',
+      receivedAt: 1781355000,
+    };
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: jest
+          .fn()
+          .mockResolvedValueOnce([descriptor])
+          .mockResolvedValue([]),
+        preparePendingPayload: jest
+          .fn()
+          .mockRejectedValue(new WatchPayloadPreparationError('invalid')),
+        acknowledgePayloads,
+      }),
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
+    expect(acknowledgePayloads).toHaveBeenCalledWith([
+      descriptor.payloadId,
+    ]);
+    await expect(repository.list()).resolves.toEqual([]);
+  });
+
+  it('drop-acknowledges prepared metadata that disagrees with the validated preview', async () => {
+    const repository = new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 1781355000,
+    });
+    const queryClient = createQueryClient();
+    const descriptor: WatchConnectivityPayload = {
+      payloadId: 'mismatched-prepared-profile',
+      localSessionId: 'fixture-rich-session',
+      receivedAt: 1781355000,
+    };
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads: jest
+          .fn()
+          .mockResolvedValueOnce([descriptor])
+          .mockResolvedValue([]),
+        preparePendingPayload: jest.fn().mockResolvedValue({
+          ...descriptor,
+          payloadJson: JSON.stringify(metadataRichFixture),
+          preparedProfile: {
+            payloadId: descriptor.payloadId!,
+            sampleCount: 8_000,
+            byteCount: 640_000,
+            sha256: 'f'.repeat(64),
+          },
+        }),
+        acknowledgePayloads,
+      }),
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
+    expect(acknowledgePayloads).toHaveBeenCalledWith([
+      descriptor.payloadId,
+    ]);
+    await expect(repository.list()).resolves.toEqual([]);
   });
 
   it('keeps the Watch artifact digest separate from the stored profile sample digest', async () => {
@@ -489,7 +615,11 @@ describe('WatchConnectivitySyncProvider', () => {
         coordinator: new WatchConnectivityImportCoordinator(),
         drainPendingPayloads: manualDrain,
       }),
-    ).resolves.toEqual({receivedCount: 0, importedCount: 0});
+    ).resolves.toEqual({
+      receivedCount: 0,
+      importedCount: 0,
+      failedCount: 0,
+    });
     expect(manualDrain).toHaveBeenCalledTimes(1);
     expect(automaticDrain).not.toHaveBeenCalled();
     expect(afterInteractions.tasks).toHaveLength(1);
@@ -526,7 +656,11 @@ describe('WatchConnectivitySyncProvider', () => {
         isHistoricalWatchArtifact: jest.fn().mockResolvedValue(true),
         yieldToRuntime,
       }),
-    ).resolves.toEqual({receivedCount: 2, importedCount: 0});
+    ).resolves.toEqual({
+      receivedCount: 2,
+      importedCount: 0,
+      failedCount: 0,
+    });
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
       historical.payloadId,
     ]);
@@ -535,11 +669,68 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
+  it('continues after a failed first payload and imports the second payload', async () => {
+    const repository = new LocalDiveLogRepository();
+    const queryClient = createQueryClient();
+    const first = makePendingPayload(
+      'first-failed',
+      'first-failed-session',
+      'c',
+    );
+    const second = makePendingPayload(
+      'second-imported',
+      'second-imported-session',
+      'd',
+    );
+    const importWatchMessages = repository.importWatchMessages.bind(repository);
+    jest
+      .spyOn(repository, 'importWatchMessages')
+      .mockImplementation(async (messages, options) => {
+        if (messages[0]?.session.localSessionId === 'first-failed-session') {
+          throw new Error('first local save failed');
+        }
+        return importWatchMessages(messages, options);
+      });
+    const drainPendingPayloads = jest
+      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .mockResolvedValueOnce([first, second])
+      .mockResolvedValue([]);
+    const acknowledgeImportedPayloads = jest
+      .fn()
+      .mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient,
+        drainPendingPayloads,
+        acknowledgeImportedPayloads,
+      }),
+    ).resolves.toEqual({
+      receivedCount: 2,
+      importedCount: 1,
+      failedCount: 1,
+    });
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      second.payloadId,
+    ]);
+    expect(acknowledgeImportedPayloads).not.toHaveBeenCalledWith([
+      first.payloadId,
+    ]);
+    expect(
+      (await repository.list()).map(
+        entry => entry.watchCapture?.session.localSessionId,
+      ),
+    ).toEqual(['second-imported-session']);
+  });
+
   it('does not yield after a failed first payload', async () => {
     const repository = new LocalDiveLogRepository();
     const queryClient = createQueryClient();
     const payload = makePendingPayload('failed-payload', 'failed-session', 'c');
     const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
       importPendingWatchConnectivityPayloads({
@@ -554,7 +745,11 @@ describe('WatchConnectivitySyncProvider', () => {
           .mockRejectedValue(new Error('history unavailable')),
         yieldToRuntime,
       }),
-    ).rejects.toThrow('history unavailable');
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 1,
+    });
     expect(yieldToRuntime).not.toHaveBeenCalled();
   });
 
@@ -798,7 +993,11 @@ describe('WatchConnectivitySyncProvider', () => {
       await flushPromises();
     });
 
-    expect(importSummary).toEqual({receivedCount: 1, importedCount: 1});
+    expect(importSummary).toEqual({
+      receivedCount: 1,
+      importedCount: 1,
+      failedCount: 0,
+    });
 
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
       'deferred-plan-watch-payload',
@@ -897,6 +1096,7 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(failedImportSummary).toEqual({
       receivedCount: 1,
       importedCount: 1,
+      failedCount: 0,
     });
 
     const failedAccountLog = (await accountLogbook.list()).find(
@@ -1080,18 +1280,12 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     const deleteStarted = createDeferred();
     const releaseDelete = createDeferred();
-    const conditionalPlanbook = guestPlanbook as unknown as {
-      deleteIf: (
-        localId: string,
-        predicate: (current: typeof guestPlan) => boolean,
-      ) => Promise<string>;
-    };
-    const deleteIf = conditionalPlanbook.deleteIf.bind(guestPlanbook);
-    jest.spyOn(conditionalPlanbook, 'deleteIf').mockImplementationOnce(
-      async (localId, predicate) => {
+    const deleteManyIf = guestPlanbook.deleteManyIf.bind(guestPlanbook);
+    jest.spyOn(guestPlanbook, 'deleteManyIf').mockImplementationOnce(
+      async requests => {
         deleteStarted.resolve();
         await releaseDelete.promise;
-        return deleteIf(localId, predicate);
+        return deleteManyIf(requests);
       },
     );
 
@@ -1125,7 +1319,11 @@ describe('WatchConnectivitySyncProvider', () => {
       }],
       acknowledgeImportedPayloads: jest.fn(async () => undefined),
       onLocalWritesCommitted: jest.fn(async () => undefined),
-    })).resolves.toEqual({receivedCount: 1, importedCount: 1});
+    })).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 1,
+      failedCount: 0,
+    });
     releaseDelete.resolve();
 
     await expect(firstAttempt).resolves.toMatchObject({
@@ -1139,7 +1337,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const accountLog = (await accountLogbook.list())[0]!;
     expect(completedGuestPlan?.convertedLogLocalId).toBe(accountLog.localId);
 
-    await expect(service.resume()).resolves.toMatchObject({
+    await expect(service.retry()).resolves.toMatchObject({
       manifest: {status: 'committed'},
     });
 
@@ -1369,7 +1567,11 @@ describe('WatchConnectivitySyncProvider', () => {
         notifyImportedEntry,
         onLocalWritesCommitted,
       }),
-    ).resolves.toEqual({receivedCount: 1, importedCount: 0});
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
 
     await expect(repository.list()).resolves.toEqual([]);
     expect(importWatchMessages).not.toHaveBeenCalled();
@@ -1391,6 +1593,7 @@ describe('WatchConnectivitySyncProvider', () => {
       'history-read-session',
       'a',
     );
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
       importPendingWatchConnectivityPayloads({
@@ -1402,7 +1605,11 @@ describe('WatchConnectivitySyncProvider', () => {
           throw new Error('claim history unavailable');
         },
       }),
-    ).rejects.toThrow('claim history unavailable');
+    ).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 1,
+    });
 
     await expect(repository.list()).resolves.toEqual([]);
     expect(acknowledgeImportedPayloads).not.toHaveBeenCalled();
@@ -1577,7 +1784,11 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const entries = await repository.list();
-    expect(summary).toEqual({ receivedCount: 2, importedCount: 2 });
+    expect(summary).toEqual({
+      receivedCount: 2,
+      importedCount: 2,
+      failedCount: 0,
+    });
     expect(entries.map(entry => entry.watchCapture?.importKey).sort()).toEqual([
       'open-to-ended-session:1781357600',
       'open-to-ended-session:open',
@@ -1627,7 +1838,11 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     const entries = await repository.list();
-    expect(summary).toEqual({ receivedCount: 2, importedCount: 2 });
+    expect(summary).toEqual({
+      receivedCount: 2,
+      importedCount: 2,
+      failedCount: 0,
+    });
     expect(entries).toHaveLength(1);
     expect(entries[0]).toMatchObject({
       cloudSyncStatus: 'notConfigured',
@@ -2179,7 +2394,11 @@ describe('WatchConnectivitySyncProvider', () => {
       drainPendingPayloads: async () => [payload],
       acknowledgeImportedPayloads,
       coordinator,
-    })).rejects.toThrow('watch unavailable');
+    })).resolves.toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 1,
+    });
 
     const result = await importPendingWatchConnectivityPayloads({
       repository,
@@ -2518,7 +2737,7 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     expect(results[1]).toEqual({
       status: 'fulfilled',
-      value: {receivedCount: 1, importedCount: 1},
+      value: {receivedCount: 1, importedCount: 1, failedCount: 0},
     });
     expect(await repositoryA.list()).toEqual([]);
     expect(await repositoryB.list()).toHaveLength(1);
@@ -2630,7 +2849,11 @@ describe('WatchConnectivitySyncProvider', () => {
       isHistoricalWatchArtifact,
     });
 
-    expect(result).toEqual({receivedCount: 1, importedCount: 0});
+    expect(result).toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
     expect(isHistoricalWatchArtifact).not.toHaveBeenCalled();
     expect(order).toEqual([
       'save-log',
@@ -2694,7 +2917,11 @@ describe('WatchConnectivitySyncProvider', () => {
       coordinator: new WatchConnectivityImportCoordinator(),
     });
 
-    expect(summary).toEqual({receivedCount: 1, importedCount: 0});
+    expect(summary).toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
     expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
       'legacy-artifact-duplicate',
     ]);

@@ -1,5 +1,6 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
+import {WatchPayloadPreparationError} from '../native/watch-connectivity';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';
@@ -12,7 +13,12 @@ import {
 } from '../storage/persistent-json-store';
 import { withLegacyDataMigrationLock } from '../storage/legacy-data-migration-lock';
 import { mobileStorageKeys } from '../storage/storage-keys';
-import { createWatchProfileStorage, type WatchProfileStorage } from '../storage/watch-profile-storage';
+import {
+  createWatchProfileStorage,
+  readWatchProfileRaw,
+  type WatchProfileStorage,
+  writeWatchProfileRaw,
+} from '../storage/watch-profile-storage';
 import type {
   DeleteDiveLogOptions,
   DiveLogRepository,
@@ -299,7 +305,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     return this.enqueueMutation(async () => {
       let metadataSnapshot: string | undefined;
       let metadataSnapshotCaptured = false;
-      const profileSnapshots: ProfileWriteSnapshot[] = [];
+      const profileSnapshots: RawProfileWriteSnapshot[] = [];
       const obsoleteProfileKeys = new Set<string>();
       let metadataWriteAttempted = false;
       let committedEntries: DiveLogEntry[];
@@ -310,8 +316,19 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
         metadataSnapshotCaptured = true;
 
         for (const [messageIndex, message] of messages.entries()) {
-          const fullSamples = message.session.samples;
-          const profileDigest = createWatchProfileDigest(fullSamples);
+          const previewOrFullSamples = message.session.samples;
+          const preparedProfile =
+            options?.preparedProfiles?.[messageIndex];
+          if (preparedProfile !== undefined) {
+            assertPreparedProfile(preparedProfile, message);
+          }
+          const profileDigest =
+            preparedProfile === undefined
+              ? createWatchProfileDigest(previewOrFullSamples)
+              : {
+                  byteCount: preparedProfile.byteCount,
+                  sha256: preparedProfile.sha256,
+                };
           const contentRevision = message.session.profile?.contentRevision
             ?? `${message.session.endedAt ?? message.session.startedAt}`;
           const profileStorageKey = makeProfileStorageKey(
@@ -321,12 +338,33 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
           );
           profileSnapshots.push({
             key: profileStorageKey,
-            previous: await this.profileStorage.read(profileStorageKey),
+            previousRaw: await readWatchProfileRaw(
+              this.profileStorage,
+              profileStorageKey,
+            ),
           });
           options?.assertCanCommit?.();
-          await this.profileStorage.write(profileStorageKey, fullSamples);
+          if (preparedProfile === undefined) {
+            await this.profileStorage.write(
+              profileStorageKey,
+              previewOrFullSamples,
+            );
+          } else {
+            if (this.profileStorage.adoptPrepared === undefined) {
+              throw new Error(
+                'Prepared Watch profile adoption is unavailable',
+              );
+            }
+            await this.profileStorage.adoptPrepared(
+              preparedProfile.payloadId,
+              profileStorageKey,
+            );
+          }
           options?.assertCanCommit?.();
-          const previewSamples = makePeakPreservingPreview(fullSamples);
+          const previewSamples =
+            preparedProfile === undefined
+              ? makePeakPreservingPreview(previewOrFullSamples)
+              : previewOrFullSamples;
           const nextEntry = watchSessionToDiveLogEntry({
             session: { ...message.session, samples: previewSamples },
             now,
@@ -337,7 +375,9 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
                 profile: {
                   storageKey: profileStorageKey,
                   contentRevision,
-                  sampleCount: fullSamples.length,
+                  sampleCount:
+                    preparedProfile?.sampleCount ??
+                    previewOrFullSamples.length,
                   sha256: profileDigest.sha256,
                   artifactSha256: options?.artifactDigests?.[messageIndex],
                 },
@@ -371,7 +411,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
           await this.restoreMetadataSnapshot(metadataSnapshot);
         }
         if (!writeCommitted) {
-          await this.restoreProfileSnapshots(profileSnapshots);
+          await this.restoreRawProfileSnapshots(profileSnapshots);
         }
         throw error;
       }
@@ -441,6 +481,22 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     }
   }
 
+  private async restoreRawProfileSnapshots(
+    snapshots: readonly RawProfileWriteSnapshot[],
+  ): Promise<void> {
+    for (const snapshot of [...snapshots].reverse()) {
+      if (snapshot.previousRaw === undefined) {
+        await this.profileStorage.remove(snapshot.key);
+      } else {
+        await writeWatchProfileRaw(
+          this.profileStorage,
+          snapshot.key,
+          snapshot.previousRaw,
+        );
+      }
+    }
+  }
+
   private async restoreProfileSnapshot(
     snapshot: ProfileWriteSnapshot,
   ): Promise<void> {
@@ -455,6 +511,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
 type ProfileWriteSnapshot = {
   key: string;
   previous?: WatchDepthSample[];
+};
+
+type RawProfileWriteSnapshot = {
+  key: string;
+  previousRaw?: string;
 };
 
 type LegacyDiveLogEntry = Omit<DiveLogEntry, 'cloudSyncStatus'> & {
@@ -513,6 +574,28 @@ function findByImportKey(entries: DiveLogEntry[], importKey: string | undefined)
 
 function referencesProfile(entries: DiveLogEntry[], storageKey: string): boolean {
   return entries.some(entry => entry.watchCapture?.profile?.storageKey === storageKey);
+}
+
+function assertPreparedProfile(
+  prepared: NonNullable<
+    ImportWatchMessagesOptions['preparedProfiles']
+  >[number],
+  message: WatchSyncMessage,
+): void {
+  const declaredSampleCount = message.session.profile?.sampleCount;
+  if (
+    !prepared ||
+    prepared.payloadId.length === 0 ||
+    !Number.isInteger(prepared.sampleCount) ||
+    prepared.sampleCount < message.session.samples.length ||
+    !Number.isInteger(prepared.byteCount) ||
+    prepared.byteCount <= 0 ||
+    !/^[a-f0-9]{64}$/i.test(prepared.sha256) ||
+    (declaredSampleCount !== undefined &&
+      declaredSampleCount !== prepared.sampleCount)
+  ) {
+    throw new WatchPayloadPreparationError('invalid');
+  }
 }
 
 function getCurrentTimestampSeconds(): number {
