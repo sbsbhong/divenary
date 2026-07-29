@@ -33,8 +33,8 @@
 | [모바일 구조](architecture/mobile.md)                                             | `apps/mobile`은 staged receipt와 canonical profile path를 독립 검증한 뒤 canonical remote ID를 저장하고, 완료된 upload receipt retry를 `finalizing`에서 재개한다. | 2026-07-29 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 JavaScript와 같은 bytes의 prepared profile을 native file로 채택하며 derived-file 손상 시 raw artifact를 보존한다. | 2026-07-28 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
-| [Supabase 구조](architecture/supabase.md)                                      | Staging finalizer는 deterministic lock 뒤 active equivalent row만 canonical account ID로 조정하고 soft-deleted/divergent collision은 원자적으로 rollback한다. | 2026-07-29 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Guest claim은 staged receipt와 canonical path를 분리 검증하고 canonical-ID readback을 durable snapshot에 저장하면서 fail-closed 경계를 유지한다. | 2026-07-29 |
+| [Supabase 구조](architecture/supabase.md)                                      | Staging finalizer는 publication 전후 deterministic candidate lock과 locked equivalence revalidation 뒤 active canonical ID만 재사용한다. | 2026-07-29 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Guest claim은 post-publication winner를 다시 잠가 full equivalence를 검증한 뒤 canonical-ID readback을 durable snapshot에 저장한다. | 2026-07-29 |
 | [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
 
 ## domains

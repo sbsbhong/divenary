@@ -1035,3 +1035,18 @@
 - Pending: Docker 기반 local DB·Function·실제 2-session concurrency와 원래 iPhone 15-item batch 물리 retry는 아직 검증하지 않았다.
 
 ## [2026-07-29] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-29] ingest | Cross-device guest claim deployment chronology
+
+- Added: Cross-device guest claim deployment chronology raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: `20260729200000` 적용 직후에는 Function을 재배포하지 않았고, 이후 commit `fa68f0f`의 guarded command로 unchanged source를 staging에 재배포했으며 `20260729210000`과 `20260729220000` 적용 때는 추가 재배포하지 않은 순서를 기록했다.
+- Corrected: finalizer wrapper는 private publication 전후로 active·soft-deleted plan/log candidate를 deterministic order로 잠그고, 두 번째 lock을 보유한 채 payload/profile/relation equivalence를 다시 검증한 뒤 remap한다.
+- Verified: local reset, 21 static/contract tests, 109 pgTAP tests, 16 Function checks와 explicit barrier를 사용한 multi-session concurrency 2개 scenario가 통과했다.
+- Verified: staging list/dry-run에서 `20260729220000`만 pending임을 확인해 해당 migration만 적용했고 post-list와 hosted guest-claim verifier가 통과했다. Edge Function과 production은 변경하지 않았다.
+- Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지 관찰은 아직 검증하지 않았다.
+
+## [2026-07-29] lint | 0 issues found, 0 auto-fixed
