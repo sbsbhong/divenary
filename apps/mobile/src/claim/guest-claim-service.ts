@@ -262,7 +262,9 @@ export class GuestClaimService {
         delete snapshot.failure;
         return this.cleanup(snapshot);
       }
-      snapshot.manifest.status = 'running';
+      snapshot.manifest.status = uploadReceiptIsComplete(snapshot)
+        ? 'finalizing'
+        : 'running';
       delete snapshot.errorCode;
       delete snapshot.failure;
       await this.persist(snapshot);
@@ -371,6 +373,15 @@ export class GuestClaimService {
     let failureContext: GuestClaimFailureDetail = { phase: 'uploading' };
     try {
       this.assertCanContinue();
+      if (
+        uploadReceiptIsComplete(snapshot) &&
+        snapshot.manifest.status !== 'finalizing'
+      ) {
+        snapshot.manifest.status = 'finalizing';
+        delete snapshot.errorCode;
+        delete snapshot.failure;
+        await this.persist(snapshot);
+      }
       if (snapshot.manifest.status !== 'finalizing') {
         snapshot.manifest.status = 'running';
         delete snapshot.errorCode;
@@ -580,6 +591,7 @@ export class GuestClaimService {
       await this.options.remoteRepository.listCommittedBatch(batchId);
     this.assertCanContinue();
     const verified = verifyCommittedBatch(snapshot, committed);
+    await this.persist(snapshot);
     await this.writeAccountSnapshot(snapshot, verified);
     this.assertCanContinue();
 
@@ -1665,6 +1677,13 @@ function isTransientClaimError(
   return errorCode === 'network_unavailable';
 }
 
+function uploadReceiptIsComplete(snapshot: GuestClaimSnapshot): boolean {
+  return (
+    snapshot.manifest.remoteBatchId !== undefined &&
+    snapshot.manifest.items.every(item => item.completedAt !== undefined)
+  );
+}
+
 function isReplaceableLocalCheckpoint(
   snapshot: GuestClaimSnapshot,
 ): boolean {
@@ -1688,7 +1707,7 @@ function verifyCommittedBatch(
   }
   const plans = uniqueByLocalId(committed.plans);
   const logs = uniqueByLocalId(committed.logs);
-  const byKey = new Map(snapshot.manifest.items.map(item => [item.key, item]));
+  const canonicalTargets = new Map<string, string>();
 
   for (const [index, item] of snapshot.manifest.items.entries()) {
     const sidecar = snapshot.snapshots[index]!;
@@ -1698,17 +1717,17 @@ function verifyCommittedBatch(
         : logs.get(item.clientRecordId);
     if (
       remote === undefined ||
-      remote.id !== item.targetRecordId ||
       remote.payloadSha256 !== item.payloadSha256 ||
       remote.revision < 1
     ) {
       throw new GuestClaimServiceError('remote_conflict');
     }
+    canonicalTargets.set(item.key, remote.id);
     const expectedPayload = parseSnapshotPayload(sidecar);
     const normalizedPayload = { ...remote.payload };
     if (item.entityKind === 'plan') {
       const target = item.convertedLogClientRecordId
-        ? byKey.get(`log:${item.convertedLogClientRecordId}`)?.targetRecordId
+        ? logs.get(item.convertedLogClientRecordId)?.id
         : undefined;
       if (normalizedPayload.converted_log_id !== (target ?? null)) {
         throw new GuestClaimServiceError('remote_conflict');
@@ -1716,7 +1735,7 @@ function verifyCommittedBatch(
       normalizedPayload.converted_log_id = expectedPayload.converted_log_id;
     } else {
       const target = item.sourcePlanClientRecordId
-        ? byKey.get(`plan:${item.sourcePlanClientRecordId}`)?.targetRecordId
+        ? plans.get(item.sourcePlanClientRecordId)?.id
         : undefined;
       if (normalizedPayload.source_plan_id !== (target ?? null)) {
         throw new GuestClaimServiceError('remote_conflict');
@@ -1760,6 +1779,9 @@ function verifyCommittedBatch(
     } else {
       logs.set(item.clientRecordId, verifiedRemote as RemoteDiveLog);
     }
+  }
+  for (const item of snapshot.manifest.items) {
+    item.targetRecordId = canonicalTargets.get(item.key)!;
   }
   return { plans, logs };
 }
