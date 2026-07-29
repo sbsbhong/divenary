@@ -167,6 +167,23 @@ async function insertRow(context, table, row) {
   return result.body[0];
 }
 
+async function updateRow(context, table, id, values) {
+  const result = await request(
+    `${context.apiUrl}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: headers(context.publishableKey, context.accessToken, {
+        Prefer: 'return=representation',
+      }),
+      body: JSON.stringify(values),
+    },
+  );
+
+  assertStatus(result, [200], `update ${table}`);
+  assert.equal(result.body?.length, 1);
+  return result.body[0];
+}
+
 async function readRows(context, table, query) {
   const result = await request(
     `${context.apiUrl}/rest/v1/${table}?${query}`,
@@ -638,20 +655,29 @@ try {
     profile: profileExpectation(sameDigestProfilePath, profileBytes, 2),
   });
   const sameDigest = await invokeFinalizer(owner, sameDigestBatch.id);
-  assertFailure(
-    sameDigest,
-    409,
-    'claim_validation_failed',
-    'same digest with different target ids',
+  assertStatus(sameDigest, [200], 'same digest cross-device reconciliation');
+  assert.deepEqual(sameDigest.body, {
+    batchId: sameDigestBatch.id,
+    status: 'committed',
+    planCount: 1,
+    logCount: 1,
+  });
+
+  const reconciledRecords = await readRows(
+    owner,
+    'guest_claim_records',
+    `select=entity_kind,target_record_id&batch_id=eq.${sameDigestBatch.id}`,
+  );
+  assert.equal(
+    reconciledRecords.find(row => row.entity_kind === 'plan').target_record_id,
+    successPlan.target_record_id,
+  );
+  assert.equal(
+    reconciledRecords.find(row => row.entity_kind === 'log').target_record_id,
+    successLog.target_record_id,
   );
   await assertFinalCounts(owner, 1, 1, 'same digest idempotency');
-  const [sameDigestBatchReadback] = await readRows(
-    owner,
-    'guest_claim_batches',
-    `select=status&id=eq.${sameDigestBatch.id}`,
-  );
-  assert.equal(sameDigestBatchReadback.status, 'uploading');
-  logCheck('new batch cannot commit against different existing target ids');
+  logCheck('same digest cross-device claim reuses canonical target ids');
 
   await deleteProfiles(status.API_URL, status.SECRET_KEY, [
     successProfilePath,
@@ -693,6 +719,75 @@ try {
   );
   assert.deepEqual(rolledBackPlans, []);
   logCheck('different digest conflict rolls back the whole batch');
+
+  const deletedAt = '2026-07-29T12:00:00.000Z';
+  await updateRow(owner, 'dive_plans', successPlan.target_record_id, {
+    deleted_at: deletedAt,
+  });
+  await updateRow(owner, 'dive_logs', successLog.target_record_id, {
+    deleted_at: deletedAt,
+  });
+  const softDeletedBatch = await createBatch(owner, {
+    label: 'soft-deleted-collision',
+    expectedPlanCount: 1,
+    expectedLogCount: 1,
+  });
+  const softDeletedProfilePath = claimProfilePath(
+    owner,
+    softDeletedBatch.id,
+  );
+  objectPaths.push(softDeletedProfilePath);
+  await uploadProfile(owner, softDeletedProfilePath, profileBytes);
+  await stageRecord(owner, softDeletedBatch.id, {
+    entityKind: 'plan',
+    clientRecordId: 'success-plan',
+    convertedLogClientRecordId: 'success-log',
+    payloadSha256: payloadDigest(successPlanPayload),
+    payload: successPlanPayload,
+  });
+  await stageRecord(owner, softDeletedBatch.id, {
+    entityKind: 'log',
+    clientRecordId: 'success-log',
+    sourcePlanClientRecordId: 'success-plan',
+    payloadSha256: payloadDigest(successLogPayload),
+    payload: successLogPayload,
+    profile: profileExpectation(softDeletedProfilePath, profileBytes, 2),
+  });
+
+  const softDeletedCollision = await invokeFinalizer(
+    owner,
+    softDeletedBatch.id,
+  );
+  assertFailure(
+    softDeletedCollision,
+    409,
+    'claim_validation_failed',
+    'soft-deleted equivalent collision',
+  );
+  const [softDeletedBatchReadback] = await readRows(
+    owner,
+    'guest_claim_batches',
+    `select=status&id=eq.${softDeletedBatch.id}`,
+  );
+  assert.equal(softDeletedBatchReadback.status, 'uploading');
+  const [plansAfterSoftDeletedCollision, logsAfterSoftDeletedCollision] =
+    await Promise.all([
+      readRows(
+        owner,
+        'dive_plans',
+        'select=id,deleted_at&local_id=eq.success-plan',
+      ),
+      readRows(
+        owner,
+        'dive_logs',
+        'select=id,deleted_at&local_id=eq.success-log',
+      ),
+    ]);
+  assert.equal(plansAfterSoftDeletedCollision.length, 1);
+  assert.equal(logsAfterSoftDeletedCollision.length, 1);
+  assert.ok(plansAfterSoftDeletedCollision[0].deleted_at);
+  assert.ok(logsAfterSoftDeletedCollision[0].deleted_at);
+  logCheck('soft-deleted equivalent collision remains resumable and inactive');
 } finally {
   await deleteProfiles(status.API_URL, status.SECRET_KEY, objectPaths);
 

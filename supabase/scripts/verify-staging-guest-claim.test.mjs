@@ -84,7 +84,8 @@ function createStagingApi({
   loseFirstCreateResponseId = false,
   paginateCleanupLookup = false,
   corruptPublishedDigest = false,
-  allowTargetReuseCommit = false,
+  failTargetReconciliation = false,
+  allowSoftDeletedCollisionCommit = false,
 } = {}) {
   const users = [];
   const memberships = new Set();
@@ -132,6 +133,7 @@ function createStagingApi({
       'local_id',
       'client_batch_id',
       'client_record_id',
+      'batch_id',
     ]) {
       const expected = eqFilter(url, field);
       if (expected !== undefined) {
@@ -388,42 +390,81 @@ function createStagingApi({
 
       const planRecord = staged.find(row => row.entity_kind === 'plan');
       const logRecord = staged.find(row => row.entity_kind === 'log');
-      const reusesExistingTarget =
-        rows.dive_plans.some(row =>
-          row.user_id === currentUser.id &&
-          row.local_id === planRecord.client_record_id &&
-          row.id !== planRecord.target_record_id
-        ) ||
-        rows.dive_logs.some(row =>
-          row.user_id === currentUser.id &&
-          row.local_id === logRecord.client_record_id &&
-          row.id !== logRecord.target_record_id
-        );
-      if (reusesExistingTarget && !allowTargetReuseCommit) {
+      const existingPlan = planRecord && rows.dive_plans.find(row =>
+        row.user_id === currentUser.id &&
+        row.local_id === planRecord.client_record_id
+      );
+      const existingLog = logRecord && rows.dive_logs.find(row =>
+        row.user_id === currentUser.id &&
+        row.local_id === logRecord.client_record_id
+      );
+      if (
+        !allowSoftDeletedCollisionCommit &&
+        (existingPlan?.deleted_at || existingLog?.deleted_at)
+      ) {
         return jsonResponse(
           409,
           {code: 'claim_validation_failed'},
           {'cache-control': 'no-store'},
         );
       }
-      rows.dive_plans.push({
-        id: planRecord.target_record_id,
-        user_id: currentUser.id,
-        local_id: planRecord.client_record_id,
-        converted_log_id: logRecord.target_record_id,
-        payload_sha256: corruptPublishedDigest
-          ? 'b'.repeat(64)
-          : planRecord.payload_sha256,
-      });
-      rows.dive_logs.push({
-        id: logRecord.target_record_id,
-        user_id: currentUser.id,
-        local_id: logRecord.client_record_id,
-        source_plan_id: planRecord.target_record_id,
-        profile_path: logRecord.profile_path,
-        profile_sha256: logRecord.profile_sha256,
-        payload_sha256: logRecord.payload_sha256,
-      });
+      if (
+        (existingPlan &&
+          (
+            existingPlan.payload_sha256 !== planRecord.payload_sha256 ||
+            JSON.stringify(existingPlan.payload) !==
+              JSON.stringify(planRecord.payload)
+          )) ||
+        (existingLog &&
+          (
+            existingLog.payload_sha256 !== logRecord.payload_sha256 ||
+            JSON.stringify(existingLog.payload) !==
+              JSON.stringify(logRecord.payload)
+          ))
+      ) {
+        return jsonResponse(
+          409,
+          {code: 'claim_validation_failed'},
+          {'cache-control': 'no-store'},
+        );
+      }
+      if (existingPlan || existingLog) {
+        assert.equal(Boolean(existingPlan), Boolean(planRecord));
+        assert.equal(Boolean(existingLog), Boolean(logRecord));
+        if (!failTargetReconciliation) {
+          if (planRecord) {
+            planRecord.target_record_id = existingPlan.id;
+          }
+          if (logRecord) {
+            logRecord.target_record_id = existingLog.id;
+          }
+        }
+      } else {
+        if (planRecord) {
+          rows.dive_plans.push({
+            id: planRecord.target_record_id,
+            user_id: currentUser.id,
+            local_id: planRecord.client_record_id,
+            converted_log_id: logRecord?.target_record_id,
+            payload_sha256: corruptPublishedDigest
+              ? 'b'.repeat(64)
+              : planRecord.payload_sha256,
+            payload: planRecord.payload,
+          });
+        }
+        if (logRecord) {
+          rows.dive_logs.push({
+            id: logRecord.target_record_id,
+            user_id: currentUser.id,
+            local_id: logRecord.client_record_id,
+            source_plan_id: planRecord?.target_record_id,
+            profile_path: logRecord.profile_path,
+            profile_sha256: logRecord.profile_sha256,
+            payload_sha256: logRecord.payload_sha256,
+            payload: logRecord.payload,
+          });
+        }
+      }
       batch.status = 'committed';
       finalizerCalls += 1;
       return jsonResponse(200, responseBody, {'cache-control': 'no-store'});
@@ -582,10 +623,10 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
     cliInvocation[2].env.SUPABASE_ACCESS_TOKEN,
     'management-token-that-must-not-be-logged',
   );
-  assert.equal(api.finalizerCalls, 2);
+  assert.equal(api.finalizerCalls, 3);
   assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
-  assert.equal(api.cleanup.profiles.length, 2);
+  assert.equal(api.cleanup.profiles.length, 3);
   assert.ok(
     api.calls
       .filter(call => call.pathname.startsWith('/rest/v1/'))
@@ -723,12 +764,22 @@ test('fails when finalization publishes a different payload digest', async () =>
   assert.equal(api.cleanup.users.length, 2);
 });
 
-test('fails when a new batch reuses local rows under different target ids', async () => {
-  const api = createStagingApi({allowTargetReuseCommit: true});
+test('fails when an equivalent claim is not remapped to canonical target ids', async () => {
+  const api = createStagingApi({failTargetReconciliation: true});
 
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
-    /target id reuse denial/i,
+    /canonical target ids/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when an equivalent soft-deleted collision is committed', async () => {
+  const api = createStagingApi({allowSoftDeletedCollisionCommit: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /soft-deleted collision/i,
   );
   assert.equal(api.cleanup.users.length, 2);
 });

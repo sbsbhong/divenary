@@ -192,6 +192,530 @@ describe('guest claim service', () => {
     await expect(guest.planbook.get('plan-a')).resolves.toBeUndefined();
   });
 
+  it('persists a canonical committed ID and publishes it to the account partition', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const guest = repositories([diveLog('log-a')], []);
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      localId: 'log-a',
+      remoteId: OTHER_ID,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
+  it('persists canonical receipts before publishing account-local rows', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const guest = repositories([diveLog('log-a')], []);
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    let persistedTargetAtPublication: string | undefined;
+    const saveLog = account.logbook.save.getMockImplementation()!;
+    account.logbook.save.mockImplementation(async value => {
+      persistedTargetAtPublication = (await store.read())?.manifest.items[0]
+        ?.targetRecordId;
+      return saveLog(value);
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+    });
+
+    await service.start();
+
+    expect(persistedTargetAtPublication).toBe(OTHER_ID);
+  });
+
+  it('accepts an earlier canonical claim profile while preserving the staged receipt', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const CANONICAL_BATCH_ID = uuid('5', 1);
+    const STAGED_PROFILE_PATH =
+      `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_PROFILE_PATH =
+      `${userId}/claims/${CANONICAL_BATCH_ID}/${OTHER_ID}/revision-1.json`;
+    const profile = profileStorage();
+    const samples = depthSamples(200);
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    let persistedReceiptAtPublication:
+      | {
+          targetRecordId: string | undefined;
+          profilePath: string | undefined;
+        }
+      | undefined;
+    const saveLog = account.logbook.save.getMockImplementation()!;
+    account.logbook.save.mockImplementation(async value => {
+      const persisted = await store.read();
+      persistedReceiptAtPublication = {
+        targetRecordId: persisted?.manifest.items[0]?.targetRecordId,
+        profilePath: persisted?.snapshots[0]?.profileReadback?.path,
+      };
+      return saveLog(value);
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath = CANONICAL_PROFILE_PATH;
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+    });
+    expect(persistedReceiptAtPublication).toEqual({
+      targetRecordId: OTHER_ID,
+      profilePath: STAGED_PROFILE_PATH,
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      localId: 'log-a',
+      remoteId: OTHER_ID,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
+  it('retries account publication with the canonical ID and staged profile path intact', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const CANONICAL_BATCH_ID = uuid('5', 1);
+    const STAGED_PROFILE_PATH =
+      `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_PROFILE_PATH =
+      `${userId}/claims/${CANONICAL_BATCH_ID}/${OTHER_ID}/revision-1.json`;
+    const profile = profileStorage();
+    const samples = depthSamples(200);
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const saveLog = account.logbook.save.getMockImplementation()!;
+    account.logbook.save
+      .mockRejectedValueOnce(
+        new GuestClaimServiceError('network_unavailable'),
+      )
+      .mockImplementation(saveLog);
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath = CANONICAL_PROFILE_PATH;
+        return committed;
+      }),
+    });
+    const firstService = claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    });
+
+    const interrupted = await firstService.start();
+
+    expect(interrupted).toMatchObject({
+      manifest: {
+        status: 'failed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+      errorCode: 'network_unavailable',
+    });
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: {
+        status: 'failed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+      snapshots: [{profileReadback: {path: STAGED_PROFILE_PATH}}],
+    });
+
+    const result = await claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    }).retry();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      remoteId: OTHER_ID,
+      cloudSyncStatus: 'synced',
+    });
+    expect(remote.stageRecord).toHaveBeenCalledTimes(1);
+    expect(remote.uploadProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a canonical account log profile path for the committed remote ID', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const samples = depthSamples(200);
+    const profile = profileStorage();
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath =
+          `${userId}/logs/${OTHER_ID}/revision-1.json`;
+        return committed;
+      }),
+    });
+
+    const result = await claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    }).start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      remoteId: OTHER_ID,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
+  it.each([
+    {
+      name: 'foreign owner',
+      path: `${otherUserId}/logs/${uuid('4', 2)}/revision-1.json`,
+    },
+    {
+      name: 'malformed canonical claim batch',
+      path: `${userId}/claims/not-a-uuid/${uuid('4', 2)}/revision-1.json`,
+    },
+    {
+      name: 'encoded traversal',
+      path: `${userId}/claims/${uuid('5', 1)}/${uuid('4', 2)}/%2e%2e.json`,
+    },
+    {
+      name: 'wrong canonical remote ID',
+      path: `${userId}/logs/${uuid('4', 3)}/revision-1.json`,
+    },
+    {
+      name: 'wrong content revision',
+      path: `${userId}/logs/${uuid('4', 2)}/revision-2.json`,
+    },
+    {
+      name: 'unsupported namespace',
+      path: `${userId}/profiles/${uuid('4', 2)}/revision-1.json`,
+    },
+  ])('rejects a $name committed profile path', async ({path}) => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const samples = depthSamples(200);
+    const profile = profileStorage();
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath = path;
+        return committed;
+      }),
+    });
+
+    const result = await claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    }).start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'failed',
+        items: [{targetRecordId: TARGET_ID}],
+      },
+      errorCode: 'remote_conflict',
+    });
+    expect(account.logbook.save).not.toHaveBeenCalled();
+  });
+
+  it('validates committed plan and log relationships with canonical remote IDs', async () => {
+    const OTHER_PLAN_ID = uuid('4', 1);
+    const OTHER_LOG_ID = uuid('4', 2);
+    const relatedLog: DiveLogEntry = {
+      ...diveLog('log-a', 'log'),
+      source: 'watch',
+      watchCapture: {
+        importKey: 'watch:log-a',
+        importedAt: 11,
+        session: {
+          localSessionId: 'session-log-a',
+          sourcePlanLocalId: 'plan-a',
+          startedAt: 10,
+          samples: [],
+        },
+        measuredValues: {startedAt: 10},
+        samples: [],
+      },
+    };
+    const guest = repositories(
+      [relatedLog],
+      [divePlan('plan-a', 'log-a')],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const saveAccountLog = account.logbook.save.getMockImplementation()!;
+    account.logbook.save.mockImplementation(async value => {
+      const saved = await saveAccountLog(value);
+      await guest.logbook.delete('log-a');
+      await guest.planbook.delete('plan-a');
+      return saved;
+    });
+    const remote = remoteRepository(store, [], {
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.plans[0]!.id = OTHER_PLAN_ID;
+        committed.plans[0]!.payload.converted_log_id = OTHER_LOG_ID;
+        committed.logs[0]!.id = OTHER_LOG_ID;
+        committed.logs[0]!.payload.source_plan_id = OTHER_PLAN_ID;
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [
+          {targetRecordId: OTHER_PLAN_ID},
+          {targetRecordId: OTHER_LOG_ID},
+        ],
+      },
+    });
+    await expect(account.planbook.get('plan-a')).resolves.toMatchObject({
+      remoteId: OTHER_PLAN_ID,
+      cloudSyncStatus: 'synced',
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      remoteId: OTHER_LOG_ID,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
+  it('keeps every staged target ID when one canonical committed row has a divergent digest', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const guest = repositories([diveLog('log-a'), diveLog('log-b')], []);
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[1]!.payloadSha256 = 'f'.repeat(64);
+        return committed;
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+    });
+
+    const result = await service.start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'failed',
+        items: [
+          {clientRecordId: 'log-a', targetRecordId: TARGET_ID},
+          {clientRecordId: 'log-b', targetRecordId: uuid('3', 3)},
+        ],
+      },
+      errorCode: 'remote_conflict',
+    });
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: {
+        items: [
+          {clientRecordId: 'log-a', targetRecordId: TARGET_ID},
+          {clientRecordId: 'log-b', targetRecordId: uuid('3', 3)},
+        ],
+      },
+    });
+    expect(account.logbook.save).not.toHaveBeenCalled();
+  });
+
   it('publishes a recovered legacy artifact digest only in the account-local profile reference', async () => {
     const profile = profileStorage();
     const fullSamples = depthSamples(2);
@@ -598,6 +1122,48 @@ describe('guest claim service', () => {
     expect(remote.createOrLoadBatch).not.toHaveBeenCalled();
     expect(remote.stageRecord).not.toHaveBeenCalled();
     expect(remote.finalize).not.toHaveBeenCalled();
+  });
+
+  it('retries a fully uploaded checkpoint directly in finalizing', async () => {
+    const guest = repositories([diveLog('log-a')], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: uuid('2', 2),
+      targetRecordId: uuid('3', 2),
+      completedAt: 101,
+    };
+    snapshot.errorCode = 'network_unavailable';
+    await store.write(snapshot);
+    const progress: Array<{phase: string}> = [];
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote: remoteRepository(store),
+      onProgress: value => progress.push(value),
+    });
+
+    await service.retry();
+
+    expect(progress[0]).toMatchObject({phase: 'finalizing'});
+    expect(progress).not.toContainEqual(
+      expect.objectContaining({phase: 'uploading'}),
+    );
   });
 
   it('preserves a failed remote-progress checkpoint after its guest source is deleted', async () => {

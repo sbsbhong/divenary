@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 import * as stagingRunner from './run-staging-supabase.mjs';
@@ -551,6 +552,59 @@ test('allows only the exact read-only onboarding metadata query', async () => {
       {spawnSyncImpl: () => ({status: 0})},
     ),
     /unsupported staging/i,
+  );
+});
+
+test('allows only the exact staging finalize guest claim function deployment', async () => {
+  const exactCommand = [
+    'functions',
+    'deploy',
+    'finalize-guest-claim',
+    '--project-ref',
+    STAGING_PROJECT_REF,
+  ];
+  const linkState = createInjectedLinkState();
+
+  await stagingRunner.runStagingSupabase(exactCommand, linkState.options);
+
+  assert.equal(linkState.calls.length, 1);
+  assert.deepEqual(linkState.calls[0][1], exactCommand);
+
+  for (const rejected of [
+    [
+      'functions',
+      'deploy',
+      'another-function',
+      '--project-ref',
+      STAGING_PROJECT_REF,
+    ],
+    [
+      'functions',
+      'deploy',
+      'finalize-guest-claim',
+      '--project-ref',
+      'production-project',
+    ],
+    [...exactCommand, '--no-verify-jwt'],
+  ]) {
+    const rejectedState = createInjectedLinkState();
+    await assert.rejects(
+      stagingRunner.runStagingSupabase(rejected, rejectedState.options),
+      /unsupported staging/i,
+    );
+    assert.equal(rejectedState.calls.length, 0);
+  }
+});
+
+test('exposes only the exact staging finalize guest claim deployment script', async () => {
+  const packageJson = JSON.parse(
+    await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
+  );
+
+  assert.equal(
+    packageJson.scripts['supabase:staging:deploy:guest-claim'],
+    'node supabase/scripts/run-staging-supabase.mjs functions deploy ' +
+      `finalize-guest-claim --project-ref ${STAGING_PROJECT_REF}`,
   );
 });
 

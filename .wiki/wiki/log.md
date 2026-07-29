@@ -1010,3 +1010,43 @@
 - Updated: Knowledge Base Index
 - Corrected: typed duration/depth의 REST readback은 one-ULP를 넘더라도 embedded source의 exact 15-significant-digit representation이고 restored payload가 stored SHA-256과 정확히 일치할 때만 복구한다.
 - Verified: remote 10개 중 새 Watch row 2개를 격리하던 12/4/11-ULP digest failure를 회귀 테스트로 재현하고 package 70개와 mobile coordinator 80개가 통과했다. Rating과 일반 numeric divergence는 계속 fail-closed다.
+
+## [2026-07-29] ingest | Cross-device guest claim reconciliation
+
+- Added: Cross-device guest claim reconciliation evidence raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Verified: staging `20260729200000` migration 적용 뒤 equivalent cross-device batch의 canonical-ID 조정과 divergent batch denial verifier가 통과했다.
+- Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지는 아직 검증하지 않았다.
+
+## [2026-07-29] ingest | Cross-device guest claim final hardening
+
+- Added: Cross-device guest claim final hardening evidence raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: mobile은 원래 staged profile receipt와 다른 기기가 먼저 확정한 canonical profile path를 독립 검증하며, 허용된 account log/claim namespace 밖의 경로는 fail closed다.
+- Corrected: finalizer wrapper는 batch와 record 뒤 active·soft-deleted canonical candidate를 plan/log 순서와 안정된 ID 순서로 잠그고 active row만 재사용한다.
+- Verified: staging `20260729210000` migration 적용 뒤 soft-deleted equivalent collision은 batch를 uploading으로 유지하고 active row를 만들지 않는 hosted verifier를 통과했다. Edge Function source는 바뀌지 않아 재배포하지 않았다.
+- Pending: Docker 기반 local DB·Function·실제 2-session concurrency와 원래 iPhone 15-item batch 물리 retry는 아직 검증하지 않았다.
+
+## [2026-07-29] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-29] ingest | Cross-device guest claim deployment chronology
+
+- Added: Cross-device guest claim deployment chronology raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: Knowledge Base Index
+- Corrected: `20260729200000` 적용 직후에는 Function을 재배포하지 않았고, 이후 commit `fa68f0f`의 guarded command로 unchanged source를 staging에 재배포했으며 `20260729210000`과 `20260729220000` 적용 때는 추가 재배포하지 않은 순서를 기록했다.
+- Corrected: finalizer wrapper는 private publication 전후로 active·soft-deleted plan/log candidate를 deterministic order로 잠그고, 두 번째 lock을 보유한 채 payload/profile/relation equivalence를 다시 검증한 뒤 remap한다.
+- Verified: local reset, 21 static/contract tests, 109 pgTAP tests, 16 Function checks와 explicit barrier를 사용한 multi-session concurrency 2개 scenario가 통과했다.
+- Verified: staging list/dry-run에서 `20260729220000`만 pending임을 확인해 해당 migration만 적용했고 post-list와 hosted guest-claim verifier가 통과했다. Edge Function과 production은 변경하지 않았다.
+- Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지 관찰은 아직 검증하지 않았다.
+
+## [2026-07-29] lint | 0 issues found, 0 auto-fixed
