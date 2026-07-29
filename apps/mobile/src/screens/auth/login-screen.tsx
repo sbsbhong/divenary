@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { SocialProvider } from '../../auth/native-social-auth';
+import { BrandLogo } from '../../components/brand/brand-logo';
 import { Box } from '../../components/ui/box';
 import {
   Button,
@@ -64,14 +65,10 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
     <SafeAreaView testID="auth-login-safe-area" edges={['bottom']} className="flex-1 bg-background">
       <VStack testID="auth-login-screen" space="md" className="px-5 pb-2 pt-3">
         <Box className="relative min-h-11 justify-center">
-          <Box
+          <BrandLogo
             testID="auth-login-brand-mark"
-            accessible={false}
-            accessibilityElementsHidden
-            importantForAccessibility="no-hide-descendants"
-            className="mx-auto h-11 w-11 items-center justify-center rounded-xl bg-primary">
-            <Text className="text-xl font-bold text-white">D</Text>
-          </Box>
+            className="mx-auto h-11 w-11 rounded-xl"
+          />
           {onClose ? (
             <Button
               testID="auth-login-close"

@@ -4,9 +4,13 @@ jest.mock('../src/states/auth', () => ({
   useAuth: () => mockAuth,
 }));
 
+jest.mock('../src/states/app-preferences', () => ({
+  useAppPreferences: () => ({resolvedTheme: 'light'}),
+}));
+
 import type { RequiredLegalDocument } from '@repo/supabase';
 import React from 'react';
-import { Linking, StyleSheet } from 'react-native';
+import { Image as NativeImage, Linking, StyleSheet } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 
 import i18n from '../src/i18n';
@@ -309,13 +313,18 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
 
     expect(renderer.root.findAllByType(ScrollView)).toHaveLength(0);
-    const brandMark = renderer.root.findByProps({ testID: 'auth-login-brand-mark' });
+    const brandMark = renderer.root
+      .findAllByType(NativeImage)
+      .find(node => node.props.testID === 'auth-login-brand-mark');
     const heading = renderer.root.findByProps({ accessibilityRole: 'header' });
-    expect(brandMark.props.accessibilityElementsHidden).toBe(true);
-    expect(brandMark.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(brandMark?.props.accessibilityElementsHidden).toBe(true);
+    expect(brandMark?.props.importantForAccessibility).toBe('no-hide-descendants');
+    expect(brandMark?.props.className).toContain('h-11');
+    expect(brandMark?.props.className).toContain('w-11');
     expect(heading.props.maxFontSizeMultiplier).toBe(1.5);
     expect(renderer.root.findByProps({ testID: 'auth-login-screen' }).props).toMatchObject({ space: 'md' });
     expect(renderer.root.findAllByProps({ testID: 'auth-login-status-row' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('"children":["D"]');
     expect(JSON.stringify(renderer.toJSON())).not.toContain('기존 기록은 이 기기에 유지됩니다.');
   });
 
