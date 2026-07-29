@@ -1769,14 +1769,13 @@ function validateSnapshotSet(
     ) {
       throw new GuestClaimStorageError();
     }
-    const expectedReadbackPath =
-      manifest.remoteBatchId !== undefined && item.targetRecordId !== undefined
-        ? `${manifest.userId}/claims/${manifest.remoteBatchId}/${item.targetRecordId}/${encodeURIComponent(item.profile.contentRevision)}.json`
-        : undefined;
     if (
       sidecar.profileReadback !== undefined &&
-      (expectedReadbackPath === undefined ||
-        sidecar.profileReadback.path !== expectedReadbackPath ||
+      (!isClaimProfileReadbackPath(
+        sidecar.profileReadback.path,
+        manifest,
+        item.profile.contentRevision,
+      ) ||
         sidecar.profileReadback.sha256 !== item.profile.sha256 ||
         sidecar.profileReadback.sampleCount !== item.profile.sampleCount ||
         sidecar.profileReadback.byteCount !== profileByteCount ||
@@ -1795,6 +1794,24 @@ function validateSnapshotSet(
       throw new GuestClaimStorageError();
     }
   }
+}
+
+function isClaimProfileReadbackPath(
+  path: string,
+  manifest: GuestClaimManifest,
+  contentRevision: string,
+): boolean {
+  const segments = path.split('/');
+  return (
+    manifest.remoteBatchId !== undefined &&
+    !path.includes('\\') &&
+    segments.length === 5 &&
+    segments[0] === manifest.userId &&
+    segments[1] === 'claims' &&
+    segments[2] === manifest.remoteBatchId &&
+    UUID_PATTERN.test(segments[3] ?? '') &&
+    segments[4] === `${encodeURIComponent(contentRevision)}.json`
+  );
 }
 
 function validateManifestOrderAndRelationships(

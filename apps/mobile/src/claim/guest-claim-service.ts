@@ -1747,10 +1747,14 @@ function verifyCommittedBatch(
       ) {
         throw new GuestClaimServiceError('remote_conflict');
       }
-      const expectedPath = item.profile
-        ? `${snapshot.userId}/claims/${snapshot.manifest.remoteBatchId}/${item.targetRecordId}/${encodeURIComponent(item.profile.contentRevision)}.json`
-        : undefined;
-      if ((remote as RemoteDiveLog).profilePath !== expectedPath) {
+      const expectedPath =
+        item.profile === undefined
+          ? undefined
+          : sidecar.profileReadback?.path;
+      if (
+        (item.profile !== undefined && expectedPath === undefined) ||
+        (remote as RemoteDiveLog).profilePath !== expectedPath
+      ) {
         throw new GuestClaimServiceError('remote_conflict');
       }
     }

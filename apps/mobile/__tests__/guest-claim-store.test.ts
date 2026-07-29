@@ -24,6 +24,10 @@ import {verifyProfileBytesSnapshot} from '../src/claim/profile-bytes';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const otherUserId = '00000000-0000-4000-8000-000000000002';
+const batchId = '10000000-0000-4000-8000-000000000001';
+const otherBatchId = '10000000-0000-4000-8000-000000000002';
+const stagedTargetId = '30000000-0000-4000-8000-000000000001';
+const canonicalTargetId = '40000000-0000-4000-8000-000000000001';
 const guestProfileKey = `${dataProfileKeyPrefix({
   kind: 'guest',
 })}session-log-a:revision-1`;
@@ -1395,7 +1399,7 @@ describe('guest claim store', () => {
     ).rejects.toThrow('user');
   });
 
-  it('rejects profile readback evidence for a different remote path', async () => {
+  it('preserves an owner-scoped staged profile path after target canonicalization', async () => {
     const storage = new InMemoryKeyValueStore();
     const profiles = profileStorage();
     const samples = depthSamples(1);
@@ -1418,18 +1422,99 @@ describe('guest claim store', () => {
       now: () => 100,
     });
     snapshot.manifest.status = 'running';
-    snapshot.manifest.remoteBatchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.remoteBatchId = batchId;
     snapshot.manifest.items[0] = {
       ...snapshot.manifest.items[0]!,
       stagingRecordId: '20000000-0000-4000-8000-000000000001',
-      targetRecordId: '30000000-0000-4000-8000-000000000001',
+      targetRecordId: canonicalTargetId,
+      completedAt: 101,
     };
     const profileBytes = (await readClaimProfileBytes(
       snapshot.snapshots[0]!,
       profiles,
     ))!;
     snapshot.snapshots[0]!.profileReadback = {
-      path: `${userId}/claims/wrong/path.json`,
+      path: `${userId}/claims/${batchId}/${stagedTargetId}/revision-1.json`,
+      byteCount: new TextEncoder().encode(profileBytes).length,
+      sha256: snapshot.manifest.items[0]!.profile!.sha256,
+      sampleCount: 1,
+      verifiedAt: 101,
+    };
+    snapshot.manifest.updatedAt = 101;
+    const store = new GuestClaimStore({storage, userId});
+
+    await expect(store.write(snapshot)).resolves.toBeUndefined();
+    await expect(store.read()).resolves.toMatchObject({
+      manifest: {
+        items: [{targetRecordId: canonicalTargetId}],
+      },
+      snapshots: [
+        {
+          profileReadback: {
+            path: `${userId}/claims/${batchId}/${stagedTargetId}/revision-1.json`,
+          },
+        },
+      ],
+    });
+  });
+
+  it.each([
+    {
+      name: 'foreign owner profile readback path',
+      path: `${otherUserId}/claims/${batchId}/${stagedTargetId}/revision-1.json`,
+    },
+    {
+      name: 'foreign batch profile readback path',
+      path: `${userId}/claims/${otherBatchId}/${stagedTargetId}/revision-1.json`,
+    },
+    {
+      name: 'malformed record profile readback path',
+      path: `${userId}/claims/${batchId}/not-a-uuid/revision-1.json`,
+    },
+    {
+      name: 'unsafe profile readback path',
+      path: `${userId}/claims/${batchId}/${stagedTargetId}/../revision-1.json`,
+    },
+    {
+      name: 'wrong revision profile readback path',
+      path: `${userId}/claims/${batchId}/${stagedTargetId}/revision-2.json`,
+    },
+  ])('rejects $name', async ({path}) => {
+    const storage = new InMemoryKeyValueStore();
+    const profiles = profileStorage();
+    const samples = depthSamples(1);
+    await profiles.write(guestProfileKey, samples);
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({
+          localId: 'log-a',
+          samples,
+          profile: {
+            storageKey: guestProfileKey,
+            contentRevision: 'revision-1',
+            sampleCount: 1,
+          },
+        }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profiles,
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'running';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: '20000000-0000-4000-8000-000000000001',
+      targetRecordId: canonicalTargetId,
+      completedAt: 101,
+    };
+    const profileBytes = (await readClaimProfileBytes(
+      snapshot.snapshots[0]!,
+      profiles,
+    ))!;
+    snapshot.snapshots[0]!.profileReadback = {
+      path,
       byteCount: new TextEncoder().encode(profileBytes).length,
       sha256: snapshot.manifest.items[0]!.profile!.sha256,
       sampleCount: 1,
@@ -1438,7 +1523,7 @@ describe('guest claim store', () => {
     snapshot.manifest.updatedAt = 101;
 
     await expect(
-      new GuestClaimStore({ storage, userId }).write(snapshot),
+      new GuestClaimStore({storage, userId}).write(snapshot),
     ).rejects.toThrow('guest claim');
   });
 
