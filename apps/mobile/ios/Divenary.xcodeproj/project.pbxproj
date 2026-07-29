@@ -29,6 +29,7 @@
 		8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5B5388708193690CDCF20BB /* DiveSessionStore.swift */; };
 		A10000000000000000000001 /* OneHertzProfileSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* OneHertzProfileSampler.swift */; };
 		A10000000000000000000002 /* DiveProfileArtifactStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* DiveProfileArtifactStore.swift */; };
+		A90000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000002 /* Assets.xcassets */; };
 		AD9A781A1B06B588B0F4E80C /* RealDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DC66E06148244A160C72C42 /* RealDepthSensorProvider.swift */; };
 		ADBE16E5205C126C7C217C7E /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 972E39BFCAB25BD1867935E1 /* Foundation.framework */; };
 		B10000000000000000000001 /* DemoDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B20000000000000000000001 /* DemoDepthSensorProvider.swift */; };
@@ -138,6 +139,7 @@
 		9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthGaugeRail.swift; sourceTree = "<group>"; };
 		A20000000000000000000001 /* OneHertzProfileSampler.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OneHertzProfileSampler.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* DiveProfileArtifactStore.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveProfileArtifactStore.swift; sourceTree = "<group>"; };
+		A90000000000000000000002 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B20000000000000000000001 /* DemoDepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DemoDepthSensorProvider.swift; sourceTree = "<group>"; };
 		B20000000000000000000002 /* DepthSensorAvailability.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorAvailability.swift; sourceTree = "<group>"; };
 		B20000000000000000000003 /* DepthAutoLaunchAuthorization.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthAutoLaunchAuthorization.swift; sourceTree = "<group>"; };
@@ -231,6 +233,7 @@
 		16C1CD0EF7BD44D4C334ABC3 /* DivenaryWatchApp */ = {
 			isa = PBXGroup;
 			children = (
+				A90000000000000000000002 /* Assets.xcassets */,
 				895332B886DE77424F1410C1 /* DivenaryWatchApp.swift */,
 				66C077D411D8E510F33267A1 /* Models */,
 				E01C29F743F7AC71BB250F07 /* Recording */,
@@ -524,6 +527,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A90000000000000000000001 /* Assets.xcassets in Resources */,
 				C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */,
 				72F99C297E562922D87444A0 /* PrivacyInfo.xcprivacy in Resources */,
 			);
@@ -951,6 +955,7 @@
 		D2388F5831CBB4A9A7F5AE22 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;
@@ -981,6 +986,7 @@
 		F85BD7A3A832F215EEE52819 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;
 				CODE_SIGN_STYLE = Automatic;

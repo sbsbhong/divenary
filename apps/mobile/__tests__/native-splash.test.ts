@@ -9,6 +9,23 @@ function readMobileFile(relativePath: string): string {
   }
 }
 
+function readPngDimensions(relativePath: string): { width: number; height: number } | undefined {
+  try {
+    const bytes = readFileSync(resolve(process.cwd(), relativePath));
+
+    if (bytes.toString('ascii', 1, 4) !== 'PNG') {
+      return undefined;
+    }
+
+    return {
+      width: bytes.readUInt32BE(16),
+      height: bytes.readUInt32BE(20),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 describe('native splash screen', () => {
   test('centers one 96 by 96 mark in the iOS launch storyboard', () => {
     const storyboard = readMobileFile('ios/Divenary/LaunchScreen.storyboard');
@@ -17,8 +34,23 @@ describe('native splash screen', () => {
     const iosMarkDirectory = resolve(process.cwd(), 'ios/Divenary/Images.xcassets/SplashMark.imageset');
     const iosMarkImages = [
       { filename: 'splash-mark.png', scale: '1x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark.png',
+        scale: '1x',
+      },
       { filename: 'splash-mark@2x.png', scale: '2x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark@2x.png',
+        scale: '2x',
+      },
       { filename: 'splash-mark@3x.png', scale: '3x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark@3x.png',
+        scale: '3x',
+      },
     ];
 
     expect(storyboard).toContain('image="SplashMark"');
@@ -30,7 +62,7 @@ describe('native splash screen', () => {
     expect(storyboard).toContain('name="SplashBackground"');
     expect(storyboard).not.toContain('systemGroupedBackgroundColor');
     expect(JSON.parse(iosMarkContents).images).toEqual(
-      iosMarkImages.map(({ filename, scale }) => ({ filename, idiom: 'universal', scale })),
+      iosMarkImages.map(image => ({ ...image, idiom: 'universal' })),
     );
     for (const { filename } of iosMarkImages) {
       expect(existsSync(resolve(iosMarkDirectory, filename))).toBe(true);
@@ -67,10 +99,16 @@ describe('native splash screen', () => {
 
   test('uses a centered mark and the correct light and night backgrounds on Android 24 through 30', () => {
     const androidLaunchScreen = readMobileFile('android/app/src/main/res/drawable/launch_screen.xml');
-    const androidMark = readMobileFile('android/app/src/main/res/drawable/splash_mark.xml');
     const androidTheme = readMobileFile('android/app/src/main/res/values/styles.xml');
     const androidColors = readMobileFile('android/app/src/main/res/values/colors.xml');
     const androidNightColors = readMobileFile('android/app/src/main/res/values-night/colors.xml');
+    const androidSplashSizes = {
+      mdpi: 96,
+      hdpi: 144,
+      xhdpi: 192,
+      xxhdpi: 288,
+      xxxhdpi: 384,
+    };
 
     expect(androidLaunchScreen).toContain('<layer-list');
     expect(androidLaunchScreen).toContain('android:drawable="@color/splash_background"');
@@ -78,9 +116,15 @@ describe('native splash screen', () => {
     expect(androidLaunchScreen).toContain('android:height="96dp"');
     expect(androidLaunchScreen).toContain('android:drawable="@drawable/splash_mark"');
     expect(androidLaunchScreen).toContain('android:gravity="center"');
-    expect(androidMark).toContain('android:width="96dp"');
-    expect(androidMark).toContain('android:height="96dp"');
-    expect(androidMark).toContain('#0066CC');
+    expect(existsSync(resolve(process.cwd(), 'android/app/src/main/res/drawable/splash_mark.xml'))).toBe(false);
+    for (const [density, size] of Object.entries(androidSplashSizes)) {
+      expect(
+        readPngDimensions(`android/app/src/main/res/drawable-${density}/splash_mark.png`),
+      ).toEqual({ width: size, height: size });
+      expect(
+        readPngDimensions(`android/app/src/main/res/drawable-night-${density}/splash_mark.png`),
+      ).toEqual({ width: size, height: size });
+    }
     expect(androidColors).toContain('<color name="splash_background">#F5F5F7</color>');
     expect(androidNightColors).toContain('<color name="splash_background">#000000</color>');
     expect(androidTheme).toContain('@drawable/launch_screen');
@@ -104,5 +148,94 @@ describe('native splash screen', () => {
     expect(android31Theme).toContain('@drawable/splash_mark');
     expect(android31Theme).toContain('android:windowSplashScreenIconBackgroundColor">@color/splash_background');
     expect(android31Theme).toContain('android:windowSplashScreenAnimationDuration">500</item>');
+  });
+});
+
+describe('native installed app icons', () => {
+  test('uses light and dark universal iOS app icons', () => {
+    const contents = JSON.parse(
+      readMobileFile('ios/Divenary/Images.xcassets/AppIcon.appiconset/Contents.json'),
+    );
+
+    expect(contents.images).toEqual([
+      {
+        filename: 'app-icon.png',
+        idiom: 'universal',
+        platform: 'ios',
+        size: '1024x1024',
+      },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'app-icon-dark.png',
+        idiom: 'universal',
+        platform: 'ios',
+        size: '1024x1024',
+      },
+    ]);
+    expect(
+      readPngDimensions('ios/Divenary/Images.xcassets/AppIcon.appiconset/app-icon.png'),
+    ).toEqual({ width: 1024, height: 1024 });
+    expect(
+      readPngDimensions('ios/Divenary/Images.xcassets/AppIcon.appiconset/app-icon-dark.png'),
+    ).toEqual({ width: 1024, height: 1024 });
+  });
+
+  test('uses light and dark Android launcher icons at every density', () => {
+    const launcherSizes = {
+      mdpi: 48,
+      hdpi: 72,
+      xhdpi: 96,
+      xxhdpi: 144,
+      xxxhdpi: 192,
+    };
+
+    for (const [density, size] of Object.entries(launcherSizes)) {
+      for (const appearance of ['', '-night']) {
+        for (const filename of ['ic_launcher.png', 'ic_launcher_round.png']) {
+          expect(
+            readPngDimensions(
+              `android/app/src/main/res/mipmap${appearance}-${density}/${filename}`,
+            ),
+          ).toEqual({ width: size, height: size });
+        }
+      }
+    }
+  });
+
+  test('owns a dark watchOS app icon in the watch target', () => {
+    const watchContents = JSON.parse(
+      readMobileFile(
+        'ios/DivenaryWatchApp/Assets.xcassets/AppIcon.appiconset/Contents.json',
+      ),
+    );
+    const accentContents = JSON.parse(
+      readMobileFile(
+        'ios/DivenaryWatchApp/Assets.xcassets/AccentColor.colorset/Contents.json',
+      ),
+    );
+    const project = readMobileFile('ios/Divenary.xcodeproj/project.pbxproj');
+
+    expect(watchContents.images).toEqual([
+      {
+        filename: 'app-icon.png',
+        idiom: 'universal',
+        platform: 'watchos',
+        size: '1024x1024',
+      },
+    ]);
+    expect(
+      readPngDimensions(
+        'ios/DivenaryWatchApp/Assets.xcassets/AppIcon.appiconset/app-icon.png',
+      ),
+    ).toEqual({ width: 1024, height: 1024 });
+    expect(accentContents.colors[0].color.components).toEqual({
+      alpha: '1.000',
+      blue: '1.000000',
+      green: '0.592157',
+      red: '0.160784',
+    });
+    expect(project).toContain('A90000000000000000000002 /* Assets.xcassets */');
+    expect(project).toContain('Assets.xcassets in Resources');
+    expect(project.match(/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/g)).toHaveLength(4);
   });
 });
