@@ -1010,3 +1010,14 @@
 - Updated: Knowledge Base Index
 - Corrected: typed duration/depth의 REST readback은 one-ULP를 넘더라도 embedded source의 exact 15-significant-digit representation이고 restored payload가 stored SHA-256과 정확히 일치할 때만 복구한다.
 - Verified: remote 10개 중 새 Watch row 2개를 격리하던 12/4/11-ULP digest failure를 회귀 테스트로 재현하고 package 70개와 mobile coordinator 80개가 통과했다. Rating과 일반 numeric divergence는 계속 fail-closed다.
+
+## [2026-07-29] ingest | Cross-device guest claim reconciliation
+
+- Added: Cross-device guest claim reconciliation evidence raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Verified: staging `20260729200000` migration 적용 뒤 equivalent cross-device batch의 canonical-ID 조정과 divergent batch denial verifier가 통과했다.
+- Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지는 아직 검증하지 않았다.
