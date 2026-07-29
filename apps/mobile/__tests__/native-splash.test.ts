@@ -9,6 +9,23 @@ function readMobileFile(relativePath: string): string {
   }
 }
 
+function readPngDimensions(relativePath: string): { width: number; height: number } | undefined {
+  try {
+    const bytes = readFileSync(resolve(process.cwd(), relativePath));
+
+    if (bytes.toString('ascii', 1, 4) !== 'PNG') {
+      return undefined;
+    }
+
+    return {
+      width: bytes.readUInt32BE(16),
+      height: bytes.readUInt32BE(20),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 describe('native splash screen', () => {
   test('centers one 96 by 96 mark in the iOS launch storyboard', () => {
     const storyboard = readMobileFile('ios/Divenary/LaunchScreen.storyboard');
@@ -17,8 +34,23 @@ describe('native splash screen', () => {
     const iosMarkDirectory = resolve(process.cwd(), 'ios/Divenary/Images.xcassets/SplashMark.imageset');
     const iosMarkImages = [
       { filename: 'splash-mark.png', scale: '1x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark.png',
+        scale: '1x',
+      },
       { filename: 'splash-mark@2x.png', scale: '2x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark@2x.png',
+        scale: '2x',
+      },
       { filename: 'splash-mark@3x.png', scale: '3x' },
+      {
+        appearances: [{ appearance: 'luminosity', value: 'dark' }],
+        filename: 'splash-mark-dark@3x.png',
+        scale: '3x',
+      },
     ];
 
     expect(storyboard).toContain('image="SplashMark"');
@@ -30,7 +62,7 @@ describe('native splash screen', () => {
     expect(storyboard).toContain('name="SplashBackground"');
     expect(storyboard).not.toContain('systemGroupedBackgroundColor');
     expect(JSON.parse(iosMarkContents).images).toEqual(
-      iosMarkImages.map(({ filename, scale }) => ({ filename, idiom: 'universal', scale })),
+      iosMarkImages.map(image => ({ ...image, idiom: 'universal' })),
     );
     for (const { filename } of iosMarkImages) {
       expect(existsSync(resolve(iosMarkDirectory, filename))).toBe(true);
@@ -67,10 +99,16 @@ describe('native splash screen', () => {
 
   test('uses a centered mark and the correct light and night backgrounds on Android 24 through 30', () => {
     const androidLaunchScreen = readMobileFile('android/app/src/main/res/drawable/launch_screen.xml');
-    const androidMark = readMobileFile('android/app/src/main/res/drawable/splash_mark.xml');
     const androidTheme = readMobileFile('android/app/src/main/res/values/styles.xml');
     const androidColors = readMobileFile('android/app/src/main/res/values/colors.xml');
     const androidNightColors = readMobileFile('android/app/src/main/res/values-night/colors.xml');
+    const androidSplashSizes = {
+      mdpi: 96,
+      hdpi: 144,
+      xhdpi: 192,
+      xxhdpi: 288,
+      xxxhdpi: 384,
+    };
 
     expect(androidLaunchScreen).toContain('<layer-list');
     expect(androidLaunchScreen).toContain('android:drawable="@color/splash_background"');
@@ -78,9 +116,15 @@ describe('native splash screen', () => {
     expect(androidLaunchScreen).toContain('android:height="96dp"');
     expect(androidLaunchScreen).toContain('android:drawable="@drawable/splash_mark"');
     expect(androidLaunchScreen).toContain('android:gravity="center"');
-    expect(androidMark).toContain('android:width="96dp"');
-    expect(androidMark).toContain('android:height="96dp"');
-    expect(androidMark).toContain('#0066CC');
+    expect(existsSync(resolve(process.cwd(), 'android/app/src/main/res/drawable/splash_mark.xml'))).toBe(false);
+    for (const [density, size] of Object.entries(androidSplashSizes)) {
+      expect(
+        readPngDimensions(`android/app/src/main/res/drawable-${density}/splash_mark.png`),
+      ).toEqual({ width: size, height: size });
+      expect(
+        readPngDimensions(`android/app/src/main/res/drawable-night-${density}/splash_mark.png`),
+      ).toEqual({ width: size, height: size });
+    }
     expect(androidColors).toContain('<color name="splash_background">#F5F5F7</color>');
     expect(androidNightColors).toContain('<color name="splash_background">#000000</color>');
     expect(androidTheme).toContain('@drawable/launch_screen');
