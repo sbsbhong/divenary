@@ -28,6 +28,7 @@
     "supabase:staging:migrations": "node supabase/scripts/run-staging-supabase.mjs migration list --linked",
     "supabase:staging:push:dry-run": "node supabase/scripts/run-staging-supabase.mjs db push --linked --dry-run",
     "supabase:staging:push": "node supabase/scripts/run-staging-supabase.mjs db push --linked",
+    "supabase:staging:deploy:guest-claim": "node supabase/scripts/run-staging-supabase.mjs functions deploy finalize-guest-claim --project-ref mclvhwzsuvsxjerdouka",
     "supabase:staging:seed:auth": "node supabase/scripts/staging-project.mjs seed",
     "supabase:staging:verify:auth": "node supabase/scripts/verify-staging-auth.mjs",
     "supabase:staging:verify:guest-claim": "node supabase/scripts/verify-staging-guest-claim.mjs",

@@ -28,6 +28,13 @@ async function assertAllowedStagingCommand(arguments_) {
     ['migration', 'list', '--linked'],
     ['db', 'push', '--linked', '--dry-run'],
     ['db', 'push', '--linked'],
+    [
+      'functions',
+      'deploy',
+      'finalize-guest-claim',
+      '--project-ref',
+      STAGING_PROJECT_REF,
+    ],
     ONBOARDING_RPC_METADATA_COMMAND,
   ];
 
