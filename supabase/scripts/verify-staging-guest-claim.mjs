@@ -1190,6 +1190,106 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
   ) {
     throw new Error('cross-device divergent claim must leave the batch resumable.');
   }
+
+  const deletedAt = '2026-07-29T12:00:00.000Z';
+  await updateRow(
+    context,
+    'dive_plans',
+    planRecord.target_record_id,
+    {deleted_at: deletedAt},
+    'soft-delete canonical claim plan',
+  );
+  await updateRow(
+    context,
+    'dive_logs',
+    logRecord.target_record_id,
+    {deleted_at: deletedAt},
+    'soft-delete canonical claim log',
+  );
+
+  const softDeletedBatch = await createBatch(
+    context,
+    cryptoImpl,
+    'soft-deleted-target-reuse',
+    1,
+    1,
+  );
+  await insertRow(context, 'guest_claim_records', {
+    batch_id: softDeletedBatch.id,
+    user_id: context.userId,
+    entity_kind: 'plan',
+    client_record_id: planLocalId,
+    converted_log_client_record_id: logLocalId,
+    payload_sha256: planPayloadSha256,
+    payload: planPayload,
+  });
+  const softDeletedLogRecord = await insertRow(
+    context,
+    'guest_claim_records',
+    {
+      batch_id: softDeletedBatch.id,
+      user_id: context.userId,
+      entity_kind: 'log',
+      client_record_id: logLocalId,
+      source_plan_client_record_id: planLocalId,
+      payload_sha256: logPayloadSha256,
+      payload: logPayload,
+    },
+  );
+  const softDeletedProfilePath =
+    `${context.userId}/claims/${softDeletedBatch.id}/${softDeletedLogRecord.id}/profile-v1.json`;
+  objectPaths.push(softDeletedProfilePath);
+  await uploadProfile(context, softDeletedProfilePath, profileBytes);
+  await updateRow(context, 'guest_claim_records', softDeletedLogRecord.id, {
+    profile_path: softDeletedProfilePath,
+    profile_content_revision: 'profile-v1',
+    profile_sha256: profileSha256,
+    profile_byte_count: profileBytes.byteLength,
+    profile_sample_count: 2,
+  }, 'attach soft-deleted collision profile metadata');
+
+  const softDeletedCollision = await invokeFinalizer(
+    context,
+    softDeletedBatch.id,
+  );
+  assertFinalizerFailure(
+    softDeletedCollision,
+    409,
+    'claim_validation_failed',
+    'soft-deleted collision denial',
+  );
+  const softDeletedBatches = await readRows(
+    context,
+    'guest_claim_batches',
+    `select=status&id=eq.${softDeletedBatch.id}`,
+    'soft-deleted collision batch status',
+  );
+  const plansAfterSoftDeletedCollision = await readRows(
+    context,
+    'dive_plans',
+    `select=id,deleted_at&local_id=eq.${encodeURIComponent(planLocalId)}`,
+    'soft-deleted collision plan rows',
+  );
+  const logsAfterSoftDeletedCollision = await readRows(
+    context,
+    'dive_logs',
+    `select=id,deleted_at&local_id=eq.${encodeURIComponent(logLocalId)}`,
+    'soft-deleted collision log rows',
+  );
+  if (
+    softDeletedBatches.length !== 1 ||
+    softDeletedBatches[0].status !== 'uploading' ||
+    plansAfterSoftDeletedCollision.length !== 1 ||
+    logsAfterSoftDeletedCollision.length !== 1 ||
+    plansAfterSoftDeletedCollision[0].deleted_at === null ||
+    plansAfterSoftDeletedCollision[0].deleted_at === undefined ||
+    logsAfterSoftDeletedCollision[0].deleted_at === null ||
+    logsAfterSoftDeletedCollision[0].deleted_at === undefined
+  ) {
+    throw new Error(
+      'soft-deleted collision must remain uploading without an active row.',
+    );
+  }
 }
 
 export async function verifyStagingGuestClaim({

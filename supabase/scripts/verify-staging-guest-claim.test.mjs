@@ -85,6 +85,7 @@ function createStagingApi({
   paginateCleanupLookup = false,
   corruptPublishedDigest = false,
   failTargetReconciliation = false,
+  allowSoftDeletedCollisionCommit = false,
 } = {}) {
   const users = [];
   const memberships = new Set();
@@ -398,6 +399,16 @@ function createStagingApi({
         row.local_id === logRecord.client_record_id
       );
       if (
+        !allowSoftDeletedCollisionCommit &&
+        (existingPlan?.deleted_at || existingLog?.deleted_at)
+      ) {
+        return jsonResponse(
+          409,
+          {code: 'claim_validation_failed'},
+          {'cache-control': 'no-store'},
+        );
+      }
+      if (
         (existingPlan &&
           (
             existingPlan.payload_sha256 !== planRecord.payload_sha256 ||
@@ -615,7 +626,7 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
   assert.equal(api.finalizerCalls, 3);
   assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
-  assert.equal(api.cleanup.profiles.length, 2);
+  assert.equal(api.cleanup.profiles.length, 3);
   assert.ok(
     api.calls
       .filter(call => call.pathname.startsWith('/rest/v1/'))
@@ -759,6 +770,16 @@ test('fails when an equivalent claim is not remapped to canonical target ids', a
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
     /canonical target ids/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when an equivalent soft-deleted collision is committed', async () => {
+  const api = createStagingApi({allowSoftDeletedCollisionCommit: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /soft-deleted collision/i,
   );
   assert.equal(api.cleanup.users.length, 2);
 });

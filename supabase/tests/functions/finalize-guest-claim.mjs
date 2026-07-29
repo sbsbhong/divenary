@@ -167,6 +167,23 @@ async function insertRow(context, table, row) {
   return result.body[0];
 }
 
+async function updateRow(context, table, id, values) {
+  const result = await request(
+    `${context.apiUrl}/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`,
+    {
+      method: 'PATCH',
+      headers: headers(context.publishableKey, context.accessToken, {
+        Prefer: 'return=representation',
+      }),
+      body: JSON.stringify(values),
+    },
+  );
+
+  assertStatus(result, [200], `update ${table}`);
+  assert.equal(result.body?.length, 1);
+  return result.body[0];
+}
+
 async function readRows(context, table, query) {
   const result = await request(
     `${context.apiUrl}/rest/v1/${table}?${query}`,
@@ -702,6 +719,75 @@ try {
   );
   assert.deepEqual(rolledBackPlans, []);
   logCheck('different digest conflict rolls back the whole batch');
+
+  const deletedAt = '2026-07-29T12:00:00.000Z';
+  await updateRow(owner, 'dive_plans', successPlan.target_record_id, {
+    deleted_at: deletedAt,
+  });
+  await updateRow(owner, 'dive_logs', successLog.target_record_id, {
+    deleted_at: deletedAt,
+  });
+  const softDeletedBatch = await createBatch(owner, {
+    label: 'soft-deleted-collision',
+    expectedPlanCount: 1,
+    expectedLogCount: 1,
+  });
+  const softDeletedProfilePath = claimProfilePath(
+    owner,
+    softDeletedBatch.id,
+  );
+  objectPaths.push(softDeletedProfilePath);
+  await uploadProfile(owner, softDeletedProfilePath, profileBytes);
+  await stageRecord(owner, softDeletedBatch.id, {
+    entityKind: 'plan',
+    clientRecordId: 'success-plan',
+    convertedLogClientRecordId: 'success-log',
+    payloadSha256: payloadDigest(successPlanPayload),
+    payload: successPlanPayload,
+  });
+  await stageRecord(owner, softDeletedBatch.id, {
+    entityKind: 'log',
+    clientRecordId: 'success-log',
+    sourcePlanClientRecordId: 'success-plan',
+    payloadSha256: payloadDigest(successLogPayload),
+    payload: successLogPayload,
+    profile: profileExpectation(softDeletedProfilePath, profileBytes, 2),
+  });
+
+  const softDeletedCollision = await invokeFinalizer(
+    owner,
+    softDeletedBatch.id,
+  );
+  assertFailure(
+    softDeletedCollision,
+    409,
+    'claim_validation_failed',
+    'soft-deleted equivalent collision',
+  );
+  const [softDeletedBatchReadback] = await readRows(
+    owner,
+    'guest_claim_batches',
+    `select=status&id=eq.${softDeletedBatch.id}`,
+  );
+  assert.equal(softDeletedBatchReadback.status, 'uploading');
+  const [plansAfterSoftDeletedCollision, logsAfterSoftDeletedCollision] =
+    await Promise.all([
+      readRows(
+        owner,
+        'dive_plans',
+        'select=id,deleted_at&local_id=eq.success-plan',
+      ),
+      readRows(
+        owner,
+        'dive_logs',
+        'select=id,deleted_at&local_id=eq.success-log',
+      ),
+    ]);
+  assert.equal(plansAfterSoftDeletedCollision.length, 1);
+  assert.equal(logsAfterSoftDeletedCollision.length, 1);
+  assert.ok(plansAfterSoftDeletedCollision[0].deleted_at);
+  assert.ok(logsAfterSoftDeletedCollision[0].deleted_at);
+  logCheck('soft-deleted equivalent collision remains resumable and inactive');
 } finally {
   await deleteProfiles(status.API_URL, status.SECRET_KEY, objectPaths);
 
