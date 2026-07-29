@@ -285,10 +285,14 @@ describe('guest claim service', () => {
     expect(persistedTargetAtPublication).toBe(OTHER_ID);
   });
 
-  it('persists a staged profile path with a canonical committed log ID', async () => {
+  it('accepts an earlier canonical claim profile while preserving the staged receipt', async () => {
     const TARGET_ID = uuid('3', 2);
     const OTHER_ID = uuid('4', 2);
-    const PROFILE_PATH = `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_BATCH_ID = uuid('5', 1);
+    const STAGED_PROFILE_PATH =
+      `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_PROFILE_PATH =
+      `${userId}/claims/${CANONICAL_BATCH_ID}/${OTHER_ID}/revision-1.json`;
     const profile = profileStorage();
     const samples = depthSamples(200);
     await profile.write(guestProfileKey, samples);
@@ -329,7 +333,7 @@ describe('guest claim service', () => {
         }
         const committed = committedRows(snapshot);
         committed.logs[0]!.id = OTHER_ID;
-        committed.logs[0]!.profilePath = PROFILE_PATH;
+        committed.logs[0]!.profilePath = CANONICAL_PROFILE_PATH;
         return committed;
       }),
     });
@@ -351,7 +355,7 @@ describe('guest claim service', () => {
     });
     expect(persistedReceiptAtPublication).toEqual({
       targetRecordId: OTHER_ID,
-      profilePath: PROFILE_PATH,
+      profilePath: STAGED_PROFILE_PATH,
     });
     await expect(account.logbook.get('log-a')).resolves.toMatchObject({
       localId: 'log-a',
@@ -363,7 +367,11 @@ describe('guest claim service', () => {
   it('retries account publication with the canonical ID and staged profile path intact', async () => {
     const TARGET_ID = uuid('3', 2);
     const OTHER_ID = uuid('4', 2);
-    const PROFILE_PATH = `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_BATCH_ID = uuid('5', 1);
+    const STAGED_PROFILE_PATH =
+      `${userId}/claims/${batchId}/${TARGET_ID}/revision-1.json`;
+    const CANONICAL_PROFILE_PATH =
+      `${userId}/claims/${CANONICAL_BATCH_ID}/${OTHER_ID}/revision-1.json`;
     const profile = profileStorage();
     const samples = depthSamples(200);
     await profile.write(guestProfileKey, samples);
@@ -395,7 +403,7 @@ describe('guest claim service', () => {
         }
         const committed = committedRows(snapshot);
         committed.logs[0]!.id = OTHER_ID;
-        committed.logs[0]!.profilePath = PROFILE_PATH;
+        committed.logs[0]!.profilePath = CANONICAL_PROFILE_PATH;
         return committed;
       }),
     });
@@ -421,7 +429,7 @@ describe('guest claim service', () => {
         status: 'failed',
         items: [{targetRecordId: OTHER_ID}],
       },
-      snapshots: [{profileReadback: {path: PROFILE_PATH}}],
+      snapshots: [{profileReadback: {path: STAGED_PROFILE_PATH}}],
     });
 
     const result = await claimService({
@@ -444,6 +452,136 @@ describe('guest claim service', () => {
     });
     expect(remote.stageRecord).toHaveBeenCalledTimes(1);
     expect(remote.uploadProfile).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts a canonical account log profile path for the committed remote ID', async () => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const samples = depthSamples(200);
+    const profile = profileStorage();
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath =
+          `${userId}/logs/${OTHER_ID}/revision-1.json`;
+        return committed;
+      }),
+    });
+
+    const result = await claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    }).start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        items: [{targetRecordId: OTHER_ID}],
+      },
+    });
+    await expect(account.logbook.get('log-a')).resolves.toMatchObject({
+      remoteId: OTHER_ID,
+      cloudSyncStatus: 'synced',
+    });
+  });
+
+  it.each([
+    {
+      name: 'foreign owner',
+      path: `${otherUserId}/logs/${uuid('4', 2)}/revision-1.json`,
+    },
+    {
+      name: 'malformed canonical claim batch',
+      path: `${userId}/claims/not-a-uuid/${uuid('4', 2)}/revision-1.json`,
+    },
+    {
+      name: 'encoded traversal',
+      path: `${userId}/claims/${uuid('5', 1)}/${uuid('4', 2)}/%2e%2e.json`,
+    },
+    {
+      name: 'wrong canonical remote ID',
+      path: `${userId}/logs/${uuid('4', 3)}/revision-1.json`,
+    },
+    {
+      name: 'wrong content revision',
+      path: `${userId}/logs/${uuid('4', 2)}/revision-2.json`,
+    },
+    {
+      name: 'unsupported namespace',
+      path: `${userId}/profiles/${uuid('4', 2)}/revision-1.json`,
+    },
+  ])('rejects a $name committed profile path', async ({path}) => {
+    const TARGET_ID = uuid('3', 2);
+    const OTHER_ID = uuid('4', 2);
+    const samples = depthSamples(200);
+    const profile = profileStorage();
+    await profile.write(guestProfileKey, samples);
+    const guest = repositories(
+      [watchLog('log-a', samples.slice(0, 160))],
+      [],
+    );
+    const account = repositories([], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store, [], {
+      stageRecord: jest.fn(async () => ({
+        stagingRecordId: uuid('2', 2),
+        targetRecordId: TARGET_ID,
+      })),
+      listCommittedBatch: jest.fn(async () => {
+        const snapshot = await store.read();
+        if (!snapshot) {
+          throw new Error('missing snapshot');
+        }
+        const committed = committedRows(snapshot);
+        committed.logs[0]!.id = OTHER_ID;
+        committed.logs[0]!.profilePath = path;
+        return committed;
+      }),
+    });
+
+    const result = await claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+    }).start();
+
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'failed',
+        items: [{targetRecordId: TARGET_ID}],
+      },
+      errorCode: 'remote_conflict',
+    });
+    expect(account.logbook.save).not.toHaveBeenCalled();
   });
 
   it('validates committed plan and log relationships with canonical remote IDs', async () => {

@@ -90,6 +90,9 @@ type ChangedGuestCapture = {
 
 type GuestEntityKind = GuestClaimItem['entityKind'];
 
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 type PromotionContext = {
   visiting: Set<string>;
   published: Map<
@@ -1747,13 +1750,23 @@ function verifyCommittedBatch(
       ) {
         throw new GuestClaimServiceError('remote_conflict');
       }
-      const expectedPath =
-        item.profile === undefined
-          ? undefined
-          : sidecar.profileReadback?.path;
-      if (
-        (item.profile !== undefined && expectedPath === undefined) ||
-        (remote as RemoteDiveLog).profilePath !== expectedPath
+      const remoteLog = remote as RemoteDiveLog;
+      if (item.profile === undefined) {
+        if (
+          sidecar.profileReadback !== undefined ||
+          remoteLog.profilePath !== undefined
+        ) {
+          throw new GuestClaimServiceError('remote_conflict');
+        }
+      } else if (
+        !isValidStagedProfileReceipt(snapshot, item, sidecar, expectedPayload) ||
+        remoteLog.profilePath === undefined ||
+        !isCanonicalCommittedProfilePath(
+          remoteLog.profilePath,
+          snapshot.userId,
+          remoteLog.id,
+          item.profile.contentRevision,
+        )
       ) {
         throw new GuestClaimServiceError('remote_conflict');
       }
@@ -1788,6 +1801,89 @@ function verifyCommittedBatch(
     item.targetRecordId = canonicalTargets.get(item.key)!;
   }
   return { plans, logs };
+}
+
+function isValidStagedProfileReceipt(
+  snapshot: GuestClaimSnapshot,
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem,
+  expectedPayload: Record<string, unknown>,
+): boolean {
+  const profile = item.profile;
+  const receipt = sidecar.profileReadback;
+  const remoteBatchId = snapshot.manifest.remoteBatchId;
+  if (
+    profile === undefined ||
+    receipt === undefined ||
+    remoteBatchId === undefined ||
+    receipt.sha256 !== profile.sha256 ||
+    receipt.sampleCount !== profile.sampleCount ||
+    expectedPayload.profile_content_revision !== profile.contentRevision ||
+    expectedPayload.profile_sha256 !== profile.sha256 ||
+    expectedPayload.profile_byte_count !== receipt.byteCount ||
+    expectedPayload.profile_sample_count !== profile.sampleCount ||
+    !isSafeProfilePath(receipt.path)
+  ) {
+    return false;
+  }
+
+  const segments = receipt.path.split('/');
+  return (
+    segments.length === 5 &&
+    segments[0] === snapshot.userId &&
+    segments[1] === 'claims' &&
+    segments[2] === remoteBatchId &&
+    UUID_PATTERN.test(segments[3] ?? '') &&
+    segments[4] ===
+      `${encodeURIComponent(profile.contentRevision)}.json`
+  );
+}
+
+function isCanonicalCommittedProfilePath(
+  path: string,
+  userId: string,
+  remoteId: string,
+  contentRevision: string,
+): boolean {
+  if (!UUID_PATTERN.test(remoteId) || !isSafeProfilePath(path)) {
+    return false;
+  }
+  const segments = path.split('/');
+  const encodedRevision = `${encodeURIComponent(contentRevision)}.json`;
+  if (
+    segments.length === 4 &&
+    segments[0] === userId &&
+    segments[1] === 'logs' &&
+    segments[2] === remoteId &&
+    segments[3] === encodedRevision
+  ) {
+    return true;
+  }
+  return (
+    segments.length === 5 &&
+    segments[0] === userId &&
+    segments[1] === 'claims' &&
+    UUID_PATTERN.test(segments[2] ?? '') &&
+    segments[3] === remoteId &&
+    segments[4] === encodedRevision
+  );
+}
+
+function isSafeProfilePath(path: string): boolean {
+  let decodedPath: string;
+  try {
+    decodedPath = decodeURIComponent(path);
+  } catch {
+    return false;
+  }
+  return (
+    !/%(?:2e|2f|5c)/i.test(path) &&
+    !/%(?:2e|2f|5c)/i.test(decodedPath) &&
+    !decodedPath.includes('\\') &&
+    !decodedPath
+      .split('/')
+      .some(segment => segment === '.' || segment === '..')
+  );
 }
 
 function uniqueByLocalId<T extends RemoteDiveLog | RemoteDivePlan>(
