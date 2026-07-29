@@ -229,6 +229,19 @@ function assertFinalizerFailure(result, status, code, label) {
   assertNoStore(result, label);
 }
 
+function assertFinalizerSuccess(result, label) {
+  assertStatus(result, [200], label);
+  if (
+    result.body === null ||
+    typeof result.body !== 'object' ||
+    Array.isArray(result.body) ||
+    result.body.status !== 'committed'
+  ) {
+    throw new Error(`${label}: unexpected success contract.`);
+  }
+  assertNoStore(result, label);
+}
+
 function assertJwtRejected(result, label) {
   assertStatus(result, [401], label);
 }
@@ -1054,7 +1067,7 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     1,
     1,
   );
-  await insertRow(context, 'guest_claim_records', {
+  const targetReusePlanRecord = await insertRow(context, 'guest_claim_records', {
     batch_id: targetReuseBatch.id,
     user_id: context.userId,
     entity_kind: 'plan',
@@ -1088,36 +1101,45 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     profile_sample_count: 2,
   }, 'attach target reuse profile metadata');
 
+  const stagedTargetReusePlanId = targetReusePlanRecord.target_record_id;
+  const stagedTargetReuseLogId = targetReuseLogRecord.target_record_id;
   const targetReuse = await invokeFinalizer(context, targetReuseBatch.id);
-  assertFinalizerFailure(
-    targetReuse,
-    409,
-    'claim_validation_failed',
-    'target id reuse denial',
-  );
-  const targetReuseBatches = await readRows(
+  assertFinalizerSuccess(targetReuse, 'cross-device equivalent claim');
+  const targetReuseRecords = await readRows(
     context,
-    'guest_claim_batches',
-    `select=status&id=eq.${targetReuseBatch.id}`,
-    'target id reuse batch status',
+    'guest_claim_records',
+    `select=entity_kind,target_record_id&batch_id=eq.${targetReuseBatch.id}`,
+    'cross-device canonical target ids',
+  );
+  const canonicalPlanRecord = targetReuseRecords.find(
+    record => record.entity_kind === 'plan',
+  );
+  const canonicalLogRecord = targetReuseRecords.find(
+    record => record.entity_kind === 'log',
   );
   if (
-    targetReuseBatches.length !== 1 ||
-    targetReuseBatches[0].status !== 'uploading'
+    targetReuseRecords.length !== 2 ||
+    canonicalPlanRecord?.target_record_id !== planRecord.target_record_id ||
+    canonicalLogRecord?.target_record_id !== logRecord.target_record_id ||
+    stagedTargetReusePlanId === planRecord.target_record_id ||
+    stagedTargetReuseLogId === logRecord.target_record_id
   ) {
-    throw new Error('target id reuse denial must leave the batch resumable.');
+    throw new Error(
+      'cross-device equivalent claim must reconcile canonical target ids.',
+    );
   }
+
   const plansAfterTargetReuse = await readRows(
     context,
     'dive_plans',
     `select=id&local_id=eq.${encodeURIComponent(planLocalId)}`,
-    'target id reuse plan count',
+    'cross-device equivalent plan count',
   );
   const logsAfterTargetReuse = await readRows(
     context,
     'dive_logs',
     `select=id&local_id=eq.${encodeURIComponent(logLocalId)}`,
-    'target id reuse log count',
+    'cross-device equivalent log count',
   );
   if (
     plansAfterTargetReuse.length !== 1 ||
@@ -1125,7 +1147,48 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     plansAfterTargetReuse[0].id !== planRecord.target_record_id ||
     logsAfterTargetReuse[0].id !== logRecord.target_record_id
   ) {
-    throw new Error('target id reuse denial must preserve existing account rows.');
+    throw new Error(
+      'cross-device equivalent claim must preserve canonical account rows.',
+    );
+  }
+
+  const divergentBatch = await createBatch(
+    context,
+    cryptoImpl,
+    'divergent-target-reuse',
+    1,
+    0,
+  );
+  const divergentPlanPayload = {
+    ...planPayload,
+    site_name: 'divergent staging claim',
+  };
+  await insertRow(context, 'guest_claim_records', {
+    batch_id: divergentBatch.id,
+    user_id: context.userId,
+    entity_kind: 'plan',
+    client_record_id: planLocalId,
+    payload_sha256: payloadDigest(cryptoImpl, divergentPlanPayload),
+    payload: divergentPlanPayload,
+  });
+  const divergent = await invokeFinalizer(context, divergentBatch.id);
+  assertFinalizerFailure(
+    divergent,
+    409,
+    'claim_validation_failed',
+    'cross-device divergent claim',
+  );
+  const divergentBatches = await readRows(
+    context,
+    'guest_claim_batches',
+    `select=status&id=eq.${divergentBatch.id}`,
+    'cross-device divergent batch status',
+  );
+  if (
+    divergentBatches.length !== 1 ||
+    divergentBatches[0].status !== 'uploading'
+  ) {
+    throw new Error('cross-device divergent claim must leave the batch resumable.');
   }
 }
 

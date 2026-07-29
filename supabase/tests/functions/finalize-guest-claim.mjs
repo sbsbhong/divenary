@@ -638,20 +638,29 @@ try {
     profile: profileExpectation(sameDigestProfilePath, profileBytes, 2),
   });
   const sameDigest = await invokeFinalizer(owner, sameDigestBatch.id);
-  assertFailure(
-    sameDigest,
-    409,
-    'claim_validation_failed',
-    'same digest with different target ids',
+  assertStatus(sameDigest, [200], 'same digest cross-device reconciliation');
+  assert.deepEqual(sameDigest.body, {
+    batchId: sameDigestBatch.id,
+    status: 'committed',
+    planCount: 1,
+    logCount: 1,
+  });
+
+  const reconciledRecords = await readRows(
+    owner,
+    'guest_claim_records',
+    `select=entity_kind,target_record_id&batch_id=eq.${sameDigestBatch.id}`,
+  );
+  assert.equal(
+    reconciledRecords.find(row => row.entity_kind === 'plan').target_record_id,
+    successPlan.target_record_id,
+  );
+  assert.equal(
+    reconciledRecords.find(row => row.entity_kind === 'log').target_record_id,
+    successLog.target_record_id,
   );
   await assertFinalCounts(owner, 1, 1, 'same digest idempotency');
-  const [sameDigestBatchReadback] = await readRows(
-    owner,
-    'guest_claim_batches',
-    `select=status&id=eq.${sameDigestBatch.id}`,
-  );
-  assert.equal(sameDigestBatchReadback.status, 'uploading');
-  logCheck('new batch cannot commit against different existing target ids');
+  logCheck('same digest cross-device claim reuses canonical target ids');
 
   await deleteProfiles(status.API_URL, status.SECRET_KEY, [
     successProfilePath,
