@@ -62,6 +62,116 @@ Every phase must have a verification gate. If the same gate fails three times wi
 - Remaining risks:
 - Manual setup required:
 
+## Epic: Mobile-authoritative Watch log deletion
+
+### Phase 0 Investigation
+
+- Goal: Preserve the physical-device evidence for the 15-to-26 resurrection and map every mobile, claim, Supabase, iPhone native, and watchOS deletion boundary before editing.
+- Files to inspect:
+  - `docs/superpowers/specs/2026-07-30-mobile-authoritative-watch-log-deletion-design.md`
+  - `apps/mobile/src/claim/guest-claim-service.ts`
+  - `apps/mobile/src/states/account-data.tsx`
+  - `apps/mobile/src/states/watch-connectivity-sync.tsx`
+  - `apps/mobile/src/native/watch-connectivity.ts`
+  - `apps/mobile/ios/Divenary/WatchConnectivityInbox.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Storage/DiveSessionStore.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Storage/DiveProfileArtifactStore.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift`
+  - `packages/supabase/src/guest-claim-repository.ts`
+  - `supabase/functions/finalize-guest-claim/index.ts`
+  - `supabase/migrations/20260719130604_create_account_data_and_guest_claim.sql`
+- Implementation notes:
+  - The resurrection came from a retained noncommitted claim snapshot, not a Watch retransmission.
+  - Preserve normal Watch import ACK as iPhone-local commit/intentional discard evidence; do not redefine it as cloud completion.
+  - Preserve the user-authorized scope: deletion is initiated only on mobile; no Watch delete gesture or button.
+- Verification gate: the design spec and task plan identify the exact 15-to-26 regression fixture, deletion ordering, claim abandonment race, and physical-device gate.
+- Risk: Previously lost deletion intent cannot be inferred safely for every existing account row; do not automatically delete the current 15 resurrected records.
+
+### Phase 1 Contract
+
+- Goal: Define persistent mobile/watch tombstones, idempotent WatchConnectivity deletion request/ACK envelopes, and privileged guest claim abandonment without weakening current RLS.
+- Files to create or update:
+  - `apps/mobile/src/deletion/watch-log-deletion-store.ts`
+  - `apps/mobile/src/deletion/watch-log-deletion-coordinator.ts`
+  - `apps/mobile/src/native/watch-connectivity.ts`
+  - `apps/mobile/ios/Divenary/WatchConnectivityModule.swift`
+  - `apps/mobile/ios/Divenary/WatchConnectivityModuleBridge.m`
+  - `apps/mobile/ios/Divenary/WatchConnectivityInbox.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift`
+  - `packages/supabase/src/account-data-types.ts`
+  - `packages/supabase/src/guest-claim-repository.ts`
+  - `supabase/migrations/*_abandon_deleted_guest_claim_logs.sql`
+  - `supabase/functions/abandon-guest-claim/index.ts`
+- Implementation notes:
+  - Mobile and Watch tombstones are keyed by `localSessionId`; revision and artifact digest remain evidence, not delete authority.
+  - Authenticated clients keep select/insert-only batch grants. A JWT-authenticated Edge Function calls a service-role-only abandonment function.
+  - Write failing Jest, Node migration-harness, and Swift source-boundary tests before production changes.
+- Verification gate: focused contract/store/repository tests pass, migration hardening tests pass, and generated Supabase types match the new status.
+- Risk: Finalize and abandon can race; `committed` must be handled as a post-commit account soft-delete rather than an attempted rollback.
+
+### Phase 2 Core Implementation
+
+- Goal: Make mobile deletion durable and resurrection-proof across guest/account repositories, imports, hydration, and claim retry.
+- Files to create or update:
+  - `apps/mobile/src/deletion/watch-log-deletion-store.ts`
+  - `apps/mobile/src/deletion/watch-log-deletion-coordinator.ts`
+  - `apps/mobile/src/states/account-data.tsx`
+  - `apps/mobile/src/states/use-dive-logbook-queries.ts`
+  - `apps/mobile/src/states/watch-connectivity-sync.tsx`
+  - `apps/mobile/src/claim/guest-claim-service.ts`
+  - `apps/mobile/src/claim/guest-claim-store.ts`
+  - `apps/mobile/src/i18n/resources.ts`
+  - focused suites under `apps/mobile/__tests__/`
+- Implementation notes:
+  - Tombstone write/readback must happen before repository deletion.
+  - Tombstoned logs are filtered immediately and reconciliation retries incomplete local/account/Watch work.
+  - Any intersecting noncommitted claim batch is abandoned before a fresh snapshot can finalize.
+  - Direct and native Watch imports check tombstones before storing large profile data.
+- Verification gate: focused RED/GREEN Jest suites reproduce the retained 15-item snapshot regression and pass after implementation; `yarn mobile:typecheck` passes.
+- Risk: Account/guest composition and claim publication share large state files; keep new logic behind small focused store/coordinator modules and serialized mutation gates.
+
+### Phase 3 Integration
+
+- Goal: Deliver durable iPhone-to-Watch deletion, remove Watch manifest/artifact state idempotently, deploy the abandonment boundary to staging, and run hosted verification.
+- Files to create or update:
+  - `apps/mobile/ios/Divenary/WatchConnectivityInbox.swift`
+  - `apps/mobile/ios/Divenary/WatchConnectivityModule.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Storage/DiveProfileArtifactStore.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Storage/DiveSessionStore.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift`
+  - `apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift`
+  - native/source-boundary test scripts under `apps/mobile/scripts/`
+  - `supabase/scripts/verify-staging-guest-claim.mjs`
+  - `supabase/tests/database/guest_data_claim.test.sql`
+  - `supabase/tests/functions/abandon-guest-claim.mjs`
+- Implementation notes:
+  - Watch persists its session tombstone before canceling transfers and removing manifest/artifact state.
+  - Duplicate/already-absent commands ACK successfully.
+  - Deploy only to staging `mclvhwzsuvsxjerdouka`; production remains untouched.
+- Verification gate: focused native tests, Supabase local tests/advisors, `yarn ios:build`, `yarn watch:build`, staging migration/function deployment, and hosted verifier all pass.
+- Risk: Paired-device delivery and artifact removal still require the explicit physical iPhone/Watch gate after automated builds.
+
+### Phase 4 Cleanup/Review
+
+- Goal: Verify the physical deletion matrix, update durable wiki knowledge, review the full diff, merge to main, re-run merged gates, and shut down the PC.
+- Files to review or update:
+  - `.wiki/raw/architecture/2026-07-30-mobile-authoritative-watch-log-deletion.md`
+  - `.wiki/wiki/architecture/sync-flow.md`
+  - `.wiki/wiki/architecture/mobile.md`
+  - `.wiki/wiki/architecture/watch-app.md`
+  - `.wiki/wiki/architecture/supabase.md`
+  - `.wiki/wiki/domains/dive-log.md`
+  - `.wiki/wiki/index.md`
+  - `.wiki/wiki/log.md`
+  - every file in `git diff main...HEAD`
+- Implementation notes:
+  - Stop and ask the user to connect iPhone/Watch before the physical gate.
+  - Preserve unrelated dirty `.turbo` cache files in main.
+  - The user already selected local merge to `main`; no additional branch-disposition prompt is needed.
+  - Shut down only after merge and post-merge verification succeed.
+- Verification gate: physical online/offline deletion matrix passes, focused/full automated gates and `yarn codex:check` pass on the feature branch and merged main, and `git diff --check` is clean.
+- Risk: OS shutdown ends the session immediately; it is the final action after reporting the merge commit and verification evidence.
+
 ## Epic: Pre-device two-mode, notifications, and validation readiness
 
 ### Phase 0 Investigation
