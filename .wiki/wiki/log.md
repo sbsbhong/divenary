@@ -1,5 +1,23 @@
 # Wiki Log
 
+## [2026-07-30] ingest | Guest claim semantic canonical reuse physical verification
+
+- Added: Guest claim semantic canonical reuse physical verification evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 원래 15건 batch와 뒤따른 별도 1건 batch가 모두 staging에서 committed 상태다.
+  - 표현만 달랐던 Watch log는 기존 canonical ID를 재사용했고 obsolete staged target은 account row로 생성되지 않았다.
+  - 실기기 local account 26건과 remote 26건의 local/remote ID가 모두 일치하며 중복 local ID가 없다.
+  - guest log 0건, snapshot 없는 compact checkpoint, outbox/conflict 0건을 확인했다.
+- 요약:
+  - UI의 `15/15 → 1개 → 성공`은 보존 checkpoint finalization/cleanup 뒤 별도 live guest 1건을 새 inventory로 가져온 정상적인 두 claim 순서였다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
 ## [2026-07-30] ingest | Guest claim semantic canonical reuse staging promotion
 
 - Added: Guest claim semantic canonical reuse staging promotion evidence raw source

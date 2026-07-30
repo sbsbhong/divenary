@@ -6,6 +6,8 @@ Sources: Guest claim semantic canonical reuse evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse.md)
 Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
+Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
+Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
 Updated: 2026-07-30
 
 ## 요약
@@ -49,7 +51,7 @@ Signed-in write는 local save 뒤 idempotent outbox가 전달한다. Remote row 
 
 3D의 계정 삭제는 앱 안에서 재확인 뒤 즉시 영구 삭제한다. 7일 유예 soft deletion/recovery는 후속 기능이다. `service_role`과 provider secret은 mobile bundle에 두지 않는다. Local seed의 `.invalid` legal URL은 test fixture이며 production 법률 문서가 아니다.
 
-Stable Divenary App ID, signed provisioning과 Google iOS client/reversed callback은 확보됐다. 사용자는 physical iPhone에서 Apple login 성공을 확인했지만 Google physical login, cancellation/repeat, session restore와 re-consent는 아직 통과로 기록하지 않는다. Account-data migrations와 `finalize-guest-claim`은 hosted staging automated verifier를 통과했지만 physical claim 검증 증거는 아직 없다. Production project, production legal document와 앱 내 즉시 영구 account deletion은 future work이며 이 gate 전에는 release하지 않는다.
+Stable Divenary App ID, signed provisioning과 Google iOS client/reversed callback은 확보됐다. 사용자는 physical iPhone에서 Apple login 성공을 확인했지만 Google physical login, cancellation/repeat, session restore와 re-consent는 아직 통과로 기록하지 않는다. Account-data migrations와 `finalize-guest-claim`은 hosted staging automated verifier를 통과했다. 원래 실패했던 physical iPhone 15-log batch도 semantic canonical 1건 재사용, 신규 14건 publication, 뒤따른 별도 1건 claim, local/remote 26건 readback, guest cleanup과 empty outbox까지 통과했다. Android, offline/force-quit resume와 second-account isolation은 별도 gate다. Production project, production legal document와 앱 내 즉시 영구 account deletion은 future work이며 이 gate 전에는 release하지 않는다.
 
 ## 관련 문서
 
