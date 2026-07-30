@@ -88,6 +88,7 @@ function createStagingApi({
   failTargetReconciliation = false,
   rejectSemanticReuse = false,
   allowSoftDeletedCollisionCommit = false,
+  retainAbandonedProfile = false,
 } = {}) {
   const users = [];
   const memberships = new Set();
@@ -296,7 +297,7 @@ function createStagingApi({
             ? {target_record_id: requestBody.target_record_id ?? nextDatabaseId()}
             : {}),
           ...(table === 'guest_claim_batches'
-            ? {status: 'uploading', committed_at: null}
+            ? {status: 'uploading', committed_at: null, abandoned_at: null}
             : {}),
         };
         rows[table].push(row);
@@ -339,6 +340,53 @@ function createStagingApi({
       return jsonResponse(200, {Key: objectPath});
     }
 
+    if (url.pathname === '/functions/v1/abandon-guest-claim' && method === 'POST') {
+      if (!currentUser) {
+        return jsonResponse(401, {message: 'Invalid JWT'});
+      }
+      const batch = rows.guest_claim_batches.find(
+        candidate =>
+          candidate.id === requestBody.batchId &&
+          candidate.user_id === currentUser.id,
+      );
+      if (!batch) {
+        return jsonResponse(
+          404,
+          {code: 'batch_not_found'},
+          {'cache-control': 'no-store'},
+        );
+      }
+      if (batch.status === 'committed') {
+        return jsonResponse(
+          200,
+          {
+            batchId: batch.id,
+            status: 'committed',
+            storageCleanupPending: false,
+          },
+          {'cache-control': 'no-store'},
+        );
+      }
+      batch.status = 'abandoned';
+      batch.abandoned_at ??= '2026-07-30T13:00:00.000Z';
+      const profilePaths = rows.guest_claim_records
+        .filter(record => record.batch_id === batch.id)
+        .map(record => record.profile_path)
+        .filter(Boolean);
+      if (!retainAbandonedProfile) {
+        profilePaths.forEach(profilePath => objects.delete(profilePath));
+      }
+      return jsonResponse(
+        200,
+        {
+          batchId: batch.id,
+          status: 'abandoned',
+          storageCleanupPending: false,
+        },
+        {'cache-control': 'no-store'},
+      );
+    }
+
     if (url.pathname === '/functions/v1/finalize-guest-claim' && method === 'POST') {
       if (!currentUser) {
         return jsonResponse(401, {message: 'Invalid JWT'});
@@ -349,6 +397,13 @@ function createStagingApi({
       );
       if (!batch) {
         return jsonResponse(404, {code: 'batch_not_found'}, {'cache-control': 'no-store'});
+      }
+      if (batch.status === 'abandoned') {
+        return jsonResponse(
+          409,
+          {code: 'claim_validation_failed'},
+          {'cache-control': 'no-store'},
+        );
       }
 
       const staged = rows.guest_claim_records.filter(row => row.batch_id === batch.id);
@@ -676,7 +731,7 @@ test('verifies owner RLS, private profiles, atomic claim publication, and idempo
   assert.equal(api.finalizerCalls, 3);
   assert.equal(api.rollbackPlanInsertAttempts, 1);
   assert.equal(api.cleanup.users.length, 2);
-  assert.equal(api.cleanup.profiles.length, 3);
+  assert.equal(api.cleanup.profiles.length, 4);
   assert.ok(
     api.calls
       .filter(call => call.pathname.startsWith('/rest/v1/'))
@@ -840,6 +895,16 @@ test('fails when an equivalent soft-deleted collision is committed', async () =>
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
     /soft-deleted collision/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when abandonment reports success without removing its staged profile', async () => {
+  const api = createStagingApi({retainAbandonedProfile: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /abandoned claim profile cleanup/i,
   );
   assert.equal(api.cleanup.users.length, 2);
 });

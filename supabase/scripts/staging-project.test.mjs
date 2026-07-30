@@ -555,20 +555,28 @@ test('allows only the exact read-only onboarding metadata query', async () => {
   );
 });
 
-test('allows only the exact staging finalize guest claim function deployment', async () => {
-  const exactCommand = [
+test('allows only the exact staging guest claim function deployments', async () => {
+  const finalizeCommand = [
     'functions',
     'deploy',
     'finalize-guest-claim',
     '--project-ref',
     STAGING_PROJECT_REF,
   ];
-  const linkState = createInjectedLinkState();
+  const abandonCommand = [
+    'functions',
+    'deploy',
+    'abandon-guest-claim',
+    '--project-ref',
+    STAGING_PROJECT_REF,
+  ];
 
-  await stagingRunner.runStagingSupabase(exactCommand, linkState.options);
-
-  assert.equal(linkState.calls.length, 1);
-  assert.deepEqual(linkState.calls[0][1], exactCommand);
+  for (const exactCommand of [finalizeCommand, abandonCommand]) {
+    const linkState = createInjectedLinkState();
+    await stagingRunner.runStagingSupabase(exactCommand, linkState.options);
+    assert.equal(linkState.calls.length, 1);
+    assert.deepEqual(linkState.calls[0][1], exactCommand);
+  }
 
   for (const rejected of [
     [
@@ -585,7 +593,8 @@ test('allows only the exact staging finalize guest claim function deployment', a
       '--project-ref',
       'production-project',
     ],
-    [...exactCommand, '--no-verify-jwt'],
+    [...finalizeCommand, '--no-verify-jwt'],
+    [...abandonCommand, '--no-verify-jwt'],
   ]) {
     const rejectedState = createInjectedLinkState();
     await assert.rejects(
@@ -596,7 +605,7 @@ test('allows only the exact staging finalize guest claim function deployment', a
   }
 });
 
-test('exposes only the exact staging finalize guest claim deployment script', async () => {
+test('exposes only the exact staging guest claim deployment scripts', async () => {
   const packageJson = JSON.parse(
     await readFile(new URL('../../package.json', import.meta.url), 'utf8'),
   );
@@ -605,6 +614,11 @@ test('exposes only the exact staging finalize guest claim deployment script', as
     packageJson.scripts['supabase:staging:deploy:guest-claim'],
     'node supabase/scripts/run-staging-supabase.mjs functions deploy ' +
       `finalize-guest-claim --project-ref ${STAGING_PROJECT_REF}`,
+  );
+  assert.equal(
+    packageJson.scripts['supabase:staging:deploy:abandon-guest-claim'],
+    'node supabase/scripts/run-staging-supabase.mjs functions deploy ' +
+      `abandon-guest-claim --project-ref ${STAGING_PROJECT_REF}`,
   );
 });
 
