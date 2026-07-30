@@ -927,13 +927,26 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     started_at: '2026-07-20T04:00:00.000Z',
     ended_at: '2026-07-20T04:40:00.000Z',
     duration_seconds: 2400,
-    max_depth_meters: 18.4,
+    max_depth_meters: 11.6,
     site_name: 'staging claim',
     title: 'staging claim',
     rating: 4,
-    manual_data: {schemaVersion: 1},
+    manual_data: {
+      schemaVersion: 1,
+      _local_record: {
+        schemaVersion: 1,
+        createdAt: 1784558000,
+        updatedAt: 1784558010,
+      },
+    },
     mobile_data: {schemaVersion: 1},
-    watch_metadata: {schemaVersion: 1},
+    watch_metadata: {
+      schemaVersion: 1,
+      importedAt: 1784558020,
+      measuredValues: {
+        maxDepthMeters: 11.600000000000001,
+      },
+    },
     provenance: {source: 'watch'},
     profile_preview: [{elapsedSeconds: 0, depthMeters: 0}],
   };
@@ -1076,6 +1089,31 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
     payload_sha256: planPayloadSha256,
     payload: planPayload,
   });
+  const semanticLogPayload = {
+    ...logPayload,
+    started_at: '2026-07-20T04:00:00.000+00:00',
+    ended_at: '2026-07-20T04:40:00.000+00:00',
+    max_depth_meters: 11.600000000000001,
+    manual_data: {
+      ...logPayload.manual_data,
+      _local_record: {
+        ...logPayload.manual_data._local_record,
+        createdAt: 1784559000,
+        updatedAt: 1784559010,
+      },
+    },
+    watch_metadata: {
+      ...logPayload.watch_metadata,
+      importedAt: 1784559020,
+    },
+  };
+  const semanticLogPayloadSha256 = payloadDigest(
+    cryptoImpl,
+    semanticLogPayload,
+  );
+  if (semanticLogPayloadSha256 === logPayloadSha256) {
+    throw new Error('semantic canonical reuse fixture must change its digest.');
+  }
   const targetReuseLogRecord = await insertRow(
     context,
     'guest_claim_records',
@@ -1085,8 +1123,8 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
       entity_kind: 'log',
       client_record_id: logLocalId,
       source_plan_client_record_id: planLocalId,
-      payload_sha256: logPayloadSha256,
-      payload: logPayload,
+      payload_sha256: semanticLogPayloadSha256,
+      payload: semanticLogPayload,
     },
   );
   const targetReuseProfilePath =
@@ -1104,7 +1142,7 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
   const stagedTargetReusePlanId = targetReusePlanRecord.target_record_id;
   const stagedTargetReuseLogId = targetReuseLogRecord.target_record_id;
   const targetReuse = await invokeFinalizer(context, targetReuseBatch.id);
-  assertFinalizerSuccess(targetReuse, 'cross-device equivalent claim');
+  assertFinalizerSuccess(targetReuse, 'semantic canonical reuse claim');
   const targetReuseRecords = await readRows(
     context,
     'guest_claim_records',
@@ -1138,17 +1176,21 @@ async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
   const logsAfterTargetReuse = await readRows(
     context,
     'dive_logs',
-    `select=id&local_id=eq.${encodeURIComponent(logLocalId)}`,
+    `select=id,payload_sha256,max_depth_meters,manual_data,watch_metadata&local_id=eq.${encodeURIComponent(logLocalId)}`,
     'cross-device equivalent log count',
   );
   if (
     plansAfterTargetReuse.length !== 1 ||
     logsAfterTargetReuse.length !== 1 ||
     plansAfterTargetReuse[0].id !== planRecord.target_record_id ||
-    logsAfterTargetReuse[0].id !== logRecord.target_record_id
+    logsAfterTargetReuse[0].id !== logRecord.target_record_id ||
+    logsAfterTargetReuse[0].payload_sha256 !== semanticLogPayloadSha256 ||
+    logsAfterTargetReuse[0].manual_data?._local_record?.createdAt !==
+      1784559000 ||
+    logsAfterTargetReuse[0].watch_metadata?.importedAt !== 1784559020
   ) {
     throw new Error(
-      'cross-device equivalent claim must preserve canonical account rows.',
+      'semantic canonical reuse must preserve and normalize the account row.',
     );
   }
 

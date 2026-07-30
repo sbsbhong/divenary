@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 const migrationUrl = new URL(
-  '../migrations/20260729220000_revalidate_guest_claim_canonical_candidates.sql',
+  '../migrations/20260730111944_reconcile_semantic_guest_claim_log_reuse.sql',
   import.meta.url,
 );
 
@@ -127,6 +127,82 @@ test('fully revalidates locked final rows before canonical remap', async () => {
   );
 });
 
+test('normalizes only semantically identical profiled logs before strict finalization', async () => {
+  const source = await readFile(migrationUrl, 'utf8');
+  const privateCallAt = source.indexOf(
+    'v_result := private.finalize_guest_claim',
+  );
+  const normalizationAt = source.indexOf(
+    '-- Normalize a representation-only canonical mismatch while phase 1 locks are held.',
+  );
+  const normalization = source.slice(normalizationAt, privateCallAt);
+  const normalizationSet = normalization.match(
+    /update public\.dive_logs as log\s+set([\s\S]*?)\s+from public\.guest_claim_records/i,
+  )?.[1];
+
+  assert.ok(normalizationAt >= 0, 'semantic normalization must be explicit');
+  assert.ok(normalizationAt < privateCallAt);
+  assert.match(
+    normalization,
+    /private\.guest_claim_log_semantically_equal\(\s*log,\s*record,\s*source_plan\.id\s*\)/i,
+  );
+  assert.match(normalization, /log\.payload_sha256 <> record\.payload_sha256/i);
+  assert.match(normalization, /log\.deleted_at is null/i);
+  assert.match(normalization, /set[\s\S]*payload_sha256 = record\.payload_sha256/i);
+  assert.ok(normalizationSet, 'normalization SET clause must be detectable');
+  assert.doesNotMatch(normalizationSet, /profile_path\s*=/i);
+  assert.doesNotMatch(normalizationSet, /profile_content_revision\s*=/i);
+  assert.doesNotMatch(normalizationSet, /\bid\s*=/i);
+  assert.doesNotMatch(normalizationSet, /\buser_id\s*=/i);
+  assert.doesNotMatch(normalizationSet, /\blocal_id\s*=/i);
+});
+
+test('semantic equivalence is narrow, profile-bound, and relation-aware', async () => {
+  const source = await readFile(migrationUrl, 'utf8');
+  const helper = source.match(
+    /create or replace function private\.guest_claim_log_semantically_equal[\s\S]*?\$\$;/i,
+  )?.[0];
+
+  assert.ok(helper, 'private semantic log helper must exist');
+  assert.match(helper, /p_log\.source = p_record\.payload->>'source'/i);
+  assert.match(helper, /p_log\.started_at = \(p_record\.payload->>'started_at'\)::timestamptz/i);
+  assert.match(helper, /p_log\.ended_at is not distinct from[\s\S]*::timestamptz/i);
+  assert.match(
+    helper,
+    /private\.account_float_readback_equal\(\s*p_log\.duration_seconds/i,
+  );
+  assert.match(
+    helper,
+    /private\.account_float_readback_equal\(\s*p_log\.max_depth_meters/i,
+  );
+  assert.match(helper, /p_log\.site_name is not distinct from p_record\.payload->>'site_name'/i);
+  assert.match(helper, /p_log\.title is not distinct from p_record\.payload->>'title'/i);
+  assert.match(helper, /p_log\.rating is not distinct from[\s\S]*::integer/i);
+  assert.match(helper, /p_log\.mobile_data = p_record\.payload->'mobile_data'/i);
+  assert.match(helper, /p_log\.provenance = p_record\.payload->'provenance'/i);
+  assert.match(helper, /p_log\.profile_preview is not distinct from\s+p_record\.payload->'profile_preview'/i);
+  assert.match(helper, /#- '\{_local_record,createdAt\}'/i);
+  assert.match(helper, /#- '\{_local_record,updatedAt\}'/i);
+  assert.match(helper, /#- '\{importedAt\}'/i);
+  assert.match(
+    helper,
+    /p_log\.profile_content_revision is not distinct from\s+p_record\.profile_content_revision/i,
+  );
+  assert.match(helper, /p_log\.profile_sha256 is not distinct from p_record\.profile_sha256/i);
+  assert.match(
+    helper,
+    /p_log\.profile_byte_count is not distinct from p_record\.profile_byte_count/i,
+  );
+  assert.match(
+    helper,
+    /p_log\.profile_sample_count is not distinct from\s+p_record\.profile_sample_count/i,
+  );
+  assert.match(
+    helper,
+    /p_log\.source_plan_id is not distinct from p_source_plan_id/i,
+  );
+});
+
 test('keeps the privileged wrapper owner-scoped and service-role-only', async () => {
   const source = await readFile(migrationUrl, 'utf8');
 
@@ -143,5 +219,13 @@ test('keeps the privileged wrapper owner-scoped and service-role-only', async ()
   assert.match(
     source,
     /grant execute on function public\.finalize_guest_claim\(uuid, uuid, jsonb\)[\s\S]*to service_role;/i,
+  );
+  assert.match(
+    source,
+    /revoke all on function private\.account_float_readback_equal\(\s*double precision,\s*double precision\s*\)[\s\S]*from public, anon, authenticated, service_role;/i,
+  );
+  assert.match(
+    source,
+    /revoke all on function private\.guest_claim_log_semantically_equal\(\s*public\.dive_logs,\s*public\.guest_claim_records,\s*uuid\s*\)[\s\S]*from public, anon, authenticated, service_role;/i,
   );
 });

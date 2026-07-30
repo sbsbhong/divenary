@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import test from 'node:test';
 
 import {
@@ -44,8 +45,8 @@ function createCrypto() {
     randomBytes(size) {
       return Buffer.alloc(size, 7);
     },
-    sha256() {
-      return 'a'.repeat(64);
+    sha256(bytes) {
+      return createHash('sha256').update(bytes).digest('hex');
     },
   };
 }
@@ -85,6 +86,7 @@ function createStagingApi({
   paginateCleanupLookup = false,
   corruptPublishedDigest = false,
   failTargetReconciliation = false,
+  rejectSemanticReuse = false,
   allowSoftDeletedCollisionCommit = false,
 } = {}) {
   const users = [];
@@ -398,6 +400,13 @@ function createStagingApi({
         row.user_id === currentUser.id &&
         row.local_id === logRecord.client_record_id
       );
+      const semanticLogReuse = existingLog && logRecord &&
+        semanticallyEqualLogPayload(existingLog.payload, logRecord.payload) &&
+        existingLog.profile_content_revision ===
+          logRecord.profile_content_revision &&
+        existingLog.profile_sha256 === logRecord.profile_sha256 &&
+        existingLog.profile_byte_count === logRecord.profile_byte_count &&
+        existingLog.profile_sample_count === logRecord.profile_sample_count;
       if (
         !allowSoftDeletedCollisionCommit &&
         (existingPlan?.deleted_at || existingLog?.deleted_at)
@@ -417,9 +426,16 @@ function createStagingApi({
           )) ||
         (existingLog &&
           (
-            existingLog.payload_sha256 !== logRecord.payload_sha256 ||
-            JSON.stringify(existingLog.payload) !==
-              JSON.stringify(logRecord.payload)
+            rejectSemanticReuse ||
+            (
+              existingLog.payload_sha256 !== logRecord.payload_sha256 &&
+              !semanticLogReuse
+            ) ||
+            (
+              JSON.stringify(existingLog.payload) !==
+                JSON.stringify(logRecord.payload) &&
+              !semanticLogReuse
+            )
           ))
       ) {
         return jsonResponse(
@@ -437,6 +453,14 @@ function createStagingApi({
           }
           if (logRecord) {
             logRecord.target_record_id = existingLog.id;
+            if (semanticLogReuse) {
+              existingLog.payload_sha256 = logRecord.payload_sha256;
+              existingLog.payload = logRecord.payload;
+              existingLog.max_depth_meters =
+                logRecord.payload.max_depth_meters;
+              existingLog.manual_data = logRecord.payload.manual_data;
+              existingLog.watch_metadata = logRecord.payload.watch_metadata;
+            }
           }
         }
       } else {
@@ -459,9 +483,15 @@ function createStagingApi({
             local_id: logRecord.client_record_id,
             source_plan_id: planRecord?.target_record_id,
             profile_path: logRecord.profile_path,
+            profile_content_revision: logRecord.profile_content_revision,
             profile_sha256: logRecord.profile_sha256,
+            profile_byte_count: logRecord.profile_byte_count,
+            profile_sample_count: logRecord.profile_sample_count,
             payload_sha256: logRecord.payload_sha256,
             payload: logRecord.payload,
+            max_depth_meters: logRecord.payload.max_depth_meters,
+            manual_data: logRecord.payload.manual_data,
+            watch_metadata: logRecord.payload.watch_metadata,
           });
         }
       }
@@ -480,6 +510,26 @@ function createStagingApi({
     get finalizerCalls() { return finalizerCalls; },
     get rollbackPlanInsertAttempts() { return rollbackPlanInsertAttempts; },
   };
+}
+
+function semanticallyEqualLogPayload(left, right) {
+  if (!left || !right) {
+    return false;
+  }
+  const normalize = payload => {
+    const value = structuredClone(payload);
+    value.started_at = new Date(value.started_at).toISOString();
+    value.ended_at =
+      value.ended_at === null ? null : new Date(value.ended_at).toISOString();
+    value.max_depth_meters = Number(
+      value.max_depth_meters.toPrecision(15),
+    );
+    delete value.manual_data?._local_record?.createdAt;
+    delete value.manual_data?._local_record?.updatedAt;
+    delete value.watch_metadata?.importedAt;
+    return value;
+  };
+  return JSON.stringify(normalize(left)) === JSON.stringify(normalize(right));
 }
 
 function successfulCli() {
@@ -770,6 +820,16 @@ test('fails when an equivalent claim is not remapped to canonical target ids', a
   await assert.rejects(
     verifyStagingGuestClaim(verificationOptions(api)),
     /canonical target ids/i,
+  );
+  assert.equal(api.cleanup.users.length, 2);
+});
+
+test('fails when the server rejects representation-only canonical log reuse', async () => {
+  const api = createStagingApi({rejectSemanticReuse: true});
+
+  await assert.rejects(
+    verifyStagingGuestClaim(verificationOptions(api)),
+    /semantic canonical reuse claim/i,
   );
   assert.equal(api.cleanup.users.length, 2);
 });

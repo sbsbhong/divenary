@@ -1,5 +1,57 @@
 # Wiki Log
 
+## [2026-07-30] ingest | Guest claim semantic canonical reuse physical verification
+
+- Added: Guest claim semantic canonical reuse physical verification evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 원래 15건 batch와 뒤따른 별도 1건 batch가 모두 staging에서 committed 상태다.
+  - 표현만 달랐던 Watch log는 기존 canonical ID를 재사용했고 obsolete staged target은 account row로 생성되지 않았다.
+  - 실기기 local account 26건과 remote 26건의 local/remote ID가 모두 일치하며 중복 local ID가 없다.
+  - guest log 0건, snapshot 없는 compact checkpoint, outbox/conflict 0건을 확인했다.
+- 요약:
+  - UI의 `15/15 → 1개 → 성공`은 보존 checkpoint finalization/cleanup 뒤 별도 live guest 1건을 새 inventory로 가져온 정상적인 두 claim 순서였다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-30] ingest | Guest claim semantic canonical reuse staging promotion
+
+- Added: Guest claim semantic canonical reuse staging promotion evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- 근거:
+  - guarded dry run은 `20260730111944` migration 하나만 선택했고 staging push 뒤 local/remote migration history가 일치했다.
+  - Edge Function source는 변경되지 않아 재배포하지 않았고, 기존 hosted Function이 새 public wrapper를 호출했다.
+  - hosted verifier가 실제 다른 staged digest의 semantic canonical reuse, canonical target-ID remap, 사용자 의미 divergence rollback, RLS와 fixture cleanup을 통과했다.
+- 요약:
+  - Semantic canonical reuse는 hosted staging까지 승격·검증됐다. 원래 보존된 iPhone 15-item batch의 물리 retry만 다음 gate로 남는다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
+## [2026-07-30] ingest | Guest claim semantic canonical reuse
+
+- Added: Guest claim semantic canonical reuse physical/root-cause evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 물리 iPhone 보존 claim 15건 중 14건은 새 log, 1건은 같은 immutable Watch profile과 사용자 content를 가진 canonical row
+  - digest 차이는 동등한 timestamp 표기, source-derived float readback과 세 import bookkeeping timestamp
+  - phase-one canonical lock 안의 좁은 normalization 뒤 기존 strict private finalization과 phase-two revalidation 유지
+  - local reset, Function integration, pgTAP 109개, concurrency 2개, Supabase 70개, mobile hydration 80개와 보안 advisor 통과
+- 요약:
+  - Payload hash mismatch를 일반 허용하지 않는다. 동일 profiled Watch log의 표현 차이만 원자적으로 staged digest에 맞추고 canonical ID를 재사용하며, 의미 차이는 whole-batch rollback한다. Hosted staging과 원래 iPhone 15-item retry는 아직 pending이다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
 ## [2026-07-28] lint | 0 issues found, 0 auto-fixed
 
 ## [2026-07-28] ingest | Local log import review hardening
