@@ -1,5 +1,21 @@
 # Wiki Log
 
+## [2026-07-30] ingest | Guest claim semantic canonical reuse staging promotion
+
+- Added: Guest claim semantic canonical reuse staging promotion evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- 근거:
+  - guarded dry run은 `20260730111944` migration 하나만 선택했고 staging push 뒤 local/remote migration history가 일치했다.
+  - Edge Function source는 변경되지 않아 재배포하지 않았고, 기존 hosted Function이 새 public wrapper를 호출했다.
+  - hosted verifier가 실제 다른 staged digest의 semantic canonical reuse, canonical target-ID remap, 사용자 의미 divergence rollback, RLS와 fixture cleanup을 통과했다.
+- 요약:
+  - Semantic canonical reuse는 hosted staging까지 승격·검증됐다. 원래 보존된 iPhone 15-item batch의 물리 retry만 다음 gate로 남는다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
 ## [2026-07-30] ingest | Guest claim semantic canonical reuse
 
 - Added: Guest claim semantic canonical reuse physical/root-cause evidence raw source
