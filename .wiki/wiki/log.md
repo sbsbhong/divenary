@@ -1,5 +1,23 @@
 # Wiki Log
 
+## [2026-07-30] ingest | Guest claim semantic canonical reuse
+
+- Added: Guest claim semantic canonical reuse physical/root-cause evidence raw source
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- 근거:
+  - 물리 iPhone 보존 claim 15건 중 14건은 새 log, 1건은 같은 immutable Watch profile과 사용자 content를 가진 canonical row
+  - digest 차이는 동등한 timestamp 표기, source-derived float readback과 세 import bookkeeping timestamp
+  - phase-one canonical lock 안의 좁은 normalization 뒤 기존 strict private finalization과 phase-two revalidation 유지
+  - local reset, Function integration, pgTAP 109개, concurrency 2개, Supabase 70개, mobile hydration 80개와 보안 advisor 통과
+- 요약:
+  - Payload hash mismatch를 일반 허용하지 않는다. 동일 profiled Watch log의 표현 차이만 원자적으로 staged digest에 맞추고 canonical ID를 재사용하며, 의미 차이는 whole-batch rollback한다. Hosted staging과 원래 iPhone 15-item retry는 아직 pending이다.
+
+## [2026-07-30] lint | 0 issues found, 0 auto-fixed
+
 ## [2026-07-28] lint | 0 issues found, 0 auto-fixed
 
 ## [2026-07-28] ingest | Local log import review hardening

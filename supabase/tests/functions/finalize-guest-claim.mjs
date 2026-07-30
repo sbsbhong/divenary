@@ -578,7 +578,25 @@ try {
     expectedLogCount: 1,
   });
   const successPlanPayload = planPayload('success');
-  const successLogPayload = logPayload('success');
+  const successLogPayload = {
+    ...logPayload('success'),
+    max_depth_meters: 11.6,
+    manual_data: {
+      schemaVersion: 1,
+      _local_record: {
+        schemaVersion: 1,
+        createdAt: 1784558000,
+        updatedAt: 1784558010,
+      },
+    },
+    watch_metadata: {
+      schemaVersion: 1,
+      importedAt: 1784558020,
+      measuredValues: {
+        maxDepthMeters: 11.600000000000001,
+      },
+    },
+  };
   const successProfilePath = claimProfilePath(owner, successBatch.id);
   objectPaths.push(successProfilePath);
   await uploadProfile(owner, successProfilePath, profileBytes);
@@ -678,6 +696,155 @@ try {
   );
   await assertFinalCounts(owner, 1, 1, 'same digest idempotency');
   logCheck('same digest cross-device claim reuses canonical target ids');
+
+  const semanticPayload = {
+    ...successLogPayload,
+    started_at: '2026-07-20T02:00:00.000+00:00',
+    ended_at: '2026-07-20T02:40:00.000+00:00',
+    max_depth_meters: 11.600000000000001,
+    manual_data: {
+      ...successLogPayload.manual_data,
+      _local_record: {
+        ...successLogPayload.manual_data._local_record,
+        createdAt: 1784559000,
+        updatedAt: 1784559010,
+      },
+    },
+    watch_metadata: {
+      ...successLogPayload.watch_metadata,
+      importedAt: 1784559020,
+    },
+  };
+  const semanticDigest = payloadDigest(semanticPayload);
+  assert.notEqual(semanticDigest, payloadDigest(successLogPayload));
+  const semanticBatch = await createBatch(owner, {
+    label: 'semantic-log-reuse',
+    expectedPlanCount: 1,
+    expectedLogCount: 1,
+  });
+  const semanticProfilePath = claimProfilePath(owner, semanticBatch.id);
+  objectPaths.push(semanticProfilePath);
+  await uploadProfile(owner, semanticProfilePath, profileBytes);
+  await stageRecord(owner, semanticBatch.id, {
+    entityKind: 'plan',
+    clientRecordId: 'success-plan',
+    convertedLogClientRecordId: 'success-log',
+    payloadSha256: payloadDigest(successPlanPayload),
+    payload: successPlanPayload,
+  });
+  const semanticLog = await stageRecord(owner, semanticBatch.id, {
+    entityKind: 'log',
+    clientRecordId: 'success-log',
+    sourcePlanClientRecordId: 'success-plan',
+    payloadSha256: semanticDigest,
+    payload: semanticPayload,
+    profile: profileExpectation(semanticProfilePath, profileBytes, 2),
+  });
+
+  const semanticReuse = await invokeFinalizer(owner, semanticBatch.id);
+  assertStatus(semanticReuse, [200], 'semantic cross-device reconciliation');
+  assert.deepEqual(semanticReuse.body, {
+    batchId: semanticBatch.id,
+    status: 'committed',
+    planCount: 1,
+    logCount: 1,
+  });
+  const semanticRecords = await readRows(
+    owner,
+    'guest_claim_records',
+    `select=entity_kind,target_record_id&batch_id=eq.${semanticBatch.id}`,
+  );
+  assert.equal(
+    semanticRecords.find(row => row.entity_kind === 'plan').target_record_id,
+    successPlan.target_record_id,
+  );
+  assert.equal(
+    semanticRecords.find(row => row.entity_kind === 'log').target_record_id,
+    successLog.target_record_id,
+  );
+  assert.notEqual(semanticLog.target_record_id, successLog.target_record_id);
+  const [semanticCanonicalLog] = await readRows(
+    owner,
+    'dive_logs',
+    'select=id,payload_sha256,max_depth_meters,manual_data,watch_metadata&local_id=eq.success-log',
+  );
+  assert.equal(semanticCanonicalLog.id, successLog.target_record_id);
+  assert.equal(semanticCanonicalLog.payload_sha256, semanticDigest);
+  assert.equal(semanticCanonicalLog.max_depth_meters, 11.6);
+  assert.equal(
+    semanticCanonicalLog.manual_data._local_record.createdAt,
+    1784559000,
+  );
+  assert.equal(semanticCanonicalLog.watch_metadata.importedAt, 1784559020);
+  assert.equal(
+    semanticCanonicalLog.watch_metadata.measuredValues.maxDepthMeters,
+    11.600000000000001,
+  );
+  await assertFinalCounts(owner, 1, 1, 'semantic log reuse idempotency');
+  logCheck('representation-only log mismatch reuses the canonical target');
+
+  const meaningfulLogConflictBatch = await createBatch(owner, {
+    label: 'meaningful-log-conflict',
+    expectedPlanCount: 2,
+    expectedLogCount: 1,
+  });
+  await stageRecord(owner, meaningfulLogConflictBatch.id, {
+    entityKind: 'plan',
+    clientRecordId: 'semantic-atomic-new-plan',
+    payload: planPayload('semantic-atomic-new-plan'),
+  });
+  await stageRecord(owner, meaningfulLogConflictBatch.id, {
+    entityKind: 'plan',
+    clientRecordId: 'success-plan',
+    convertedLogClientRecordId: 'success-log',
+    payloadSha256: payloadDigest(successPlanPayload),
+    payload: successPlanPayload,
+  });
+  const meaningfulConflictProfilePath = claimProfilePath(
+    owner,
+    meaningfulLogConflictBatch.id,
+  );
+  objectPaths.push(meaningfulConflictProfilePath);
+  await uploadProfile(owner, meaningfulConflictProfilePath, profileBytes);
+  const meaningfulConflictPayload = {
+    ...semanticPayload,
+    title: 'meaningfully different title',
+  };
+  await stageRecord(owner, meaningfulLogConflictBatch.id, {
+    entityKind: 'log',
+    clientRecordId: 'success-log',
+    sourcePlanClientRecordId: 'success-plan',
+    payload: meaningfulConflictPayload,
+    profile: profileExpectation(
+      meaningfulConflictProfilePath,
+      profileBytes,
+      2,
+    ),
+  });
+  const meaningfulLogConflict = await invokeFinalizer(
+    owner,
+    meaningfulLogConflictBatch.id,
+  );
+  assertFailure(
+    meaningfulLogConflict,
+    409,
+    'claim_validation_failed',
+    'meaningful canonical log conflict',
+  );
+  const atomicNewPlans = await readRows(
+    owner,
+    'dive_plans',
+    'select=id&local_id=eq.semantic-atomic-new-plan',
+  );
+  assert.deepEqual(atomicNewPlans, []);
+  const [canonicalAfterMeaningfulConflict] = await readRows(
+    owner,
+    'dive_logs',
+    'select=payload_sha256,title&local_id=eq.success-log',
+  );
+  assert.equal(canonicalAfterMeaningfulConflict.payload_sha256, semanticDigest);
+  assert.equal(canonicalAfterMeaningfulConflict.title, 'success');
+  logCheck('meaningful log conflict keeps atomic fail-closed behavior');
 
   await deleteProfiles(status.API_URL, status.SECRET_KEY, [
     successProfilePath,
