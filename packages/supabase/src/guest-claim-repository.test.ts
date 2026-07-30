@@ -301,6 +301,52 @@ describe('GuestClaimRemoteRepository', () => {
     ]);
   });
 
+  test('invokes the abandonment boundary and accepts abandoned or committed races', async () => {
+    for (const status of ['abandoned', 'committed'] as const) {
+      const {client, storageCalls} = createClient([
+        {
+          data: {status, storageCleanupPending: status === 'abandoned'},
+          error: null,
+        },
+      ]);
+      const repository = createGuestClaimRemoteRepository(client as never, {
+        userId: USER_ID,
+      });
+
+      assert.deepEqual(await repository.abandon(BATCH_ID), {
+        status,
+        storageCleanupPending: status === 'abandoned',
+      });
+      assert.deepEqual(storageCalls, [
+        {
+          method: 'invoke',
+          name: 'abandon-guest-claim',
+          options: {body: {batchId: BATCH_ID}},
+        },
+      ]);
+    }
+  });
+
+  test('fails closed for malformed abandonment responses', async () => {
+    for (const data of [
+      {status: 'uploading', storageCleanupPending: false},
+      {status: 'abandoned'},
+      {status: 'committed', storageCleanupPending: 'no'},
+    ]) {
+      const {client} = createClient([{data, error: null}]);
+      const repository = createGuestClaimRemoteRepository(client as never, {
+        userId: USER_ID,
+      });
+
+      await assert.rejects(() => repository.abandon(BATCH_ID), error => {
+        assert.ok(error instanceof GuestClaimRepositoryError);
+        assert.equal(error.operation, 'abandon');
+        assert.equal(Reflect.get(error, 'kind'), 'remote_conflict');
+        return true;
+      });
+    }
+  });
+
   test('accepts a duplicate profile upload only when the stored bytes match', async () => {
     const path = `${USER_ID}/claims/${BATCH_ID}/${STAGING_ID}/profile.json`;
     const bytes = new Uint8Array([1, 2, 3]);

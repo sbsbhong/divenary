@@ -2209,6 +2209,191 @@ describe('guest claim service', () => {
     expect(guest.planbook.deleteIf).not.toHaveBeenCalled();
   });
 
+  it('abandons the stale 15-log batch when one deleted Watch session is tombstoned', async () => {
+    const fullSamples = depthSamples(200);
+    const profile = profileStorage();
+    await profile.write(guestProfileKey, fullSamples);
+    const logs = [
+      watchLog('log-a', fullSamples.slice(0, 160)),
+      ...Array.from({length: 14}, (_, index) =>
+        diveLog(`remaining-log-${index}`),
+      ),
+    ];
+    const guest = repositories(logs, []);
+    const account = repositories([], [], [], 'account');
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profile,
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    snapshot.manifest.items.forEach((item, index) => {
+      item.stagingRecordId = uuid('2', index + 1);
+      item.targetRecordId = uuid('3', index + 1);
+      item.completedAt = 101;
+    });
+    const watchItemIndex = snapshot.manifest.items.findIndex(
+      item => item.clientRecordId === 'log-a',
+    );
+    const watchItem = snapshot.manifest.items[watchItemIndex]!;
+    const watchProfileBytes = (await readClaimProfileBytes(
+      snapshot.snapshots[watchItemIndex]!,
+      profile,
+    ))!;
+    snapshot.snapshots[watchItemIndex]!.profileReadback = {
+      path: `${userId}/claims/${batchId}/${watchItem.targetRecordId}/revision-1.json`,
+      byteCount: new TextEncoder().encode(watchProfileBytes).length,
+      sha256: watchItem.profile!.sha256,
+      sampleCount: watchItem.profile!.sampleCount,
+      verifiedAt: 102,
+    };
+    await store.write(snapshot);
+    await guest.logbook.delete('log-a');
+
+    const replacementBatchId = uuid('1', 2);
+    let replacementOrdinal = 0;
+    const remote = remoteRepository(store, [], {
+      createOrLoadBatch: jest.fn(async () => ({
+        id: replacementBatchId,
+        status: 'uploading' as const,
+      })),
+      stageRecord: jest.fn(async () => {
+        replacementOrdinal += 1;
+        return {
+          stagingRecordId: uuid('2', replacementOrdinal),
+          targetRecordId: uuid('3', replacementOrdinal),
+        };
+      }),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile,
+      remote,
+      isWatchSessionDeleted: async localSessionId =>
+        localSessionId === 'session-log-a',
+    });
+
+    const result = await service.retry();
+
+    expect(remote.abandon).toHaveBeenCalledWith(batchId);
+    expect(remote.finalize).not.toHaveBeenCalledWith(batchId);
+    expect(result).toMatchObject({
+      manifest: {
+        status: 'committed',
+        remoteBatchId: replacementBatchId,
+        logCount: 14,
+      },
+    });
+    await expect(account.logbook.get('log-a')).resolves.toBeUndefined();
+  });
+
+  it('deletes a tombstoned Watch row again when abandonment loses to commit', async () => {
+    const baseWatchLog = watchLog('log-a', []);
+    const deletedWatchLog: DiveLogEntry = {
+      ...baseWatchLog,
+      watchCapture: {
+        ...baseWatchLog.watchCapture!,
+        profile: undefined,
+      },
+    };
+    const guest = repositories([deletedWatchLog], []);
+    const account = repositories([], [], [], 'account');
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guest.logbook,
+      planRepository: guest.planbook,
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    snapshot.manifest.items[0] = {
+      ...snapshot.manifest.items[0]!,
+      stagingRecordId: uuid('2', 1),
+      targetRecordId: uuid('3', 1),
+      completedAt: 101,
+    };
+    await store.write(snapshot);
+    await guest.logbook.delete('log-a');
+    const remote = remoteRepository(store, [], {
+      abandon: jest.fn(async () => ({
+        status: 'committed' as const,
+        storageCleanupPending: false,
+      })),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account,
+      profile: profileStorage(),
+      remote,
+      isWatchSessionDeleted: async localSessionId =>
+        localSessionId === 'session-log-a',
+    });
+
+    const result = await service.retry();
+
+    expect(result?.manifest.status).toBe('committed');
+    expect(remote.abandon).toHaveBeenCalledWith(batchId);
+    expect(remote.finalize).not.toHaveBeenCalled();
+    expect(account.logbook.save).toHaveBeenCalledWith(
+      expect.objectContaining({localId: 'log-a'}),
+    );
+    expect(account.logbook.delete).toHaveBeenCalledWith('log-a');
+    await expect(account.logbook.get('log-a')).resolves.toBeUndefined();
+  });
+
+  it('invalidates a local-only claim checkpoint inside the deletion mutation gate', async () => {
+    const baseWatchLog = watchLog('log-a', []);
+    const deletedWatchLog: DiveLogEntry = {
+      ...baseWatchLog,
+      watchCapture: {
+        ...baseWatchLog.watchCapture!,
+        profile: undefined,
+      },
+    };
+    const guest = repositories([deletedWatchLog], []);
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const remote = remoteRepository(store);
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote,
+      isWatchSessionDeleted: async localSessionId =>
+        localSessionId === 'session-log-a',
+    });
+    await service.defer();
+
+    await service.invalidateDeletedWatchSession('session-log-a');
+
+    await expect(store.read()).resolves.toBeUndefined();
+    await expect(guest.logbook.get('log-a')).resolves.toBeDefined();
+    expect(remote.abandon).not.toHaveBeenCalled();
+  });
+
   it('keeps a changed row retryable when its bulk condition fails', async () => {
     const changedId = 'changed-during-cleanup';
     const guest = repositories([diveLog(changedId)], []);
@@ -2746,6 +2931,9 @@ function claimService(input: {
   remote: jest.Mocked<GuestClaimRemoteRepository>;
   order?: string[];
   onProgress?: ConstructorParameters<typeof GuestClaimService>[0]['onProgress'];
+  isWatchSessionDeleted?: ConstructorParameters<
+    typeof GuestClaimService
+  >[0]['isWatchSessionDeleted'];
 }) {
   return new GuestClaimService({
     userId,
@@ -2757,6 +2945,7 @@ function claimService(input: {
     remoteRepository: input.remote,
     now: clock(),
     onProgress: input.onProgress,
+    isWatchSessionDeleted: input.isWatchSessionDeleted,
   });
 }
 
@@ -2799,6 +2988,10 @@ function remoteRepository(
         logCount: snapshot?.manifest.logCount ?? 0,
       };
     },
+    async abandon() {
+      order.push('remote:abandon');
+      return {status: 'abandoned', storageCleanupPending: false};
+    },
     async listCommittedBatch() {
       order.push('remote:list');
       const snapshot = await store.read();
@@ -2816,6 +3009,7 @@ function remoteRepository(
     uploadProfile: jest.fn(repository.uploadProfile),
     downloadProfile: jest.fn(repository.downloadProfile),
     finalize: jest.fn(repository.finalize),
+    abandon: jest.fn(repository.abandon),
     listCommittedBatch: jest.fn(repository.listCommittedBatch),
   };
 }

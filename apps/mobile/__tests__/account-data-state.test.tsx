@@ -5711,6 +5711,10 @@ function guestClaimRepository(): jest.Mocked<GuestClaimRemoteRepository> {
       planCount: 0,
       logCount: 0,
     })),
+    abandon: jest.fn(async (_batchId: string) => ({
+      status: 'abandoned' as const,
+      storageCleanupPending: false,
+    })),
     listCommittedBatch: jest.fn(async (_batchId: string) => ({
       plans: [] as RemoteDivePlan[],
       logs: [] as RemoteDiveLog[],

@@ -6,6 +6,10 @@ const migrationUrl = new URL(
   '../migrations/20260730111944_reconcile_semantic_guest_claim_log_reuse.sql',
   import.meta.url,
 );
+const abandonmentMigrationUrl = new URL(
+  '../migrations/20260730130838_abandon_deleted_guest_claim_logs.sql',
+  import.meta.url,
+);
 
 function lockLoops(source, relation) {
   return [
@@ -227,5 +231,41 @@ test('keeps the privileged wrapper owner-scoped and service-role-only', async ()
   assert.match(
     source,
     /revoke all on function private\.guest_claim_log_semantically_equal\(\s*public\.dive_logs,\s*public\.guest_claim_records,\s*uuid\s*\)[\s\S]*from public, anon, authenticated, service_role;/i,
+  );
+});
+
+test('makes abandonment terminal, owner-scoped, and service-role-only', async () => {
+  const source = await readFile(abandonmentMigrationUrl, 'utf8');
+  const privateFunction = source.match(
+    /create function private\.abandon_guest_claim[\s\S]*?\$\$;/i,
+  )?.[0];
+
+  assert.ok(privateFunction, 'private abandonment transition must exist');
+  assert.match(source, /status in \('uploading', 'committed', 'abandoned'\)/i);
+  assert.match(
+    source,
+    /status = 'abandoned'[\s\S]*committed_at is null[\s\S]*abandoned_at is not null/i,
+  );
+  assert.match(privateFunction, /batch\.user_id = p_user_id/i);
+  assert.match(privateFunction, /for update of batch/i);
+  assert.match(
+    privateFunction,
+    /status = 'abandoned'[\s\S]*abandoned_at = pg_catalog\.transaction_timestamp\(\)/i,
+  );
+  assert.match(
+    privateFunction,
+    /batch\.status = 'uploading'/i,
+  );
+  assert.match(
+    source,
+    /revoke all on function private\.abandon_guest_claim\(uuid, uuid\)[\s\S]*from public, anon, authenticated, service_role;/i,
+  );
+  assert.match(
+    source,
+    /revoke all on function public\.abandon_guest_claim\(uuid, uuid\)[\s\S]*from public, anon, authenticated;/i,
+  );
+  assert.match(
+    source,
+    /grant execute on function public\.abandon_guest_claim\(uuid, uuid\)[\s\S]*to service_role;/i,
   );
 });

@@ -18,7 +18,13 @@ import type {
   VerifiedCurrentUser,
 } from './account-data-types.ts';
 
-export type GuestClaimRepositoryOperation = 'batch' | 'stage' | 'profile' | 'finalize' | 'list';
+export type GuestClaimRepositoryOperation =
+  | 'batch'
+  | 'stage'
+  | 'profile'
+  | 'finalize'
+  | 'abandon'
+  | 'list';
 export type GuestClaimRepositoryErrorKind =
   | 'network_unavailable'
   | 'session_expired'
@@ -166,7 +172,7 @@ function assertStageInput(input: GuestClaimStageInput) {
 }
 
 function assertBatchRow(row: BatchRow, input: GuestClaimBatchInput, userId: string) {
-  if (row.user_id !== userId || row.client_batch_id !== input.clientBatchId || row.manifest_sha256 !== input.manifestSha256 || row.expected_plan_count !== input.expectedPlanCount || row.expected_log_count !== input.expectedLogCount || (row.status !== 'uploading' && row.status !== 'committed')) fail('batch', 'remote_conflict');
+  if (row.user_id !== userId || row.client_batch_id !== input.clientBatchId || row.manifest_sha256 !== input.manifestSha256 || row.expected_plan_count !== input.expectedPlanCount || row.expected_log_count !== input.expectedLogCount || (row.status !== 'uploading' && row.status !== 'committed' && row.status !== 'abandoned')) fail('batch', 'remote_conflict');
 }
 
 function assertCommittedBatchRow(row: BatchRow, batchId: string, userId: string) {
@@ -271,7 +277,10 @@ export function createGuestClaimRemoteRepository(
         throw claimError(inserted.error, 'batch');
       }
       assertBatchRow(row, input, userId);
-      return {id: row.id, status: row.status as 'uploading' | 'committed'};
+      return {
+        id: row.id,
+        status: row.status as 'uploading' | 'committed' | 'abandoned',
+      };
     } catch (error) {
       throw claimError(error, 'batch');
     }
@@ -356,6 +365,32 @@ export function createGuestClaimRemoteRepository(
     }
   }
 
+  async function abandon(batchId: string) {
+    try {
+      if (!validUuid(batchId)) return fail('abandon');
+      const result = await client.functions.invoke('abandon-guest-claim', {
+        body: {batchId},
+      });
+      if (result.error) throw claimError(result.error, 'abandon');
+      if (typeof result.data !== 'object' || result.data === null) {
+        return fail('abandon', 'remote_conflict');
+      }
+      const data = result.data as Record<string, unknown>;
+      if (
+        (data.status !== 'abandoned' && data.status !== 'committed') ||
+        typeof data.storageCleanupPending !== 'boolean'
+      ) {
+        return fail('abandon', 'remote_conflict');
+      }
+      return {
+        status: data.status as 'abandoned' | 'committed',
+        storageCleanupPending: data.storageCleanupPending,
+      };
+    } catch (error) {
+      throw claimError(error, 'abandon');
+    }
+  }
+
   async function listCommittedBatch(batchId: string): Promise<{plans: RemoteDivePlan[]; logs: RemoteDiveLog[]}> {
     try {
       if (!validUuid(batchId)) return fail('list');
@@ -386,5 +421,5 @@ export function createGuestClaimRemoteRepository(
     }
   }
 
-  return {createOrLoadBatch, stageRecord, attachProfile, uploadProfile, downloadProfile, finalize, listCommittedBatch};
+  return {createOrLoadBatch, stageRecord, attachProfile, uploadProfile, downloadProfile, finalize, abandon, listCommittedBatch};
 }

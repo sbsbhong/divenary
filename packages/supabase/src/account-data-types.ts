@@ -46,12 +46,16 @@ export type GuestClaimStageInput = {
 };
 
 export type GuestClaimRemoteRepository = {
-  createOrLoadBatch(input: GuestClaimBatchInput): Promise<{id: string; status: 'uploading' | 'committed'}>;
+  createOrLoadBatch(input: GuestClaimBatchInput): Promise<{id: string; status: 'uploading' | 'committed' | 'abandoned'}>;
   stageRecord(input: GuestClaimStageInput): Promise<{stagingRecordId: string; targetRecordId: string}>;
   attachProfile(input: {stagingRecordId: string; path: string; contentRevision: string; sha256: string; byteCount: number; sampleCount: number}): Promise<void>;
   uploadProfile(path: string, bytes: Uint8Array): Promise<void>;
   downloadProfile(path: string): Promise<Uint8Array>;
   finalize(batchId: string): Promise<{status: 'committed'; planCount: number; logCount: number}>;
+  abandon(batchId: string): Promise<{
+    status: 'abandoned' | 'committed';
+    storageCleanupPending: boolean;
+  }>;
   listCommittedBatch(batchId: string): Promise<{plans: RemoteDivePlan[]; logs: RemoteDiveLog[]}>;
 };
 

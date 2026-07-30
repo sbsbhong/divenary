@@ -132,6 +132,9 @@ function planOnlyClaimRemoteRepository(
         logCount: snapshot?.manifest.logCount ?? 0,
       };
     },
+    async abandon() {
+      return {status: 'abandoned', storageCleanupPending: false};
+    },
     async listCommittedBatch() {
       const snapshot = (await store.read()) as GuestClaimSnapshot;
       return {
@@ -156,6 +159,7 @@ function planOnlyClaimRemoteRepository(
     uploadProfile: jest.fn(implementation.uploadProfile),
     downloadProfile: jest.fn(implementation.downloadProfile),
     finalize: jest.fn(implementation.finalize),
+    abandon: jest.fn(implementation.abandon),
     listCommittedBatch: jest.fn(implementation.listCommittedBatch),
   };
 }

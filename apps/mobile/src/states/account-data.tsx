@@ -443,6 +443,9 @@ export function AccountDataProviderCore({
           beforeDelete: async tombstone => {
             await publication.beforeWatchLogDelete?.(tombstone);
           },
+          requestSync: async () => {
+            await publication.coordinator?.drain({online: isOnline});
+          },
           now: dependencies.now,
         });
         publication.rawVisibleLogbook = rawVisibleLogbook;
@@ -458,6 +461,7 @@ export function AccountDataProviderCore({
       if (!watchDeletionCoordinator) {
         throw new Error('Watch deletion coordinator was not initialized.');
       }
+      nextPublication.beforeWatchLogDelete = undefined;
       await watchDeletionCoordinator.reconcile();
 
       if (
@@ -483,6 +487,8 @@ export function AccountDataProviderCore({
           accountMutationRepositories,
           profileStorage: dependencies.profileStorage,
           remoteRepository: auth.guestClaimRemoteRepository,
+          isWatchSessionDeleted: async localSessionId =>
+            (await watchDeletionStore.get(localSessionId)) !== undefined,
           now: dependencies.now,
           assertCanContinue: () => {
             if (!isCurrent()) {
@@ -566,9 +572,14 @@ export function AccountDataProviderCore({
             }
           },
         });
+        publication.beforeWatchLogDelete = tombstone =>
+          publication.claimService!.invalidateDeletedWatchSession(
+            tombstone.localSessionId,
+          );
       } else if (desiredPrincipal.kind === 'user') {
         nextPublication.claimGeneration = generation;
         nextPublication.claimService = undefined;
+        nextPublication.beforeWatchLogDelete = undefined;
       }
 
       if (!isCurrent()) {
