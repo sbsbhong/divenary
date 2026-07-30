@@ -72,6 +72,31 @@ export function createWatchLogDeletionCoordinator(
     }
   };
 
+  const invalidateClaimSafely = async (
+    tombstone: WatchLogDeletionTombstone,
+  ): Promise<void> => {
+    if (!options.beforeDelete) {
+      return;
+    }
+    try {
+      await options.beforeDelete(tombstone);
+    } catch (error) {
+      warn('Failed to invalidate guest claim for Watch log deletion', error);
+    }
+  };
+
+  const deleteTombstonedRowSafely = async (
+    localId: string,
+  ): Promise<boolean> => {
+    try {
+      await options.repository.delete(localId);
+      return true;
+    } catch (error) {
+      warn('Failed to remove tombstoned Watch log from local repository', error);
+      return false;
+    }
+  };
+
   const applyAcknowledgementsSafely = async (): Promise<void> => {
     if (!options.listAcknowledgements) {
       return;
@@ -128,8 +153,8 @@ export function createWatchLogDeletionCoordinator(
             }
           : {}),
       });
-      await options.beforeDelete?.(tombstone);
-      await options.repository.delete(entry.localId);
+      await invalidateClaimSafely(tombstone);
+      await deleteTombstonedRowSafely(entry.localId);
       await queueSafely(tombstone);
       await requestSyncSafely();
     },
@@ -137,13 +162,20 @@ export function createWatchLogDeletionCoordinator(
       await applyAcknowledgementsSafely();
       let deletedRow = false;
       for (const tombstone of await options.tombstones.list()) {
-        await options.beforeDelete?.(tombstone);
+        await invalidateClaimSafely(tombstone);
         for (const localId of tombstone.sourceLocalIds) {
-          if ((await options.repository.get(localId)) === undefined) {
+          let entry: DiveLogEntry | undefined;
+          try {
+            entry = await options.repository.get(localId);
+          } catch (error) {
+            warn('Failed to inspect tombstoned Watch log in local repository', error);
             continue;
           }
-          await options.repository.delete(localId);
-          deletedRow = true;
+          if (entry === undefined) {
+            continue;
+          }
+          deletedRow =
+            (await deleteTombstonedRowSafely(localId)) || deletedRow;
         }
         await queueSafely(tombstone);
       }

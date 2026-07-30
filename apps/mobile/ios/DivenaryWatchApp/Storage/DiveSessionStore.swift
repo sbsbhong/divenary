@@ -17,6 +17,7 @@ final class DiveSessionStore: ObservableObject {
     private let fileManager: FileManager
     private let recordsStorageURL: URL
     private let profileStore: DiveProfileArtifactStore
+    private var deletionRecoverySucceeded = false
     private var executedPlanIds = Set<String>()
 
     init(
@@ -36,7 +37,12 @@ final class DiveSessionStore: ObservableObject {
             fileManager: fileManager
         )
         preferredDiveMode = Self.loadPreferredDiveMode(from: userDefaults)
-        try? self.profileStore.resumePendingDeletions()
+        do {
+            try self.profileStore.resumePendingDeletions()
+            deletionRecoverySucceeded = true
+        } catch {
+            deletionRecoverySucceeded = false
+        }
         load()
         loadPlannedDives()
         self.syncTransport.onTransferStatusChanged = { [weak self] artifact, syncStatus in
@@ -64,6 +70,9 @@ final class DiveSessionStore: ObservableObject {
 
     @discardableResult
     func save(_ session: DiveSessionRecord) -> Bool {
+        guard deletionRecoverySucceeded else {
+            return false
+        }
         let safeSession = session.sanitizedForPersistence()
         let entry: DiveProfileManifestEntry
         do {
@@ -92,6 +101,9 @@ final class DiveSessionStore: ObservableObject {
         for session: DiveSessionRecord,
         explicitProfile: DiveProfileMetadata?
     ) throws -> DiveProfileManifestEntry {
+        guard deletionRecoverySucceeded else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
         if let existingEntry = try profileStore.loadEntries().first(where: { $0.id == session.id }) {
             guard try profileStore.matchesCanonicalArtifact(
                 for: session,
@@ -131,7 +143,8 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func updateSyncStatus(for artifact: DiveProfileArtifactIdentity, to syncStatus: DiveSyncStatus) {
-        guard let entry = try? profileStore.loadEntries().first(where: {
+        guard deletionRecoverySucceeded,
+              let entry = try? profileStore.loadEntries().first(where: {
             $0.id == artifact.localSessionId
                 && $0.artifact.contentRevision == artifact.contentRevision
                 && $0.artifact.sha256 == artifact.sha256
@@ -151,7 +164,8 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func retryPendingSyncs() {
-        guard let entries = try? profileStore.loadEntries() else { return }
+        guard deletionRecoverySucceeded,
+              let entries = try? profileStore.loadEntries() else { return }
         for entry in entries {
             guard entry.displayRecord.syncStatus != .synced else {
                 continue
@@ -193,6 +207,10 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func load() {
+        guard deletionRecoverySucceeded else {
+            sessions = []
+            return
+        }
         defer { recoverInterruptedRecordings() }
         if fileManager.fileExists(atPath: recordsStorageURL.path) {
             do {
@@ -241,7 +259,8 @@ final class DiveSessionStore: ObservableObject {
     }
 
     private func recoverInterruptedRecordings() {
-        guard let recordings = try? profileStore.loadActiveRecordings() else { return }
+        guard deletionRecoverySucceeded,
+              let recordings = try? profileStore.loadActiveRecordings() else { return }
         for recording in recordings where !sessions.contains(where: { $0.id == recording.metadata.localSessionId }) {
             guard !recording.samples.isEmpty else { continue }
             let endedAt = recording.samples.last?.timestamp ?? recording.metadata.startedAt

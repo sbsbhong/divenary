@@ -274,6 +274,12 @@ describe('WatchConnectivity native source contract', () => {
       /recordDeletionIntent[\s\S]*save\(entries: remainingEntries\)[\s\S]*removeItem/,
     );
     expect(sessionStore).toContain('profileStore.resumePendingDeletions()');
+    expect(sessionStore).not.toContain(
+      'try? self.profileStore.resumePendingDeletions()',
+    );
+    expect(sessionStore).toContain(
+      'guard deletionRecoverySucceeded else',
+    );
     expect(sessionStore).toContain('handleSessionDeletion');
     expect(sessionStore).toContain('sessions.removeAll');
     expect(sessionStore).not.toContain('swipeActions');

@@ -94,6 +94,68 @@ describe('WatchLogDeletionCoordinator', () => {
     );
   });
 
+  it('continues durable cleanup and Watch delivery after claim invalidation fails', async () => {
+    const tombstones = createWatchLogDeletionStore({
+      storage: new InMemoryKeyValueStore(),
+    });
+    const repository = new LocalDiveLogRepository([watchLog]);
+    const beforeDelete = jest
+      .fn()
+      .mockRejectedValue(new Error('network unavailable'));
+    const queueDeletion = jest.fn().mockResolvedValue(undefined);
+    const warn = jest.fn();
+    const coordinator = createWatchLogDeletionCoordinator({
+      tombstones,
+      repository,
+      beforeDelete,
+      queueDeletion,
+      warn,
+      now: () => 200,
+    });
+
+    await expect(coordinator.delete(watchLog)).resolves.toBeUndefined();
+
+    expect(await coordinator.isDeleted('watch-session-1')).toBe(true);
+    expect(await repository.get(watchLog.localId)).toBeUndefined();
+    expect(queueDeletion).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to invalidate guest claim for Watch log deletion',
+      expect.any(Error),
+    );
+  });
+
+  it('keeps a failed local cleanup hidden and still queues paired Watch deletion', async () => {
+    const tombstones = createWatchLogDeletionStore({
+      storage: new InMemoryKeyValueStore(),
+    });
+    const raw = new LocalDiveLogRepository([watchLog]);
+    raw.delete = jest.fn().mockRejectedValue(new Error('storage unavailable'));
+    const queueDeletion = jest.fn().mockResolvedValue(undefined);
+    const warn = jest.fn();
+    const coordinator = createWatchLogDeletionCoordinator({
+      tombstones,
+      repository: raw,
+      queueDeletion,
+      warn,
+      now: () => 200,
+    });
+    const visible = createWatchDeletionAwareLogbookRepository({
+      repository: raw,
+      tombstones,
+      deleteEntry: entry => coordinator.delete(entry),
+    });
+
+    await expect(visible.delete(watchLog.localId)).resolves.toBeUndefined();
+
+    expect(await visible.get(watchLog.localId)).toBeUndefined();
+    expect(await raw.get(watchLog.localId)).toBeDefined();
+    expect(queueDeletion).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      'Failed to remove tombstoned Watch log from local repository',
+      expect.any(Error),
+    );
+  });
+
   it('reconciles a persisted tombstone with a row left behind by an interrupted delete', async () => {
     const tombstones = createWatchLogDeletionStore({
       storage: new InMemoryKeyValueStore(),

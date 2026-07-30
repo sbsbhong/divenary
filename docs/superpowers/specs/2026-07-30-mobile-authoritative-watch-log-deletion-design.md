@@ -245,7 +245,7 @@ Request field:
 formatVersion
 commandId
 localSessionId
-contentRevision? 
+contentRevision?
 artifactSha256?
 requestedAt
 ```
