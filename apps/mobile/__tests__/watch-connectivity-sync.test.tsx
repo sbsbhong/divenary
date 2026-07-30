@@ -3109,4 +3109,77 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(requestSync).not.toHaveBeenCalled();
     expect(console.warn).not.toHaveBeenCalled();
   });
+
+  it('consumes a tombstoned native descriptor before preparing its profile', async () => {
+    const repository = new LocalDiveLogRepository();
+    const preparePendingPayload = jest.fn();
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const isWatchSessionDeleted = jest.fn().mockResolvedValue(true);
+    const reconcileDeletedWatchSession = jest.fn().mockResolvedValue(undefined);
+    const payload: WatchConnectivityPayload = {
+      payloadId: 'deleted-native-payload',
+      localSessionId: 'fixture-rich-session',
+      contentRevision: 'fixture-rich-revision-1',
+      sha256: 'a'.repeat(64),
+      receivedAt: 1781355000,
+    };
+
+    const summary = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient: createQueryClient(),
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [payload],
+      preparePendingPayload,
+      acknowledgeImportedPayloads,
+      isWatchSessionDeleted,
+      reconcileDeletedWatchSession,
+    });
+
+    expect(summary).toEqual({
+      receivedCount: 1,
+      importedCount: 0,
+      failedCount: 0,
+    });
+    expect(isWatchSessionDeleted).toHaveBeenCalledWith('fixture-rich-session');
+    expect(preparePendingPayload).not.toHaveBeenCalled();
+    expect(repository.listSync()).toEqual([]);
+    expect(reconcileDeletedWatchSession).toHaveBeenCalledWith(
+      'fixture-rich-session',
+    );
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      'deleted-native-payload',
+    ]);
+  });
+
+  it('consumes a tombstoned legacy inline payload before repository import', async () => {
+    const repository = new LocalDiveLogRepository();
+    const importWatchMessages = jest.spyOn(repository, 'importWatchMessages');
+    const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
+    const isWatchSessionDeleted = jest.fn().mockResolvedValue(true);
+    const reconcileDeletedWatchSession = jest.fn().mockResolvedValue(undefined);
+
+    const summary = await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient: createQueryClient(),
+      coordinator: new WatchConnectivityImportCoordinator(),
+      drainPendingPayloads: async () => [{
+        payloadId: 'deleted-inline-payload',
+        payloadJson: JSON.stringify(metadataRichFixture),
+        receivedAt: 1781355000,
+      }],
+      acknowledgeImportedPayloads,
+      isWatchSessionDeleted,
+      reconcileDeletedWatchSession,
+    });
+
+    expect(summary.importedCount).toBe(0);
+    expect(summary.failedCount).toBe(0);
+    expect(importWatchMessages).not.toHaveBeenCalled();
+    expect(reconcileDeletedWatchSession).toHaveBeenCalledWith(
+      'fixture-rich-session',
+    );
+    expect(acknowledgeImportedPayloads).toHaveBeenCalledWith([
+      'deleted-inline-payload',
+    ]);
+  });
 });
