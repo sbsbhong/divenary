@@ -1,7 +1,10 @@
 import {sha256} from '@noble/hashes/sha256';
 import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
 
-import type {WatchSessionDeletionCommand} from '../native/watch-connectivity';
+import type {
+  WatchSessionDeletionAcknowledgement,
+  WatchSessionDeletionCommand,
+} from '../native/watch-connectivity';
 import type {DiveLogRepository} from '../repositories/dive-log-repository';
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {
@@ -28,6 +31,7 @@ type WatchLogDeletionCoordinatorOptions = {
   tombstones: WatchLogDeletionStore;
   repository: DiveLogRepository;
   queueDeletion(command: WatchSessionDeletionCommand): Promise<void>;
+  listAcknowledgements?(): Promise<WatchSessionDeletionAcknowledgement[]>;
   beforeDelete?(tombstone: WatchLogDeletionTombstone): Promise<void>;
   requestSync?(): Promise<unknown>;
   now?: () => number;
@@ -68,6 +72,38 @@ export function createWatchLogDeletionCoordinator(
     }
   };
 
+  const applyAcknowledgementsSafely = async (): Promise<void> => {
+    if (!options.listAcknowledgements) {
+      return;
+    }
+    try {
+      const tombstonesBySessionId = new Map(
+        (await options.tombstones.list()).map(tombstone => [
+          tombstone.localSessionId,
+          tombstone,
+        ]),
+      );
+      for (const acknowledgement of await options.listAcknowledgements()) {
+        const tombstone = tombstonesBySessionId.get(
+          acknowledgement.localSessionId,
+        );
+        if (
+          tombstone === undefined ||
+          commandFromTombstone(tombstone).commandId !==
+            acknowledgement.commandId
+        ) {
+          continue;
+        }
+        await options.tombstones.acknowledge(
+          acknowledgement.localSessionId,
+          acknowledgement.acknowledgedAt,
+        );
+      }
+    } catch (error) {
+      warn('Failed to reconcile Watch session deletion acknowledgements', error);
+    }
+  };
+
   return {
     async delete(entry) {
       const capture = entry.watchCapture;
@@ -98,6 +134,7 @@ export function createWatchLogDeletionCoordinator(
       await requestSyncSafely();
     },
     async reconcile() {
+      await applyAcknowledgementsSafely();
       let deletedRow = false;
       for (const tombstone of await options.tombstones.list()) {
         await options.beforeDelete?.(tombstone);

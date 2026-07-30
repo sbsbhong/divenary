@@ -115,6 +115,37 @@ final class WatchConnectivityModule: RCTEventEmitter {
     }
   }
 
+  @objc(queueSessionDeletion:resolver:rejecter:)
+  func queueSessionDeletion(
+    command: [String: Any],
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.queueSessionDeletion(command: command) { result in
+      switch result {
+      case .success:
+        resolve(nil)
+      case .failure(let error):
+        reject(
+          "watch_session_deletion_invalid",
+          "The Watch session deletion command is invalid.",
+          error
+        )
+      }
+    }
+  }
+
+  @objc(listSessionDeletionAcknowledgements:rejecter:)
+  func listSessionDeletionAcknowledgements(
+    resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: RCTPromiseRejectBlock
+  ) {
+    WatchConnectivityInbox.shared.listSessionDeletionAcknowledgements {
+      acknowledgements in
+      resolve(acknowledgements)
+    }
+  }
+
   @objc(updatePlannedDives:resolver:rejecter:)
   func updatePlannedDives(
     plannedDivesJson: String,

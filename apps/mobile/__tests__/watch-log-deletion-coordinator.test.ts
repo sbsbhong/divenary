@@ -123,6 +123,78 @@ describe('WatchLogDeletionCoordinator', () => {
     expect(await repository.get(watchLog.localId)).toBeUndefined();
   });
 
+  it('records the durable Watch acknowledgement and stops retrying the command', async () => {
+    const tombstones = createWatchLogDeletionStore({
+      storage: new InMemoryKeyValueStore(),
+    });
+    await tombstones.record({
+      localSessionId: 'watch-session-1',
+      sourceLocalId: watchLog.localId,
+      requestedAt: 100,
+    });
+    const queueDeletion = jest.fn().mockResolvedValue(undefined);
+    const listAcknowledgements = jest.fn().mockResolvedValue([]);
+    const coordinator = createWatchLogDeletionCoordinator({
+      tombstones,
+      repository: new LocalDiveLogRepository(),
+      queueDeletion,
+      listAcknowledgements,
+    });
+
+    await coordinator.reconcile();
+    const command = queueDeletion.mock.calls[0]?.[0];
+    expect(command).toBeDefined();
+    listAcknowledgements.mockResolvedValue([
+      {
+        formatVersion: 1,
+        commandId: command!.commandId,
+        localSessionId: 'watch-session-1',
+        acknowledgedAt: 250,
+        result: 'deleted',
+      },
+    ]);
+
+    await coordinator.reconcile();
+
+    expect(await tombstones.get('watch-session-1')).toMatchObject({
+      watchAcknowledgedAt: 250,
+    });
+    expect(queueDeletion).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an acknowledgement whose deterministic command identity does not match', async () => {
+    const tombstones = createWatchLogDeletionStore({
+      storage: new InMemoryKeyValueStore(),
+    });
+    await tombstones.record({
+      localSessionId: 'watch-session-1',
+      sourceLocalId: watchLog.localId,
+      requestedAt: 100,
+    });
+    const queueDeletion = jest.fn().mockResolvedValue(undefined);
+    const coordinator = createWatchLogDeletionCoordinator({
+      tombstones,
+      repository: new LocalDiveLogRepository(),
+      queueDeletion,
+      listAcknowledgements: jest.fn().mockResolvedValue([
+        {
+          formatVersion: 1,
+          commandId: 'c'.repeat(64),
+          localSessionId: 'watch-session-1',
+          acknowledgedAt: 250,
+          result: 'deleted',
+        },
+      ]),
+    });
+
+    await coordinator.reconcile();
+
+    expect(await tombstones.get('watch-session-1')).not.toHaveProperty(
+      'watchAcknowledgedAt',
+    );
+    expect(queueDeletion).toHaveBeenCalledTimes(1);
+  });
+
   it('hides a tombstoned row before interrupted physical cleanup completes', async () => {
     const tombstones = createWatchLogDeletionStore({
       storage: new InMemoryKeyValueStore(),

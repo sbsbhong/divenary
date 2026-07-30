@@ -27,6 +27,12 @@ struct CanonicalDiveProfileArtifact {
     let identity: DiveProfileArtifactIdentity
 }
 
+struct DeletedDiveSessionArtifact: Equatable {
+    let localSessionId: UUID
+    let contentRevision: String
+    let artifactSha256: String
+}
+
 struct ActiveDiveRecordingMetadata: Codable, Equatable {
     let localSessionId: UUID
     let startedAt: Date
@@ -56,6 +62,11 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         let line: Data
     }
 
+    private struct DeletedSessionLedger: Codable {
+        let formatVersion: Int
+        let sessionIds: [UUID]
+    }
+
     private let rootURL: URL
     private let fileManager: FileManager
     private let makeRevision: () -> String
@@ -75,6 +86,9 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func finalize(record: DiveSessionRecord) throws -> DiveProfileManifestEntry {
+        guard try !isSessionDeleted(record.id) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
         let safeRecord = record.sanitizedForPersistence()
         let revision = safeRecord.profile?.contentRevision ?? makeRevision()
         let profile = DiveProfileMetadata(
@@ -130,6 +144,47 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
 
     func artifactURL(for identity: DiveProfileArtifactIdentity) -> URL {
         rootURL.appendingPathComponent(identity.relativePath)
+    }
+
+    func isSessionDeleted(_ localSessionId: UUID) throws -> Bool {
+        try loadDeletedSessionIds().contains(localSessionId)
+    }
+
+    @discardableResult
+    func deleteSession(
+        localSessionId: UUID
+    ) throws -> DeletedDiveSessionArtifact? {
+        try recordDeletionIntent(localSessionId)
+
+        let entries = try loadEntries()
+        let removedEntry = entries.first { $0.id == localSessionId }
+        let remainingEntries = entries.filter { $0.id != localSessionId }
+        if removedEntry != nil {
+            try save(entries: remainingEntries)
+        }
+
+        let sessionURL = sessionDirectory(for: localSessionId)
+        if fileManager.fileExists(atPath: sessionURL.path) {
+            try fileManager.removeItem(at: sessionURL)
+        }
+
+        guard try loadEntries().allSatisfy({ $0.id != localSessionId }),
+              !fileManager.fileExists(atPath: sessionURL.path) else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        return removedEntry.map {
+            DeletedDiveSessionArtifact(
+                localSessionId: localSessionId,
+                contentRevision: $0.artifact.contentRevision,
+                artifactSha256: $0.artifact.sha256
+            )
+        }
+    }
+
+    func resumePendingDeletions() throws {
+        for localSessionId in try loadDeletedSessionIds() {
+            try deleteSession(localSessionId: localSessionId)
+        }
     }
 
     func verifyArtifact(_ identity: DiveProfileArtifactIdentity) throws {
@@ -241,6 +296,9 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         let records = try decoder.decode([DiveSessionRecord].self, from: Data(contentsOf: legacyURL))
         var entries = try loadEntries()
         for record in records {
+            if try isSessionDeleted(record.id) {
+                continue
+            }
             if let existing = entries.first(where: { $0.id == record.id }) {
                 try verifyArtifact(existing.artifact)
                 continue
@@ -258,6 +316,9 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
+        guard try !isSessionDeleted(metadata.localSessionId) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
         let directory = sessionDirectory(for: metadata.localSessionId)
         let metadataURL = activeMetadataURL(for: metadata.localSessionId)
         let journalURL = recordingJournalURL(for: metadata.localSessionId)
@@ -279,7 +340,8 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func append(_ sample: DepthSample, to sessionID: UUID) throws {
-        guard sample.isValidRecordingSample,
+        guard try !isSessionDeleted(sessionID),
+              sample.isValidRecordingSample,
               fileManager.fileExists(atPath: activeMetadataURL(for: sessionID).path),
               fileManager.fileExists(atPath: recordingJournalURL(for: sessionID).path)
         else {
@@ -327,6 +389,10 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
                 guard directory.lastPathComponent == metadata.localSessionId.uuidString else {
                     throw CocoaError(.fileReadCorruptFile)
                 }
+                guard try !isSessionDeleted(metadata.localSessionId) else {
+                    try fileManager.removeItem(at: directory)
+                    continue
+                }
                 _ = try resolvePendingAppend(sessionID: metadata.localSessionId)
                 let journalURL = directory.appendingPathComponent("recording.ndjson")
                 let samples = try loadJournalSamples(at: journalURL)
@@ -352,6 +418,9 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func updateDisplayRecord(_ displayRecord: DiveSessionRecord) throws {
+        guard try !isSessionDeleted(displayRecord.id) else {
+            throw CocoaError(.fileWriteFileExists)
+        }
         var entries = try loadEntries()
         guard let index = entries.firstIndex(where: { $0.id == displayRecord.id }) else {
             throw CocoaError(.fileNoSuchFile)
@@ -367,6 +436,50 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
 
     private var manifestURL: URL {
         rootURL.appendingPathComponent("session-manifest.json")
+    }
+
+    private var deletionLedgerURL: URL {
+        rootURL.appendingPathComponent("deleted-session-ledger.json")
+    }
+
+    private func recordDeletionIntent(_ localSessionId: UUID) throws {
+        var sessionIds = try loadDeletedSessionIds()
+        guard sessionIds.insert(localSessionId).inserted else {
+            return
+        }
+        try saveDeletedSessionIds(sessionIds)
+    }
+
+    private func loadDeletedSessionIds() throws -> Set<UUID> {
+        guard fileManager.fileExists(atPath: deletionLedgerURL.path) else {
+            return []
+        }
+        let ledger = try decoder.decode(
+            DeletedSessionLedger.self,
+            from: Data(contentsOf: deletionLedgerURL)
+        )
+        guard ledger.formatVersion == 1,
+              Set(ledger.sessionIds).count == ledger.sessionIds.count else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        return Set(ledger.sessionIds)
+    }
+
+    private func saveDeletedSessionIds(_ sessionIds: Set<UUID>) throws {
+        try fileManager.createDirectory(
+            at: rootURL,
+            withIntermediateDirectories: true
+        )
+        let ledger = DeletedSessionLedger(
+            formatVersion: 1,
+            sessionIds: sessionIds.sorted {
+                $0.uuidString < $1.uuidString
+            }
+        )
+        try encoder.encode(ledger).write(to: deletionLedgerURL, options: .atomic)
+        guard try loadDeletedSessionIds() == sessionIds else {
+            throw CocoaError(.fileWriteUnknown)
+        }
     }
 
     private func save(entries: [DiveProfileManifestEntry]) throws {

@@ -36,6 +36,7 @@ final class DiveSessionStore: ObservableObject {
             fileManager: fileManager
         )
         preferredDiveMode = Self.loadPreferredDiveMode(from: userDefaults)
+        try? self.profileStore.resumePendingDeletions()
         load()
         loadPlannedDives()
         self.syncTransport.onTransferStatusChanged = { [weak self] artifact, syncStatus in
@@ -51,6 +52,11 @@ final class DiveSessionStore: ObservableObject {
         self.syncTransport.onPlannedDivesChanged = { [weak self] plannedDives in
             Task { @MainActor in
                 self?.replacePlannedDives(plannedDives)
+            }
+        }
+        self.syncTransport.onSessionDeletionRequested = { [weak self] command in
+            Task { @MainActor in
+                self?.handleSessionDeletion(command)
             }
         }
         syncTransport.activate()
@@ -155,6 +161,34 @@ final class DiveSessionStore: ObservableObject {
                 fileURL: profileStore.artifactURL(for: entry.artifact)
             )
             updateSyncStatus(for: entry.artifact, to: syncStatus)
+        }
+    }
+
+    private func handleSessionDeletion(
+        _ command: WatchSessionDeletionCommand
+    ) {
+        syncTransport.cancelTransfers(
+            localSessionId: command.localSessionId
+        )
+        do {
+            let removed = try profileStore.deleteSession(
+                localSessionId: command.localSessionId
+            )
+            sessions.removeAll { $0.id == command.localSessionId }
+            syncTransport.acknowledgeDeletion(
+                WatchSessionDeletionResult(
+                    commandId: command.commandId,
+                    localSessionId: command.localSessionId,
+                    acknowledgedAt: Date(),
+                    outcome: removed == nil ? .alreadyAbsent : .deleted,
+                    removedContentRevision: removed?.contentRevision,
+                    removedArtifactSha256: removed?.artifactSha256
+                )
+            )
+        } catch {
+            assertionFailure(
+                "Failed to delete Watch session \(command.localSessionId): \(error)"
+            )
         }
     }
 

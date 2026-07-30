@@ -12,6 +12,9 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
 
   private static let storageKey = "watchConnectivityPendingPayloads"
   private static let acknowledgementStorageKey = "watchConnectivityPendingAcknowledgements"
+  private static let sessionDeletionStorageKey = "watchConnectivityPendingSessionDeletions"
+  private static let sessionDeletionAcknowledgementStorageKey =
+    "watchConnectivitySessionDeletionAcknowledgements"
   private static let plannedDivesContextStorageKey = "watchConnectivityLatestPlannedDivesJson"
 
   private let connectivitySession: WCSession?
@@ -25,6 +28,8 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   private var isActivated = false
   private var pendingPayloads: [PendingWatchConnectivityPayload] = []
   private var pendingAcknowledgements: [PendingWatchConnectivityAcknowledgement] = []
+  private var pendingSessionDeletions: [PendingWatchSessionDeletion] = []
+  private var sessionDeletionAcknowledgements: [WatchSessionDeletionAcknowledgement] = []
   private var pendingPlannedDivesJson: String?
   private var lastPlannedDivesContextError: NSError?
 
@@ -37,6 +42,11 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       guard let self else { return }
       self.pendingPayloads = Self.loadPendingPayloads(from: self.userDefaults)
       self.pendingAcknowledgements = Self.loadPendingAcknowledgements(from: self.userDefaults)
+      self.pendingSessionDeletions = Self.loadPendingSessionDeletions(
+        from: self.userDefaults
+      )
+      self.sessionDeletionAcknowledgements =
+        Self.loadSessionDeletionAcknowledgements(from: self.userDefaults)
       self.pendingPlannedDivesJson = self.userDefaults.string(
         forKey: Self.plannedDivesContextStorageKey
       )
@@ -145,6 +155,49 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     }
   }
 
+  func queueSessionDeletion(
+    command: [String: Any],
+    completion: @escaping (Result<Void, Error>) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      guard let self else {
+        completion(.failure(WatchSessionDeletionBridgeError.invalidCommand))
+        return
+      }
+      guard let deletion = PendingWatchSessionDeletion(dictionary: command) else {
+        completion(.failure(WatchSessionDeletionBridgeError.invalidCommand))
+        return
+      }
+      if self.sessionDeletionAcknowledgements.contains(where: {
+        $0.commandId == deletion.commandId
+          && $0.localSessionId == deletion.localSessionId
+      }) {
+        completion(.success(()))
+        return
+      }
+      if !self.pendingSessionDeletions.contains(where: {
+        $0.commandId == deletion.commandId
+      }) {
+        self.pendingSessionDeletions.append(deletion)
+        self.persistPendingSessionDeletions()
+      }
+      self.flushPendingSessionDeletionsOnStateQueue()
+      completion(.success(()))
+    }
+  }
+
+  func listSessionDeletionAcknowledgements(
+    completion: @escaping ([[String: Any]]) -> Void
+  ) {
+    stateQueue.async { [weak self] in
+      completion(
+        self?.sessionDeletionAcknowledgements
+          .sorted { $0.acknowledgedAt < $1.acknowledgedAt }
+          .map(\.dictionary) ?? []
+      )
+    }
+  }
+
   func updatePlannedDives(
     json plannedDivesJson: String,
     completion: @escaping ([String: Any]) -> Void
@@ -180,6 +233,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     stateQueue.async { [weak self] in
       self?.flushPendingPlannedDivesContextOnStateQueue()
       self?.flushPendingAcknowledgementsOnStateQueue()
+      self?.flushPendingSessionDeletionsOnStateQueue()
     }
   }
 
@@ -198,6 +252,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
       }
       self?.flushPendingPlannedDivesContextOnStateQueue()
       self?.flushPendingAcknowledgementsOnStateQueue()
+      self?.flushPendingSessionDeletionsOnStateQueue()
     }
   }
 
@@ -209,12 +264,18 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
 
   func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
     stateQueue.async { [weak self] in
+      guard self?.handleSessionDeletionAcknowledgementOnStateQueue(userInfo) == false else {
+        return
+      }
       self?.enqueuePendingPayloadOnStateQueue(from: userInfo)
     }
   }
 
   func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
     stateQueue.async { [weak self] in
+      guard self?.handleSessionDeletionAcknowledgementOnStateQueue(message) == false else {
+        return
+      }
       self?.enqueuePendingPayloadOnStateQueue(from: message)
     }
   }
@@ -612,12 +673,74 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
     }
   }
 
+  private func flushPendingSessionDeletionsOnStateQueue() {
+    guard let connectivitySession,
+          connectivitySession.activationState == .activated,
+          connectivitySession.isPaired,
+          connectivitySession.isWatchAppInstalled else {
+      return
+    }
+    let outstandingCommandIds = Set(
+      connectivitySession.outstandingUserInfoTransfers.compactMap {
+        PendingWatchSessionDeletion.commandId(from: $0.userInfo)
+      }
+    )
+    for deletion in pendingSessionDeletions
+    where !outstandingCommandIds.contains(deletion.commandId) {
+      let dictionary = deletion.dictionary
+      if connectivitySession.isReachable {
+        connectivitySession.sendMessage(dictionary, replyHandler: nil) { _ in }
+      }
+      connectivitySession.transferUserInfo(dictionary)
+    }
+  }
+
+  @discardableResult
+  private func handleSessionDeletionAcknowledgementOnStateQueue(
+    _ dictionary: [String: Any]
+  ) -> Bool {
+    guard dictionary[WatchConnectivityEnvelopeKey.kind] as? String
+      == WatchConnectivityEnvelopeValue.sessionDeletionAcknowledgementKind
+    else {
+      return false
+    }
+    guard let acknowledgement =
+      WatchSessionDeletionAcknowledgement(dictionary: dictionary),
+      pendingSessionDeletions.contains(where: {
+        $0.commandId == acknowledgement.commandId
+          && $0.localSessionId == acknowledgement.localSessionId
+      }) else {
+      return true
+    }
+
+    pendingSessionDeletions.removeAll {
+      $0.commandId == acknowledgement.commandId
+        && $0.localSessionId == acknowledgement.localSessionId
+    }
+    if !sessionDeletionAcknowledgements.contains(where: {
+      $0.commandId == acknowledgement.commandId
+    }) {
+      sessionDeletionAcknowledgements.append(acknowledgement)
+    }
+    persistPendingSessionDeletions()
+    persistSessionDeletionAcknowledgements()
+    return true
+  }
+
   func session(
     _ session: WCSession,
     didFinish userInfoTransfer: WCSessionUserInfoTransfer,
     error: Error?
   ) {
     stateQueue.async { [weak self] in
+      if PendingWatchSessionDeletion.commandId(
+        from: userInfoTransfer.userInfo
+      ) != nil {
+        // Delivery completion is not deletion completion. Keep the durable
+        // command until the Watch ACK arrives and retry on the next normal
+        // activation/reachability/reconciliation trigger.
+        return
+      }
       guard error == nil,
             let identity = PendingWatchConnectivityAcknowledgement.identity(
               from: userInfoTransfer.userInfo
@@ -818,6 +941,46 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   ) -> [PendingWatchConnectivityAcknowledgement] {
     guard let data = userDefaults.data(forKey: acknowledgementStorageKey) else { return [] }
     return (try? JSONDecoder().decode([PendingWatchConnectivityAcknowledgement].self, from: data)) ?? []
+  }
+
+  private func persistPendingSessionDeletions() {
+    userDefaults.set(
+      try? JSONEncoder().encode(pendingSessionDeletions),
+      forKey: Self.sessionDeletionStorageKey
+    )
+  }
+
+  private static func loadPendingSessionDeletions(
+    from userDefaults: UserDefaults
+  ) -> [PendingWatchSessionDeletion] {
+    guard let data = userDefaults.data(forKey: sessionDeletionStorageKey) else {
+      return []
+    }
+    return (try? JSONDecoder().decode(
+      [PendingWatchSessionDeletion].self,
+      from: data
+    )) ?? []
+  }
+
+  private func persistSessionDeletionAcknowledgements() {
+    userDefaults.set(
+      try? JSONEncoder().encode(sessionDeletionAcknowledgements),
+      forKey: Self.sessionDeletionAcknowledgementStorageKey
+    )
+  }
+
+  private static func loadSessionDeletionAcknowledgements(
+    from userDefaults: UserDefaults
+  ) -> [WatchSessionDeletionAcknowledgement] {
+    guard let data = userDefaults.data(
+      forKey: sessionDeletionAcknowledgementStorageKey
+    ) else {
+      return []
+    }
+    return (try? JSONDecoder().decode(
+      [WatchSessionDeletionAcknowledgement].self,
+      from: data
+    )) ?? []
   }
 
   private func persistPendingFile(
@@ -1027,6 +1190,180 @@ private struct PendingWatchConnectivityAcknowledgement: Codable, Equatable {
   }
 }
 
+private struct PendingWatchSessionDeletion: Codable, Equatable {
+  let formatVersion: Int
+  let commandId: String
+  let localSessionId: String
+  let requestedAt: TimeInterval
+  let contentRevision: String?
+  let artifactSha256: String?
+
+  init?(dictionary: [String: Any]) {
+    let allowedKeys = Set([
+      WatchConnectivityEnvelopeKey.formatVersion,
+      WatchConnectivityEnvelopeKey.commandId,
+      WatchConnectivityEnvelopeKey.localSessionId,
+      WatchConnectivityEnvelopeKey.requestedAt,
+      WatchConnectivityEnvelopeKey.contentRevision,
+      WatchConnectivityEnvelopeKey.artifactSha256
+    ])
+    guard Set(dictionary.keys).isSubset(of: allowedKeys),
+          dictionary[WatchConnectivityEnvelopeKey.formatVersion] as? Int == 1,
+          let commandId = dictionary[WatchConnectivityEnvelopeKey.commandId] as? String,
+          Self.isSHA256(commandId),
+          let localSessionId = dictionary[WatchConnectivityEnvelopeKey.localSessionId] as? String,
+          !localSessionId.isEmpty,
+          localSessionId.count <= 512,
+          let requestedAtNumber = dictionary[
+            WatchConnectivityEnvelopeKey.requestedAt
+          ] as? NSNumber,
+          CFGetTypeID(requestedAtNumber) != CFBooleanGetTypeID(),
+          requestedAtNumber.doubleValue.isFinite,
+          requestedAtNumber.doubleValue >= 0 else {
+      return nil
+    }
+    let contentRevision =
+      dictionary[WatchConnectivityEnvelopeKey.contentRevision] as? String
+    let artifactSha256 =
+      dictionary[WatchConnectivityEnvelopeKey.artifactSha256] as? String
+    guard (contentRevision == nil) == (artifactSha256 == nil),
+          contentRevision.map({ !$0.isEmpty && $0.count <= 512 }) ?? true,
+          artifactSha256.map(Self.isSHA256) ?? true else {
+      return nil
+    }
+
+    self.formatVersion = 1
+    self.commandId = commandId
+    self.localSessionId = localSessionId
+    self.requestedAt = requestedAtNumber.doubleValue
+    self.contentRevision = contentRevision
+    self.artifactSha256 = artifactSha256
+  }
+
+  static func commandId(from dictionary: [String: Any]) -> String? {
+    guard dictionary[WatchConnectivityEnvelopeKey.kind] as? String
+      == WatchConnectivityEnvelopeValue.sessionDeletionCommandKind,
+      let commandId = dictionary[
+        WatchConnectivityEnvelopeKey.commandId
+      ] as? String else {
+      return nil
+    }
+    return commandId
+  }
+
+  var dictionary: [String: Any] {
+    var value: [String: Any] = [
+      WatchConnectivityEnvelopeKey.kind:
+        WatchConnectivityEnvelopeValue.sessionDeletionCommandKind,
+      WatchConnectivityEnvelopeKey.formatVersion: formatVersion,
+      WatchConnectivityEnvelopeKey.commandId: commandId,
+      WatchConnectivityEnvelopeKey.localSessionId: localSessionId,
+      WatchConnectivityEnvelopeKey.requestedAt: requestedAt
+    ]
+    if let contentRevision, let artifactSha256 {
+      value[WatchConnectivityEnvelopeKey.contentRevision] = contentRevision
+      value[WatchConnectivityEnvelopeKey.artifactSha256] = artifactSha256
+    }
+    return value
+  }
+
+  private static func isSHA256(_ value: String) -> Bool {
+    value.range(
+      of: "^[0-9a-f]{64}$",
+      options: .regularExpression
+    ) != nil
+  }
+}
+
+private struct WatchSessionDeletionAcknowledgement: Codable, Equatable {
+  let formatVersion: Int
+  let commandId: String
+  let localSessionId: String
+  let acknowledgedAt: TimeInterval
+  let result: String
+  let removedContentRevision: String?
+  let removedArtifactSha256: String?
+
+  init?(dictionary: [String: Any]) {
+    let allowedKeys = Set([
+      WatchConnectivityEnvelopeKey.kind,
+      WatchConnectivityEnvelopeKey.formatVersion,
+      WatchConnectivityEnvelopeKey.commandId,
+      WatchConnectivityEnvelopeKey.localSessionId,
+      WatchConnectivityEnvelopeKey.acknowledgedAt,
+      WatchConnectivityEnvelopeKey.result,
+      WatchConnectivityEnvelopeKey.removedContentRevision,
+      WatchConnectivityEnvelopeKey.removedArtifactSha256
+    ])
+    guard Set(dictionary.keys).isSubset(of: allowedKeys),
+          dictionary[WatchConnectivityEnvelopeKey.kind] as? String
+            == WatchConnectivityEnvelopeValue.sessionDeletionAcknowledgementKind,
+          dictionary[WatchConnectivityEnvelopeKey.formatVersion] as? Int == 1,
+          let commandId = dictionary[WatchConnectivityEnvelopeKey.commandId] as? String,
+          commandId.range(
+            of: "^[0-9a-f]{64}$",
+            options: .regularExpression
+          ) != nil,
+          let localSessionId = dictionary[WatchConnectivityEnvelopeKey.localSessionId] as? String,
+          !localSessionId.isEmpty,
+          localSessionId.count <= 512,
+          let acknowledgedAtNumber = dictionary[
+            WatchConnectivityEnvelopeKey.acknowledgedAt
+          ] as? NSNumber,
+          CFGetTypeID(acknowledgedAtNumber) != CFBooleanGetTypeID(),
+          acknowledgedAtNumber.doubleValue.isFinite,
+          acknowledgedAtNumber.doubleValue >= 0,
+          let result = dictionary[WatchConnectivityEnvelopeKey.result] as? String,
+          result == WatchConnectivityEnvelopeValue.deleted
+            || result == WatchConnectivityEnvelopeValue.alreadyAbsent else {
+      return nil
+    }
+    let removedContentRevision =
+      dictionary[WatchConnectivityEnvelopeKey.removedContentRevision] as? String
+    let removedArtifactSha256 =
+      dictionary[WatchConnectivityEnvelopeKey.removedArtifactSha256] as? String
+    guard (removedContentRevision == nil) == (removedArtifactSha256 == nil),
+          removedContentRevision.map({ !$0.isEmpty && $0.count <= 512 }) ?? true,
+          removedArtifactSha256.map({
+            $0.range(
+              of: "^[0-9a-f]{64}$",
+              options: .regularExpression
+            ) != nil
+          }) ?? true else {
+      return nil
+    }
+
+    self.formatVersion = 1
+    self.commandId = commandId
+    self.localSessionId = localSessionId
+    self.acknowledgedAt = acknowledgedAtNumber.doubleValue
+    self.result = result
+    self.removedContentRevision = removedContentRevision
+    self.removedArtifactSha256 = removedArtifactSha256
+  }
+
+  var dictionary: [String: Any] {
+    var value: [String: Any] = [
+      WatchConnectivityEnvelopeKey.formatVersion: formatVersion,
+      WatchConnectivityEnvelopeKey.commandId: commandId,
+      WatchConnectivityEnvelopeKey.localSessionId: localSessionId,
+      WatchConnectivityEnvelopeKey.acknowledgedAt: acknowledgedAt,
+      WatchConnectivityEnvelopeKey.result: result
+    ]
+    if let removedContentRevision, let removedArtifactSha256 {
+      value[WatchConnectivityEnvelopeKey.removedContentRevision] =
+        removedContentRevision
+      value[WatchConnectivityEnvelopeKey.removedArtifactSha256] =
+        removedArtifactSha256
+    }
+    return value
+  }
+}
+
+private enum WatchSessionDeletionBridgeError: Error {
+  case invalidCommand
+}
+
 private typealias UpdateApplicationContextIMP = @convention(c) (
   AnyObject,
   Selector,
@@ -1044,19 +1381,31 @@ private enum PlannedDivesContextUpdateErrorCode: Int {
 
 private enum WatchConnectivityEnvelopeKey {
   static let kind = "kind"
+  static let formatVersion = "formatVersion"
+  static let commandId = "commandId"
   static let payloadBase64 = "payloadBase64"
   static let localSessionId = "localSessionId"
+  static let requestedAt = "requestedAt"
   static let acknowledgedAt = "acknowledgedAt"
   static let plannedDivesJson = "plannedDivesJson"
   static let updatedAt = "updatedAt"
   static let contentRevision = "contentRevision"
+  static let artifactSha256 = "artifactSha256"
   static let sha256 = "sha256"
   static let byteCount = "byteCount"
   static let sampleCount = "sampleCount"
+  static let result = "result"
+  static let removedContentRevision = "removedContentRevision"
+  static let removedArtifactSha256 = "removedArtifactSha256"
 }
 
 private enum WatchConnectivityEnvelopeValue {
   static let kind = "watchSyncMessage"
   static let acknowledgementKind = "watchSyncAcknowledgement"
+  static let sessionDeletionCommandKind = "watchSessionDeletionCommand"
+  static let sessionDeletionAcknowledgementKind =
+    "watchSessionDeletionAcknowledgement"
   static let plannedDivesKind = "watchPlannedDives"
+  static let deleted = "deleted"
+  static let alreadyAbsent = "alreadyAbsent"
 }

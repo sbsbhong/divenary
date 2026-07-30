@@ -32,6 +32,27 @@ describe('WatchLogDeletionStore', () => {
     });
   });
 
+  it('does not rewrite an acknowledgement that is already durable', async () => {
+    const storage = new MemoryStorage();
+    const store = createWatchLogDeletionStore({storage});
+
+    await store.record({
+      localSessionId: 'watch-session-1',
+      sourceLocalId: 'log-1',
+      requestedAt: 100,
+    });
+    await store.acknowledge('watch-session-1', 110);
+    const writesAfterFirstAcknowledgement = storage.writeCount;
+
+    await store.acknowledge('watch-session-1', 110);
+    await store.acknowledge('watch-session-1', 109);
+
+    expect(storage.writeCount).toBe(writesAfterFirstAcknowledgement);
+    expect(await store.get('watch-session-1')).toMatchObject({
+      watchAcknowledgedAt: 110,
+    });
+  });
+
   it('merges repeated deletion evidence by logical Watch session', async () => {
     const storage = new MemoryStorage();
     const store = createWatchLogDeletionStore({storage});
@@ -134,12 +155,14 @@ describe('WatchLogDeletionStore', () => {
 
 class MemoryStorage implements PersistentKeyValueStore {
   protected readonly values = new Map<string, string>();
+  writeCount = 0;
 
   async getString(key: string): Promise<string | undefined> {
     return this.values.get(key);
   }
 
   async setString(key: string, value: string): Promise<void> {
+    this.writeCount += 1;
     this.values.set(key, value);
   }
 
@@ -157,11 +180,11 @@ class PausedFirstWriteStorage extends MemoryStorage {
   private readonly resume = new Promise<void>(resolve => {
     this.resolveResumeFirstWrite = resolve;
   });
-  private writeCount = 0;
+  private pausedWriteCount = 0;
 
   override async setString(key: string, value: string): Promise<void> {
-    this.writeCount += 1;
-    if (this.writeCount === 1) {
+    this.pausedWriteCount += 1;
+    if (this.pausedWriteCount === 1) {
       this.resolveFirstWriteStarted();
       await this.resume;
     }

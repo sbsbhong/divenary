@@ -118,6 +118,14 @@ export function createWatchLogDeletionStore(
         if (index < 0) {
           return;
         }
+        const currentAcknowledgedAt =
+          envelope.tombstones[index]!.watchAcknowledgedAt;
+        if (
+          currentAcknowledgedAt !== undefined &&
+          currentAcknowledgedAt >= acknowledgedAt
+        ) {
+          return;
+        }
         envelope.tombstones[index] = {
           ...envelope.tombstones[index]!,
           watchAcknowledgedAt: acknowledgedAt,

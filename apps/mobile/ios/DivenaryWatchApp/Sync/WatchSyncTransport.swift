@@ -5,9 +5,12 @@ protocol WatchSyncTransporting: AnyObject {
     var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)? { get set }
     var onActivationCompleted: (() -> Void)? { get set }
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)? { get set }
+    var onSessionDeletionRequested: ((WatchSessionDeletionCommand) -> Void)? { get set }
 
     func activate()
     func enqueue(artifact: DiveProfileArtifactIdentity, fileURL: URL) -> DiveSyncStatus
+    func cancelTransfers(localSessionId: UUID)
+    func acknowledgeDeletion(_ result: WatchSessionDeletionResult)
     func refreshPlannedDives()
 }
 
@@ -15,6 +18,7 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
     var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)?
     var onActivationCompleted: (() -> Void)?
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)?
+    var onSessionDeletionRequested: ((WatchSessionDeletionCommand) -> Void)?
 
     private let connectivitySession: WCSession?
     private let fileManager: FileManager
@@ -54,6 +58,36 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
             )
         }
         return .pending
+    }
+
+    func cancelTransfers(localSessionId: UUID) {
+        guard let connectivitySession else {
+            return
+        }
+        for fileTransfer in connectivitySession.outstandingFileTransfers {
+            guard let metadata = fileTransfer.file.metadata,
+                  let artifact = WatchSyncEnvelope.artifactIdentity(
+                    from: metadata
+                  ),
+                  artifact.localSessionId == localSessionId else {
+                continue
+            }
+            fileTransfer.cancel()
+        }
+    }
+
+    func acknowledgeDeletion(_ result: WatchSessionDeletionResult) {
+        guard let connectivitySession else {
+            return
+        }
+        let acknowledgement = result.dictionary
+        if connectivitySession.isReachable {
+            connectivitySession.sendMessage(
+                acknowledgement,
+                replyHandler: nil
+            ) { _ in }
+        }
+        connectivitySession.transferUserInfo(acknowledgement)
     }
 
     func refreshPlannedDives() {
@@ -110,6 +144,9 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
     }
 
     func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        guard !handleSessionDeletion(userInfo: userInfo) else {
+            return
+        }
         guard !handlePlannedDives(userInfo: userInfo) else {
             return
         }
@@ -118,6 +155,9 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard !handleSessionDeletion(userInfo: message) else {
+            return
+        }
         guard !handlePlannedDives(userInfo: message) else {
             return
         }
@@ -154,6 +194,22 @@ final class WatchSyncTransport: NSObject, WatchSyncTransporting, WCSessionDelega
         DispatchQueue.main.async { [weak self] in
             self?.onTransferStatusChanged?(artifact, .synced)
         }
+    }
+
+    private func handleSessionDeletion(userInfo: [String: Any]) -> Bool {
+        guard userInfo[WatchSyncEnvelope.kindKey] as? String
+                == WatchSyncEnvelope.sessionDeletionCommandKind else {
+            return false
+        }
+        guard let command = WatchSessionDeletionCommand(
+            dictionary: userInfo
+        ) else {
+            return true
+        }
+        DispatchQueue.main.async { [weak self] in
+            self?.onSessionDeletionRequested?(command)
+        }
+        return true
     }
 
     private func handlePlannedDives(userInfo: [String: Any]) -> Bool {

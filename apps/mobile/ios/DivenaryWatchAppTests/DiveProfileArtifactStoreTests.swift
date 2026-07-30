@@ -282,6 +282,99 @@ final class DiveProfileArtifactStoreTests: XCTestCase {
         XCTAssertEqual(try store.loadEntries().count, 1)
     }
 
+    func testDeleteSessionDurablyRemovesManifestArtifactAndBlocksResurrection() throws {
+        let rootURL = temporaryDirectory()
+        let store = DiveProfileArtifactStore(
+            rootURL: rootURL,
+            makeRevision: { "deleted-revision" }
+        )
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 20)
+        let entry = try store.finalize(record: record)
+        let artifactURL = store.artifactURL(for: entry.artifact)
+
+        let removed = try store.deleteSession(localSessionId: record.id)
+
+        XCTAssertEqual(removed?.localSessionId, record.id)
+        XCTAssertEqual(removed?.contentRevision, entry.artifact.contentRevision)
+        XCTAssertEqual(removed?.artifactSha256, entry.artifact.sha256)
+        XCTAssertTrue(try store.loadEntries().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertTrue(try store.isSessionDeleted(record.id))
+        XCTAssertNil(try store.deleteSession(localSessionId: record.id))
+        XCTAssertThrowsError(try store.finalize(record: record))
+    }
+
+    func testResumePendingDeletionFinishesAfterManifestCommitPrecedesFileRemoval() throws {
+        let rootURL = temporaryDirectory()
+        let sessionID = UUID(
+            uuidString: "00000000-0000-0000-0000-00000000012D"
+        )!
+        let fileManager = FailFirstSessionRemovalFileManager(
+            sessionID: sessionID
+        )
+        let store = DiveProfileArtifactStore(
+            rootURL: rootURL,
+            fileManager: fileManager,
+            makeRevision: { "interrupted-delete" }
+        )
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 20)
+            .withIdentity(sessionID)
+        let entry = try store.finalize(record: record)
+        let artifactURL = store.artifactURL(for: entry.artifact)
+
+        XCTAssertThrowsError(
+            try store.deleteSession(localSessionId: sessionID)
+        )
+        XCTAssertTrue(try store.loadEntries().isEmpty)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertTrue(try store.isSessionDeleted(sessionID))
+
+        let reconstructed = DiveProfileArtifactStore(rootURL: rootURL)
+        try reconstructed.resumePendingDeletions()
+
+        XCTAssertTrue(try reconstructed.loadEntries().isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertTrue(try reconstructed.isSessionDeleted(sessionID))
+    }
+
+    func testLegacyMigrationCannotRestoreADeletedSession() throws {
+        let rootURL = temporaryDirectory()
+        let legacyURL = rootURL.appendingPathComponent(
+            "savedDiveSessionRecords.json"
+        )
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 20)
+        let store = DiveProfileArtifactStore(rootURL: rootURL)
+        _ = try store.deleteSession(localSessionId: record.id)
+        try JSONEncoder().encode([record]).write(
+            to: legacyURL,
+            options: .atomic
+        )
+
+        let migrated = try store.migrateLegacyRecords(at: legacyURL)
+
+        XCTAssertTrue(migrated.isEmpty)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacyURL.path))
+        XCTAssertTrue(try store.isSessionDeleted(record.id))
+    }
+
+    func testDeletingAnAlreadyAbsentSessionDoesNotCreateAnEmptyManifest() throws {
+        let rootURL = temporaryDirectory()
+        let store = DiveProfileArtifactStore(rootURL: rootURL)
+        let sessionID = UUID(
+            uuidString: "00000000-0000-0000-0000-00000000012E"
+        )!
+
+        XCTAssertNil(try store.deleteSession(localSessionId: sessionID))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: rootURL
+                    .appendingPathComponent("session-manifest.json")
+                    .path
+            )
+        )
+        XCTAssertTrue(try store.isSessionDeleted(sessionID))
+    }
+
     private func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("DiveProfileArtifactStoreTests")
@@ -323,6 +416,29 @@ private final class FailFirstPendingRemovalFileManager: FileManager {
     override func removeItem(at URL: URL) throws {
         if !didFailPendingRemoval, URL.lastPathComponent == "recording-pending.json" {
             didFailPendingRemoval = true
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.removeItem(at: URL)
+    }
+}
+
+private final class FailFirstSessionRemovalFileManager: FileManager {
+    private let sessionID: UUID
+    private var didFailSessionRemoval = false
+
+    init(sessionID: UUID) {
+        self.sessionID = sessionID
+        super.init()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func removeItem(at URL: URL) throws {
+        if !didFailSessionRemoval,
+           URL.lastPathComponent == sessionID.uuidString {
+            didFailSessionRemoval = true
             throw CocoaError(.fileWriteNoPermission)
         }
         try super.removeItem(at: URL)

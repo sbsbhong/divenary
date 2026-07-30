@@ -37,7 +37,10 @@ import {
   type WatchLogDeletionStore,
   type WatchLogDeletionTombstone,
 } from '../deletion/watch-log-deletion-store';
-import {queueWatchSessionDeletion} from '../native/watch-connectivity';
+import {
+  listWatchSessionDeletionAcknowledgements,
+  queueWatchSessionDeletion,
+} from '../native/watch-connectivity';
 import type {
   GuestClaimProgress,
   GuestClaimViewState,
@@ -157,6 +160,8 @@ export type AccountDataDependencies = PrincipalRepositoryDependencies & {
   now: () => number;
   jitter: () => number;
   queueWatchSessionDeletion: typeof queueWatchSessionDeletion;
+  listWatchSessionDeletionAcknowledgements:
+    typeof listWatchSessionDeletionAcknowledgements;
 };
 
 type AccountLocalFirstRepositoryOptions = {
@@ -440,6 +445,8 @@ export function AccountDataProviderCore({
           tombstones: watchDeletionStore,
           repository: rawVisibleLogbook,
           queueDeletion: dependencies.queueWatchSessionDeletion,
+          listAcknowledgements:
+            dependencies.listWatchSessionDeletionAcknowledgements,
           beforeDelete: async tombstone => {
             await publication.beforeWatchLogDelete?.(tombstone);
           },
@@ -462,7 +469,6 @@ export function AccountDataProviderCore({
         throw new Error('Watch deletion coordinator was not initialized.');
       }
       nextPublication.beforeWatchLogDelete = undefined;
-      await watchDeletionCoordinator.reconcile();
 
       if (
         desiredPrincipal.kind === 'user' &&
@@ -581,6 +587,7 @@ export function AccountDataProviderCore({
         nextPublication.claimService = undefined;
         nextPublication.beforeWatchLogDelete = undefined;
       }
+      await watchDeletionCoordinator.reconcile();
 
       if (!isCurrent()) {
         return;
@@ -3023,6 +3030,7 @@ function getDefaultDependencies(): AccountDataDependencies {
     now: () => Date.now() / 1_000,
     jitter: Math.random,
     queueWatchSessionDeletion,
+    listWatchSessionDeletionAcknowledgements,
   };
   return defaultDependencies;
 }

@@ -183,6 +183,92 @@ describe('account data state', () => {
     queryClient.clear();
   });
 
+  it('abandons a stale Watch claim from a persisted tombstone before bootstrap resumes it', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const deletedWatchEntry = {
+      ...watchEntry,
+      watchCapture: {
+        ...watchEntry.watchCapture!,
+        profile: undefined,
+      },
+    };
+    const guestLogbook = new LocalDiveLogRepository([deletedWatchEntry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const claimStore = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 100,
+    });
+    const batchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    await claimStore.write(snapshot);
+    await createWatchLogDeletionStore({storage: metadataStorage}).record({
+      localSessionId: 'watch-session-1',
+      sourceLocalId: deletedWatchEntry.localId,
+      requestedAt: 110,
+    });
+    await guestLogbook.delete(deletedWatchEntry.localId);
+
+    const remote = guestClaimRepository();
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady={false}
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage,
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            queueWatchSessionDeletion: jest.fn(async () => undefined),
+            listWatchSessionDeletionAcknowledgements: jest.fn(async () => []),
+            createId: () => batchId,
+            now: () => 120,
+            jitter: () => 0,
+          }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    await waitFor(() => expect(remote.abandon).toHaveBeenCalledWith(batchId));
+    await expect(claimStore.read()).resolves.toBeUndefined();
+    expect(remote.finalize).not.toHaveBeenCalledWith(batchId);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
   it('publishes local account rows before scheduling the initial cloud hydration', async () => {
     const localLogbook = new LocalDiveLogRepository([entry]);
     const remote = accountRepository();

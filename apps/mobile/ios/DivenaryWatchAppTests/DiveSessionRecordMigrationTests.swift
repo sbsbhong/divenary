@@ -225,6 +225,50 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testStoreHandlesMobileDeletionCommandAndAcknowledgesPhysicalRemoval() async throws {
+        let userDefaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let rootURL = storageURL.deletingLastPathComponent()
+        let profileStore = DiveProfileArtifactStore(rootURL: rootURL)
+        let transport = StubWatchSyncTransport(enqueueStatus: .pending)
+        let store = DiveSessionStore(
+            userDefaults: userDefaults,
+            syncTransport: transport,
+            recordsStorageURL: storageURL,
+            profileStore: profileStore
+        )
+        let record = Self.debugFreediveRecord()
+        XCTAssertTrue(store.save(record))
+        let entry = try XCTUnwrap(profileStore.loadEntries().first)
+        let artifactURL = profileStore.artifactURL(for: entry.artifact)
+        let command = try XCTUnwrap(WatchSessionDeletionCommand(dictionary: [
+            WatchSyncEnvelope.kindKey:
+                WatchSyncEnvelope.sessionDeletionCommandKind,
+            WatchSyncEnvelope.formatVersionKey: 1,
+            WatchSyncEnvelope.commandIdKey: String(repeating: "d", count: 64),
+            WatchSyncEnvelope.localSessionIdKey: record.id.uuidString,
+            WatchSyncEnvelope.requestedAtKey: 300.0,
+            WatchSyncEnvelope.contentRevisionKey:
+                entry.artifact.contentRevision,
+            WatchSyncEnvelope.artifactSha256Key: entry.artifact.sha256,
+        ]))
+
+        transport.onSessionDeletionRequested?(command)
+        await Task.yield()
+
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertEqual(transport.cancelledSessionIds, [record.id])
+        XCTAssertEqual(transport.deletionResults.count, 1)
+        XCTAssertEqual(transport.deletionResults.first?.outcome, .deleted)
+        XCTAssertEqual(
+            transport.deletionResults.first?.removedContentRevision,
+            entry.artifact.contentRevision
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: artifactURL.path))
+        XCTAssertTrue(try profileStore.isSessionDeleted(record.id))
+    }
+
+    @MainActor
     func testStoreAcceptsCanonicalIdenticalRetryAfterCleanupFailure() throws {
         let userDefaults = makeIsolatedUserDefaults()
         let storageURL = makeIsolatedRecordsStorageURL()
@@ -1214,6 +1258,7 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     var onTransferStatusChanged: ((DiveProfileArtifactIdentity, DiveSyncStatus) -> Void)?
     var onActivationCompleted: (() -> Void)?
     var onPlannedDivesChanged: (([WatchPlannedDive]) -> Void)?
+    var onSessionDeletionRequested: ((WatchSessionDeletionCommand) -> Void)?
 
     var onEnqueue: (() -> Void)?
     private var enqueueStatuses: [DiveSyncStatus]
@@ -1221,6 +1266,8 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     private(set) var enqueuedArtifacts: [DiveProfileArtifactIdentity] = []
     private(set) var enqueuedFileURLs: [URL] = []
     private(set) var activateCallCount = 0
+    private(set) var cancelledSessionIds: [UUID] = []
+    private(set) var deletionResults: [WatchSessionDeletionResult] = []
 
     init(enqueueStatus: DiveSyncStatus) {
         enqueueStatuses = [enqueueStatus]
@@ -1248,6 +1295,14 @@ private final class StubWatchSyncTransport: WatchSyncTransporting {
     }
 
     func refreshPlannedDives() {}
+
+    func cancelTransfers(localSessionId: UUID) {
+        cancelledSessionIds.append(localSessionId)
+    }
+
+    func acknowledgeDeletion(_ result: WatchSessionDeletionResult) {
+        deletionResults.append(result)
+    }
 }
 
 private final class RevisionSequence {
