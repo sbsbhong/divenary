@@ -83,14 +83,38 @@ final class SafetyStopControllerTests: XCTestCase {
         XCTAssertEqual(controller.record.completedAt, EngineTestFixtures.date(182))
     }
 
-    func testCompletedStateIsNotResetByLaterBelowArmDepthUpdate() {
-        var controller = activeController()
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(182, depth: 5))
-        controller.update(maxDepthMeters: 9.9, sample: EngineTestFixtures.sample(190, depth: 0))
+    func testCompletedStateRemainsCompletedWhileCurrentDepthIsBelowArmDepth() {
+        var controller = completedController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(190, depth: 9.9))
 
         XCTAssertEqual(controller.record.status, .completed)
-        XCTAssertTrue(controller.record.required)
         XCTAssertTrue(controller.record.completed)
+        XCTAssertEqual(controller.record.completedAt, EngineTestFixtures.date(182))
+    }
+
+    func testCompletedStateRearmsAtCurrentArmDepth() {
+        var controller = completedController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(190, depth: 10))
+
+        XCTAssertEqual(controller.record.status, .armed)
+        XCTAssertTrue(controller.record.required)
+        XCTAssertFalse(controller.record.completed)
+        XCTAssertEqual(controller.record.remainingSeconds, 180, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 0, accuracy: 0.01)
+        XCTAssertNil(controller.record.startedAt)
+        XCTAssertNil(controller.record.completedAt)
+    }
+
+    func testRearmedStopStartsFreshCountdownOnReturningToCountingZone() {
+        var controller = completedController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(190, depth: 10))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(200, depth: 5))
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(210, depth: 5))
+
+        XCTAssertEqual(controller.record.status, .active)
+        XCTAssertEqual(controller.record.startedAt, EngineTestFixtures.date(200))
+        XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 10, accuracy: 0.01)
     }
 
     func testSurfacingBeforeCompletionMarksIncomplete() {
@@ -185,6 +209,12 @@ final class SafetyStopControllerTests: XCTestCase {
     private func activeControllerWithTenSecondsCredited() -> SafetyStopController {
         var controller = activeController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 5))
+        return controller
+    }
+
+    private func completedController() -> SafetyStopController {
+        var controller = activeController()
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(182, depth: 5))
         return controller
     }
 }

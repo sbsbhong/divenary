@@ -46,7 +46,12 @@ struct SafetyStopController {
     mutating func update(maxDepthMeters: Double, sample: DepthSample) {
         defer { lastSample = sample }
 
-        guard status != .completed && status != .skippedOrIncomplete else {
+        if status == .completed {
+            guard sample.depthMeters >= configuration.armDepthMeters else { return }
+            rearmCompletedStop()
+        }
+
+        guard status != .skippedOrIncomplete else {
             return
         }
 
@@ -84,6 +89,15 @@ struct SafetyStopController {
     mutating func markSurfaced(at _: Date) {
         guard status != .completed && status != .notRequired else { return }
         status = .skippedOrIncomplete
+    }
+
+    private mutating func rearmCompletedStop() {
+        startedAt = nil
+        outsideZoneStartedAt = nil
+        completedAt = nil
+        remainingSeconds = configuration.durationSeconds
+        timeInZoneSeconds = 0
+        status = .armed
     }
 
     private func elapsedSinceLastSample(to sample: DepthSample) -> TimeInterval {
