@@ -1102,3 +1102,10 @@
 - Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지 관찰은 아직 검증하지 않았다.
 
 ## [2026-07-29] lint | 0 issues found, 0 auto-fixed
+
+## [2026-08-02] ingest | Safety stop rearm after redescent
+- Added: Safety stop rearm after redescent raw source
+- Updated: Diving App / Scuba Mode
+- Updated: Knowledge Base Index
+- Recorded: completed 권장 스탑 뒤 현재 수심이 10m에 다시 도달하면 같은 recording에서 180초 리마인더를 재무장한다.
+- Clarified: 이 동작은 감압·조직 포화 계산이 아닌 고정 리마인더 규칙이며 기존 completed/armed contract를 재사용한다.
