@@ -1,11 +1,11 @@
 # Diving App / Scuba Mode
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md)
-Updated: 2026-07-09
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; Diving App repository implementation, 2026-07-05; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; safety stop redescent rearm decision and implementation, 2026-08-02
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Safety stop rearm after redescent](../../raw/architecture/2026-08-02-safety-stop-rearm-after-redescent.md)
+Updated: 2026-08-02
 Status: Draft / Needs Validation / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-07-09
+Last reviewed: 2026-08-02
 Change policy: scuba requirements require explicit safety review
 Related pages: [Diving App / Immutable Algorithm Reference](../algorithms/diving-app-algorithm-reference.md); [Diving App / State Management](../architecture/diving-app-state-management.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md); [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotiable-safety-rules.md)
 Slug: diving-app-scuba-mode
@@ -65,6 +65,8 @@ else:
 ## v1 Air-only safety stop 범위
 
 v1 스쿠버는 40m 이하 Apple Watch 기반 Air-only로 시작한다. Safety stop은 스쿠버 앱의 기본 사용성을 위해 포함하되, 감압 모델이나 tissue state 기반 판단이 아니라 rule-based 리마인더와 타이머로 제한한다. 현재 기본값은 max depth threshold 도달 후 stop reminder를 arm하고, 5m/180초 target과 3-6m displayed zone을 사용한다. Countdown은 stop zone 안에서만 줄고, 너무 깊거나 얕으면 pause된다. Safety stop은 권장 리마인더이고 decompression stop 또는 감압 정지와 같은 말로 쓰지 않는다.
+
+권장 스탑이 완료된 뒤 현재 수심이 `armDepthMeters`의 기본값인 10m에 다시 도달하면 기존 `armed` 상태로 재무장한다. 이때 남은 시간은 180초, stop zone 누적 시간은 0으로 초기화하고 이전 시작·완료 시각을 지운다. 재무장 판단은 session의 과거 `maxDepthMeters`가 아니라 현재 depth sample을 사용한다. 이는 감압 또는 생리 계산식이 아니라 같은 recording 안에서 다시 깊어진 경우에 적용하는 고정 리마인더 규칙이다. 완료 전 counting zone 이탈에 적용되는 기존 30초 reset 규칙은 그대로 유지한다.
 
 현재 코드에는 safety stop record의 `required` field가 compatibility field로 남아 있지만, v1 제품 의미는 의무 정지가 아니라 권장 리마인더다. 새 payload는 optional `recommendationType: "recommended"`를 사용할 수 있고, user-facing summary/detail은 required wording 대신 recommendation wording을 사용한다. 다음 고위험 설계에서는 `recommended`, `advisory`, `mandatory/decompression` 같은 용어와 contract migration 필요성을 다시 검토해야 한다.
 

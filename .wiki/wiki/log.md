@@ -1117,3 +1117,10 @@
 - Recorded: Release는 staging Auth를 차단하고, physical Debug 검증은 feature Metro를 별도 포트와 explicit `RCT_jsLocation`으로 고정해야 다른 worktree JS와 섞이지 않는다.
 
 ## [2026-08-02] lint | 0 issues found, 0 auto-fixed
+
+## [2026-08-02] ingest | Safety stop rearm after redescent
+- Added: Safety stop rearm after redescent raw source
+- Updated: Diving App / Scuba Mode
+- Updated: Knowledge Base Index
+- Recorded: completed 권장 스탑 뒤 현재 수심이 10m에 다시 도달하면 같은 recording에서 180초 리마인더를 재무장한다.
+- Clarified: 이 동작은 감압·조직 포화 계산이 아닌 고정 리마인더 규칙이며 기존 completed/armed contract를 재사용한다.
