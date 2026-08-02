@@ -286,6 +286,38 @@ describe('WatchConnectivity native source contract', () => {
     expect(sessionStore).not.toContain('onDelete');
   });
 
+  it('uses the immediate deletion channel even while a background deletion transfer is outstanding', () => {
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const flushBlock = inbox.slice(
+      inbox.indexOf('private func flushPendingSessionDeletionsOnStateQueue()'),
+      inbox.indexOf(
+        'private func handleSessionDeletionAcknowledgementOnStateQueue(',
+      ),
+    );
+
+    expect(flushBlock).toMatch(
+      /for deletion in pendingSessionDeletions \{[\s\S]*if connectivitySession\.isReachable \{[\s\S]*connectivitySession\.sendMessage[\s\S]*guard !outstandingCommandIds\.contains\(deletion\.commandId\) else \{[\s\S]*continue[\s\S]*\}[\s\S]*connectivitySession\.transferUserInfo/,
+    );
+  });
+
+  it('retries durable deletion commands when the paired Watch state changes', () => {
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const watchStateBlock = inbox.slice(
+      inbox.indexOf('func sessionWatchStateDidChange(_ session: WCSession)'),
+      inbox.indexOf(
+        'func session(_ session: WCSession, didReceiveUserInfo',
+      ),
+    );
+
+    expect(watchStateBlock).toContain(
+      'flushPendingSessionDeletionsOnStateQueue()',
+    );
+  });
+
   it('uses one immutable file transfer for every watch session size', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
     const envelope = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift');

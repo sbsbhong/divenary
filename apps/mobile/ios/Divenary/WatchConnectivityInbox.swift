@@ -259,6 +259,7 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
   func sessionWatchStateDidChange(_ session: WCSession) {
     stateQueue.async { [weak self] in
       self?.flushPendingPlannedDivesContextOnStateQueue()
+      self?.flushPendingSessionDeletionsOnStateQueue()
     }
   }
 
@@ -685,11 +686,13 @@ final class WatchConnectivityInbox: NSObject, WCSessionDelegate {
         PendingWatchSessionDeletion.commandId(from: $0.userInfo)
       }
     )
-    for deletion in pendingSessionDeletions
-    where !outstandingCommandIds.contains(deletion.commandId) {
+    for deletion in pendingSessionDeletions {
       let dictionary = deletion.dictionary
       if connectivitySession.isReachable {
         connectivitySession.sendMessage(dictionary, replyHandler: nil) { _ in }
+      }
+      guard !outstandingCommandIds.contains(deletion.commandId) else {
+        continue
       }
       connectivitySession.transferUserInfo(dictionary)
     }
