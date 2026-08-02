@@ -8,11 +8,23 @@ Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-0
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
 Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
-Updated: 2026-07-30
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
+Updated: 2026-08-02
 
 ## 요약
 
 현재 동기화 모델은 Watch-to-mobile local import, authenticated account outbox sync, guest-to-account claim을 서로 다른 durability 경계로 다룬다. Watch import acknowledgement는 mobile local repository 저장만 뜻한다. Account mutation은 local save와 outbox 뒤 remote revision을 조정한다. Guest claim은 immutable snapshot을 staging하고 remote finalize/readback과 account local publication/readback을 마친 뒤 `cleanupPending`을 저장하고 guest reconciliation을 시작한다. Durable local validation이 실패하면 cloud 작업을 막는다. 검증 뒤 outbox reconciliation은 즉시 실행하고, 자동 Watch drain과 account hydration/drain은 interaction scheduler를 거쳐 cooperative yield와 함께 실행한다.
+
+## 모바일 권한 기반 Watch 로그 삭제
+
+Watch 로그 삭제의 사용자 조작 지점은 모바일뿐이며 logical identity는 `localSessionId`다. 모바일은 device-wide 묘비를 row 삭제보다 먼저 영속화한다. Repository composition, Watch import와 account hydration은 묘비가 있는 session을 숨기고 stale artifact를 consume/ACK하되 다시 저장하지 않는다. Account row는 기존 local-first delete outbox로 remote soft-delete에 수렴한다.
+
+삭제된 session이 noncommitted guest claim snapshot에 있으면 기존 batch를 그대로 finalize하지 않는다. Remote batch가 있으면 staging의 `abandon-guest-claim`을 통해 `uploading → abandoned`로 전환하고, live non-tombstoned inventory로 새 snapshot을 만든다. Finalize 경쟁에서 이미 committed면 account row를 보이지 않게 게시한 직후 delete outbox로 전환한다.
+
+iPhone deletion command는 native `UserDefaults` queue에 남는다. Background `transferUserInfo`는 같은 command의 outstanding transfer만 중복 방지하고, reachable 상태의 `sendMessage`는 그 outstanding 여부와 무관하게 시도한다. Activation, reachability, paired-Watch state와 foreground가 queue를 다시 flush한다. Watch ACK는 native pending command만 정리하며 mobile tombstone은 stale import 방어를 위해 유지한다.
+
+2026-08-02 실기기에서는 로그인 전 생성한 Watch 로그 하나가 로그인 뒤 기기 가져오기 `1/1`로 처리됐고, 모바일 삭제 후 Watch session도 제거됐다. 양쪽 앱 재실행 뒤에도 삭제 로그는 부활하지 않았다. Release는 development Auth를 의도적으로 차단하므로 계정 검증은 feature worktree staging Debug bundle과 격리된 8083 Metro로 수행했다.
 
 ## 현재 상태
 

@@ -264,8 +264,11 @@ removedArtifactSha256?
 
 `commandId`는 normalized request의 deterministic digest로 만든다. iPhone native
 `WatchConnectivityInbox`는 pending request를 `UserDefaults`에 저장한 뒤
-`transferUserInfo`로 보낸다. Activation, reachability change, app foreground에서
-같은 command가 이미 outstanding인지 확인하고 재전송한다.
+background `transferUserInfo`와 reachable 상태의 immediate `sendMessage`로 보낸다.
+같은 command의 outstanding 여부는 background transfer 중복만 막는다. Background
+transfer가 outstanding이어도 Watch가 reachable이면 `sendMessage`를 항상 시도한다.
+Activation, reachability change, paired Watch state change와 app foreground에서 queue를
+다시 flush한다.
 
 Watch ACK가 오면 native pending request를 제거하고 ACK receipt를 저장한다. JS는
 launch/foreground reconcile 또는 event로 receipt를 읽어 tombstone의
@@ -430,6 +433,15 @@ account delete reconciliation 대상으로 넘긴다.
    확인한다.
 
 실기기 연결이 필요한 시점에는 구현을 멈추고 사용자에게 연결을 요청한다.
+
+2026-08-02 검증에서는 로그아웃 상태의 Watch demo session을 모바일에 동기화한 뒤
+로그인했다. 기기 데이터 가져오기는 과거 checkpoint의 15개가 아니라 현재 1개와
+`1/1` progress를 표시했고, account import 완료 뒤 모바일 삭제가 Watch saved
+session까지 제거했다. 별도 guest 삭제는 ACK queue 정리와 양쪽 앱 재실행 뒤
+비부활을 통과했다. Radio-off 시도는 `reachable=false`에서 background transfer가
+등록됐지만 WatchConnectivity가 수동 reconnect 전에 전달했으므로 durable delivery와
+ACK 수렴 증거로만 기록하며, reconnect 이후에만 전달되는 통제된 지연 증거로
+과장하지 않는다.
 
 ## Durable documentation
 

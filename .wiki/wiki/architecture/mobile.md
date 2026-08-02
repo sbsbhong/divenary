@@ -8,11 +8,15 @@ Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-0
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
 Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
-Updated: 2026-07-30
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
+Updated: 2026-08-02
 
 ## 요약
 
 `apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. React Navigation, React Query, principal-partitioned persistent repository, account local-first outbox/sync, resumable guest data claim, generated watch contract, Gluestack UI v4/NativeWind와 Supabase/Auth client 경계를 사용한다. Durable Logbook/Planbook은 fail-closed로 읽고, 자동 Watch drain과 account hydration은 로컬 화면 공개와 첫 상호작용 뒤에 시작한다. Watch full profile과 claim profile evidence는 metadata envelope 밖 파일 sidecar에 둔다. Production cloud backup과 account deletion은 아직 없다.
+
+모바일은 Watch 로그 삭제의 유일한 사용자 조작 지점이다. `src/deletion/`은 `localSessionId` 기반 device-wide 묘비와 삭제 coordinator를 소유한다. 묘비 readback이 repository delete보다 먼저 끝나야 하며, 이후 실패가 있어도 화면·import·hydration에서 해당 session을 다시 게시하지 않는다. 수동 로그 삭제는 Watch command를 만들지 않는다.
 
 ## 현재 상태
 
@@ -24,6 +28,7 @@ Updated: 2026-07-30
 - `src/providers.tsx`: app-owned `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `GluestackUIProvider`, render error boundary, `AuthProvider`, `AccountDataProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
 - `src/auth/`: Keychain session adapter, native Google/Apple credential adapter, membership cache, recent-provider preference와 mobile Auth assembly.
 - `src/claim/`: immutable guest snapshot/manifest, exact profile-byte verification, resumable claim service와 persistent claim store.
+- `src/deletion/`: Watch log deletion tombstone, claim/repository/native command reconciliation과 stale import visibility filter.
 - `src/states/account-data.tsx`: 현재 Auth principal에 맞는 repository publication, account/guest row composition, account sync와 claim lifecycle, user/cache isolation.
 - `src/sync/account-outbox.ts`, `src/sync/account-sync-coordinator.ts`: local-first account operation durability, retry와 revision conflict 보존.
 - `src/storage/data-principal.ts`, `src/repositories/principal-repositories.ts`: `guest`와 `user:<uuid>` namespace와 principal-bound repository 구성.

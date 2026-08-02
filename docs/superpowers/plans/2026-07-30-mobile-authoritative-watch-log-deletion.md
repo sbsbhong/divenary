@@ -545,3 +545,13 @@ sudo shutdown -h now
 ```
 
 Request privilege escalation for shutdown if required. Do not run shutdown before the final handoff data is prepared.
+
+## Execution status — 2026-08-02
+
+- Tasks 1–5 were implemented and committed through `51b13a1`; migration and `abandon-guest-claim` were promoted only to staging `mclvhwzsuvsxjerdouka`, and the hosted verifier passed.
+- The final native retry regression keeps immediate `sendMessage` independent from outstanding background deletion transfers and flushes pending deletion commands on paired-Watch state changes.
+- Physical guest deletion removed the iPhone row and Watch session, cleared the native pending queue after ACK, and did not resurrect after both apps were relaunched.
+- The original account path was repeated as logout → Watch demo creation → mobile sync → login → device import. The UI selected exactly one current log, showed `1/1`, completed the account import, and mobile deletion removed the Watch session.
+- A radio-off attempt registered a durable background command at `reachable=false`; WatchConnectivity delivered it before manual reconnect and the later ACK cleared the iPhone queue. This verifies eventual background delivery, not a controlled reconnect-only delivery delay.
+- Release social login remained intentionally disabled. Account physical verification used the feature worktree staging Debug bundle on an isolated 8083 Metro; `-RCT_jsLocation` prevented the installed native feature build from loading main-checkout JS on 8081.
+- Production Supabase was not changed. The final documentation, verification, commit, local merge, worktree cleanup and shutdown are performed after this status entry.

@@ -8,11 +8,13 @@ Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-0
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
 Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
-Updated: 2026-07-30
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
+Updated: 2026-08-02
 
 ## 요약
 
-Local Supabase/Auth 기반과 staging Auth promotion에 더해 account Logbook/Planbook schema, typed repository, local-first outbox와 resumable guest data claim 경계가 구현됐다. Hosted project `mclvhwzsuvsxjerdouka`는 staging 전용이며 production이 아니다. Account-data migrations와 claim Edge Function은 hosted staging automated verifier를 통과했다. Physical claim, production과 account deletion은 별도 승격 gate다.
+Local Supabase/Auth 기반과 staging Auth promotion에 더해 account Logbook/Planbook schema, typed repository, local-first outbox와 resumable guest data claim 경계가 구현됐다. 삭제된 Watch session이 noncommitted claim snapshot에서 부활하지 않도록 idempotent guest-claim abandonment 경계도 staging에 배포됐다. Hosted project `mclvhwzsuvsxjerdouka`는 staging 전용이며 production이 아니다. Account-data migrations와 claim Edge Function은 hosted staging automated verifier를 통과했다. Production과 account deletion은 별도 승격 gate다.
 
 ## 현재 상태
 
@@ -25,6 +27,8 @@ Auth는 iOS native Google/Apple login과 Keychain-compatible session을 구현�
 Account data schema는 `dive_logs`, `dive_plans`, private `dive-profiles` bucket을 사용한다. Row는 `(user_id, local_id)`로 한 소유자 안에서 고유하며 positive `revision`과 payload digest를 가진다. RLS는 `auth.uid()`와 membership을 함께 확인한다. 전체 Watch profile은 list row에 넣지 않고 `<user_id>/claims/...` staging 또는 `<user_id>/logs/...` account object path 아래 JSON으로 저장한다.
 
 Guest claim은 normal account row와 분리된 `guest_claim_batches`/`guest_claim_records`에 immutable manifest와 record/profile digest를 staging한다. Edge Function은 authenticated user와 exact profile bytes를 검증한 뒤 service-role finalizer를 호출한다. Finalizer는 expected count, 관계, digest와 기존 local ID를 한 transaction에서 검사하고 account rows를 publish한다. 같은 committed batch 재호출은 idempotent하다. Public wrapper는 먼저 batch, 현재 batch records, 같은 owner/local ID의 모든 plan, 모든 log 순서로 row lock을 얻고 각 candidate 집합을 안정된 ID 순서로 잠근다. Private publication 뒤에는 새로 materialize됐거나 첫 snapshot에서 보이지 않았던 unique-key winner까지 포함하도록 모든 plan과 모든 log를 같은 순서로 다시 잠근다. 두 candidate phase 모두 active와 soft-deleted row를 포함한다. Byte-level digest가 다르더라도 active profiled Watch log의 owner/local ID, relation, profile revision/digest/count와 모든 사용자 의미 field가 같고 차이가 동등한 `timestamptz`, source-derived float readback, 세 import bookkeeping timestamp뿐이면 phase-one lock 안에서 canonical row의 payload 표현과 digest를 staged 표현으로 정규화한다. Canonical ID, owner, local ID, profile path/revision과 relation은 바꾸지 않는다. 그 뒤 기존 private strict digest 검증, phase-two lock/revalidation과 canonical target remap을 그대로 실행하므로 이후 실패는 정규화와 publication을 함께 rollback한다. Soft-deleted row, title/site/rating/notes, profile tuple, relation 또는 다른 JSON 차이는 계속 whole-batch conflict다. Finalizer는 committed batch/record와 claim profile object를 삭제하지 않고 idempotent readback과 audit 근거로 보존한다. Auth user deletion 시 database claim row는 foreign key로 cascade되지만 remote Storage profile object는 자동 삭제되지 않는다. Account deletion과 privileged object cleanup이 아직 구현되지 않았으므로 이 object는 보존되며, cleanup은 future release gate다.
+
+Migration `20260730130838`은 batch status에 `abandoned`와 `abandoned_at` invariant를 추가한다. `abandon-guest-claim` Edge Function은 현재 JWT owner와 batch를 확인하고 service-role wrapper로 `uploading → abandoned`를 잠금 전환한 뒤 exact owner/batch claim Storage prefix만 정리한다. Stale finalizer는 abandoned batch를 게시할 수 없다. Cleanup 실패는 abandonment를 되돌리지 않고 재호출에서 object cleanup만 재시도한다. 이미 committed된 경쟁 결과는 `committed`로 반환해 mobile이 hidden account delete path로 전환한다. 이 migration과 Function은 staging에만 배포됐고 hosted verifier를 통과했다.
 
 Supabase table은 RLS만으로 노출되지 않는 2026 Data API 권한 모델을 적용해 최소 `GRANT`도 migration에 명시한다. Session bootstrap은 `getSession()`만 신뢰하지 않고 online claims/user/status 검증을 수행한다. `getClaims()` 또는 `getUser()` transport failure 때만 unexpired stored session evidence와 같은 user의 마지막 server-verified complete cache가 정확히 일치하면 local-only offline state를 허용한다. Invalid session, server rejection 또는 onboarding-status RPC 실패는 offline fallback 근거가 아니다. Client concurrency는 설치된 `auth-js@2.110.2`의 기본 lockless single-flight/commit guard를 사용하며 deprecated `processLock` custom option은 추가하지 않는다.
 
