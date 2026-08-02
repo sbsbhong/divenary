@@ -2,7 +2,9 @@
 
 Sources: pre-Karpathy wiki page, 2026-06-28; mobile form validation and pressure metadata, 2026-06-28; Diving App repository implementation, 2026-07-05; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Guest data account claim implementation evidence, 2026-07-19; Guest claim profile quarantine, 2026-07-22; Watch profile digest recovery and list badges design, 2026-07-24
 Raw: [Pre-Karpathy: 다이브 로그 도메인](../../raw/domains/dive-log.md); [Mobile form validation and pressure metadata](../../raw/domains/2026-06-28-mobile-form-validation-pressure-metadata.md); [Watch freedive segments and scuba safety stop implementation](../../raw/architecture/2026-07-05-watch-freedive-safety-stop-implementation.md); [Watch real-device readiness and explicit demo mode](../../raw/architecture/2026-07-05-watch-real-device-readiness.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest claim profile quarantine](../../raw/architecture/2026-07-22-guest-claim-profile-quarantine.md); [Watch profile digest recovery and list badges design](../../raw/architecture/2026-07-24-watch-profile-digest-recovery.md)
-Updated: 2026-07-24
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
+Updated: 2026-08-02
 
 ## 요약
 
@@ -11,6 +13,10 @@ Dive log domain은 watch 기록과 모바일 수동 로그를 과거 기록 확�
 ## 현재 상태
 
 Shared watch sync contract는 `WatchSession`, `WatchDepthSample`, `WatchLocation`, `WatchSyncMessage`를 사용한다. Watch 앱은 동기화 가능한 payload로 mapping되는 local Swift `DiveSessionRecord`, `DiveSessionPayload`, `DepthSample` model을 갖는다. 모바일 앱의 최종 로그북 항목은 `DiveLogEntry`이며, `guest` 또는 `user:<uuid>` repository partition에 저장된다. Watch contract에는 account user ID를 넣지 않는다.
+
+Watch에서 시작된 logical session의 삭제 identity는 `localSessionId`다. Mobile/Watch deletion ledger와 native command는 content revision이나 artifact digest가 달라져도 같은 `localSessionId`를 같은 session으로 삭제한다. Revision과 digest는 exact artifact evidence이지 새로운 session identity가 아니다. 새 다이빙은 항상 새 UUID를 사용한다.
+
+Watch import acknowledgement는 iPhone local repository commit 또는 mobile tombstone에 따른 의도적 consume 완료만 뜻한다. Account cloud delete, guest claim abandonment와 Watch artifact removal은 각각 별도의 idempotent 완료 경계다.
 
 ## 상세
 

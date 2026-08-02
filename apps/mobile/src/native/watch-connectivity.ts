@@ -47,6 +47,32 @@ export type WatchConnectivitySubscription = {
   remove(): void;
 };
 
+export type WatchSessionDeletionCommand = {
+  formatVersion: 1;
+  commandId: string;
+  localSessionId: string;
+  requestedAt: number;
+  contentRevision?: string;
+  artifactSha256?: string;
+};
+
+export type WatchSessionDeletionAcknowledgement = {
+  formatVersion: 1;
+  commandId: string;
+  localSessionId: string;
+  acknowledgedAt: number;
+  result: 'deleted' | 'alreadyAbsent';
+  removedContentRevision?: string;
+  removedArtifactSha256?: string;
+};
+
+export class WatchSessionDeletionBridgeError extends Error {
+  constructor(message = 'Malformed Watch session deletion bridge data') {
+    super(message);
+    this.name = 'WatchSessionDeletionBridgeError';
+  }
+}
+
 export type LinkedWatchInfo = {
   nativeBridgeAvailable?: boolean;
   isSupported: boolean;
@@ -77,6 +103,10 @@ type WatchConnectivityModule = {
   ) => Promise<string>;
   acknowledgePayloads?: (payloadIds: string[]) => Promise<void>;
   acknowledgeImportedPayloads?: (payloadIds: string[]) => Promise<void>;
+  queueSessionDeletion?: (
+    command: WatchSessionDeletionCommand,
+  ) => Promise<void>;
+  listSessionDeletionAcknowledgements?: () => Promise<unknown>;
   updatePlannedDives?: (plannedDivesJson: string) => Promise<PlannedWatchDivesUpdateStatus | undefined>;
   getLinkedWatchInfo?: () => Promise<LinkedWatchInfo>;
   addListener: (eventName: string) => void;
@@ -175,6 +205,34 @@ export async function acknowledgeImportedWatchConnectivityPayloads(payloadIds: r
   await nativeModule.acknowledgeImportedPayloads([...payloadIds]);
 }
 
+export async function queueWatchSessionDeletion(
+  command: WatchSessionDeletionCommand,
+  queue = nativeModule?.queueSessionDeletion?.bind(nativeModule),
+): Promise<void> {
+  const normalized = parseDeletionCommand(command);
+  if (!queue) {
+    return;
+  }
+  await queue(normalized);
+}
+
+export async function listWatchSessionDeletionAcknowledgements(
+  list = nativeModule?.listSessionDeletionAcknowledgements?.bind(nativeModule),
+): Promise<WatchSessionDeletionAcknowledgement[]> {
+  if (!list) {
+    return [];
+  }
+  const raw = await list();
+  if (!Array.isArray(raw)) {
+    throw new WatchSessionDeletionBridgeError();
+  }
+  return raw.map(parseDeletionAcknowledgement).sort(
+    (left, right) =>
+      left.acknowledgedAt - right.acknowledgedAt ||
+      left.localSessionId.localeCompare(right.localSessionId),
+  );
+}
+
 export async function updatePlannedWatchDives(plans: readonly DivePlan[]): Promise<PlannedWatchDivesUpdateStatus> {
   const plannedDives = plans.filter(isWatchVisiblePlan).map(toWatchPlannedDivePayload);
 
@@ -270,4 +328,114 @@ function classifyPreparationError(
         : 'io',
     {cause: error},
   );
+}
+
+function parseDeletionCommand(value: unknown): WatchSessionDeletionCommand {
+  if (
+    !isRecord(value) ||
+    !hasAllowedKeys(value, [
+      'formatVersion',
+      'commandId',
+      'localSessionId',
+      'requestedAt',
+      'contentRevision',
+      'artifactSha256',
+    ]) ||
+    value.formatVersion !== 1 ||
+    !isSha(value.commandId) ||
+    !isNonEmptyString(value.localSessionId) ||
+    !isTimestamp(value.requestedAt)
+  ) {
+    throw new WatchSessionDeletionBridgeError();
+  }
+  const hasRevision = value.contentRevision !== undefined;
+  const hasDigest = value.artifactSha256 !== undefined;
+  if (
+    hasRevision !== hasDigest ||
+    (hasRevision && !isNonEmptyString(value.contentRevision)) ||
+    (hasDigest && !isSha(value.artifactSha256))
+  ) {
+    throw new WatchSessionDeletionBridgeError();
+  }
+  return {
+    formatVersion: 1,
+    commandId: value.commandId,
+    localSessionId: value.localSessionId,
+    requestedAt: value.requestedAt,
+    ...(hasRevision && hasDigest
+      ? {
+          contentRevision: value.contentRevision as string,
+          artifactSha256: value.artifactSha256 as string,
+        }
+      : {}),
+  };
+}
+
+function parseDeletionAcknowledgement(
+  value: unknown,
+): WatchSessionDeletionAcknowledgement {
+  if (
+    !isRecord(value) ||
+    !hasAllowedKeys(value, [
+      'formatVersion',
+      'commandId',
+      'localSessionId',
+      'acknowledgedAt',
+      'result',
+      'removedContentRevision',
+      'removedArtifactSha256',
+    ]) ||
+    value.formatVersion !== 1 ||
+    !isSha(value.commandId) ||
+    !isNonEmptyString(value.localSessionId) ||
+    !isTimestamp(value.acknowledgedAt) ||
+    (value.result !== 'deleted' && value.result !== 'alreadyAbsent')
+  ) {
+    throw new WatchSessionDeletionBridgeError();
+  }
+  const hasRevision = value.removedContentRevision !== undefined;
+  const hasDigest = value.removedArtifactSha256 !== undefined;
+  if (
+    hasRevision !== hasDigest ||
+    (hasRevision && !isNonEmptyString(value.removedContentRevision)) ||
+    (hasDigest && !isSha(value.removedArtifactSha256))
+  ) {
+    throw new WatchSessionDeletionBridgeError();
+  }
+  return {
+    formatVersion: 1,
+    commandId: value.commandId,
+    localSessionId: value.localSessionId,
+    acknowledgedAt: value.acknowledgedAt,
+    result: value.result,
+    ...(hasRevision && hasDigest
+      ? {
+          removedContentRevision: value.removedContentRevision as string,
+          removedArtifactSha256: value.removedArtifactSha256 as string,
+        }
+      : {}),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasAllowedKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  return Object.keys(value).every(key => keys.includes(key));
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 512;
+}
+
+function isSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+}
+
+function isTimestamp(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }

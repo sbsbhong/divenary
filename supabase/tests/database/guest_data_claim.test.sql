@@ -2,7 +2,7 @@ begin;
 
 create extension if not exists pgtap with schema extensions;
 
-select plan(42);
+select plan(51);
 
 select function_privs_are(
   'public',
@@ -15,6 +15,20 @@ select function_privs_are(
   'public',
   'finalize_guest_claim',
   array['uuid', 'uuid', 'jsonb'],
+  'authenticated',
+  array[]::text[]
+);
+select function_privs_are(
+  'public',
+  'abandon_guest_claim',
+  array['uuid', 'uuid'],
+  'service_role',
+  array['EXECUTE']
+);
+select function_privs_are(
+  'public',
+  'abandon_guest_claim',
+  array['uuid', 'uuid'],
   'authenticated',
   array[]::text[]
 );
@@ -36,6 +50,12 @@ select has_column(
   'dive_logs',
   'profile_sha256',
   'dive logs store the profile digest'
+);
+select has_column(
+  'public',
+  'guest_claim_batches',
+  'abandoned_at',
+  'guest claim batches store an abandonment timestamp'
 );
 select has_column(
   'public',
@@ -192,7 +212,8 @@ select results_eq(
       ('expected_log_count', 'integer', true, ''),
       ('status', 'text', true, '''uploading''::text'),
       ('created_at', 'timestamp with time zone', true, 'transaction_timestamp()'),
-      ('committed_at', 'timestamp with time zone', false, '')
+      ('committed_at', 'timestamp with time zone', false, ''),
+      ('abandoned_at', 'timestamp with time zone', false, '')
   $$,
   'claim batches expose the exact column type, nullability, and default contract'
 );
@@ -285,6 +306,7 @@ select results_eq(
       ('guest_claim_batches', 'guest_claim_batches_id_user_id_key', 'u'),
       ('guest_claim_batches', 'guest_claim_batches_manifest_sha256_check', 'c'),
       ('guest_claim_batches', 'guest_claim_batches_status_check', 'c'),
+      ('guest_claim_batches', 'guest_claim_batches_terminal_timestamp_check', 'c'),
       ('guest_claim_batches', 'guest_claim_batches_user_id_client_batch_id_key', 'u'),
       ('guest_claim_batches', 'guest_claim_batches_user_id_fkey', 'f'),
       ('guest_claim_records', 'guest_claim_records_batch_id_entity_kind_client_record_id_key', 'u'),
@@ -360,7 +382,9 @@ select results_eq(
         'CHECK (manifest_sha256 ~ ''^[0-9a-f]{64}$''::text)'),
       ('guest_claim_batches', 'guest_claim_batches_pkey', 'PRIMARY KEY (id)'),
       ('guest_claim_batches', 'guest_claim_batches_status_check',
-        'CHECK (status = ANY (ARRAY[''uploading''::text, ''committed''::text]))'),
+        'CHECK (status = ANY (ARRAY[''uploading''::text, ''committed''::text, ''abandoned''::text]))'),
+      ('guest_claim_batches', 'guest_claim_batches_terminal_timestamp_check',
+        'CHECK (status = ''uploading''::text AND committed_at IS NULL AND abandoned_at IS NULL OR status = ''committed''::text AND committed_at IS NOT NULL AND abandoned_at IS NULL OR status = ''abandoned''::text AND committed_at IS NULL AND abandoned_at IS NOT NULL)'),
       ('guest_claim_records',
         'guest_claim_records_client_record_id_check',
         'CHECK (length(client_record_id) >= 1 AND length(client_record_id) <= 256)'),
@@ -1016,6 +1040,106 @@ select throws_ok(
   'P0001',
   'claim validation failed',
   'the finalizer rejects profile counts changed after server verification'
+);
+
+insert into public.guest_claim_batches (
+  id,
+  user_id,
+  client_batch_id,
+  manifest_sha256,
+  expected_plan_count,
+  expected_log_count
+) values (
+  '00000000-0000-0000-0000-000000000120',
+  '00000000-0000-0000-0000-000000000011',
+  'abandon-uploading-batch',
+  repeat('5', 64),
+  0,
+  0
+);
+
+select results_eq(
+  $$
+    select public.abandon_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000120'
+    )->>'status'
+  $$,
+  $$values ('abandoned'::text)$$,
+  'an uploading claim can be abandoned'
+);
+
+select results_eq(
+  $$
+    select status, abandoned_at is not null
+    from public.guest_claim_batches
+    where id = '00000000-0000-0000-0000-000000000120'
+  $$,
+  $$values ('abandoned'::text, true)$$,
+  'abandonment persists a terminal timestamp'
+);
+
+select results_eq(
+  $$
+    select public.abandon_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000120'
+    )->>'status'
+  $$,
+  $$values ('abandoned'::text)$$,
+  'abandonment is idempotent'
+);
+
+select throws_ok(
+  $$
+    select public.finalize_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000120',
+      '[]'::jsonb
+    )
+  $$,
+  'P0001',
+  'claim validation failed',
+  'an abandoned claim cannot be finalized'
+);
+
+insert into public.guest_claim_batches (
+  id,
+  user_id,
+  client_batch_id,
+  manifest_sha256,
+  expected_plan_count,
+  expected_log_count
+) values (
+  '00000000-0000-0000-0000-000000000130',
+  '00000000-0000-0000-0000-000000000011',
+  'commit-before-abandon',
+  repeat('4', 64),
+  0,
+  0
+);
+
+select results_eq(
+  $$
+    select public.finalize_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000130',
+      '[]'::jsonb
+    )->>'status'
+  $$,
+  $$values ('committed'::text)$$,
+  'the race fixture commits before abandonment'
+);
+
+select results_eq(
+  $$
+    select public.abandon_guest_claim(
+      '00000000-0000-0000-0000-000000000011',
+      '00000000-0000-0000-0000-000000000130'
+    )->>'status'
+  $$,
+  $$values ('committed'::text)$$,
+  'abandonment reports a committed race without rewriting it'
 );
 
 select * from finish();

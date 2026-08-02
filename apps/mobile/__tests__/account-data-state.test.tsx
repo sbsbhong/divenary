@@ -37,6 +37,7 @@ import {
   GuestClaimStore,
 } from '../src/claim/guest-claim-store';
 import {createWatchProfileDigest} from '../src/utils/watch-profile-digest';
+import {createWatchLogDeletionStore} from '../src/deletion/watch-log-deletion-store';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const immediateAfterInteractions = (
@@ -77,6 +78,30 @@ const entry: DiveLogEntry = {
   provenance: {},
 };
 
+const watchEntry: DiveLogEntry = {
+  ...entry,
+  localId: 'watch-log-1',
+  source: 'watch',
+  watchCapture: {
+    importKey: 'watch-session-1:100',
+    importedAt: 110,
+    session: {
+      localSessionId: 'watch-session-1',
+      startedAt: 100,
+      samples: [],
+    },
+    measuredValues: {startedAt: 100},
+    samples: [],
+    profile: {
+      storageKey: 'watch-profile-1',
+      contentRevision: 'revision-1',
+      sampleCount: 0,
+      sha256: 'b'.repeat(64),
+      artifactSha256: 'a'.repeat(64),
+    },
+  },
+};
+
 const plan: DivePlan = {
   localId: 'local-plan-1',
   status: 'draft',
@@ -96,6 +121,152 @@ describe('account data state', () => {
     await ReactTestRenderer.act(async () => {
       await i18n.changeLanguage('ko');
     });
+  });
+
+  it('routes a mobile Watch-log delete through the durable tombstone coordinator', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const localLogbook = new LocalDiveLogRepository([watchEntry]);
+    const queueWatchSessionDeletion = jest.fn().mockResolvedValue(undefined);
+    const queryClient = new QueryClient();
+    let capture: ReturnType<typeof useAccountData> | undefined;
+    const Capture = () => {
+      capture = useAccountData();
+      return null;
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          auth={{state: {status: 'guest'}}}
+          dependencies={{
+            metadataStorage,
+            profileStorage: {
+              write: jest.fn(async () => undefined),
+              read: jest.fn(async () => undefined),
+              remove: jest.fn(async () => undefined),
+            },
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope: 'guest',
+              logbook: localLogbook,
+              planbook: new LocalDivePlanRepository(),
+            }),
+            queueWatchSessionDeletion,
+            scheduleAfterInteractions: immediateAfterInteractions,
+            createId: () => '10000000-0000-4000-8000-000000000001',
+            now: () => 200,
+            jitter: () => 0,
+          }}>
+          <Capture />
+        </AccountDataProviderCore>,
+      );
+      await flushPromises();
+    });
+    await waitFor(() => expect(capture?.bootstrap).toEqual({status: 'ready'}));
+
+    await capture!.logbookRepository.delete(watchEntry.localId);
+
+    expect(await localLogbook.get(watchEntry.localId)).toBeUndefined();
+    expect(
+      await createWatchLogDeletionStore({storage: metadataStorage}).get(
+        'watch-session-1',
+      ),
+    ).toMatchObject({sourceLocalIds: [watchEntry.localId]});
+    expect(queueWatchSessionDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({localSessionId: 'watch-session-1'}),
+    );
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
+  });
+
+  it('abandons a stale Watch claim from a persisted tombstone before bootstrap resumes it', async () => {
+    const metadataStorage = new InMemoryKeyValueStore();
+    const deletedWatchEntry = {
+      ...watchEntry,
+      watchCapture: {
+        ...watchEntry.watchCapture!,
+        profile: undefined,
+      },
+    };
+    const guestLogbook = new LocalDiveLogRepository([deletedWatchEntry]);
+    const guestPlanbook = new LocalDivePlanRepository();
+    const profileStorage = {
+      write: jest.fn(async () => undefined),
+      read: jest.fn(async () => undefined),
+      remove: jest.fn(async () => undefined),
+    };
+    const claimStore = new GuestClaimStore({storage: metadataStorage, userId});
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: guestLogbook,
+      planRepository: guestPlanbook,
+      profileStorage,
+      now: () => 100,
+    });
+    const batchId = '10000000-0000-4000-8000-000000000001';
+    snapshot.manifest.status = 'failed';
+    snapshot.manifest.remoteBatchId = batchId;
+    snapshot.errorCode = 'network_unavailable';
+    await claimStore.write(snapshot);
+    await createWatchLogDeletionStore({storage: metadataStorage}).record({
+      localSessionId: 'watch-session-1',
+      sourceLocalId: deletedWatchEntry.localId,
+      requestedAt: 110,
+    });
+    await guestLogbook.delete(deletedWatchEntry.localId);
+
+    const remote = guestClaimRepository();
+    const queryClient = new QueryClient();
+    let renderer: ReactTestRenderer.ReactTestRenderer;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AccountDataProviderCore
+          queryClient={queryClient}
+          navigationReady={false}
+          auth={{
+            state: {status: 'authenticated', userId},
+            guestClaimRemoteRepository: remote,
+          }}
+          dependencies={{
+            metadataStorage,
+            profileStorage,
+            migrateLegacyData: jest.fn(async () => undefined),
+            createRepositories: principal => ({
+              principal,
+              queryScope:
+                principal.kind === 'guest'
+                  ? 'guest'
+                  : `user:${principal.userId}`,
+              logbook:
+                principal.kind === 'guest'
+                  ? guestLogbook
+                  : new LocalDiveLogRepository(),
+              planbook:
+                principal.kind === 'guest'
+                  ? guestPlanbook
+                  : new LocalDivePlanRepository(),
+            }),
+            queueWatchSessionDeletion: jest.fn(async () => undefined),
+            listWatchSessionDeletionAcknowledgements: jest.fn(async () => []),
+            createId: () => batchId,
+            now: () => 120,
+            jitter: () => 0,
+          }}
+        />,
+      );
+      await flushPromises();
+    });
+
+    await waitFor(() => expect(remote.abandon).toHaveBeenCalledWith(batchId));
+    await expect(claimStore.read()).resolves.toBeUndefined();
+    expect(remote.finalize).not.toHaveBeenCalledWith(batchId);
+
+    await ReactTestRenderer.act(async () => renderer!.unmount());
+    queryClient.clear();
   });
 
   it('publishes local account rows before scheduling the initial cloud hydration', async () => {
@@ -5625,6 +5796,10 @@ function guestClaimRepository(): jest.Mocked<GuestClaimRemoteRepository> {
       status: 'committed' as const,
       planCount: 0,
       logCount: 0,
+    })),
+    abandon: jest.fn(async (_batchId: string) => ({
+      status: 'abandoned' as const,
+      storageCleanupPending: false,
     })),
     listCommittedBatch: jest.fn(async (_batchId: string) => ({
       plans: [] as RemoteDivePlan[],

@@ -1102,3 +1102,18 @@
 - Pending: 원래 iPhone의 보존된 15-item batch 물리 retry와 두 번째 retry 중복 방지 관찰은 아직 검증하지 않았다.
 
 ## [2026-07-29] lint | 0 issues found, 0 auto-fixed
+
+## [2026-08-02] ingest | Mobile-authoritative Watch log deletion implementation and physical verification
+- Added: Mobile-authoritative Watch log deletion implementation and physical verification raw source
+- Updated: 모바일 구조
+- Updated: Supabase 구조
+- Updated: 동기화 흐름 구조
+- Updated: Watch 앱 구조
+- Updated: 다이브 로그 도메인
+- Updated: Knowledge Base Index
+- Verified: 로그인 전 생성한 Watch log가 로그인 뒤 기기 가져오기 1개와 `1/1` progress로 처리됐고, 모바일 삭제 후 Watch session도 제거됐다.
+- Verified: Guest 삭제 ACK가 native pending queue를 정리했고 양쪽 앱 재실행 뒤 삭제 session이 부활하지 않았다.
+- Recorded: Background transfer outstanding은 reachable `sendMessage`를 막지 않으며 paired-Watch state change도 durable deletion queue를 flush한다.
+- Recorded: Release는 staging Auth를 차단하고, physical Debug 검증은 feature Metro를 별도 포트와 explicit `RCT_jsLocation`으로 고정해야 다른 worktree JS와 섞이지 않는다.
+
+## [2026-08-02] lint | 0 issues found, 0 auto-fixed

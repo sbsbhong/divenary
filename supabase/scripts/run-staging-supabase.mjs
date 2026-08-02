@@ -35,6 +35,13 @@ async function assertAllowedStagingCommand(arguments_) {
       '--project-ref',
       STAGING_PROJECT_REF,
     ],
+    [
+      'functions',
+      'deploy',
+      'abandon-guest-claim',
+      '--project-ref',
+      STAGING_PROJECT_REF,
+    ],
     ONBOARDING_RPC_METADATA_COMMAND,
   ];
 

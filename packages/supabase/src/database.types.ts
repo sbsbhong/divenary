@@ -244,6 +244,7 @@ export type Database = {
       }
       guest_claim_batches: {
         Row: {
+          abandoned_at: string | null
           client_batch_id: string
           committed_at: string | null
           created_at: string
@@ -255,6 +256,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          abandoned_at?: string | null
           client_batch_id: string
           committed_at?: string | null
           created_at?: string
@@ -266,6 +268,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          abandoned_at?: string | null
           client_batch_id?: string
           committed_at?: string | null
           created_at?: string
@@ -372,6 +375,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      abandon_guest_claim: {
+        Args: { p_batch_id: string; p_user_id: string }
+        Returns: Json
+      }
       complete_onboarding: {
         Args: { requested_documents: Json }
         Returns: Json

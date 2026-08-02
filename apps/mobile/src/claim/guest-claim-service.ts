@@ -75,6 +75,7 @@ export type GuestClaimServiceOptions = {
   onProgress?: (progress: GuestClaimProgress) => void;
   onSnapshot?: (snapshot: GuestClaimSnapshot) => void | Promise<void>;
   assertCanContinue?: () => void;
+  isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
 };
 
 type ChangedGuestCapture = {
@@ -113,6 +114,7 @@ type PromotionRoot = {
 export class GuestClaimService {
   private readonly now: () => number;
   private operation: Promise<GuestClaimSnapshot | undefined> | undefined;
+  private mutationTail: Promise<void> = Promise.resolve();
 
   constructor(private readonly options: GuestClaimServiceOptions) {
     this.now = options.now ?? (() => Date.now() / 1_000);
@@ -120,6 +122,16 @@ export class GuestClaimService {
 
   async prepare(): Promise<GuestClaimSnapshot | undefined> {
     let existing = await this.readOwned();
+    if (
+      existing !== undefined &&
+      (await this.snapshotContainsDeletedWatchSession(existing))
+    ) {
+      const reconciled = await this.resolveDeletedSnapshot(existing);
+      if (reconciled !== undefined) {
+        return reconciled;
+      }
+      existing = undefined;
+    }
     if (
       existing !== undefined &&
       isReplaceableLocalCheckpoint(existing)
@@ -181,7 +193,16 @@ export class GuestClaimService {
     try {
       snapshot = await createGuestClaimSnapshot({
         userId: this.options.userId,
-        logbookRepository: this.options.guestRepositories.logbook,
+        logbookRepository: {
+          ...this.options.guestRepositories.logbook,
+          list: async () => {
+            const logs = await this.options.guestRepositories.logbook.list();
+            const deleted = await Promise.all(
+              logs.map(log => this.isDeletedWatchLog(log)),
+            );
+            return logs.filter((_log, index) => !deleted[index]);
+          },
+        },
         planRepository: this.options.guestRepositories.planbook,
         profileStorage: this.options.profileStorage,
         now: this.now,
@@ -207,6 +228,9 @@ export class GuestClaimService {
         return undefined;
       }
       if (snapshot.manifest.status === 'retained') {
+        return snapshot;
+      }
+      if (snapshot.manifest.status === 'committed') {
         return snapshot;
       }
       return this.run(snapshot);
@@ -258,6 +282,9 @@ export class GuestClaimService {
         return undefined;
       }
       if (snapshot.manifest.status === 'retained') {
+        return snapshot;
+      }
+      if (snapshot.manifest.status === 'committed') {
         return snapshot;
       }
       if (snapshot.manifest.status === 'cleanupPending') {
@@ -334,6 +361,26 @@ export class GuestClaimService {
     return snapshot;
   }
 
+  invalidateDeletedWatchSession(
+    localSessionId: string,
+  ): Promise<void> {
+    if (localSessionId.length === 0) {
+      return Promise.reject(
+        new GuestClaimServiceError('claim_validation_failed'),
+      );
+    }
+    return this.serializeMutation(async () => {
+      const snapshot = await this.readOwned();
+      if (
+        snapshot === undefined ||
+        !this.snapshotContainsWatchSession(snapshot, localSessionId)
+      ) {
+        return;
+      }
+      await this.resolveDeletedSnapshot(snapshot);
+    });
+  }
+
   async hiddenGuestIds(): Promise<{
     logIds: Set<string>;
     planIds: Set<string>;
@@ -372,7 +419,9 @@ export class GuestClaimService {
     return { logIds, planIds };
   }
 
-  private async run(snapshot: GuestClaimSnapshot): Promise<GuestClaimSnapshot> {
+  private async run(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<GuestClaimSnapshot | undefined> {
     let failureContext: GuestClaimFailureDetail = { phase: 'uploading' };
     try {
       this.assertCanContinue();
@@ -409,6 +458,9 @@ export class GuestClaimService {
           snapshot.manifest.remoteBatchId = batch.id;
           await this.persist(snapshot);
         }
+        if (batch.status === 'abandoned') {
+          throw new GuestClaimServiceError('remote_conflict');
+        }
 
         if (batch.status !== 'committed') {
           for (const [index, item] of snapshot.manifest.items.entries()) {
@@ -429,6 +481,9 @@ export class GuestClaimService {
         }
       }
       failureContext = { phase: 'finalizing' };
+      if (await this.snapshotContainsDeletedWatchSession(snapshot)) {
+        return this.resolveDeletedSnapshot(snapshot);
+      }
       return await this.finalize(snapshot);
     } catch (error) {
       if (snapshot.userId !== this.options.userId) {
@@ -707,6 +762,14 @@ export class GuestClaimService {
       }
       await this.options.accountRepositories.logbook.save(accountValue);
       this.assertCanContinue();
+      const deletedWatchLog = await this.isDeletedWatchLog(accountValue);
+      if (deletedWatchLog) {
+        await this.options.accountMutationRepositories.logbook.delete(
+          item.clientRecordId,
+        );
+        this.assertCanContinue();
+        continue;
+      }
       const readback = await this.options.accountRepositories.logbook.get(
         item.clientRecordId,
       );
@@ -1565,6 +1628,94 @@ export class GuestClaimService {
     return snapshot;
   }
 
+  private async resolveDeletedSnapshot(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<GuestClaimSnapshot | undefined> {
+    if (!(await this.snapshotContainsDeletedWatchSession(snapshot))) {
+      return snapshot;
+    }
+    const batchId = snapshot.manifest.remoteBatchId;
+    if (batchId === undefined) {
+      await this.discardSnapshot(snapshot);
+      return undefined;
+    }
+
+    const abandoned = await this.options.remoteRepository.abandon(batchId);
+    this.assertCanContinue();
+    if (abandoned.status === 'abandoned') {
+      await this.discardSnapshot(snapshot);
+      return undefined;
+    }
+
+    const committed =
+      await this.options.remoteRepository.listCommittedBatch(batchId);
+    this.assertCanContinue();
+    const verified = verifyCommittedBatch(snapshot, committed);
+    await this.persist(snapshot);
+    await this.writeAccountSnapshot(snapshot, verified);
+    this.assertCanContinue();
+    snapshot.manifest.status = 'cleanupPending';
+    delete snapshot.errorCode;
+    delete snapshot.failure;
+    await this.persist(snapshot);
+    this.emitProgress(snapshot, 'cleanup');
+    return this.cleanup(snapshot, true);
+  }
+
+  private async discardSnapshot(snapshot: GuestClaimSnapshot): Promise<void> {
+    if (!this.options.store.remove) {
+      throw new GuestClaimServiceError('claim_validation_failed');
+    }
+    for (const storageKey of claimProfileEvidenceStorageKeys(snapshot)) {
+      await this.options.profileStorage.remove(storageKey);
+    }
+    await this.options.store.remove();
+  }
+
+  private async snapshotContainsDeletedWatchSession(
+    snapshot: GuestClaimSnapshot,
+  ): Promise<boolean> {
+    if (!this.options.isWatchSessionDeleted) {
+      return false;
+    }
+    for (const sidecar of snapshot.snapshots) {
+      if (sidecar.entityKind !== 'log') {
+        continue;
+      }
+      const local = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+      const localSessionId = local.watchCapture?.session.localSessionId;
+      if (
+        localSessionId !== undefined &&
+        (await this.options.isWatchSessionDeleted(localSessionId))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private snapshotContainsWatchSession(
+    snapshot: GuestClaimSnapshot,
+    localSessionId: string,
+  ): boolean {
+    return snapshot.snapshots.some(sidecar => {
+      if (sidecar.entityKind !== 'log') {
+        return false;
+      }
+      const local = parseSnapshotLocalRecord(sidecar) as DiveLogEntry;
+      return local.watchCapture?.session.localSessionId === localSessionId;
+    });
+  }
+
+  private async isDeletedWatchLog(log: DiveLogEntry): Promise<boolean> {
+    const localSessionId = log.watchCapture?.session.localSessionId;
+    return (
+      localSessionId !== undefined &&
+      this.options.isWatchSessionDeleted !== undefined &&
+      (await this.options.isWatchSessionDeleted(localSessionId))
+    );
+  }
+
   private async persist(snapshot: GuestClaimSnapshot): Promise<void> {
     this.assertCanContinue();
     if (snapshot.userId !== this.options.userId) {
@@ -1624,7 +1775,7 @@ export class GuestClaimService {
     if (this.operation !== undefined) {
       return this.operation;
     }
-    const running = operation();
+    const running = this.serializeMutation(operation);
     this.operation = running;
     running.then(
       () => {
@@ -1637,6 +1788,15 @@ export class GuestClaimService {
           this.operation = undefined;
         }
       },
+    );
+    return running;
+  }
+
+  private serializeMutation<T>(operation: () => Promise<T>): Promise<T> {
+    const running = this.mutationTail.then(operation);
+    this.mutationTail = running.then(
+      () => undefined,
+      () => undefined,
     );
     return running;
   }

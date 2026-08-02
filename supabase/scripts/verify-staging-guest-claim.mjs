@@ -242,6 +242,20 @@ function assertFinalizerSuccess(result, label) {
   assertNoStore(result, label);
 }
 
+function assertAbandonSuccess(result, expectedStatus, label) {
+  assertStatus(result, [200], label);
+  if (
+    result.body === null ||
+    typeof result.body !== 'object' ||
+    Array.isArray(result.body) ||
+    result.body.status !== expectedStatus ||
+    result.body.storageCleanupPending !== false
+  ) {
+    throw new Error(`${label}: unexpected success contract.`);
+  }
+  assertNoStore(result, label);
+}
+
 function assertJwtRejected(result, label) {
   assertStatus(result, [401], label);
 }
@@ -564,6 +578,26 @@ async function invokeFinalizer(
       body: JSON.stringify({batchId}),
     },
     'invoke guest claim finalizer',
+  );
+}
+
+async function invokeAbandoner(
+  context,
+  batchId,
+  {bearer = context.accessToken, includeAuthorization = true} = {},
+) {
+  return request(
+    context.fetchImpl,
+    '/functions/v1/abandon-guest-claim',
+    {
+      method: 'POST',
+      headers: requestHeaders(
+        context.publicKey,
+        includeAuthorization ? bearer : undefined,
+      ),
+      body: JSON.stringify({batchId}),
+    },
+    'invoke guest claim abandonment',
   );
 }
 
@@ -908,6 +942,98 @@ async function verifyAtomicRollback(context, cryptoImpl) {
       throw new Error('atomic rollback must not publish account rows.');
     }
   }
+}
+
+async function verifyAbandonedClaim(
+  context,
+  other,
+  cryptoImpl,
+  objectPaths,
+) {
+  const batch = await createBatch(
+    context,
+    cryptoImpl,
+    'deleted-watch-log',
+    0,
+    1,
+  );
+  const logRecord = await insertRow(context, 'guest_claim_records', {
+    batch_id: batch.id,
+    user_id: context.userId,
+    entity_kind: 'log',
+    client_record_id: `deleted-watch-log-${cryptoImpl.randomUUID()}`,
+    payload_sha256: payloadDigest(cryptoImpl, {deletedWatchLog: true}),
+    payload: {
+      source: 'watch',
+      started_at: '2026-07-20T04:00:00.000Z',
+      manual_data: {schemaVersion: 1},
+      mobile_data: {schemaVersion: 1},
+      provenance: {source: 'watch'},
+    },
+  });
+  const profileBytes = new TextEncoder().encode(JSON.stringify([
+    {elapsedSeconds: 0, depthMeters: 0},
+  ]));
+  const profilePath =
+    `${context.userId}/claims/${batch.id}/${logRecord.id}/deleted-profile.json`;
+  objectPaths.push(profilePath);
+  await uploadProfile(context, profilePath, profileBytes);
+  await updateRow(context, 'guest_claim_records', logRecord.id, {
+    profile_path: profilePath,
+    profile_content_revision: 'deleted-profile',
+    profile_sha256: sha256(cryptoImpl, profileBytes),
+    profile_byte_count: profileBytes.byteLength,
+    profile_sample_count: 1,
+  }, 'attach abandoned claim profile metadata');
+
+  const abandoned = await invokeAbandoner(context, batch.id);
+  assertAbandonSuccess(abandoned, 'abandoned', 'deleted Watch claim abandonment');
+  if (abandoned.body.batchId !== batch.id) {
+    throw new Error('deleted Watch claim abandonment: unexpected batch.');
+  }
+
+  const batches = await readRows(
+    context,
+    'guest_claim_batches',
+    `select=status,abandoned_at&id=eq.${batch.id}`,
+    'abandoned claim readback',
+  );
+  if (
+    batches.length !== 1 ||
+    batches[0].status !== 'abandoned' ||
+    typeof batches[0].abandoned_at !== 'string'
+  ) {
+    throw new Error('deleted Watch claim abandonment was not durable.');
+  }
+
+  const removedProfile = await downloadProfile(context, profilePath);
+  assertStatus(
+    removedProfile,
+    [400, 404],
+    'abandoned claim profile cleanup',
+  );
+
+  const staleFinalization = await invokeFinalizer(context, batch.id);
+  assertFinalizerFailure(
+    staleFinalization,
+    409,
+    'claim_validation_failed',
+    'abandoned claim finalization rejection',
+  );
+
+  const replay = await invokeAbandoner(context, batch.id);
+  assertAbandonSuccess(replay, 'abandoned', 'repeated claim abandonment');
+  if (JSON.stringify(replay.body) !== JSON.stringify(abandoned.body)) {
+    throw new Error('repeated claim abandonment must be idempotent.');
+  }
+
+  const foreign = await invokeAbandoner(other, batch.id);
+  assertFinalizerFailure(
+    foreign,
+    404,
+    'batch_not_found',
+    'cross-owner claim abandonment rejection',
+  );
 }
 
 async function verifyCompleteClaim(context, other, cryptoImpl, objectPaths) {
@@ -1412,8 +1538,26 @@ export async function verifyStagingGuestClaim({
       {bearer: 'invalid-jwt'},
     );
     assertJwtRejected(invalidJwt, 'invalid finalizer JWT rejection');
+    const missingAbandonJwt = await invokeAbandoner(
+      contexts[0],
+      cryptoImpl.randomUUID(),
+      {includeAuthorization: false},
+    );
+    assertJwtRejected(missingAbandonJwt, 'missing abandonment JWT rejection');
+    const invalidAbandonJwt = await invokeAbandoner(
+      contexts[0],
+      cryptoImpl.randomUUID(),
+      {bearer: 'invalid-jwt'},
+    );
+    assertJwtRejected(invalidAbandonJwt, 'invalid abandonment JWT rejection');
 
     await verifyAtomicRollback(contexts[0], cryptoImpl);
+    await verifyAbandonedClaim(
+      contexts[0],
+      contexts[1],
+      cryptoImpl,
+      objectPaths,
+    );
     await verifyCompleteClaim(
       contexts[0],
       contexts[1],

@@ -8,6 +8,8 @@ RCT_EXTERN_METHOD(preparePendingPayload:(NSString *)payloadId resolver:(RCTPromi
 RCT_EXTERN_METHOD(adoptPreparedProfile:(NSString *)payloadId destinationKey:(NSString *)destinationKey resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(acknowledgePayloads:(NSArray *)payloadIds resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(acknowledgeImportedPayloads:(NSArray *)payloadIds resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(queueSessionDeletion:(NSDictionary *)command resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(listSessionDeletionAcknowledgements:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(updatePlannedDives:(NSString *)plannedDivesJson resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getLinkedWatchInfo:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 

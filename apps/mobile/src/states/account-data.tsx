@@ -27,6 +27,20 @@ import {
   claimSnapshotContainsHistoricalArtifact,
   type WatchArtifactIdentity,
 } from '../claim/watch-artifact-history';
+import {
+  createWatchDeletionAwareLogbookRepository,
+  createWatchLogDeletionCoordinator,
+  type WatchLogDeletionCoordinator,
+} from '../deletion/watch-log-deletion-coordinator';
+import {
+  createWatchLogDeletionStore,
+  type WatchLogDeletionStore,
+  type WatchLogDeletionTombstone,
+} from '../deletion/watch-log-deletion-store';
+import {
+  listWatchSessionDeletionAcknowledgements,
+  queueWatchSessionDeletion,
+} from '../native/watch-connectivity';
 import type {
   GuestClaimProgress,
   GuestClaimViewState,
@@ -84,6 +98,8 @@ export type AccountDataContextValue = {
   isHistoricalWatchArtifact(
     identity: WatchArtifactIdentity,
   ): Promise<boolean>;
+  isWatchSessionDeleted(localSessionId: string): Promise<boolean>;
+  reconcileDeletedWatchSession(localSessionId: string): Promise<void>;
   requestSync(): Promise<AccountSyncDrainResult>;
   refreshCloudData(): Promise<void>;
 };
@@ -143,6 +159,9 @@ export type AccountDataDependencies = PrincipalRepositoryDependencies & {
   createId: () => string;
   now: () => number;
   jitter: () => number;
+  queueWatchSessionDeletion: typeof queueWatchSessionDeletion;
+  listWatchSessionDeletionAcknowledgements:
+    typeof listWatchSessionDeletionAcknowledgements;
 };
 
 type AccountLocalFirstRepositoryOptions = {
@@ -185,6 +204,11 @@ type PublishedAccountData = PrincipalRepositories & {
     generation: number;
     promise: Promise<Set<string>>;
   };
+  rawVisibleLogbook?: DiveLogRepository;
+  watchDeletionCoordinator?: WatchLogDeletionCoordinator;
+  beforeWatchLogDelete?: (
+    tombstone: WatchLogDeletionTombstone,
+  ) => Promise<void>;
 };
 
 type HiddenGuestIds = {
@@ -260,6 +284,9 @@ export function AccountDataProviderCore({
     ...getDefaultDependencies(),
     ...dependencyOverrides,
   }));
+  const [watchDeletionStore] = React.useState<WatchLogDeletionStore>(() =>
+    createWatchLogDeletionStore({storage: dependencies.metadataStorage}),
+  );
   const desiredPrincipal = React.useMemo(
     () => principalForAuthState(auth.state),
     [auth.state],
@@ -409,6 +436,41 @@ export function AccountDataProviderCore({
       }
 
       if (
+        !nextPublication.watchDeletionCoordinator ||
+        !nextPublication.rawVisibleLogbook
+      ) {
+        const publication = nextPublication;
+        const rawVisibleLogbook = publication.logbook;
+        const watchDeletionCoordinator = createWatchLogDeletionCoordinator({
+          tombstones: watchDeletionStore,
+          repository: rawVisibleLogbook,
+          queueDeletion: dependencies.queueWatchSessionDeletion,
+          listAcknowledgements:
+            dependencies.listWatchSessionDeletionAcknowledgements,
+          beforeDelete: async tombstone => {
+            await publication.beforeWatchLogDelete?.(tombstone);
+          },
+          requestSync: async () => {
+            await publication.coordinator?.drain({online: isOnline});
+          },
+          now: dependencies.now,
+        });
+        publication.rawVisibleLogbook = rawVisibleLogbook;
+        publication.watchDeletionCoordinator = watchDeletionCoordinator;
+        publication.logbook = createWatchDeletionAwareLogbookRepository({
+          repository: rawVisibleLogbook,
+          tombstones: watchDeletionStore,
+          deleteEntry: entry => watchDeletionCoordinator.delete(entry),
+        });
+      }
+      const watchDeletionCoordinator =
+        nextPublication.watchDeletionCoordinator;
+      if (!watchDeletionCoordinator) {
+        throw new Error('Watch deletion coordinator was not initialized.');
+      }
+      nextPublication.beforeWatchLogDelete = undefined;
+
+      if (
         desiredPrincipal.kind === 'user' &&
         nextPublication.claimStore &&
         nextPublication.guestRepositories &&
@@ -431,6 +493,8 @@ export function AccountDataProviderCore({
           accountMutationRepositories,
           profileStorage: dependencies.profileStorage,
           remoteRepository: auth.guestClaimRemoteRepository,
+          isWatchSessionDeleted: async localSessionId =>
+            (await watchDeletionStore.get(localSessionId)) !== undefined,
           now: dependencies.now,
           assertCanContinue: () => {
             if (!isCurrent()) {
@@ -514,10 +578,16 @@ export function AccountDataProviderCore({
             }
           },
         });
+        publication.beforeWatchLogDelete = tombstone =>
+          publication.claimService!.invalidateDeletedWatchSession(
+            tombstone.localSessionId,
+          );
       } else if (desiredPrincipal.kind === 'user') {
         nextPublication.claimGeneration = generation;
         nextPublication.claimService = undefined;
+        nextPublication.beforeWatchLogDelete = undefined;
       }
+      await watchDeletionCoordinator.reconcile();
 
       if (!isCurrent()) {
         return;
@@ -1400,6 +1470,24 @@ export function AccountDataProviderCore({
     },
     [desiredScope],
   );
+  const isWatchSessionDeleted = React.useCallback(
+    async (localSessionId: string): Promise<boolean> =>
+      (await watchDeletionStore.get(localSessionId)) !== undefined,
+    [watchDeletionStore],
+  );
+  const reconcileDeletedWatchSession = React.useCallback(
+    async (localSessionId: string): Promise<void> => {
+      if ((await watchDeletionStore.get(localSessionId)) === undefined) {
+        return;
+      }
+      const publication = publishedRef.current;
+      await publication?.watchDeletionCoordinator?.reconcile();
+      if (publication?.queryScope === desiredScope) {
+        await invalidatePrincipalQueries(queryClient, desiredScope);
+      }
+    },
+    [desiredScope, queryClient, watchDeletionStore],
+  );
 
   const bootstrap =
     bootstrapPresentation.queryScope === desiredScope
@@ -1441,6 +1529,8 @@ export function AccountDataProviderCore({
           }
         : hiddenClaimController(),
     isHistoricalWatchArtifact,
+    isWatchSessionDeleted,
+    reconcileDeletedWatchSession,
     requestSync,
     refreshCloudData,
   };
@@ -2939,6 +3029,8 @@ function getDefaultDependencies(): AccountDataDependencies {
     createId: createUuid,
     now: () => Date.now() / 1_000,
     jitter: Math.random,
+    queueWatchSessionDeletion,
+    listWatchSessionDeletionAcknowledgements,
   };
   return defaultDependencies;
 }

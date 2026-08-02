@@ -2,11 +2,19 @@
 
 Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18; Watch 기록 내구성과 경로 복구 경계, 2026-07-18; Watch callback, retry, re-entry, navigation hardening, 2026-07-18
 Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md); [Watch callback, retry, re-entry, navigation hardening](../../raw/architecture/2026-07-18-watch-callback-retry-reentry-navigation.md)
-Updated: 2026-07-18
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
+Updated: 2026-08-02
 
 ## 요약
 
 `apps/mobile/ios/DivenaryWatchApp`는 `apps/mobile/ios/Divenary.xcodeproj`의 `DivenaryWatchApp` target이 소유하는 SwiftUI watchOS companion이다. real recording은 watchOS underwater extended runtime lifecycle을 따르고, demo/debug recording은 별도의 view-scoped simulation 흐름을 유지한다. 이 앱은 다이빙 기록과 사후 리뷰 companion이며 인증된 다이브 컴퓨터나 안전 판단 시스템이 아니다.
+
+## 모바일 삭제 명령 처리
+
+Watch에는 사용자용 삭제 UI나 gesture가 없다. iPhone의 `watchSessionDeletionCommand`를 받으면 Watch는 `localSessionId`를 deleted-session ledger에 먼저 기록하고, 같은 session의 outstanding file transfer, manifest entry, canonical/legacy artifact와 saved-session row를 제거한 뒤 acknowledgement를 보낸다. 대상이 이미 없어도 idempotent success로 응답한다.
+
+Artifact cleanup이 실패하면 ACK하지 않고 ledger를 유지해 다음 launch나 반복 명령에서 정리를 재개한다. Load, migration과 save는 ledger에 있는 session을 복원하지 않는다. 이 삭제는 finalized history만 대상으로 하며 active underwater recording을 원격에서 중단하지 않는다.
 
 ## 앱 범위와 소유권
 

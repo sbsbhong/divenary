@@ -224,6 +224,100 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('syncStatus == .failed && sessions[index].syncStatus == .synced');
   });
 
+  it('persists mobile deletion commands until the Watch acknowledges exact session removal', () => {
+    const module = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityModule.swift',
+    );
+    const bridge = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityModuleBridge.m',
+    );
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const envelope = readRepoFile(
+      'apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift',
+    );
+    const transport = readRepoFile(
+      'apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift',
+    );
+    const artifactStore = readRepoFile(
+      'apps/mobile/ios/DivenaryWatchApp/Storage/DiveProfileArtifactStore.swift',
+    );
+    const sessionStore = readRepoFile(
+      'apps/mobile/ios/DivenaryWatchApp/Storage/DiveSessionStore.swift',
+    );
+
+    expect(module).toContain('@objc(queueSessionDeletion:resolver:rejecter:)');
+    expect(module).toContain(
+      '@objc(listSessionDeletionAcknowledgements:rejecter:)',
+    );
+    expect(bridge).toContain('queueSessionDeletion');
+    expect(bridge).toContain('listSessionDeletionAcknowledgements');
+    expect(inbox).toContain('watchConnectivityPendingSessionDeletions');
+    expect(inbox).toContain('persistPendingSessionDeletions()');
+    expect(inbox).toContain('flushPendingSessionDeletionsOnStateQueue()');
+    expect(inbox).toContain('outstandingUserInfoTransfers');
+    expect(inbox).toContain('watchSessionDeletionAcknowledgement');
+    expect(envelope).toContain('watchSessionDeletionCommand');
+    expect(envelope).toContain('watchSessionDeletionAcknowledgement');
+    expect(transport).toContain('onSessionDeletionRequested');
+    expect(transport).toContain('cancelTransfers(localSessionId:');
+    expect(transport).toContain('fileTransfer.cancel()');
+    expect(transport).toContain('acknowledgeDeletion(');
+    expect(artifactStore).toContain('deleted-session-ledger.json');
+    expect(artifactStore).toMatch(
+      /func deleteSession\(\s*localSessionId:/,
+    );
+    expect(artifactStore).toContain('func resumePendingDeletions()');
+    expect(artifactStore).toContain('func isSessionDeleted(');
+    expect(artifactStore).toMatch(
+      /recordDeletionIntent[\s\S]*save\(entries: remainingEntries\)[\s\S]*removeItem/,
+    );
+    expect(sessionStore).toContain('profileStore.resumePendingDeletions()');
+    expect(sessionStore).not.toContain(
+      'try? self.profileStore.resumePendingDeletions()',
+    );
+    expect(sessionStore).toContain(
+      'guard deletionRecoverySucceeded else',
+    );
+    expect(sessionStore).toContain('handleSessionDeletion');
+    expect(sessionStore).toContain('sessions.removeAll');
+    expect(sessionStore).not.toContain('swipeActions');
+    expect(sessionStore).not.toContain('onDelete');
+  });
+
+  it('uses the immediate deletion channel even while a background deletion transfer is outstanding', () => {
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const flushBlock = inbox.slice(
+      inbox.indexOf('private func flushPendingSessionDeletionsOnStateQueue()'),
+      inbox.indexOf(
+        'private func handleSessionDeletionAcknowledgementOnStateQueue(',
+      ),
+    );
+
+    expect(flushBlock).toMatch(
+      /for deletion in pendingSessionDeletions \{[\s\S]*if connectivitySession\.isReachable \{[\s\S]*connectivitySession\.sendMessage[\s\S]*guard !outstandingCommandIds\.contains\(deletion\.commandId\) else \{[\s\S]*continue[\s\S]*\}[\s\S]*connectivitySession\.transferUserInfo/,
+    );
+  });
+
+  it('retries durable deletion commands when the paired Watch state changes', () => {
+    const inbox = readRepoFile(
+      'apps/mobile/ios/Divenary/WatchConnectivityInbox.swift',
+    );
+    const watchStateBlock = inbox.slice(
+      inbox.indexOf('func sessionWatchStateDidChange(_ session: WCSession)'),
+      inbox.indexOf(
+        'func session(_ session: WCSession, didReceiveUserInfo',
+      ),
+    );
+
+    expect(watchStateBlock).toContain(
+      'flushPendingSessionDeletionsOnStateQueue()',
+    );
+  });
+
   it('uses one immutable file transfer for every watch session size', () => {
     const transport = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncTransport.swift');
     const envelope = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift');

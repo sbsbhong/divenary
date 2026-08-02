@@ -30,12 +30,12 @@
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Hosted staging 승격 뒤 Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md)                                             | iPhone 15-item checkpoint가 canonical 1건 재사용과 신규 14건 publication 뒤 cleanup됐고, 별도 1건 claim까지 local/remote readback을 통과했다. | 2026-07-30 |
+| [모바일 구조](architecture/mobile.md)                                             | 모바일이 Watch 로그 삭제 묘비를 먼저 영속화하고 claim, account outbox, native Watch command와 stale import 차단을 재조정한다. | 2026-08-02 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 JavaScript와 같은 bytes의 prepared profile을 native file로 채택하며 derived-file 손상 시 raw artifact를 보존한다. | 2026-07-28 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
-| [Supabase 구조](architecture/supabase.md)                                      | Semantic canonical reuse가 hosted staging과 원래 physical iPhone batch에서 canonical ID 보존·중복 방지를 통과했다. | 2026-07-30 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | 보존된 15-item checkpoint가 finalization부터 재개·cleanup되고 별도 1건 inventory와 claim으로 정확히 전환됐다. | 2026-07-30 |
-| [Watch 앱 구조](architecture/watch-app.md)                                      | Core Motion scalar actor hop, ordered O(1) 1Hz retry, runtime invalidation/re-entry gate와 managed simulated summary dismissal을 one app-scoped graph, canonical artifact, physical hardware gate와 분리한다. | 2026-07-18 |
+| [Supabase 구조](architecture/supabase.md)                                      | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단한다. | 2026-08-02 |
+| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Device-wide deletion tombstone이 Watch stale import, guest claim 부활, account delete와 Watch artifact 제거를 분리된 idempotent 경계로 수렴시킨다. | 2026-08-02 |
+| [Watch 앱 구조](architecture/watch-app.md)                                      | Watch는 모바일 삭제 명령을 ledger에 먼저 기록하고 transfer, manifest, artifact와 saved session을 제거한 뒤 ACK한다. | 2026-08-02 |
 
 ## domains
 
@@ -47,7 +47,7 @@
 | [Diving App / Non-Negotiable Safety Rules](domains/diving-app-non-negotiable-safety-rules.md) | 제품 구현에서 절대 위반하면 안 되는 safety-critical 규칙을 정리하고, Apple Watch 기반 v1 40m 지원 범위, 40m 초과 값 보존+unsupported 표시, v1 Air-only safety stop을 감압 의무처럼 표현하지 않는 규칙을 포함한다. | 2026-07-09 |
 | [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 안전 copy, warning hierarchy, 책임 관련 UX 원칙을 정리하고, v1 Air-only safety stop 권장을 mandatory/decompression stop과 다른 색상과 문구로 제한한다. | 2026-07-08 |
 | [Diving App / Scuba Mode](domains/diving-app-scuba-mode.md) | Scuba mode v1은 Apple Watch 기반 40m 이하 Air-only gauge/log와 rule-based safety stop reminder를 포함하고, 40m 초과 값은 지원 범위 밖 warning과 함께 보존하지만 NDL, ceiling, TTS, CNS, gas remaining, decompression stop은 고위험 검증 범위로 분리한다. | 2026-07-09 |
-| [다이브 로그 도메인](domains/dive-log.md) | Watch profile의 sample `sha256`과 artifact `artifactSha256`을 분리하고 `captureMode`를 동기화 경로와 독립된 provenance/display metadata로 다룬다. | 2026-07-24 |
+| [다이브 로그 도메인](domains/dive-log.md) | Watch session 삭제 identity는 `localSessionId`이며 mobile tombstone, account/claim과 Watch artifact 제거는 별도 완료 경계다. | 2026-08-02 |
 | [다이브 계획 도메인](domains/dive-planning.md) | 모바일 Planbook은 비중요 계획 알림이며, optional planned pressure는 준비 맥락 metadata일 뿐 실제 측정값이나 안전 계산 결과가 아니다. | 2026-06-28 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
 | [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, debug sample과 미수신 수온을 실측값처럼 표시하지 않는다. | 2026-07-12 |

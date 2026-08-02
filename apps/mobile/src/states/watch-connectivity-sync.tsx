@@ -53,6 +53,8 @@ type WatchConnectivitySyncProviderProps = {
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
   ) => Promise<boolean>;
+  isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
+  reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
   scheduleAfterInteractions?: (
     task: () => void | Promise<void>,
   ) => {cancel(): void};
@@ -76,6 +78,8 @@ type WatchConnectivityImportOptions = {
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
   ) => Promise<boolean>;
+  isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
+  reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
   yieldToRuntime?: () => Promise<void>;
 };
 
@@ -111,6 +115,8 @@ type WatchConnectivityPayloadImportOptions = {
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
   ) => Promise<boolean>;
+  isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
+  reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
 };
 
 type WatchConnectivityPayloadImportOnceOptions = Omit<
@@ -172,6 +178,14 @@ export function WatchConnectivitySyncProvider(
     ?? (props.repository
       ? undefined
       : accountData?.isHistoricalWatchArtifact);
+  const isWatchSessionDeleted =
+    props.isWatchSessionDeleted ??
+    (props.repository ? undefined : accountData?.isWatchSessionDeleted);
+  const reconcileDeletedWatchSession =
+    props.reconcileDeletedWatchSession ??
+    (props.repository
+      ? undefined
+      : accountData?.reconcileDeletedWatchSession);
   const scheduleAfterInteractions =
     props.scheduleAfterInteractions ?? defaultScheduleAfterInteractions;
   const yieldToRuntime = props.yieldToRuntime ?? defaultYieldToRuntime;
@@ -200,6 +214,8 @@ export function WatchConnectivitySyncProvider(
           queryScope,
           onLocalWritesCommitted,
           isHistoricalWatchArtifact,
+          isWatchSessionDeleted,
+          reconcileDeletedWatchSession,
         }),
       );
 
@@ -294,6 +310,7 @@ export function WatchConnectivitySyncProvider(
     coordinator,
     drainPendingPayloads,
     isHistoricalWatchArtifact,
+    isWatchSessionDeleted,
     notifyImportedEntry,
     onImportedEntry,
     onLocalWritesCommitted,
@@ -303,6 +320,7 @@ export function WatchConnectivitySyncProvider(
     queryClient,
     queryScope,
     repository,
+    reconcileDeletedWatchSession,
     scheduleAfterInteractions,
     subscribeToPayloads,
     yieldToRuntime,
@@ -324,6 +342,8 @@ export async function importPendingWatchConnectivityPayloads({
   coordinator = defaultWatchConnectivityImportCoordinator,
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
+  isWatchSessionDeleted,
+  reconcileDeletedWatchSession,
   yieldToRuntime = defaultYieldToRuntime,
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
   let importedCount = 0;
@@ -366,6 +386,8 @@ export async function importPendingWatchConnectivityPayloads({
             scope,
             onLocalWritesCommitted,
             isHistoricalWatchArtifact,
+            isWatchSessionDeleted,
+            reconcileDeletedWatchSession,
           }),
         );
         if (importedEntry) {
@@ -403,9 +425,24 @@ async function importWatchConnectivityPayload({
   scope,
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
+  isWatchSessionDeleted,
+  reconcileDeletedWatchSession,
 }: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
   return coordinator.run(scope, payload, async guard => {
     try {
+      if (
+        payload.localSessionId !== undefined &&
+        (await isWatchSessionDeleted?.(payload.localSessionId)) === true
+      ) {
+        await consumeDeletedWatchPayload({
+          payload,
+          localSessionId: payload.localSessionId,
+          acknowledgeImportedPayloads,
+          reconcileDeletedWatchSession,
+          guard,
+        });
+        return undefined;
+      }
       const preparedPayload = await preparePayloadForImport(
         payload,
         preparePendingPayload,
@@ -423,6 +460,8 @@ async function importWatchConnectivityPayload({
         guard,
         onLocalWritesCommitted,
         isHistoricalWatchArtifact,
+        isWatchSessionDeleted,
+        reconcileDeletedWatchSession,
       });
     } catch (error) {
       if (
@@ -450,12 +489,27 @@ async function importWatchConnectivityPayloadOnce({
   guard,
   onLocalWritesCommitted,
   isHistoricalWatchArtifact,
+  isWatchSessionDeleted,
+  reconcileDeletedWatchSession,
 }: WatchConnectivityPayloadImportOnceOptions): Promise<DiveLogEntry | undefined> {
   const result = parseWatchSyncMessageJson(payload.payloadJson);
 
   if (!result.ok) {
     console.warn('Dropped invalid watch sync payload', result.error);
     await acknowledgePayload(payload, acknowledgePayloads);
+    return undefined;
+  }
+  if (
+    (await isWatchSessionDeleted?.(result.message.session.localSessionId)) ===
+    true
+  ) {
+    await consumeDeletedWatchPayload({
+      payload,
+      localSessionId: result.message.session.localSessionId,
+      acknowledgeImportedPayloads,
+      reconcileDeletedWatchSession,
+      guard,
+    });
     return undefined;
   }
 
@@ -520,6 +574,22 @@ async function importWatchConnectivityPayloadOnce({
   requestAccountSyncSafely(onLocalWritesCommitted);
   await notifyImportedEntrySafely(importedEntry, notifyImportedEntry);
   return importedEntry;
+}
+
+async function consumeDeletedWatchPayload(options: {
+  payload: WatchConnectivityPayload;
+  localSessionId: string;
+  acknowledgeImportedPayloads: WatchConnectivityAcknowledgement;
+  reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
+  guard: WatchConnectivityImportGuard;
+}): Promise<void> {
+  options.guard.assertActive();
+  await options.reconcileDeletedWatchSession?.(options.localSessionId);
+  options.guard.assertActive();
+  await acknowledgePayload(
+    options.payload,
+    options.acknowledgeImportedPayloads,
+  );
 }
 
 async function preparePayloadForImport(

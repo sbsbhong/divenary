@@ -5,4 +5,5 @@ export const mobileStorageKeys = {
   planbook: 'dive-app:planbook:v2',
   preferences: 'dive-app:preferences:v1',
   legacyGuestMigration: 'dive-app:data:legacy-to-guest:v1',
+  watchLogDeletions: 'dive-app:watch-log-deletions:v1',
 } as const;
