@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { inflateSync } from 'node:zlib';
 
 function readMobileFile(relativePath: string): string {
   try {
@@ -9,7 +10,9 @@ function readMobileFile(relativePath: string): string {
   }
 }
 
-function readPngDimensions(relativePath: string): { width: number; height: number } | undefined {
+function readPngMetadata(
+  relativePath: string,
+): { width: number; height: number; colorType: number } | undefined {
   try {
     const bytes = readFileSync(resolve(process.cwd(), relativePath));
 
@@ -20,6 +23,95 @@ function readPngDimensions(relativePath: string): { width: number; height: numbe
     return {
       width: bytes.readUInt32BE(16),
       height: bytes.readUInt32BE(20),
+      colorType: bytes.readUInt8(25),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function readPngDimensions(relativePath: string): { width: number; height: number } | undefined {
+  const metadata = readPngMetadata(relativePath);
+  return metadata && { width: metadata.width, height: metadata.height };
+}
+
+function paeth(left: number, up: number, upperLeft: number): number {
+  const estimate = left + up - upperLeft;
+  const leftDistance = Math.abs(estimate - left);
+  const upDistance = Math.abs(estimate - up);
+  const upperLeftDistance = Math.abs(estimate - upperLeft);
+
+  if (leftDistance <= upDistance && leftDistance <= upperLeftDistance) {
+    return left;
+  }
+
+  return upDistance <= upperLeftDistance ? up : upperLeft;
+}
+
+function readPngAlphaSamples(
+  relativePath: string,
+): { cornerAlpha: number; centerAlpha: number } | undefined {
+  try {
+    const bytes = readFileSync(resolve(process.cwd(), relativePath));
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+
+    if (bytes.readUInt8(24) !== 8 || bytes.readUInt8(25) !== 6 || bytes.readUInt8(28) !== 0) {
+      return undefined;
+    }
+
+    const chunks: Buffer[] = [];
+
+    for (let offset = 8; offset < bytes.length;) {
+      const length = bytes.readUInt32BE(offset);
+      const type = bytes.toString('ascii', offset + 4, offset + 8);
+
+      if (type === 'IDAT') {
+        chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
+      }
+
+      offset += length + 12;
+    }
+
+    const decoded = inflateSync(Buffer.concat(chunks));
+    const stride = width * 4;
+    const rows: Buffer[] = [];
+    let cursor = 0;
+    let previous = Buffer.alloc(stride);
+
+    for (let y = 0; y < height; y += 1) {
+      const filter = decoded[cursor];
+      cursor += 1;
+      const raw = decoded.subarray(cursor, cursor + stride);
+      cursor += stride;
+      const row = Buffer.alloc(stride);
+
+      for (let index = 0; index < stride; index += 1) {
+        const left = index >= 4 ? row[index - 4] : 0;
+        const up = previous[index];
+        const upperLeft = index >= 4 ? previous[index - 4] : 0;
+        const predictor = [
+          0,
+          left,
+          up,
+          Math.floor((left + up) / 2),
+          paeth(left, up, upperLeft),
+        ][filter];
+
+        if (predictor === undefined) {
+          return undefined;
+        }
+
+        row[index] = (raw[index] + predictor) & 0xff;
+      }
+
+      rows.push(row);
+      previous = row;
+    }
+
+    return {
+      cornerAlpha: rows[0][3],
+      centerAlpha: rows[Math.floor(height / 2)][Math.floor(width / 2) * 4 + 3],
     };
   } catch {
     return undefined;
@@ -27,6 +119,16 @@ function readPngDimensions(relativePath: string): { width: number; height: numbe
 }
 
 describe('native splash screen', () => {
+  test('keeps the approved logo and splash geometry in the asset generator', () => {
+    const generator = readMobileFile('scripts/generate-brand-assets.swift');
+
+    expect(generator).toContain('static let foregroundScale = 0.85');
+    expect(generator).toContain('static let splashCornerRadiusRatio = 0.22');
+    expect(generator).toContain('splashCornerRadiusRatio * CGFloat(renderSize)');
+    expect(generator).toContain('let supersample = rounded ? 4 : 1');
+    expect(generator).toContain('layer.cornerCurve = .continuous');
+  });
+
   test('centers one 96 by 96 mark in the iOS launch storyboard', () => {
     const storyboard = readMobileFile('ios/Divenary/LaunchScreen.storyboard');
     const iosMarkContents = readMobileFile('ios/Divenary/Images.xcassets/SplashMark.imageset/Contents.json');
@@ -64,8 +166,20 @@ describe('native splash screen', () => {
     expect(JSON.parse(iosMarkContents).images).toEqual(
       iosMarkImages.map(image => ({ ...image, idiom: 'universal' })),
     );
-    for (const { filename } of iosMarkImages) {
+    for (const { filename, scale } of iosMarkImages) {
+      const relativePath = `ios/Divenary/Images.xcassets/SplashMark.imageset/${filename}`;
+      const multiplier = Number.parseInt(scale, 10);
+
       expect(existsSync(resolve(iosMarkDirectory, filename))).toBe(true);
+      expect(readPngMetadata(relativePath)).toEqual({
+        width: 96 * multiplier,
+        height: 96 * multiplier,
+        colorType: 6,
+      });
+      expect(readPngAlphaSamples(relativePath)).toEqual({
+        cornerAlpha: 0,
+        centerAlpha: 255,
+      });
     }
     expect(iosMarkContents).not.toContain('.svg');
     expect(iosMarkContents).not.toContain('preserves-vector-representation');
@@ -118,12 +232,20 @@ describe('native splash screen', () => {
     expect(androidLaunchScreen).toContain('android:gravity="center"');
     expect(existsSync(resolve(process.cwd(), 'android/app/src/main/res/drawable/splash_mark.xml'))).toBe(false);
     for (const [density, size] of Object.entries(androidSplashSizes)) {
-      expect(
-        readPngDimensions(`android/app/src/main/res/drawable-${density}/splash_mark.png`),
-      ).toEqual({ width: size, height: size });
-      expect(
-        readPngDimensions(`android/app/src/main/res/drawable-night-${density}/splash_mark.png`),
-      ).toEqual({ width: size, height: size });
+      const lightPath = `android/app/src/main/res/drawable-${density}/splash_mark.png`;
+      const darkPath = `android/app/src/main/res/drawable-night-${density}/splash_mark.png`;
+
+      for (const relativePath of [lightPath, darkPath]) {
+        expect(readPngMetadata(relativePath)).toEqual({
+          width: size,
+          height: size,
+          colorType: 6,
+        });
+        expect(readPngAlphaSamples(relativePath)).toEqual({
+          cornerAlpha: 0,
+          centerAlpha: 255,
+        });
+      }
     }
     expect(androidColors).toContain('<color name="splash_background">#F5F5F7</color>');
     expect(androidNightColors).toContain('<color name="splash_background">#000000</color>');
