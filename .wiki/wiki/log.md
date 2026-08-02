@@ -1124,3 +1124,14 @@
 - Updated: Knowledge Base Index
 - Recorded: completed 권장 스탑 뒤 현재 수심이 10m에 다시 도달하면 같은 recording에서 180초 리마인더를 재무장한다.
 - Clarified: 이 동작은 감압·조직 포화 계산이 아닌 고정 리마인더 규칙이며 기존 completed/armed contract를 재사용한다.
+
+## [2026-08-02] ingest | 개인정보 최소화 Mobile/Watch 진단 설계
+- Added: 개인정보 최소화 모바일·Watch 진단 결정 raw source
+- Added: ADR: 개인정보 최소화 device-local 진단 파이프라인
+- Updated: ADR 목록
+- Updated: 구현 우선순위 기록
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Recorded: 모든 build의 진단 journal에서 계정·Auth·위치·사용자 콘텐츠·다이빙 수치와 원본 payload를 제외한다.
+- Recorded: 1단계는 Watch 3일/1MB와 iPhone 14일/10MB local journal, 전용 Watch diagnostic transfer/ACK, 고정 분류 incident marker, 수동 JSONL export와 cross-device purge다.
+- Pending: 공통 schema와 journal 구현, paired-device background/reconnect/retention/purge 검증, 원격 provider·동의·privacy policy·native crash 수집은 아직 완료되지 않았다.

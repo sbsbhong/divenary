@@ -1,12 +1,12 @@
 # 구현 우선순위 기록
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
-Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
-Updated: 2026-07-20
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Wave 3 Supabase/Auth 승인 결정, 2026-07-13; Wave 3A Auth 설계 검토 보정, 2026-07-13; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Divenary Auth promotion readiness evidence, 2026-07-15; Google iOS client and callback correction, 2026-07-16; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20; 사용자 승인 진단 설계, 2026-08-02
+Raw: [Pre-Karpathy: 구현 우선순위 기록](../../raw/architecture/implementation-priorities.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Wave 3 Supabase/Auth 승인 결정](../../raw/architecture/2026-07-13-wave3-supabase-auth-decisions.md); [Wave 3A Auth 설계 검토 보정](../../raw/architecture/2026-07-13-wave3-auth-design-review.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Divenary Auth promotion readiness evidence](../../raw/architecture/2026-07-15-divenary-auth-promotion-readiness.md); [Google iOS client and callback correction](../../raw/architecture/2026-07-16-google-ios-callback-correction.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [개인정보 최소화 모바일·Watch 진단 결정](../../raw/decisions/2026-08-02-privacy-minimized-diagnostics.md)
+Updated: 2026-08-02
 
 ## 요약
 
-실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Auth, owner account schema, principal partition, outbox/sync, guest claim core와 hosted staging automated verification은 완료됐다. 현재 우선순위는 Google/claim 실기기 검증, post-Auth Watch regression, committed claim evidence lifecycle과 account deletion gate다.
+실제 프리다이빙·스쿠버를 해야만 검증할 수 있는 항목을 제외한 모든 미구현 작업은 P0다. Auth, owner account schema, principal partition, outbox/sync, guest claim core와 hosted staging automated verification은 완료됐다. 현재 우선순위는 Google/claim 실기기 검증, post-Auth Watch regression, committed claim evidence lifecycle, account deletion과 개인정보 최소화 진단 기반이다.
 
 ## 현재 상태
 
@@ -49,6 +49,9 @@ Updated: 2026-07-20
 
 ## P0 Wave 4: 제품 완성
 
+- 개인정보 최소화 diagnostic schema, Mobile/Watch bounded journal, Watch-to-iPhone 전용 transfer/ACK, 고정 분류 incident marker, Settings JSONL export와 cross-device purge를 구현한다. 현재는 설계만 승인됐으며 구현 완료로 표시하지 않는다.
+- Watch 3일/1MB와 iPhone 14일/10MB retention, 개인정보 canary 차단, malformed/duplicate/ACK-loss recovery와 paired-device background/reconnect를 검증한다.
+- 원격 수집 provider, 자동 upload, native crash/symbolication, 사용자 동의·opt-out, privacy policy, sampling과 server retention/deletion은 device-local 1단계 뒤의 별도 2단계로 유지한다.
 - Memory/share를 별도 spec으로 재설계하고 현재 tab 구조에 연결한다.
 - 사진·영상 첨부, export/share card, metadata redaction, 실패/취소 상태를 구현한다.
 - Logbook profile·검색·filter·통계·review와 Planbook 반복 사용 흐름을 실제 저장소 기준으로 마무리한다.
@@ -78,4 +81,5 @@ Updated: 2026-07-20
 - [Watch 앱 구조](watch-app.md)
 - [Supabase 구조](supabase.md)
 - [안전 규칙](../domains/safety-rules.md)
+- [ADR: 개인정보 최소화 device-local 진단 파이프라인](../decisions/adr-privacy-minimized-diagnostics.md)
 - [열린 질문](../questions/open-questions.md)

@@ -28,7 +28,7 @@
 | Article                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                | Updated    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Hosted staging 승격 뒤 Google·claim 실기기, Watch 회귀, claim evidence lifecycle과 account deletion을 우선 gate로 둔다. | 2026-07-20 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Google·claim 실기기, Watch 회귀, account deletion과 개인정보 최소화 device-local 진단 기반을 P0로 두고 원격 수집을 별도 2단계로 분리한다. | 2026-08-02 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
 | [모바일 구조](architecture/mobile.md)                                             | 모바일이 Watch 로그 삭제 묘비를 먼저 영속화하고 claim, account outbox, native Watch command와 stale import 차단을 재조정한다. | 2026-08-02 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 JavaScript와 같은 bytes의 prepared profile을 native file로 채택하며 derived-file 손상 시 raw artifact를 보존한다. | 2026-07-28 |
@@ -66,9 +66,10 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [ADR 목록](decisions/adr-index.md) | 이 문서는 accepted architecture decision record 목록을 관리한다. | 2026-06-28 |
+| [ADR 목록](decisions/adr-index.md) | 이 문서는 accepted architecture decision record 목록을 관리한다. | 2026-08-02 |
 | [ADR: 1Hz immutable profile과 file-only session sync](decisions/adr-one-hertz-file-sync.md) | raw live callback과 bounded profile을 분리하고 session body를 immutable file 하나로 전달한다. | 2026-07-12 |
 | [ADR: Local-first mobile logbook with future Supabase sync](decisions/adr-local-first-mobile-logbook.md) | Local-first 저장소를 유지하고, guest 로그 연결 동의 뒤 Supabase outbox를 추가한다. 현재 cloud 상태는 `notConfigured`다. | 2026-07-12 |
+| [ADR: 개인정보 최소화 device-local 진단 파이프라인](decisions/adr-privacy-minimized-diagnostics.md) | 모든 build에서 사용자 콘텐츠를 제외한 Mobile/Watch local journal과 수동 export를 먼저 구현하고, 원격 수집을 별도 동의 단계로 남긴다. | 2026-08-02 |
 
 ## questions
 
@@ -77,4 +78,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | Semantic canonical reuse의 iPhone gate 이후 남은 Android·offline/force-quit claim, Watch·센서, production/account deletion gate를 기록한다. | 2026-07-30 |
+| [열린 질문](questions/open-questions.md) | 남은 claim·Watch·production gate와 함께 device-local 진단 1단계 및 동의 기반 원격 수집 2단계의 미구현·실기기 검증 항목을 기록한다. | 2026-08-02 |

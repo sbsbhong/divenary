@@ -8,8 +8,10 @@ Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-0
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
 Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
-Updated: 2026-07-30
-Last reviewed: 2026-07-30
+Sources: 사용자 승인 진단 설계, 2026-08-02
+Raw: [개인정보 최소화 모바일·Watch 진단 결정](../../raw/decisions/2026-08-02-privacy-minimized-diagnostics.md)
+Updated: 2026-08-02
+Last reviewed: 2026-08-02
 
 ## 요약
 
@@ -26,6 +28,7 @@ Last reviewed: 2026-07-30
 - Apple Watch 기반 v1 지원 수심은 40m 이하로 제한한다. 40m보다 깊은 값은 reject/clamp하지 않고 로그/계획/review에 보존하되 unsupported-depth warning을 표시하는 정책으로 구현됐다. 다만 실제 Apple Watch가 40m 초과 상황에서 어떤 값을 제공하거나 기능을 중단하는지는 지원 hardware에서 검증해야 한다.
 - Store-level Apple Watch Ultra-only install filtering은 App Store/TestFlight 단계에서 검증해야 한다. 현재 code boundary는 watch target `underwater-depth` background mode, motion usage description, `waterSubmersionAvailable` runtime gate로 real start를 제한한다.
 - WatchConnectivity session body는 file-only이고 native inbox와 activation-gated ACK outbox가 구현됐다. 사용자가 약 4분의 foreground pairing, 자동 import, local save 뒤 Watch `synced` 전환을 확인했지만 build identifier, 기기/OS, background/force-quit delivery, reconnect, retry timing, large transfer는 아직 검증되지 않았다.
+- 개인정보를 최소화한 Mobile/Watch 진단 파이프라인은 설계만 승인됐고 구현되지 않았다. 1단계에는 공통 schema, 3일/1MB Watch journal, 14일/10MB iPhone journal, session sync와 분리된 Watch diagnostic transfer/ACK, 고정 분류 incident marker, JSONL 수동 export와 cross-device purge가 필요하다. 모든 build에서 계정 식별자, Auth 정보, 위치, 사용자 콘텐츠, 다이빙 수치·sample과 원본 payload를 제외해야 한다. Watch background/reconnect/ACK retry, retention, offline purge는 paired hardware gate다. 원격 provider, 자동 upload, 사용자 동의·opt-out, privacy policy, sampling, server retention/deletion, native crash/symbolication은 별도 승인 전까지 미구현 2단계다.
 - 자동 drain과 수동 drain은 process-wide coordinator로 직렬화됐지만, 실제 disconnect/reconnect crash가 사라졌는지는 paired hardware에서 재현해야 한다.
 - Watch sync notification은 preference hydration, AppState 재-drain, Notifee background handler, denied-permission Settings 복구 경로를 갖지만 background/force-quit 상태에서 실제 WatchConnectivity wake와 local notification 표시가 어떻게 동작하는지는 paired 실기기에서 검증되지 않았다.
 - Settings의 기기 관리는 공개 `WCSession` 상태를 표시하지만, 사용자가 설정한 Apple Watch 이름을 읽는 공개 API는 아직 확인되지 않았다. 현재 native fallback 이름은 `Apple Watch`다.
@@ -57,4 +60,5 @@ Last reviewed: 2026-07-30
 - [Supabase 구조](../architecture/supabase.md)
 - [동기화 흐름 구조](../architecture/sync-flow.md)
 - [안전 규칙](../domains/safety-rules.md)
+- [ADR: 개인정보 최소화 device-local 진단 파이프라인](../decisions/adr-privacy-minimized-diagnostics.md)
 - [Diving App / Open Questions](diving-app-open-questions.md)
