@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
@@ -7,6 +8,17 @@ function readMobileFile(relativePath: string): string {
     return readFileSync(resolve(process.cwd(), relativePath), 'utf8');
   } catch {
     return '';
+  }
+}
+
+function readGitBlobId(relativePath: string): string | undefined {
+  try {
+    const bytes = readFileSync(resolve(process.cwd(), relativePath));
+    const header = Buffer.from(`blob ${bytes.length}\0`);
+
+    return createHash('sha1').update(header).update(bytes).digest('hex');
+  } catch {
+    return undefined;
   }
 }
 
@@ -119,10 +131,16 @@ function readPngAlphaSamples(
 }
 
 describe('native splash screen', () => {
-  test('keeps the approved logo and splash geometry in the asset generator', () => {
+  test('keeps the exact large logo sources and approved splash geometry', () => {
     const generator = readMobileFile('scripts/generate-brand-assets.swift');
 
-    expect(generator).toContain('static let foregroundScale = 0.85');
+    expect(readGitBlobId('src/assets/brand/app-logo-light.png')).toBe(
+      '5a5eb21bcb739897e84158244407a5988d95d201',
+    );
+    expect(readGitBlobId('src/assets/brand/app-logo-dark.png')).toBe(
+      'c4a76b743a18eb835706aa83c4ec8b8505aecb95',
+    );
+    expect(generator).not.toContain('foregroundScale');
     expect(generator).toContain('static let splashCornerRadiusRatio = 0.22');
     expect(generator).toContain('splashCornerRadiusRatio * CGFloat(renderSize)');
     expect(generator).toContain('let supersample = rounded ? 4 : 1');

@@ -7,7 +7,6 @@ import QuartzCore
 import UniformTypeIdentifiers
 
 enum BrandAssetConfig {
-  static let foregroundScale = 0.85
   static let splashCornerRadiusRatio = 0.22
   static let androidSplashSizes = [
     "mdpi": 96,
@@ -211,6 +210,5 @@ for (density, size) in BrandAssetConfig.androidLauncherSizes {
 
 print(
   "Generated Divenary brand assets "
-    + "(foregroundScale=\(BrandAssetConfig.foregroundScale), "
-    + "splashCornerRadiusRatio=\(BrandAssetConfig.splashCornerRadiusRatio))"
+    + "(splashCornerRadiusRatio=\(BrandAssetConfig.splashCornerRadiusRatio))"
 )
