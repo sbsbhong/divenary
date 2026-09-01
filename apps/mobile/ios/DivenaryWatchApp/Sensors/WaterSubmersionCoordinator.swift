@@ -37,6 +37,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
 
     @Published private(set) var latestState: WaterSubmersionState = .unknown
     @Published private(set) var latestDepthState: WaterDepthState = .unknown
+    @Published private(set) var latestDepthMeters: Double?
     @Published private(set) var maximumDepthMeters: Double?
 
     private let managerFactory: () -> CMWaterSubmersionManager?
@@ -182,6 +183,9 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
 
     func receiveEvent(state: WaterSubmersionState, at timestamp: Date) {
         latestState = state
+        if state == .notSubmerged {
+            latestDepthMeters = nil
+        }
         onEvent?(state, timestamp)
     }
 
@@ -199,9 +203,13 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
             temperatureCelsius: latestTemperatureCelsius,
             depthState: depthState
         ) else {
+            if depthState == .notSubmerged || depthState == .sensorDepthError {
+                latestDepthMeters = nil
+            }
             return
         }
 
+        latestDepthMeters = sample.depthMeters
         onSample?(sample)
     }
 

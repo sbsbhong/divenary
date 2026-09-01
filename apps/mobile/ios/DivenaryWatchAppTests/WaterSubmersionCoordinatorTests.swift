@@ -159,6 +159,52 @@ final class WaterSubmersionCoordinatorTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(sample.waterTemperatureCelsius), 18.4, accuracy: 0.001)
     }
 
+    func testValidMeasurementPublishesLatestDepthMeters() throws {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+
+        coordinator.receiveMeasurement(
+            timestamp: Date(timeIntervalSince1970: 1),
+            depthMeters: 0.12,
+            pressureKPa: 102.4,
+            depthState: .submergedShallow
+        )
+
+        XCTAssertEqual(try XCTUnwrap(coordinator.latestDepthMeters), 0.12, accuracy: 0.001)
+    }
+
+    func testNotSubmergedEventClearsLatestDepthMeters() {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        coordinator.receiveMeasurement(
+            timestamp: Date(timeIntervalSince1970: 1),
+            depthMeters: 0.12,
+            pressureKPa: 102.4,
+            depthState: .submergedShallow
+        )
+
+        coordinator.receiveEvent(state: .notSubmerged, at: Date(timeIntervalSince1970: 2))
+
+        XCTAssertNil(coordinator.latestDepthMeters)
+    }
+
+    func testSensorDepthErrorClearsLatestDepthMeters() {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        coordinator.receiveMeasurement(
+            timestamp: Date(timeIntervalSince1970: 1),
+            depthMeters: 0.12,
+            pressureKPa: 102.4,
+            depthState: .submergedShallow
+        )
+
+        coordinator.receiveMeasurement(
+            timestamp: Date(timeIntervalSince1970: 2),
+            depthMeters: nil,
+            pressureKPa: nil,
+            depthState: .sensorDepthError
+        )
+
+        XCTAssertNil(coordinator.latestDepthMeters)
+    }
+
     func testMissingDepthOrPressureDoesNotProduceSample() {
         XCTAssertNil(WaterSubmersionCoordinator.makeSample(
             timestamp: date(1), depthMeters: nil, pressureKPa: 101.3,
