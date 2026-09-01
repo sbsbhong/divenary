@@ -363,6 +363,8 @@ final class DiveSessionStore: ObservableObject {
     }
 }
 
+extension DiveSessionStore: DiveSessionPersisting {}
+
 private extension DiveSessionRecord {
     var resolvedSourcePlanLocalId: String? {
         if let sourcePlanLocalId {

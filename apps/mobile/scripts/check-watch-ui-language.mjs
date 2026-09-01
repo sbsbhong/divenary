@@ -26,6 +26,14 @@ const wetReadyViewSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/WetReadyView.swift'),
   'utf8',
 );
+const summaryViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/SummaryView.swift'),
+  'utf8',
+);
+const realRecordingFlowSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift'),
+  'utf8',
+);
 const sessionListViewSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/SessionListView.swift'),
   'utf8',
@@ -96,6 +104,21 @@ const checks = [
       /press.*Digital Crown/i.test(wetReadyViewSource),
   },
   {
+    name: 'watch summary omits subjective post-dive input',
+    pattern: /StarRatingControl|POST-DIVE REVIEW|TextField\("Quick note"/,
+    source: summaryViewSource,
+  },
+  {
+    name: 'real recording flow delegates persistence to the coordinator',
+    failed:
+      realRecordingFlowSource.includes('store.save(') ||
+      realRecordingFlowSource.includes('onDiscard:'),
+  },
+  {
+    name: 'real recording copy does not claim crown-press handling',
+    failed: /press and hold the Digital Crown/i.test(recordingViewSource),
+  },
+  {
     name: 'watch string catalog includes English and Korean localizations',
     failed:
       !stringCatalog ||
@@ -112,7 +135,9 @@ const checks = [
   },
 ];
 
-const failures = checks.filter(check => check.failed ?? check.pattern.test(source));
+const failures = checks.filter(check =>
+  check.failed ?? check.pattern.test(check.source ?? source),
+);
 
 if (failures.length > 0) {
   console.error('Watch UI language check failed:');

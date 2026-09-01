@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct RealRecordingFlowView: View {
-    @ObservedObject var store: DiveSessionStore
     @ObservedObject var water: WaterSubmersionCoordinator
     @ObservedObject var recorder: DiveSessionRecorder
     @ObservedObject var coordinator: RealDiveSessionCoordinator
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -25,27 +25,29 @@ struct RealRecordingFlowView: View {
                     endControl: WatchRecordingMode.real.endControl,
                     onEndDive: nil
                 )
-            case .summary(let session):
-                SummaryView(
+            case .completing:
+                savingView
+            case .savedSummary(let session):
+                SavedSessionSummaryView(
                     session: session,
-                    onSave: { session in
-                        if store.save(session) {
-                            coordinator.markSummarySaved()
-                        }
-                    },
-                    onDiscard: {
-                        coordinator.discardSummary()
-                    }
+                    onDone: coordinator.dismissSavedSummary
                 )
             case .noSamples:
                 noSamplesView
             case .awaitingRuntimeInvalidation:
-                persistenceErrorView(allowsDismissal: false)
-            case .persistenceError:
-                persistenceErrorView(allowsDismissal: true)
+                startPersistenceErrorView(allowsDismissal: false)
+            case .startPersistenceError:
+                startPersistenceErrorView(allowsDismissal: true)
+            case .savePersistenceError:
+                savePersistenceErrorView
             }
         }
         .navigationBarBackButtonHidden(true)
+        .onChange(of: scenePhase) { _, nextPhase in
+            if nextPhase == .active {
+                coordinator.retryCompletedSessionSave()
+            }
+        }
     }
 
     private var noSamplesView: some View {
@@ -67,7 +69,7 @@ struct RealRecordingFlowView: View {
         .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
-    private func persistenceErrorView(allowsDismissal: Bool) -> some View {
+    private func startPersistenceErrorView(allowsDismissal: Bool) -> some View {
         VStack(spacing: 10) {
             Image(systemName: "externaldrive.badge.exclamationmark")
                 .font(.system(size: 24, weight: .semibold))
@@ -88,13 +90,46 @@ struct RealRecordingFlowView: View {
 
             if allowsDismissal {
                 Button("Done") {
-                    coordinator.dismissPersistenceError()
+                    coordinator.dismissStartPersistenceError()
                 }
                 .buttonStyle(DiveActionButtonStyle(kind: .primary))
             } else {
                 ProgressView()
                     .tint(DiveWatchTheme.primary)
             }
+        }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var savingView: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(DiveWatchTheme.primary)
+            Text("Saving log")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var savePersistenceErrorView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+
+            Text("Keeping your captured log.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .multilineTextAlignment(.center)
+
+            Button("Retry Save") {
+                coordinator.retryCompletedSessionSave()
+            }
+            .buttonStyle(DiveActionButtonStyle(kind: .primary))
         }
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)

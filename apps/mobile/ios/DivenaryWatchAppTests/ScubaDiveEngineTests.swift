@@ -220,10 +220,12 @@ final class WatchRecordingModeTests: XCTestCase {
                 plan: PreDivePlan(diveMode: .scuba)
             ).presentsRecordingFlow
         )
-        XCTAssertTrue(RealDivePhase.summary(DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.completing(record: DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.savedSummary(record: DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.noSamples.presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.awaitingRuntimeInvalidation(source: .systemAutoLaunch).presentsRecordingFlow)
-        XCTAssertTrue(RealDivePhase.persistenceError(source: .manual).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.startPersistenceError(source: .manual).presentsRecordingFlow)
+        XCTAssertTrue(RealDivePhase.savePersistenceError(record: DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
     }
 
     func testDepthGaugeRailUsesReadableSessionLayoutWidth() {

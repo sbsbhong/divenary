@@ -146,7 +146,6 @@ struct HomeView: View {
             .navigationTitle("Dive")
             .navigationDestination(isPresented: realRecordingFlowIsPresented) {
                 RealRecordingFlowView(
-                    store: store,
                     water: water,
                     recorder: realRecorder,
                     coordinator: realCoordinator

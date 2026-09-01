@@ -11,16 +11,19 @@ enum RealDivePhase {
     case idle
     case wetReady(mode: DiveMode)
     case recording(source: RealDiveStartSource, plan: PreDivePlan)
-    case summary(DiveSessionRecord)
+    case completing(record: DiveSessionRecord)
+    case savedSummary(record: DiveSessionRecord)
     case noSamples
     case awaitingRuntimeInvalidation(source: RealDiveStartSource)
-    case persistenceError(source: RealDiveStartSource)
+    case startPersistenceError(source: RealDiveStartSource)
+    case savePersistenceError(record: DiveSessionRecord)
 
     var presentsRecordingFlow: Bool {
         switch self {
         case .idle:
             return false
-        case .wetReady, .recording, .summary, .noSamples, .awaitingRuntimeInvalidation, .persistenceError:
+        case .wetReady, .recording, .completing, .savedSummary, .noSamples,
+             .awaitingRuntimeInvalidation, .startPersistenceError, .savePersistenceError:
             return true
         }
     }
@@ -66,6 +69,12 @@ protocol DiveSessionRecording: AnyObject {
 }
 
 @MainActor
+protocol DiveSessionPersisting: AnyObject {
+    @discardableResult
+    func save(_ session: DiveSessionRecord) -> Bool
+}
+
+@MainActor
 protocol DiveActionButtonDonating: AnyObject {
     func donateEndAction()
 }
@@ -78,6 +87,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let updatePreferredMode: (DiveMode) -> Void
     private let runtime: DiveRuntimeSessionControlling
     private let recorder: DiveSessionRecording
+    private let sessionStore: DiveSessionPersisting
     private let water: WaterSubmersionStateReading
     private let actionButtonDonor: DiveActionButtonDonating
     private let wetReadyExitScheduler: WetReadyExitScheduling
@@ -91,12 +101,14 @@ final class RealDiveSessionCoordinator: ObservableObject {
         recorder: DiveSessionRecording,
         water: WaterSubmersionStateReading,
         actionButtonDonor: DiveActionButtonDonating,
-        wetReadyExitScheduler: WetReadyExitScheduling? = nil
+        wetReadyExitScheduler: WetReadyExitScheduling? = nil,
+        sessionStore: DiveSessionPersisting
     ) {
         self.preferredMode = preferredMode
         self.updatePreferredMode = updatePreferredMode
         self.runtime = runtime
         self.recorder = recorder
+        self.sessionStore = sessionStore
         self.water = water
         self.actionButtonDonor = actionButtonDonor
         self.wetReadyExitScheduler = wetReadyExitScheduler ?? TaskWetReadyExitScheduler()
@@ -112,7 +124,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
 
         guard recorder.startSession(plan: plan) else {
-            phase = .persistenceError(source: .manual)
+            phase = .startPersistenceError(source: .manual)
             return false
         }
         guard acquireManualRuntime(source: .manual) else {
@@ -137,7 +149,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
         wetReadyExitScheduler.cancel()
         guard recorder.startSession(plan: plan) else {
-            phase = .persistenceError(source: .actionButton)
+            phase = .startPersistenceError(source: .actionButton)
             return false
         }
         guard acquireManualRuntime(source: .actionButton) else {
@@ -191,23 +203,13 @@ final class RealDiveSessionCoordinator: ObservableObject {
         return true
     }
 
-    func markSummarySaved() {
-        guard case .summary = phase else {
-            return
-        }
-
-        recorder.resetCompletedSession()
-        phase = .idle
+    func retryCompletedSessionSave() {
+        guard case let .savePersistenceError(record) = phase else { return }
+        persistCompletedRecord(record)
     }
 
-    func discardSummary() {
-        guard case .summary = phase else {
-            return
-        }
-
-        guard recorder.cancelSession() else {
-            return
-        }
+    func dismissSavedSummary() {
+        guard case .savedSummary = phase else { return }
         phase = .idle
     }
 
@@ -222,8 +224,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
         phase = .idle
     }
 
-    func dismissPersistenceError() {
-        guard case .persistenceError = phase else {
+    func dismissStartPersistenceError() {
+        guard case .startPersistenceError = phase else {
             return
         }
         guard recorder.cancelSession() else {
@@ -238,7 +240,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             startAdoptedSystemSession()
         case .didInvalidate:
             if case let .awaitingRuntimeInvalidation(source) = phase {
-                phase = .persistenceError(source: source)
+                phase = .startPersistenceError(source: source)
             } else {
                 finalizeAfterRuntimeInvalidation()
             }
@@ -308,7 +310,18 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
 
-        phase = .summary(record)
+        persistCompletedRecord(record)
+    }
+
+    private func persistCompletedRecord(_ record: DiveSessionRecord) {
+        phase = .completing(record: record)
+        guard sessionStore.save(record) else {
+            phase = .savePersistenceError(record: record)
+            return
+        }
+
+        recorder.resetCompletedSession()
+        phase = .savedSummary(record: record)
     }
 
     private func cancelWithoutSamples(source: RealDiveStartSource) {

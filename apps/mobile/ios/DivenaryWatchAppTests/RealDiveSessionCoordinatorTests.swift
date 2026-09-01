@@ -17,8 +17,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.startManualCallCount, 0)
         XCTAssertEqual(runtime.invalidateCallCount, 0)
         XCTAssertEqual(donor.callCount, 0)
-        assertPersistenceError(coordinator, source: .manual)
-        coordinator.dismissPersistenceError()
+        assertStartPersistenceError(coordinator, source: .manual)
+        coordinator.dismissStartPersistenceError()
         assertIdle(coordinator)
     }
 
@@ -32,7 +32,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(runtime.startManualCallCount, 0)
         XCTAssertEqual(runtime.invalidateCallCount, 0)
-        assertPersistenceError(coordinator, source: .actionButton)
+        assertStartPersistenceError(coordinator, source: .actionButton)
     }
 
     func testAdoptedRecorderStartFailureInvalidatesRuntimeExactlyOnceWithoutDonation() {
@@ -49,10 +49,10 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.invalidateCallCount, 1)
         XCTAssertEqual(donor.callCount, 0)
         assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-        assertPersistenceError(coordinator, source: .systemAutoLaunch)
+        assertStartPersistenceError(coordinator, source: .systemAutoLaunch)
     }
 
     func testAdoptedSetupFailureBlocksReentryUntilMatchingInvalidationAndIgnoresStaleCallback() {
@@ -78,13 +78,14 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             recorder: recorder,
             water: FakeWaterStateReader(),
             actionButtonDonor: donor,
-            wetReadyExitScheduler: FakeWetReadyExitScheduler()
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore()
         )
 
         runtime.adoptSystemSession(WKExtendedRuntimeSession())
 
         assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
         XCTAssertFalse(coordinator.startFromActionButton())
         assertAwaitingRuntimeInvalidation(coordinator, source: .systemAutoLaunch)
@@ -94,8 +95,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         adoptedAdapter.emitInvalidation(reason: .none, error: nil)
 
-        assertPersistenceError(coordinator, source: .systemAutoLaunch)
-        coordinator.dismissPersistenceError()
+        assertStartPersistenceError(coordinator, source: .systemAutoLaunch)
+        coordinator.dismissStartPersistenceError()
         assertIdle(coordinator)
         XCTAssertEqual(recorder.cancelCallCount, 1)
 
@@ -126,10 +127,10 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.cancelCallCount, 1)
         XCTAssertEqual(donor.callCount, 0)
         assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-        assertPersistenceError(coordinator, source: .manual)
+        assertStartPersistenceError(coordinator, source: .manual)
     }
 
     func testActionRuntimeAcquisitionFailureCleansRecorderWithoutExposingRecording() {
@@ -147,7 +148,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.cancelCallCount, 1)
         assertAwaitingRuntimeInvalidation(coordinator, source: .actionButton)
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-        assertPersistenceError(coordinator, source: .actionButton)
+        assertStartPersistenceError(coordinator, source: .actionButton)
     }
 
     func testManualRuntimeCollisionWaitsForMatchingInvalidationBeforeRetryingFreshAdapter() {
@@ -174,7 +175,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             recorder: recorder,
             water: FakeWaterStateReader(),
             actionButtonDonor: donor,
-            wetReadyExitScheduler: FakeWetReadyExitScheduler()
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore()
         )
 
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
@@ -183,7 +185,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(staleAdapter.calls, [.setDelegate, .start, .invalidate])
         XCTAssertEqual(recorder.cancelCallCount, 1)
         XCTAssertEqual(donor.callCount, 0)
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .freedive)))
         XCTAssertFalse(coordinator.startFromActionButton())
         assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
@@ -191,8 +193,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         staleAdapter.emitInvalidation(reason: .none, error: nil)
 
-        assertPersistenceError(coordinator, source: .manual)
-        coordinator.dismissPersistenceError()
+        assertStartPersistenceError(coordinator, source: .manual)
+        coordinator.dismissStartPersistenceError()
         assertIdle(coordinator)
 
         XCTAssertTrue(coordinator.startManual(plan: PreDivePlan(diveMode: .freedive)))
@@ -214,15 +216,15 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan()))
         assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         assertAwaitingRuntimeInvalidation(coordinator, source: .manual)
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-        assertPersistenceError(coordinator, source: .manual)
+        assertStartPersistenceError(coordinator, source: .manual)
 
-        coordinator.dismissPersistenceError()
-        assertPersistenceError(coordinator, source: .manual)
+        coordinator.dismissStartPersistenceError()
+        assertStartPersistenceError(coordinator, source: .manual)
 
-        coordinator.dismissPersistenceError()
+        coordinator.dismissStartPersistenceError()
         assertIdle(coordinator)
         XCTAssertEqual(recorder.cancelCallCount, 3)
     }
@@ -556,22 +558,117 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertRecording(coordinator, source: .actionButton)
     }
 
-    func testRuntimeInvalidationWithSamplesCreatesOneSummaryAfterDuplicateCallbacks() {
+    func testRuntimeInvalidationWithSamplesAutomaticallySavesExactlyOnce() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
-        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
-        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
-        coordinator.startManual(plan: PreDivePlan())
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1).applyingPostDive(
+            rating: nil,
+            perceivedExertion: nil,
+            visibilityRating: nil,
+            waterCondition: .unknown,
+            notes: nil
+        )
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            stopResult: record
+        )
+        let sessionStore = FakeDiveSessionStore(saveResults: [true])
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            sessionStore: sessionStore
+        )
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
 
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
 
+        XCTAssertEqual(sessionStore.saveAttempts.map(\.id), [record.id])
         XCTAssertEqual(recorder.stopCallCount, 1)
-        XCTAssertEqual(recorder.cancelCallCount, 0)
-        assertSummary(coordinator)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
+        let saved = assertSavedSummary(coordinator)
+        XCTAssertNil(saved.rating)
+        XCTAssertNil(saved.perceivedExertion)
+        XCTAssertNil(saved.visibilityRating)
+        XCTAssertNil(saved.notes)
+        XCTAssertEqual(saved.waterCondition, .unknown)
     }
 
-    func testRealRecorderProcessesSampleBeforeInvalidationAndIgnoresLateCallbackAfterCancel() async {
+    func testSaveFailureRetainsRecordAndRetriesSameSessionID() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            stopResult: record
+        )
+        let sessionStore = FakeDiveSessionStore(saveResults: [false, true])
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            sessionStore: sessionStore
+        )
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertSavePersistenceError(coordinator, recordID: record.id)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 0)
+
+        coordinator.retryCompletedSessionSave()
+        coordinator.retryCompletedSessionSave()
+
+        XCTAssertEqual(sessionStore.saveAttempts.map(\.id), [record.id, record.id])
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
+        XCTAssertEqual(assertSavedSummary(coordinator).id, record.id)
+    }
+
+    func testDismissSavedSummaryOnlyChangesUIState() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            stopResult: record
+        )
+        let sessionStore = FakeDiveSessionStore(saveResults: [true])
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            sessionStore: sessionStore
+        )
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        coordinator.dismissSavedSummary()
+        coordinator.dismissSavedSummary()
+
+        assertIdle(coordinator)
+        XCTAssertEqual(sessionStore.saveAttempts.map(\.id), [record.id])
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+    }
+
+    func testNoSampleAutoLaunchStillDoesNotSave() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: false)
+        let sessionStore = FakeDiveSessionStore(saveResults: [true])
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            sessionStore: sessionStore
+        )
+        runtime.emit(.adoptedSystemSession)
+
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertIdle(coordinator)
+        XCTAssertTrue(sessionStore.saveAttempts.isEmpty)
+    }
+
+    func testRealRecorderProcessesSampleBeforeInvalidationAndIgnoresLateCallbackAfterReset() async {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
         let sensorProvider = RetainingManualDepthSensorProvider()
@@ -588,7 +685,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             recorder: recorder,
             water: FakeWaterStateReader(),
             actionButtonDonor: FakeActionButtonDonor(calls: calls),
-            wetReadyExitScheduler: FakeWetReadyExitScheduler()
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore()
         )
         let acceptedSample = EngineTestFixtures.sample(1, depth: 4)
 
@@ -600,12 +698,10 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
 
-        assertSummary(coordinator)
+        assertSavedSummary(coordinator)
         let recordedSampleCount = recorder.samples.count
         let persistedSampleCount = profileStore.appendedSamples.count
-        coordinator.discardSummary()
 
-        XCTAssertEqual(profileStore.clearCallCount, 1)
         sensorProvider.emitRetained(EngineTestFixtures.sample(2, depth: 18))
         await Task.yield()
 
@@ -666,67 +762,6 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertNoSamples(coordinator)
     }
 
-    func testSummaryDiscardClearsActiveArtifactExactlyOnce() {
-        let calls = LifecycleCallLog()
-        let runtime = FakeDiveRuntime(calls: calls)
-        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
-        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
-        coordinator.startManual(plan: PreDivePlan())
-        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-
-        coordinator.discardSummary()
-        coordinator.discardSummary()
-
-        XCTAssertEqual(recorder.cancelCallCount, 1)
-        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 0)
-        assertIdle(coordinator)
-    }
-
-    func testRealRecorderDiscardRetainsSummaryAndActiveArtifactUntilCleanupRetry() throws {
-        let rootURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileManager = FailFirstRecorderCleanupFileManager()
-        let profileStore = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
-        let calls = LifecycleCallLog()
-        let runtime = FakeDiveRuntime(calls: calls)
-        let sensorProvider = RetainingManualDepthSensorProvider()
-        let recorder = DiveSessionRecorder(
-            sensorProvider: sensorProvider,
-            profileStore: profileStore,
-            now: { EngineTestFixtures.start }
-        )
-        let coordinator = RealDiveSessionCoordinator(
-            preferredMode: { .scuba },
-            updatePreferredMode: { _ in },
-            runtime: runtime,
-            recorder: recorder,
-            water: FakeWaterStateReader(),
-            actionButtonDonor: FakeActionButtonDonor(calls: calls),
-            wetReadyExitScheduler: FakeWetReadyExitScheduler()
-        )
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: rootURL)
-        }
-
-        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
-        sensorProvider.emit(EngineTestFixtures.sample(1, depth: 4))
-        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-        let record = try summaryRecord(from: coordinator)
-
-        coordinator.discardSummary()
-
-        assertSummary(coordinator)
-        XCTAssertEqual(
-            try profileStore.loadActiveRecordings().map(\.metadata.localSessionId),
-            [record.id]
-        )
-
-        coordinator.discardSummary()
-
-        assertIdle(coordinator)
-        XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
-    }
-
     func testRealRecorderNoSamplesRetainsArtifactUntilDismissRetry() throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -746,7 +781,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             recorder: recorder,
             water: FakeWaterStateReader(),
             actionButtonDonor: FakeActionButtonDonor(calls: calls),
-            wetReadyExitScheduler: FakeWetReadyExitScheduler()
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore()
         )
         addTeardownBlock {
             try? FileManager.default.removeItem(at: rootURL)
@@ -762,36 +798,6 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
 
         assertIdle(coordinator)
         XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
-    }
-
-    func testSuccessfulSavePermitsCompletionWhileUnreportedFailureLeavesSummaryActive() throws {
-        let calls = LifecycleCallLog()
-        let runtime = FakeDiveRuntime(calls: calls)
-        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
-        let recorder = FakeDiveRecorder(
-            calls: calls,
-            hasCapturedDepthSample: true,
-            stopResult: record
-        )
-        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
-        coordinator.startManual(plan: PreDivePlan())
-        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
-
-        let failedStore = try makeFailingStore()
-        XCTAssertFalse(failedStore.save(record))
-        assertSummary(coordinator)
-
-        let successStore = DiveSessionStore(
-            userDefaults: makeIsolatedUserDefaults(),
-            recordsStorageURL: makeIsolatedRecordsStorageURL()
-        )
-        XCTAssertTrue(successStore.save(record))
-        coordinator.markSummarySaved()
-        coordinator.markSummarySaved()
-
-        XCTAssertEqual(recorder.cancelCallCount, 0)
-        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
-        assertIdle(coordinator)
     }
 
     func testNoSamplesCanBeDismissedIdempotently() {
@@ -831,24 +837,6 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         )
     }
 
-    private func makeIsolatedUserDefaults() -> UserDefaults {
-        let suite = "RealDiveSessionCoordinatorTests.\(UUID().uuidString)"
-        let userDefaults = UserDefaults(suiteName: suite)!
-        addTeardownBlock {
-            userDefaults.removePersistentDomain(forName: suite)
-        }
-        return userDefaults
-    }
-
-    private func makeIsolatedRecordsStorageURL() -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: directory)
-        }
-        return directory.appendingPathComponent("records.json")
-    }
-
     private func makeCoordinator(
         preferredMode: DiveMode = .scuba,
         runtime: FakeDiveRuntime,
@@ -856,7 +844,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         water: FakeWaterStateReader? = nil,
         donor: FakeActionButtonDonor? = nil,
         preference: FakeDiveModePreference? = nil,
-        scheduler: FakeWetReadyExitScheduler? = nil
+        scheduler: FakeWetReadyExitScheduler? = nil,
+        sessionStore: FakeDiveSessionStore? = nil
     ) -> RealDiveSessionCoordinator {
         let preference = preference ?? FakeDiveModePreference(mode: preferredMode)
         return RealDiveSessionCoordinator(
@@ -866,7 +855,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             recorder: recorder,
             water: water ?? FakeWaterStateReader(),
             actionButtonDonor: donor ?? FakeActionButtonDonor(calls: LifecycleCallLog()),
-            wetReadyExitScheduler: scheduler ?? FakeWetReadyExitScheduler()
+            wetReadyExitScheduler: scheduler ?? FakeWetReadyExitScheduler(),
+            sessionStore: sessionStore ?? FakeDiveSessionStore()
         )
     }
 
@@ -908,26 +898,29 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(actualMode, mode, file: file, line: line)
     }
 
-    private func assertSummary(
+    @discardableResult
+    private func assertSavedSummary(
         _ coordinator: RealDiveSessionCoordinator,
         file: StaticString = #filePath,
         line: UInt = #line
-    ) {
-        guard case .summary = coordinator.phase else {
-            return XCTFail("Expected summary phase, received \(coordinator.phase)", file: file, line: line)
-        }
-    }
-
-    private func summaryRecord(
-        from coordinator: RealDiveSessionCoordinator,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) throws -> DiveSessionRecord {
-        guard case let .summary(record) = coordinator.phase else {
-            XCTFail("Expected summary phase, received \(coordinator.phase)", file: file, line: line)
-            throw CocoaError(.fileNoSuchFile)
+    ) -> DiveSessionRecord {
+        guard case let .savedSummary(record) = coordinator.phase else {
+            XCTFail("Expected saved-summary phase, received \(coordinator.phase)", file: file, line: line)
+            return DiveSessionRecord.largeDebugFixture(sampleCount: 1)
         }
         return record
+    }
+
+    private func assertSavePersistenceError(
+        _ coordinator: RealDiveSessionCoordinator,
+        recordID: UUID,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case let .savePersistenceError(record) = coordinator.phase else {
+            return XCTFail("Expected save-persistence-error phase", file: file, line: line)
+        }
+        XCTAssertEqual(record.id, recordID, file: file, line: line)
     }
 
     private func assertNoSamples(
@@ -940,14 +933,14 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         }
     }
 
-    private func assertPersistenceError(
+    private func assertStartPersistenceError(
         _ coordinator: RealDiveSessionCoordinator,
         source: RealDiveStartSource,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        guard case let .persistenceError(actualSource) = coordinator.phase else {
-            return XCTFail("Expected persistence-error phase", file: file, line: line)
+        guard case let .startPersistenceError(actualSource) = coordinator.phase else {
+            return XCTFail("Expected start-persistence-error phase", file: file, line: line)
         }
         XCTAssertEqual(actualSource, source, file: file, line: line)
         XCTAssertTrue(coordinator.phase.presentsRecordingFlow, file: file, line: line)
@@ -1002,6 +995,21 @@ private final class FakeWetReadyExitScheduler: WetReadyExitScheduling {
         let pendingAction = action
         action = nil
         pendingAction?()
+    }
+}
+
+@MainActor
+private final class FakeDiveSessionStore: DiveSessionPersisting {
+    private var saveResults: [Bool]
+    private(set) var saveAttempts: [DiveSessionRecord] = []
+
+    init(saveResults: [Bool] = [true]) {
+        self.saveResults = saveResults
+    }
+
+    func save(_ session: DiveSessionRecord) -> Bool {
+        saveAttempts.append(session)
+        return saveResults.isEmpty ? true : saveResults.removeFirst()
     }
 }
 

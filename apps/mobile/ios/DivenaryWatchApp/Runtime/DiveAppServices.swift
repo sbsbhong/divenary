@@ -1,5 +1,25 @@
 import Foundation
 
+#if DEBUG
+@MainActor
+final class FailFirstDiveSessionPersisting: DiveSessionPersisting {
+    private let base: any DiveSessionPersisting
+    private var shouldFail = true
+
+    init(base: any DiveSessionPersisting) {
+        self.base = base
+    }
+
+    func save(_ session: DiveSessionRecord) -> Bool {
+        guard !shouldFail else {
+            shouldFail = false
+            return false
+        }
+        return base.save(session)
+    }
+}
+#endif
+
 @MainActor
 final class DiveAppServices {
     static let shared = DiveAppServices()
@@ -20,13 +40,24 @@ final class DiveAppServices {
         let realSensorProvider = RealDepthSensorProvider(coordinator: water)
         let realRecorder = DiveSessionRecorder(sensorProvider: realSensorProvider)
         let actionButtonDonor = DiveActionButtonDonor()
+        let completionStore: any DiveSessionPersisting
+        #if DEBUG
+        if ProcessInfo.processInfo.environment["DIVE_WATCH_FAIL_FIRST_COMPLETION_SAVE"] == "1" {
+            completionStore = FailFirstDiveSessionPersisting(base: store)
+        } else {
+            completionStore = store
+        }
+        #else
+        completionStore = store
+        #endif
         let realCoordinator = RealDiveSessionCoordinator(
             preferredMode: { store.preferredDiveMode },
             updatePreferredMode: store.updatePreferredDiveMode,
             runtime: runtime,
             recorder: realRecorder,
             water: water,
-            actionButtonDonor: actionButtonDonor
+            actionButtonDonor: actionButtonDonor,
+            sessionStore: completionStore
         )
 
         self.store = store

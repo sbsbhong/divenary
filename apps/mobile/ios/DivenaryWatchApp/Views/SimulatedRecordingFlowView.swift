@@ -240,9 +240,9 @@ struct SimulatedRecordingFlowView: View {
         case .ready, .recording:
             recordingContent
         case .summary(let session):
-            SummaryView(
+            CapturedSessionSummaryView(
                 session: session,
-                onSave: save,
+                onSave: { save(session) },
                 onDiscard: discard
             )
         case .persistenceError:

@@ -1,14 +1,8 @@
 import SwiftUI
 
-struct SummaryView: View {
+struct SessionSummaryContent: View {
     let session: DiveSessionRecord
-    let onSave: (DiveSessionRecord) -> Void
-    let onDiscard: () -> Void
-    @State private var rating = 4
-    @State private var perceivedExertion = 2
-    @State private var visibilityRating = 3
-    @State private var waterCondition = WaterCondition.unknown
-    @State private var notes = ""
+    let statusTitle: LocalizedStringKey
 
     private var summary: DiveSessionSummary {
         session.summary
@@ -20,7 +14,17 @@ struct SummaryView: View {
                 InstrumentCard(accent: DiveWatchTheme.primary) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            StatusPill(title: String(localized: "Dive captured"))
+                            Text(statusTitle)
+                                .font(DiveWatchTheme.labelFont())
+                                .foregroundStyle(DiveWatchTheme.primary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(DiveWatchTheme.primary.opacity(0.16))
+                                )
                             if let captureProvenanceLabel = session.captureProvenanceLabel {
                                 StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
                             }
@@ -48,58 +52,6 @@ struct SummaryView: View {
                 modeSummarySection
                 commonMetricsSection
 
-                InstrumentCard(accent: DiveWatchTheme.secondary) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("POST-DIVE REVIEW")
-                            .font(DiveWatchTheme.labelFont())
-                            .foregroundStyle(DiveWatchTheme.secondary)
-
-                        StarRatingControl(title: String(localized: "Rating"), value: $rating)
-                        StarRatingControl(title: String(localized: "Effort"), value: $perceivedExertion)
-                        StarRatingControl(title: String(localized: "Visibility"), value: $visibilityRating)
-
-                        Picker("Water", selection: $waterCondition) {
-                            ForEach(WaterCondition.allCases) { condition in
-                                Text(condition.label).tag(condition)
-                            }
-                        }
-                        .labelsHidden()
-                        .frame(height: 56)
-
-                        TextField("Quick note", text: $notes)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 7)
-                            .background(
-                                RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                                    .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-                            )
-                    }
-                }
-
-                Button {
-                    onSave(
-                        session.applyingPostDive(
-                            rating: rating,
-                            perceivedExertion: perceivedExertion,
-                            visibilityRating: visibilityRating,
-                            waterCondition: waterCondition,
-                            notes: notes.isEmpty ? session.notes : notes
-                        )
-                    )
-                } label: {
-                    Label("Save", systemImage: "tray.and.arrow.down.fill")
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                Button(role: .destructive) {
-                    onDiscard()
-                } label: {
-                    Label("Discard", systemImage: "trash")
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
-
                 DiveDisclaimer(text: String(localized: "SAVED LOG ONLY. NON-CERTIFIED ASSISTANT."))
             }
             .padding(.horizontal, DiveWatchTheme.edgeMargin)
@@ -107,13 +59,6 @@ struct SummaryView: View {
         }
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .navigationTitle("Summary")
-        .onAppear {
-            rating = session.rating ?? rating
-            perceivedExertion = session.perceivedExertion ?? perceivedExertion
-            visibilityRating = session.visibilityRating ?? visibilityRating
-            waterCondition = session.waterCondition
-            notes = session.notes ?? ""
-        }
     }
 
     private var commonMetricsSection: some View {
@@ -146,6 +91,48 @@ struct SummaryView: View {
         case .scuba(let scubaSession):
             SafetyStopSummarySection(session: scubaSession)
         }
+    }
+}
+
+struct SavedSessionSummaryView: View {
+    let session: DiveSessionRecord
+    let onDone: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            SessionSummaryContent(session: session, statusTitle: "Saved")
+
+            Text("Edit details on iPhone.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .multilineTextAlignment(.center)
+
+            Button("Done", action: onDone)
+                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+        }
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+}
+
+struct CapturedSessionSummaryView: View {
+    let session: DiveSessionRecord
+    let onSave: () -> Void
+    let onDiscard: () -> Void
+
+    var body: some View {
+        VStack(spacing: 8) {
+            SessionSummaryContent(session: session, statusTitle: "Dive captured")
+
+            HStack(spacing: 8) {
+                Button("Save", action: onSave)
+                    .buttonStyle(DiveActionButtonStyle(kind: .primary))
+
+                Button("Discard", role: .destructive, action: onDiscard)
+                    .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+            }
+            .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        }
+        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 }
 
@@ -217,46 +204,5 @@ private struct SafetyStopSummarySection: View {
 
     private func localizedBoolean(_ value: Bool) -> String {
         value ? String(localized: "Yes") : String(localized: "No")
-    }
-}
-
-private struct StarRatingControl: View {
-    let title: String
-    @Binding var value: Int
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack {
-                Text(title.uppercased())
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                Spacer(minLength: 4)
-                Text("\(value)/5")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.primary)
-                    .monospacedDigit()
-            }
-
-            HStack(spacing: 4) {
-                ForEach(1...5, id: \.self) { star in
-                    Button {
-                        value = star
-                    } label: {
-                        Image(systemName: star <= value ? "star.fill" : "star")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundStyle(star <= value ? DiveWatchTheme.primary : DiveWatchTheme.mutedText)
-                            .frame(maxWidth: .infinity, minHeight: 30)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("\(title) \(star)")
-                }
-            }
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-        )
     }
 }

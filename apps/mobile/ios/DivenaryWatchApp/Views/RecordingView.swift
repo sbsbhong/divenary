@@ -237,7 +237,7 @@ private struct RecordingEndControlFooter: View {
         switch endControl {
         case .crownHint:
             footerHint(
-                String(localized: "To end the dive immediately, press and hold the Digital Crown while out of the water.")
+                String(localized: "End with the configured Action Button or by turning off Water Lock.")
             )
         case .demoButton:
             VStack(spacing: 1) {
