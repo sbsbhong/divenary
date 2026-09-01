@@ -11,10 +11,16 @@ struct RealRecordingFlowView: View {
             switch coordinator.phase {
             case .idle:
                 EmptyView()
-            case .recording:
+            case .wetReady(let mode):
+                WetReadyView(
+                    mode: mode,
+                    currentDepthMeters: water.latestDepthMeters,
+                    onSelect: coordinator.selectWetReadyMode
+                )
+            case .recording(_, let plan):
                 RecordingInstrumentView(
                     recorder: recorder,
-                    plan: PreDivePlan(diveMode: store.preferredDiveMode),
+                    plan: plan,
                     maximumDepthMeters: water.maximumDepthMeters,
                     endControl: WatchRecordingMode.real.endControl,
                     onEndDive: nil

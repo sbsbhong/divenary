@@ -17,6 +17,7 @@
 		3D597016F3A3DFE341484908 /* WatchSyncEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F26525BE2C876EE578F3C9A /* WatchSyncEnvelope.swift */; };
 		55EABF84D85DF352419E66E8 /* DepthSample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DE78178255421044754FD2F /* DepthSample.swift */; };
 		646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6BE6A545437839029CC97811 /* HomeView.swift */; };
+		F10000000000000000000001 /* WetReadyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* WetReadyView.swift */; };
 		65B418949D09CE62247AEB33 /* SummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */; };
 		6839BFC6D39D48C6E24E65FB /* WatchSyncTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BB8558F91BE7C8E9EA22C1A /* WatchSyncTransport.swift */; };
 		6D05BB5FE2EB6EE8C69CBDD5 /* MockDepthSensorProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39957D0BC852B0FDF38FABA2 /* MockDepthSensorProvider.swift */; };
@@ -128,6 +129,7 @@
 		5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Divenary.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6359F0F795514043D38F67FB /* DivenaryWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivenaryWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6BE6A545437839029CC97811 /* HomeView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* WetReadyView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WetReadyView.swift; sourceTree = "<group>"; };
 		6DE78178255421044754FD2F /* DepthSample.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSample.swift; sourceTree = "<group>"; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Divenary/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = Divenary/LaunchScreen.storyboard; sourceTree = "<group>"; };
@@ -360,6 +362,7 @@
 				9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */,
 				2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */,
 				6BE6A545437839029CC97811 /* HomeView.swift */,
+				F20000000000000000000001 /* WetReadyView.swift */,
 				D60000000000000000000006 /* RealRecordingFlowView.swift */,
 				1E2C63175E91C4718DBE3923 /* RecordingView.swift */,
 				D60000000000000000000008 /* SimulatedRecordingFlowView.swift */,
@@ -685,6 +688,7 @@
 				08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */,
 				8097168CBD59D256F2B105FC /* DiveFormatters.swift in Sources */,
 				646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */,
+				F10000000000000000000001 /* WetReadyView.swift in Sources */,
 				D60000000000000000000005 /* RealRecordingFlowView.swift in Sources */,
 				079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */,
 				D60000000000000000000007 /* SimulatedRecordingFlowView.swift in Sources */,

@@ -214,7 +214,12 @@ final class WatchRecordingModeTests: XCTestCase {
 
     func testRealFlowNavigationIsDerivedFromCoordinatorPhase() {
         XCTAssertFalse(RealDivePhase.idle.presentsRecordingFlow)
-        XCTAssertTrue(RealDivePhase.recording(source: .systemAutoLaunch).presentsRecordingFlow)
+        XCTAssertTrue(
+            RealDivePhase.recording(
+                source: .systemAutoLaunch,
+                plan: PreDivePlan(diveMode: .scuba)
+            ).presentsRecordingFlow
+        )
         XCTAssertTrue(RealDivePhase.summary(DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.noSamples.presentsRecordingFlow)
         XCTAssertTrue(RealDivePhase.awaitingRuntimeInvalidation(source: .systemAutoLaunch).presentsRecordingFlow)

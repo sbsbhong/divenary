@@ -1646,6 +1646,22 @@
         }
       }
     },
+    "Ready" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ready"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "준비됨"
+          }
+        }
+      }
+    },
     "Real Watch required" : {
       "localizations" : {
         "en" : {
@@ -1770,6 +1786,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "기록을 시작할 수 없음"
+          }
+        }
+      }
+    },
+    "Rotate the Digital Crown to choose a mode." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rotate the Digital Crown to choose a mode."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "디지털 크라운을 돌려 모드를 선택하세요."
+          }
+        }
+      }
+    },
+    "Underwater recording starts automatically." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Underwater recording starts automatically."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 세션이 시작되면 자동으로 기록합니다."
           }
         }
       }

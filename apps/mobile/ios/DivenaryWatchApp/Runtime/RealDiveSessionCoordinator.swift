@@ -9,7 +9,8 @@ enum RealDiveStartSource: Equatable {
 
 enum RealDivePhase {
     case idle
-    case recording(source: RealDiveStartSource)
+    case wetReady(mode: DiveMode)
+    case recording(source: RealDiveStartSource, plan: PreDivePlan)
     case summary(DiveSessionRecord)
     case noSamples
     case awaitingRuntimeInvalidation(source: RealDiveStartSource)
@@ -19,9 +20,34 @@ enum RealDivePhase {
         switch self {
         case .idle:
             return false
-        case .recording, .summary, .noSamples, .awaitingRuntimeInvalidation, .persistenceError:
+        case .wetReady, .recording, .summary, .noSamples, .awaitingRuntimeInvalidation, .persistenceError:
             return true
         }
+    }
+}
+
+@MainActor
+protocol WetReadyExitScheduling: AnyObject {
+    func schedule(_ action: @escaping @MainActor () -> Void)
+    func cancel()
+}
+
+@MainActor
+final class TaskWetReadyExitScheduler: WetReadyExitScheduling {
+    private var task: Task<Void, Never>?
+
+    func schedule(_ action: @escaping @MainActor () -> Void) {
+        cancel()
+        task = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+    }
+
+    func cancel() {
+        task?.cancel()
+        task = nil
     }
 }
 
@@ -49,25 +75,31 @@ final class RealDiveSessionCoordinator: ObservableObject {
     @Published private(set) var phase: RealDivePhase = .idle
 
     private let preferredMode: () -> DiveMode
+    private let updatePreferredMode: (DiveMode) -> Void
     private let runtime: DiveRuntimeSessionControlling
     private let recorder: DiveSessionRecording
     private let water: WaterSubmersionStateReading
     private let actionButtonDonor: DiveActionButtonDonating
+    private let wetReadyExitScheduler: WetReadyExitScheduling
     private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
     private let surfaceEndDepthMeters = 1.0
 
     init(
         preferredMode: @escaping () -> DiveMode,
+        updatePreferredMode: @escaping (DiveMode) -> Void,
         runtime: DiveRuntimeSessionControlling,
         recorder: DiveSessionRecording,
         water: WaterSubmersionStateReading,
-        actionButtonDonor: DiveActionButtonDonating
+        actionButtonDonor: DiveActionButtonDonating,
+        wetReadyExitScheduler: WetReadyExitScheduling? = nil
     ) {
         self.preferredMode = preferredMode
+        self.updatePreferredMode = updatePreferredMode
         self.runtime = runtime
         self.recorder = recorder
         self.water = water
         self.actionButtonDonor = actionButtonDonor
+        self.wetReadyExitScheduler = wetReadyExitScheduler ?? TaskWetReadyExitScheduler()
         runtime.onEvent = { [weak self] event in
             self?.handleRuntimeEvent(event)
         }
@@ -86,26 +118,65 @@ final class RealDiveSessionCoordinator: ObservableObject {
         guard acquireManualRuntime(source: .manual) else {
             return false
         }
-        phase = .recording(source: .manual)
+        phase = .recording(source: .manual, plan: plan)
         actionButtonDonor.donateEndAction()
         return true
     }
 
     @discardableResult
     func startFromActionButton() -> Bool {
-        guard case .idle = phase else {
+        let plan: PreDivePlan
+        switch phase {
+        case .idle:
+            plan = preferredPlan()
+        case let .wetReady(mode):
+            plan = PreDivePlan(diveMode: mode)
+        default:
             return false
         }
 
-        guard recorder.startSession(plan: preferredPlan()) else {
+        wetReadyExitScheduler.cancel()
+        guard recorder.startSession(plan: plan) else {
             phase = .persistenceError(source: .actionButton)
             return false
         }
         guard acquireManualRuntime(source: .actionButton) else {
             return false
         }
-        phase = .recording(source: .actionButton)
+        phase = .recording(source: .actionButton, plan: plan)
         return true
+    }
+
+    func receiveWaterState(_ state: WaterSubmersionState) {
+        switch state {
+        case .submerged:
+            wetReadyExitScheduler.cancel()
+            guard case .idle = phase else { return }
+            phase = .wetReady(mode: preferredMode())
+        case .notSubmerged:
+            guard case .wetReady = phase else { return }
+            wetReadyExitScheduler.schedule { [weak self] in
+                guard let self,
+                      self.water.latestState == .notSubmerged,
+                      case .wetReady = self.phase
+                else {
+                    return
+                }
+                self.phase = .idle
+            }
+        case .unknown:
+            wetReadyExitScheduler.cancel()
+        }
+    }
+
+    func selectWetReadyMode(_ mode: DiveMode) {
+        guard case let .wetReady(currentMode) = phase,
+              currentMode != mode
+        else {
+            return
+        }
+        updatePreferredMode(mode)
+        phase = .wetReady(mode: mode)
     }
 
     func requestActionButtonEnd() -> Bool {
@@ -177,16 +248,23 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func startAdoptedSystemSession() {
-        guard case .idle = phase else {
+        let plan: PreDivePlan
+        switch phase {
+        case .idle:
+            plan = preferredPlan()
+        case let .wetReady(mode):
+            plan = PreDivePlan(diveMode: mode)
+        default:
             return
         }
 
-        guard recorder.startSession(plan: preferredPlan()) else {
+        wetReadyExitScheduler.cancel()
+        guard recorder.startSession(plan: plan) else {
             phase = .awaitingRuntimeInvalidation(source: .systemAutoLaunch)
             runtime.invalidate()
             return
         }
-        phase = .recording(source: .systemAutoLaunch)
+        phase = .recording(source: .systemAutoLaunch, plan: plan)
         actionButtonDonor.donateEndAction()
     }
 
@@ -216,7 +294,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func finalizeAfterRuntimeInvalidation() {
-        guard case let .recording(source) = phase else {
+        guard case let .recording(source, _) = phase else {
             return
         }
 

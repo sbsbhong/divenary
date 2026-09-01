@@ -12,12 +12,18 @@ const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/SessionDetailView.swift',
   'ios/DivenaryWatchApp/Views/SessionListView.swift',
   'ios/DivenaryWatchApp/Views/HomeView.swift',
+  'ios/DivenaryWatchApp/Views/WetReadyView.swift',
+  'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift',
 ];
 const source = watchSourceFiles
   .map(file => readFileSync(join(root, file), 'utf8'))
   .join('\n');
 const recordingViewSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/RecordingView.swift'),
+  'utf8',
+);
+const wetReadyViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/WetReadyView.swift'),
   'utf8',
 );
 const sessionListViewSource = readFileSync(
@@ -82,6 +88,12 @@ const checks = [
   {
     name: 'watch app includes Localizable.xcstrings in the Xcode project',
     failed: !/Localizable\.xcstrings/.test(project),
+  },
+  {
+    name: 'wet ready uses crown selection without a crown-press confirmation',
+    failed:
+      !wetReadyViewSource.includes('.digitalCrownRotation(') ||
+      /press.*Digital Crown/i.test(wetReadyViewSource),
   },
   {
     name: 'watch string catalog includes English and Korean localizations',

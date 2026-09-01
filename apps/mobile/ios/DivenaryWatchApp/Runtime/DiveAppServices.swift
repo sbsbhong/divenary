@@ -22,6 +22,7 @@ final class DiveAppServices {
         let actionButtonDonor = DiveActionButtonDonor()
         let realCoordinator = RealDiveSessionCoordinator(
             preferredMode: { store.preferredDiveMode },
+            updatePreferredMode: store.updatePreferredDiveMode,
             runtime: runtime,
             recorder: realRecorder,
             water: water,

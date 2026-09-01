@@ -73,10 +73,12 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         let donor = FakeActionButtonDonor(calls: calls)
         let coordinator = RealDiveSessionCoordinator(
             preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
             runtime: runtime,
             recorder: recorder,
             water: FakeWaterStateReader(),
-            actionButtonDonor: donor
+            actionButtonDonor: donor,
+            wetReadyExitScheduler: FakeWetReadyExitScheduler()
         )
 
         runtime.adoptSystemSession(WKExtendedRuntimeSession())
@@ -167,10 +169,12 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         let donor = FakeActionButtonDonor(calls: calls)
         let coordinator = RealDiveSessionCoordinator(
             preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
             runtime: runtime,
             recorder: recorder,
             water: FakeWaterStateReader(),
-            actionButtonDonor: donor
+            actionButtonDonor: donor,
+            wetReadyExitScheduler: FakeWetReadyExitScheduler()
         )
 
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
@@ -289,6 +293,163 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.startManualCallCount, 0)
         XCTAssertEqual(donor.callCount, 1)
         assertRecording(coordinator, source: .systemAutoLaunch)
+    }
+
+    func testSubmersionEntersWetReadyWithoutStartingRecorder() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let preference = FakeDiveModePreference(mode: .freedive)
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            water: water,
+            preference: preference
+        )
+
+        coordinator.receiveWaterState(.submerged)
+
+        assertWetReady(coordinator, mode: .freedive)
+        XCTAssertTrue(recorder.startedPlans.isEmpty)
+        XCTAssertEqual(runtime.startManualCallCount, 0)
+    }
+
+    func testWetReadySelectionPersistsAndAdoptedRuntimeLocksSelectedPlan() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let preference = FakeDiveModePreference(mode: .scuba)
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            water: water,
+            preference: preference
+        )
+        coordinator.receiveWaterState(.submerged)
+
+        coordinator.selectWetReadyMode(.freedive)
+        runtime.emit(.adoptedSystemSession)
+
+        XCTAssertEqual(preference.mode, .freedive)
+        XCTAssertEqual(preference.updates, [.freedive])
+        XCTAssertEqual(recorder.startedPlans, [PreDivePlan(diveMode: .freedive)])
+        assertRecording(
+            coordinator,
+            source: .systemAutoLaunch,
+            plan: PreDivePlan(diveMode: .freedive)
+        )
+    }
+
+    func testRuntimeBeforeWaterEventUsesPreferredModeFallback() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let preference = FakeDiveModePreference(mode: .scuba)
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            preference: preference
+        )
+
+        runtime.emit(.adoptedSystemSession)
+
+        XCTAssertEqual(recorder.startedPlans, [PreDivePlan(diveMode: .scuba)])
+        assertRecording(
+            coordinator,
+            source: .systemAutoLaunch,
+            plan: PreDivePlan(diveMode: .scuba)
+        )
+    }
+
+    func testStableDryExitDismissesWetReadyWithoutCreatingSession() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let scheduler = FakeWetReadyExitScheduler()
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            water: water,
+            scheduler: scheduler
+        )
+        coordinator.receiveWaterState(.submerged)
+
+        water.latestState = .notSubmerged
+        coordinator.receiveWaterState(.notSubmerged)
+        assertWetReady(coordinator, mode: .scuba)
+        scheduler.fire()
+
+        assertIdle(coordinator)
+        XCTAssertTrue(recorder.startedPlans.isEmpty)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+    }
+
+    func testResubmersionCancelsPendingWetReadyExit() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let scheduler = FakeWetReadyExitScheduler()
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            water: water,
+            scheduler: scheduler
+        )
+        coordinator.receiveWaterState(.submerged)
+        water.latestState = .notSubmerged
+        coordinator.receiveWaterState(.notSubmerged)
+
+        water.latestState = .submerged
+        coordinator.receiveWaterState(.submerged)
+        scheduler.fire()
+
+        assertWetReady(coordinator, mode: .scuba)
+        XCTAssertEqual(scheduler.cancelCallCount, 1)
+    }
+
+    func testActionButtonFromWetReadyUsesArmedMode() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water)
+        coordinator.receiveWaterState(.submerged)
+        coordinator.selectWetReadyMode(.freedive)
+
+        XCTAssertTrue(coordinator.startFromActionButton())
+
+        XCTAssertEqual(recorder.startedPlans, [PreDivePlan(diveMode: .freedive)])
+        assertRecording(
+            coordinator,
+            source: .actionButton,
+            plan: PreDivePlan(diveMode: .freedive)
+        )
+    }
+
+    func testRecordingRejectsWetReadyModeChanges() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let preference = FakeDiveModePreference(mode: .scuba)
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: recorder,
+            preference: preference
+        )
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+
+        coordinator.selectWetReadyMode(.freedive)
+
+        XCTAssertTrue(preference.updates.isEmpty)
+        assertRecording(
+            coordinator,
+            source: .manual,
+            plan: PreDivePlan(diveMode: .scuba)
+        )
     }
 
     func testDonationFailureDoesNotCancelRecording() {
@@ -422,10 +583,12 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         )
         let coordinator = RealDiveSessionCoordinator(
             preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
             runtime: runtime,
             recorder: recorder,
             water: FakeWaterStateReader(),
-            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler()
         )
         let acceptedSample = EngineTestFixtures.sample(1, depth: 4)
 
@@ -534,10 +697,12 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         )
         let coordinator = RealDiveSessionCoordinator(
             preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
             runtime: runtime,
             recorder: recorder,
             water: FakeWaterStateReader(),
-            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler()
         )
         addTeardownBlock {
             try? FileManager.default.removeItem(at: rootURL)
@@ -576,10 +741,12 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         )
         let coordinator = RealDiveSessionCoordinator(
             preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
             runtime: runtime,
             recorder: recorder,
             water: FakeWaterStateReader(),
-            actionButtonDonor: FakeActionButtonDonor(calls: calls)
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler()
         )
         addTeardownBlock {
             try? FileManager.default.removeItem(at: rootURL)
@@ -687,14 +854,19 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         runtime: FakeDiveRuntime,
         recorder: FakeDiveRecorder,
         water: FakeWaterStateReader? = nil,
-        donor: FakeActionButtonDonor? = nil
+        donor: FakeActionButtonDonor? = nil,
+        preference: FakeDiveModePreference? = nil,
+        scheduler: FakeWetReadyExitScheduler? = nil
     ) -> RealDiveSessionCoordinator {
-        RealDiveSessionCoordinator(
-            preferredMode: { preferredMode },
+        let preference = preference ?? FakeDiveModePreference(mode: preferredMode)
+        return RealDiveSessionCoordinator(
+            preferredMode: { preference.mode },
+            updatePreferredMode: preference.update,
             runtime: runtime,
             recorder: recorder,
             water: water ?? FakeWaterStateReader(),
-            actionButtonDonor: donor ?? FakeActionButtonDonor(calls: LifecycleCallLog())
+            actionButtonDonor: donor ?? FakeActionButtonDonor(calls: LifecycleCallLog()),
+            wetReadyExitScheduler: scheduler ?? FakeWetReadyExitScheduler()
         )
     }
 
@@ -711,13 +883,29 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
     private func assertRecording(
         _ coordinator: RealDiveSessionCoordinator,
         source: RealDiveStartSource,
+        plan expectedPlan: PreDivePlan? = nil,
         file: StaticString = #filePath,
         line: UInt = #line
     ) {
-        guard case let .recording(actualSource) = coordinator.phase else {
+        guard case let .recording(actualSource, actualPlan) = coordinator.phase else {
             return XCTFail("Expected recording phase, received \(coordinator.phase)", file: file, line: line)
         }
         XCTAssertEqual(actualSource, source, file: file, line: line)
+        if let expectedPlan {
+            XCTAssertEqual(actualPlan, expectedPlan, file: file, line: line)
+        }
+    }
+
+    private func assertWetReady(
+        _ coordinator: RealDiveSessionCoordinator,
+        mode: DiveMode,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard case let .wetReady(actualMode) = coordinator.phase else {
+            return XCTFail("Expected wet-ready phase, received \(coordinator.phase)", file: file, line: line)
+        }
+        XCTAssertEqual(actualMode, mode, file: file, line: line)
     }
 
     private func assertSummary(
@@ -776,6 +964,44 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         }
         XCTAssertEqual(actualSource, source, file: file, line: line)
         XCTAssertTrue(coordinator.phase.presentsRecordingFlow, file: file, line: line)
+    }
+}
+
+@MainActor
+private final class FakeDiveModePreference {
+    var mode: DiveMode
+    private(set) var updates: [DiveMode] = []
+
+    init(mode: DiveMode) {
+        self.mode = mode
+    }
+
+    func update(_ mode: DiveMode) {
+        self.mode = mode
+        updates.append(mode)
+    }
+}
+
+@MainActor
+private final class FakeWetReadyExitScheduler: WetReadyExitScheduling {
+    private var action: (@MainActor () -> Void)?
+    private(set) var cancelCallCount = 0
+
+    func schedule(_ action: @escaping @MainActor () -> Void) {
+        self.action = action
+    }
+
+    func cancel() {
+        if action != nil {
+            cancelCallCount += 1
+        }
+        action = nil
+    }
+
+    func fire() {
+        let pendingAction = action
+        action = nil
+        pendingAction?()
     }
 }
 

@@ -156,6 +156,10 @@ struct HomeView: View {
                 applyPreferredDiveMode()
                 loadInitialSensorAvailability()
                 autoLaunchAuthorization.refresh()
+                realCoordinator.receiveWaterState(water.latestState)
+            }
+            .onChange(of: water.latestState) { _, nextState in
+                realCoordinator.receiveWaterState(nextState)
             }
         }
     }
