@@ -6,7 +6,7 @@
 
 Simulator XCTest와 `yarn watch:build`는 코드 통합의 근거일 뿐 실제 `CMWaterSubmersionManager` sensor, Water Lock, Digital Crown, Action Button, provisioning 또는 `When Submerged` 동작의 성공 근거가 아니다. Xcode Easy Submersion은 simulator에서 system session delivery/adoption과 real recording UI navigation을 확인할 수 있지만, physical sensor delivery, 실제 hardware의 `When Submerged` 선택/auto-launch, Water Lock 또는 device release readiness를 검증하지 않는다. 각 physical 행의 pass는 아래에 적은 기기 evidence가 있어야만 기록한다.
 
-15cm bag/tank test는 수동으로 시작한 real session에서 얕은 sample이 들어오는지만 검증한다. 약 `0.1 m` 표시는 `When Submerged` automatic launch 통과가 아니다. Xcode Easy Submersion 결과는 simulator integration evidence로만 기록한다. physical automatic launch는 지원 hardware에서 안전하게 통제된 `>1 m` 환경으로 별도 검증한다.
+15cm bag/tank test는 수동으로 시작한 real session에서 얕은 sample이 들어오는지만 검증한다. 약 `0.1 m` 표시는 `When Submerged` automatic launch 통과가 아니다. Xcode Easy Submersion 결과는 simulator integration evidence로만 기록한다. physical automatic launch는 지원 hardware에서 Wet Ready를 확인한 뒤 watchOS가 제공하는 threshold에서 별도 검증한다.
 
 ## 실측 기록
 
@@ -15,8 +15,10 @@ Simulator XCTest와 `yarn watch:build`는 코드 통합의 근거일 뿐 실제 
 - 확인: 실제 수심과 수온 sample 수신.
 - 확인: 수심 감지 시 Divenary 자동 실행.
 - 미확인: `submergedDeep` 진입과 watchOS 자동 `WKExtendedRuntimeSession` 전달. 테스트 수심이 1m 미만이므로 자동 다이빙 세션이 시작되지 않은 결과는 실패로 판정하지 않는다.
-- `D4b`: **NOT RUN**. 수영장 등 안전하게 통제된 `>1 m` 환경에서 `handle(_:)`, `systemAutoLaunch`, local session ID를 확인한다.
-- `D5`: **NOT RUN**. D4b 통과 후 preferred mode를 스쿠버와 프리다이빙으로 각각 바꾸어 자동 기록 mode를 확인한다.
+- `D4b`: **NOT RUN**. 얕은 입수에서 Wet Ready, Water Lock, Crown mode 선택을 확인한 뒤 지원 hardware의 platform-provided threshold에서 `handle(_:)`, `systemAutoLaunch`, local session ID를 확인한다.
+- `D5`: **NOT RUN**. D4b 통과 뒤 Wet Ready에서 고른 mode가 recording 시작 후 저장 preference 변경에도 유지되는지 확인한다.
+- `D6`: **NOT RUN**. sample이 있는 real recording 종료 뒤 touch 입력 없이 local save와 Saved summary가 한 번만 나타나는지 확인한다.
+- `D13`: **NOT RUN**. Debug-only forced local-save failure 뒤 같은 local session ID의 retry와 cleanup 순서를 확인한다.
 - 미기록 evidence: build/version, Watch model/watchOS, authorization status, local session ID, 사진 또는 screen recording. 다음 실행 때 사전 기록 항목과 함께 보완한다.
 
 ## 사전 기록
@@ -63,16 +65,17 @@ Signing 또는 provisioning이 없으면 exact build failure를 기록하고 이
 | D1 | signed build를 Watch에 설치하고 capability 변경 뒤 재설치한다. Settings > General > Auto-Launch > When Submerged에서 Divenary가 보이고 선택되는지 확인한다. | Settings 화면, 설치 build/version, model/watchOS, authorization status. | 목록 누락 여부, exact status/error, signed-bundle/profile 출력. | required |
 | D2 | 15cm bag/tank에서 Home으로 real session을 수동 시작한다. | Water Lock 활성화와 약 `0.1 m` real depth sample, local session ID와 sample 수. | sample 없음, 표시 depth/pressure, Water Lock 미활성, log/crash. | required for shallow manual sampling |
 | D3 | D2 결과를 automatic launch로 기록하지 않는다. | test record에 `manual start only; When Submerged not exercised`가 명시돼 있다. | automatic pass로 잘못 분류한 기록. | required classification |
-| D4a | Xcode Easy Submersion으로 simulator system session을 전달한다. | `WKApplicationDelegate.handle(_:)` adoption과 같은 real recording UI navigation, simulator log/session ID. 이 결과는 simulator integration pass다. | adoption 이전 종료, UI navigation 실패, simulator log. | physical/release gate 아님 |
-| D4b | D1에서 선택한 Divenary를 지원 hardware에서 안전하게 통제한 `>1 m` 환경으로 `When Submerged` auto-launch한다. | 실제 hardware `When Submerged` selection, `handle(_:)` adoption, start source `systemAutoLaunch`, build/model/watchOS와 local session ID. | launch 없음, adoption 이전 종료, authorization status/error, hardware/OS/build. | required for physical automatic-launch claim; supported hardware 전에는 not-run |
-| D5 | D4b physical automatic start에서 저장된 preferred dive mode를 바꾸어 각각 재실행한다. | 자동 기록 plan이 마지막 preferred mode이고 persisted planned dive를 추론하지 않은 evidence. | 예상과 다른 mode, plan leakage, logs. | required |
-| D6 | sample이 있는 real recording을 surface한 뒤 Digital Crown을 길게 눌러 Water Lock을 해제한다. | watchOS invalidation 뒤 summary가 정확히 하나, local session ID 하나. | Water Lock 해제 실패, summary 0개/2개 이상, invalidation log. | required |
+| D4a | Xcode Easy Submersion으로 Wet Ready 뒤 adopted runtime과 runtime-first 순서를 각각 전달한다. | Wet Ready가 먼저 온 경우 armed mode recording, runtime-first인 경우 preferred-mode fallback recording, simulator log/session ID. 이 결과는 simulator integration pass다. | adoption 이전 종료, event-order별 mode 불일치, UI navigation 실패, simulator log. | physical/release gate 아님 |
+| D4b | D1에서 선택한 Divenary를 지원 hardware의 얕은 입수에서 Wet Ready로 전환한다. Water Lock이 활성인 상태에서 Crown으로 mode를 고른 뒤 platform-provided threshold에서 `When Submerged` auto-launch를 확인한다. | Wet Ready, active Water Lock, Crown 선택, 실제 hardware `When Submerged` selection, `handle(_:)` adoption, start source `systemAutoLaunch`, build/model/watchOS와 local session ID. | launch 없음, Crown focus/선택 실패, adoption 이전 종료, authorization status/error, hardware/OS/build. | required for physical automatic-launch claim; supported hardware 전에는 not-run |
+| D5 | D4b physical automatic start에서 Wet Ready로 고른 Freedive/Scuba mode가 recording mode로 고정되는지 확인하고, recording 시작 뒤 저장 preference를 바꾼다. | active `PreDivePlan`과 recording mode가 Wet Ready 선택을 유지하고 persisted planned dive를 추론하지 않은 evidence. | 예상과 다른 mode, preference overwrite, plan leakage, logs. | required |
+| D6 | sample이 있는 real recording을 surface한 뒤 Digital Crown으로 Water Lock을 해제한다. | watchOS invalidation 뒤 post-dive input 또는 Save tap 없이 locally saved summary가 정확히 하나, local session ID 하나. | Water Lock 해제 실패, summary 0개/2개 이상, 조기 Saved 표시, invalidation log. | required |
 | D7 | Apple Watch Ultra에서 Divenary를 Action Button Dive app으로 구성한다. existing real recording을 surface한 뒤 `>=180s (3 minutes)`가 지난 시점에만 next press로 종료한다. 수중, unknown state, 또는 `180s` 미만에는 Action Button을 누르지 않는다. | surfaced eligible request 뒤 정확히 하나의 summary와 watchOS invalidation. first-press start와 submerged/unknown/early rejection은 [coordinator unit test](../apps/mobile/ios/DivenaryWatchAppTests/RealDiveSessionCoordinatorTests.swift) 및 [intent unit test](../apps/mobile/ios/DivenaryWatchAppTests/DiveActionButtonIntentTests.swift)로 확인한다. | donation/configuration 실패, surfaced eligible end 실패, summary 0개/2개 이상, start/end log. | required on Action Button hardware |
 | D8 | real recording을 surface한 뒤 연속 `>600s (10 minutes)` 동안 다시 잠기지 않는다. | device evidence는 watchOS invalidation timestamp만 기록한다. 별도 source audit에서 [real coordinator](../apps/mobile/ios/DivenaryWatchApp/Runtime/RealDiveSessionCoordinator.swift)에 app timer가 없고, [water-state unit test](../apps/mobile/ios/DivenaryWatchAppTests/RealDiveSessionCoordinatorTests.swift)가 state event만으로 recorder를 끝내지 않음을 확인한다. | invalidation 없음/조기 invalidation, device event timeline. source audit search 결과도 별도 보관한다. | required |
 | D9 | surface 후 `600s (10 minutes)` 전에 다시 submerge한다. | 기존 local session ID와 recorder가 계속되고 summary가 새 session으로 분리되지 않는다. | 새 ID/새 summary, event timeline. | required |
 | D10 | manual 및 Action Button start를 valid depth sample 없이 종료하고, 별도 system auto-launch no-sample attempt도 종료한다. | manual/Action Button은 한 번의 compact no-sample result와 저장 log 없음. system auto-launch는 silent cancellation과 저장 log 없음. | empty record, unexpected summary/UI, duplicate result. | required |
 | D11 | demo/debug recording을 실행해 Crown으로 depth를 조절하고 surface-gated touch end를 사용한다. | Water Lock 없이 demo/test marker, Crown control, touch end summary. `WKExtendedRuntimeSession`을 쓰지 않은 debug path. | Water Lock/runtime 호출, touch end 누락, marker 누락. | regression gate |
 | D12 | 42mm, 46mm, 49mm에서 real helper row와 demo end row, depth rail, metrics, disclaimer를 확인한다. | 각 size의 screenshot에서 clipping/overlap 없음. | model/size/build별 screenshot과 겹침 위치. | required UI coverage |
+| D13 | Debug-only forced local-save failure로 sample이 있는 real session을 종료한 뒤 같은 화면에서 자동 retry와 수동 Retry를 각각 실행한다. | `Saved`가 조기 표시되지 않고 같은 local session ID가 유지되며, 성공 뒤 saved session은 정확히 하나다. recorder cleanup은 성공 뒤 한 번만 발생한다. | 실패 record 소실, ID 변경, 중복 session, 조기 cleanup, retry log. | required recovery gate |
 
 ## 종료 규칙 확인
 
@@ -86,7 +89,7 @@ real recording에는 touch end action이 없다. 종료는 다음 세 경로가 
 
 ## 배포 판정
 
-- D1-D12의 각 required 행은 pass/fail/not-run과 evidence path를 남긴다.
+- D1-D13의 각 required 행은 pass/fail/not-run과 evidence path를 남긴다.
 - signing, `When Submerged`, Water Lock/Crown, timeout, Action Button hardware가 not-run 또는 fail이면 physical runtime success를 주장하거나 release gate를 통과로 표시하지 않는다.
 - managed deeper entitlement/provisioning이 없으면 shallow public entitlement 상태로만 기록하고 full-depth behavior는 외부 승인 gate로 둔다.
 - 물리 시험 중 sensor/Water Lock/Action Button failure, crash, unexpected multiple summary, no-sample persistence, layout clipping이 나오면 build, device/OS, steps, screenshots/logs, local session ID를 issue에 첨부한다.

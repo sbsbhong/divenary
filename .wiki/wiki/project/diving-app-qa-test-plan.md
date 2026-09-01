@@ -1,8 +1,8 @@
 # Diving App / QA and Test Plan
 
-Sources: pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18
-Raw: [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md)
-Updated: 2026-07-18
+Sources: pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch Wet Ready and automatic local save, 2026-09-01
+Raw: [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch Wet Ready and automatic local save](../../raw/architecture/2026-09-01-watch-wet-ready-auto-save.md)
+Updated: 2026-09-01
 
 ## 범위와 안전 경계
 
@@ -18,6 +18,7 @@ Updated: 2026-07-18
 - 1Hz bucket의 sparse/invalid/out-of-order/final flush, 3시간 10,800 sample 상한, immutable artifact digest와 legacy migration을 검증한다.
 - short/large session이 모두 단일 `transferFile` 경로를 사용하고 ACK identity가 revision/digest까지 일치하는지 검증한다.
 - fixture와 simulator 결과는 실제 WatchConnectivity delivery 또는 수중 sensor 동작의 증거로 쓰지 않는다.
+- `RealDiveSessionCoordinatorTests`는 Wet Ready 뒤 runtime adoption과 runtime-first preferred-mode fallback, 2초 dry debounce, recording 뒤 mode lock, sample session의 automatic local save, 같은 local session ID save retry, system auto-launch no-sample non-save를 검증한다.
 
 ## Gate B: 건식 실기기
 
@@ -36,13 +37,13 @@ Gate B는 Watch 앱이 설치되지 않은 동안 완료로 표시하지 않는�
 - signed watch bundle의 `underwater-depth`, code-signing entitlement, embedded provisioning profile의 shallow entitlement를 각각 확인한다. simulator와 unsigned build는 이 gate의 evidence가 아니다.
 - capability 변경 뒤 reinstall하고 Settings > General > Auto-Launch > When Submerged에서 Divenary가 보이고 선택되는지, installed build/model/watchOS와 `requestAutoLaunchAuthorizationStatus`를 기록한다.
 - 15cm bag/tank에서는 manually started real session의 약 `0.1 m` depth sample과 Water Lock만 확인한다. 이 결과는 `When Submerged` automatic launch pass가 아니다.
-- Xcode Easy Submersion은 simulator system-session delivery/adoption과 UI navigation만 확인한다. physical sensor delivery, actual hardware `When Submerged` selection/auto-launch, Water Lock, device release readiness의 evidence가 아니다. physical automatic launch는 지원 hardware의 안전하게 통제한 `>1 m`에서 `handle(_:)` adoption, persisted preferred mode, real recording UI로 별도 확인한다.
-- surface 뒤 Digital Crown Water Lock removal, surfaced `>=180s (3 minutes)` Action Button end, watchOS continuous out-of-water `>600s (10 minutes)` invalidation이 각각 정확히 하나의 summary로 수렴하는지 확인한다. Action Button submerged/unknown/early rejection은 diver interaction이 아니라 existing unit test 또는 controlled developer harness로 확인한다.
+- Xcode Easy Submersion은 simulator system-session delivery/adoption과 UI navigation만 확인한다. physical sensor delivery, actual hardware `When Submerged` selection/auto-launch, Water Lock, device release readiness의 evidence가 아니다. physical automatic launch는 지원 hardware에서 shallow Wet Ready, active Water Lock, Crown mode selection, `handle(_:)` adoption과 recording mode lock으로 별도 확인한다.
+- surface 뒤 Digital Crown Water Lock removal, surfaced `>=180s (3 minutes)` Action Button end, watchOS continuous out-of-water `>600s (10 minutes)` invalidation이 각각 기록 종료로 수렴하는지 확인한다. sample real completion은 touch 입력 없이 saved summary 하나가 나타나야 한다. Debug-only forced save failure에서는 `Saved` 조기 표시 없이 같은 local session ID로 automatic retry와 수동 Retry의 성공, 한 번의 recorder cleanup을 evidence로 남긴다. Action Button submerged/unknown/early rejection은 diver interaction이 아니라 existing unit test 또는 controlled developer harness로 확인한다.
 - `600s (10 minutes)` 전에 resubmerge했을 때 같은 local session ID가 계속되는지, manual/Action Button no-sample은 compact result만 남기고 system auto-launch no-sample은 silent cancellation하는지 확인한다.
 - D8 device evidence는 watchOS invalidation timing만 남긴다. app-side timer 부재는 `RealDiveSessionCoordinator.swift` timer-symbol static search와 `testWaterStateChangesDoNotStopOrReplaceRecording` unit test를 별도 감사 evidence로 보관한다.
 - demo/debug는 Water Lock 없이 Crown depth simulation과 surface-gated touch end를 유지하고 `WKExtendedRuntimeSession`을 사용하지 않는지 확인한다.
 - 42mm, 46mm, 49mm에서 recording helper/control row, depth rail, metric, disclaimer의 clipping/overlap을 screenshot으로 확인한다.
-- 수온이 늦거나 없을 때 `0°C`를 저장·표시하지 않고, 수신 뒤 실제 측정값만 표시하는지 확인한다. 실제 프리다이빙·스쿠버 profile, 깊은 수심, 실제 safety-stop profile은 이 gate에서 제외한다.
+- 수온이 늦거나 없을 때 `0°C`를 저장·표시하지 않고, 수신 뒤 실제 측정값만 표시하는지 확인한다. 실제 프리다이빙·스쿠버 profile, 깊은 수심, 실제 safety-stop profile은 이 gate에서 제외한다. actual underwater behavior는 지원 hardware evidence 전까지 pending이다.
 
 ## Gate D: Cloud와 제품 흐름
 

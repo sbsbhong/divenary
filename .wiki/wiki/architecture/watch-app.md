@@ -2,9 +2,9 @@
 
 Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18; Watch 기록 내구성과 경로 복구 경계, 2026-07-18; Watch callback, retry, re-entry, navigation hardening, 2026-07-18
 Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md); [Watch callback, retry, re-entry, navigation hardening](../../raw/architecture/2026-07-18-watch-callback-retry-reentry-navigation.md)
-Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
-Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
-Updated: 2026-08-02
+Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02; Watch Wet Ready and automatic local save, 2026-09-01
+Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md); [Watch Wet Ready and automatic local save](../../raw/architecture/2026-09-01-watch-wet-ready-auto-save.md)
+Updated: 2026-09-01
 
 ## 요약
 
@@ -47,10 +47,11 @@ smoothed rate와 transient warning은 기록 화면의 비인증 보조 referenc
 ## 시작 규칙
 
 - manual start는 사용자가 고른 명시적 `PreDivePlan`으로 recorder를 시작하고 Divenary가 runtime session을 시작한다.
-- system auto-launch는 `Settings > General > Auto-Launch > When Submerged`에서 선택된 Divenary에 watchOS가 runtime session을 제공할 때 시작한다. coordinator는 `DiveSessionStore.preferredDiveMode`로 plan을 만든다.
+- 물 감지가 `submerged`가 되면 recorder를 시작하지 않고 `wetReady(mode:)`를 표시한다. 마지막 `preferredDiveMode`를 기본값으로 쓰며 Digital Crown 회전으로 Freedive/Scuba armed mode를 즉시 바꾼다. Crown press는 Water Lock의 watchOS system action이며 앱 입력이나 확인으로 쓰지 않는다.
+- system auto-launch는 `Settings > General > Auto-Launch > When Submerged`에서 선택된 Divenary에 watchOS가 runtime session을 제공할 때만 시작한다. Wet Ready가 먼저 있으면 armed mode를 `PreDivePlan`에 고정하고, runtime event가 water UI event보다 먼저 오면 `preferredDiveMode`를 fallback으로 쓴다. app-local depth threshold나 elapsed-time trigger는 recording start 조건이 아니다.
 - Action Button start도 같은 preferred mode로 app-scoped coordinator를 시작한다. `StartDiveIntent`는 다음 Action Button action으로 end intent를 donate한다.
 - automatic과 Action Button start는 selected planned dive를 저장하거나 추론하지 않는다. manual start만 explicit plan을 유지한다.
-- 이전의 app-local `3 m` sensor auto-start monitor는 제거됐다. `When Submerged`는 local depth threshold가 아니라 watchOS runtime handoff가 기준이다.
+- recording이 시작된 뒤에는 armed mode나 active `PreDivePlan`을 바꾸지 않는다.
 
 active metadata와 NDJSON journal 준비는 모든 recording start의 선행 조건이다. `DiveSessionRecorder.startSession`이 실패하면 sensor, timer, engine을 시작하지 않고 active session도 만들지 않는다. manual과 Action Button 경로는 runtime start와 end action 제공을 중단한다. 이미 watchOS가 넘긴 system session은 adopted 상태를 유지한 채 runtime invalidation을 한 번만 요청한다.
 
@@ -76,7 +77,7 @@ real recording에는 touch end control이 없다. 다음 신호는 runtime inval
 
 단일 `notSubmerged` event는 종료하지 않고, Divenary에는 app-side `600-second (10-minute)` timer가 없다. 이 부재는 `RealDiveSessionCoordinator.swift`의 timer-symbol static search와 `RealDiveSessionCoordinatorTests.testWaterStateChangesDoNotStopOrReplaceRecording`으로 감사한다. `600s (10 minutes)` 전에 resubmerge하면 기존 recorder와 local session ID가 계속 사용된다.
 
-valid depth sample이 있으면 invalidation 뒤 summary를 하나만 만든다. manual/Action Button start가 sample 없이 끝나면 저장하지 않고 compact no-sample result를 한 번 보인다. system auto-launch no-sample attempt는 저장하거나 UI를 남기지 않고 조용히 취소한다.
+valid depth sample이 있으면 invalidation 뒤 finalized `DiveSessionRecord`를 Watch local store에 먼저 저장한다. 성공 뒤에만 recorder completed state를 정리하고 read-only `Saved` summary를 표시한다. save 실패는 record와 local session ID를 유지하며 foreground 복귀 또는 명시적 Retry가 같은 record를 다시 저장한다. real completion에는 post-dive metadata, Save/Discard/Delete 입력이 없다. manual/Action Button start가 sample 없이 끝나면 저장하지 않고 compact no-sample result를 한 번 보인다. system auto-launch no-sample attempt는 저장하거나 UI를 남기지 않고 조용히 취소한다.
 
 demo/debug는 `DemoDepthSensorProvider`, Digital Crown depth simulation, `SurfaceEndDiveGate`, surface-gated touch end를 유지한다. 이 경로는 `WKExtendedRuntimeSession`, Water Lock, real Action Button ending, 10분 규칙을 사용하지 않는다.
 
@@ -88,7 +89,7 @@ watch `Info.plist`는 `WKBackgroundModes`의 `underwater-depth`를 유지하고,
 
 signed device build에서 code-signing entitlement와 embedded profile 모두를 검사해야 한다. 공개 shallow capability는 manager가 승인한 얕은 범위 접근만 뜻한다. 더 깊은 sensor access는 Apple managed entitlement와 provisioning의 외부 승인 gate이며, 현재 build를 40m sensor-authorized로 설명할 수 없다. physical sensor delivery, signing/profile, `When Submerged`, Water Lock/Crown, Action Button hardware behavior와 watchOS timeout은 모두 계속 미검증 상태다.
 
-15cm bag/tank test는 manually started real session의 shallow sample(예: 약 `0.1 m`)과 Water Lock만 검증한다. Xcode Easy Submersion은 simulator adoption 확인으로만 기록한다. physical `When Submerged` automatic launch는 지원 hardware의 안전하게 통제한 `>1 m`에서 `handle(_:)` adoption과 실제 selection을 별도로 검증해야 한다. Digital Crown, timeout, surfaced eligible Action Button end도 지원 hardware에서 독립적으로 확인해야 한다.
+15cm bag/tank test는 manually started real session의 shallow sample(예: 약 `0.1 m`)과 Water Lock만 검증한다. Xcode Easy Submersion은 simulator adoption 확인으로만 기록한다. physical `When Submerged` automatic launch는 지원 hardware에서 Wet Ready와 Crown selection을 확인한 뒤 watchOS가 제공하는 threshold의 `handle(_:)` adoption과 실제 selection을 별도로 검증해야 한다. Digital Crown, timeout, surfaced eligible Action Button end도 지원 hardware에서 독립적으로 확인해야 한다.
 
 ## 관련 문서
 

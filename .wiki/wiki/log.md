@@ -1135,3 +1135,15 @@
 - Recorded: 모든 build의 진단 journal에서 계정·Auth·위치·사용자 콘텐츠·다이빙 수치와 원본 payload를 제외한다.
 - Recorded: 1단계는 Watch 3일/1MB와 iPhone 14일/10MB local journal, 전용 Watch diagnostic transfer/ACK, 고정 분류 incident marker, 수동 JSONL export와 cross-device purge다.
 - Pending: 공통 schema와 journal 구현, paired-device background/reconnect/retention/purge 검증, 원격 provider·동의·privacy policy·native crash 수집은 아직 완료되지 않았다.
+
+## [2026-09-01] ingest | Watch Wet Ready and automatic local save
+- Added: Watch Wet Ready and automatic local save raw source
+- Updated: Watch 앱 구조
+- Updated: Diving App / QA and Test Plan
+- Updated: Knowledge Base Index
+- Recorded: 물 감지 뒤 Wet Ready에서 Crown으로 Freedive/Scuba를 선택하고 watchOS runtime adoption 순간 mode와 plan을 고정한다.
+- Recorded: sample이 있는 real completion은 Watch local save 성공 뒤에만 Saved summary를 표시하며 실패 시 같은 local session ID를 유지해 재시도한다.
+- Clarified: app-local 1m/3m/30초 start trigger와 active-session mode change, wet post-dive metadata 입력, immediate delete는 구현하지 않는다.
+- Pending: physical Water Lock Crown focus, actual When Submerged ordering, touchless save, forced save-retry는 지원 hardware evidence가 필요하다.
+
+## [2026-09-01] lint | 0 issues found, 0 auto-fixed
