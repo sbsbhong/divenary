@@ -650,6 +650,22 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.cancelCallCount, 0)
     }
 
+    func testDismissSavedSummaryReentersWetReadyWhenCurrentWaterStateIsSubmerged() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let water = FakeWaterStateReader(latestState: .notSubmerged)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .freedive))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertSavedSummary(coordinator)
+        water.latestState = .submerged
+        coordinator.dismissSavedSummary()
+
+        assertWetReady(coordinator, mode: .scuba)
+    }
+
     func testNoSampleAutoLaunchStillDoesNotSave() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)

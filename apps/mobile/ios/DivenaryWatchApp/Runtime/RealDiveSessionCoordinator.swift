@@ -211,6 +211,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     func dismissSavedSummary() {
         guard case .savedSummary = phase else { return }
         phase = .idle
+        receiveWaterState(water.latestState)
     }
 
     func dismissNoSamples() {

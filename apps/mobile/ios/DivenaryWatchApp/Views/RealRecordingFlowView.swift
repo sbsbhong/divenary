@@ -30,7 +30,7 @@ struct RealRecordingFlowView: View {
             case .savedSummary(let session):
                 SavedSessionSummaryView(
                     session: session,
-                    onDone: coordinator.dismissSavedSummary
+                    onBack: coordinator.dismissSavedSummary
                 )
             case .noSamples:
                 noSamplesView

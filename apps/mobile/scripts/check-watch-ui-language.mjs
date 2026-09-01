@@ -119,6 +119,18 @@ const checks = [
     failed: /press and hold the Digital Crown/i.test(recordingViewSource),
   },
   {
+    name: 'saved real summary uses toolbar back navigation and a scroll footer',
+    failed:
+      !/struct SavedSessionSummaryView[\s\S]*ToolbarItem\(placement: \.topBarLeading\)[\s\S]*onBack/.test(summaryViewSource) ||
+      /Button\("Done"/.test(
+        summaryViewSource.slice(
+          summaryViewSource.indexOf('struct SavedSessionSummaryView'),
+          summaryViewSource.indexOf('struct CapturedSessionSummaryView'),
+        ),
+      ) ||
+      !/struct SessionSummaryContent[\s\S]*DiveDisclaimer[\s\S]*if let footer[\s\S]*Text\(footer\)/.test(summaryViewSource),
+  },
+  {
     name: 'watch string catalog includes English and Korean localizations',
     failed:
       !stringCatalog ||

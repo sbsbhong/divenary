@@ -3,6 +3,7 @@ import SwiftUI
 struct SessionSummaryContent: View {
     let session: DiveSessionRecord
     let statusTitle: LocalizedStringKey
+    let footer: LocalizedStringKey?
 
     private var summary: DiveSessionSummary {
         session.summary
@@ -53,6 +54,14 @@ struct SessionSummaryContent: View {
                 commonMetricsSection
 
                 DiveDisclaimer(text: String(localized: "SAVED LOG ONLY. NON-CERTIFIED ASSISTANT."))
+
+                if let footer {
+                    Text(footer)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity)
+                }
             }
             .padding(.horizontal, DiveWatchTheme.edgeMargin)
             .padding(.vertical, 10)
@@ -96,21 +105,21 @@ struct SessionSummaryContent: View {
 
 struct SavedSessionSummaryView: View {
     let session: DiveSessionRecord
-    let onDone: () -> Void
+    let onBack: () -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
-            SessionSummaryContent(session: session, statusTitle: "Saved")
-
-            Text("Edit details on iPhone.")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-                .multilineTextAlignment(.center)
-
-            Button("Done", action: onDone)
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+        SessionSummaryContent(
+            session: session,
+            statusTitle: "Saved",
+            footer: "Edit details on iPhone."
+        )
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                }
+            }
         }
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 }
 
@@ -121,7 +130,11 @@ struct CapturedSessionSummaryView: View {
 
     var body: some View {
         VStack(spacing: 8) {
-            SessionSummaryContent(session: session, statusTitle: "Dive captured")
+            SessionSummaryContent(
+                session: session,
+                statusTitle: "Dive captured",
+                footer: nil
+            )
 
             HStack(spacing: 8) {
                 Button("Save", action: onSave)
