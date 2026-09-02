@@ -145,6 +145,8 @@ const checks = [
       !homeViewSource.includes('title: "Freediving"') ||
       !homeViewSource.includes('title: "Scuba Diving"') ||
       (homeViewSource.match(/trailingSystemImage: "play.fill"/g) ?? []).length !== 3 ||
+      !homeViewSource.includes('static let minimumHeight: CGFloat = 64') ||
+      homeViewSource.includes('subtitle: String(localized: "Crown-controlled sample dive")') ||
       homeViewSource.includes('Supplemental log · no safety calculation') ||
       homeViewSource.includes('Recommended safety stop reminder.'),
   },

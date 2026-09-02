@@ -68,7 +68,6 @@ struct HomeView: View {
                     } label: {
                         StartSessionCard(
                             title: "Demo",
-                            subtitle: String(localized: "Crown-controlled sample dive"),
                             systemImage: "digitalcrown.arrow.clockwise",
                             accent: DiveWatchTheme.secondary,
                             trailingSystemImage: "play.fill"
@@ -346,6 +345,8 @@ private extension DepthSensorReadiness {
 }
 
 private struct StartSessionCard: View {
+    static let minimumHeight: CGFloat = 64
+
     let title: LocalizedStringKey
     var subtitle: String?
     var footnote: String?
@@ -392,6 +393,7 @@ private struct StartSessionCard: View {
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
         }
+        .frame(minHeight: Self.minimumHeight)
     }
 }
 
