@@ -392,8 +392,8 @@ private struct StartSessionCard: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
+            .frame(minHeight: Self.minimumHeight)
         }
-        .frame(minHeight: Self.minimumHeight)
     }
 }
 
