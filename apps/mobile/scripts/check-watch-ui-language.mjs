@@ -14,6 +14,7 @@ const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/HomeView.swift',
   'ios/DivenaryWatchApp/Views/WetReadyView.swift',
   'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift',
+  'ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift',
 ];
 const source = watchSourceFiles
   .map(file => readFileSync(join(root, file), 'utf8'))
@@ -32,6 +33,10 @@ const summaryViewSource = readFileSync(
 );
 const realRecordingFlowSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift'),
+  'utf8',
+);
+const simulatedRecordingFlowSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift'),
   'utf8',
 );
 const sessionListViewSource = readFileSync(
@@ -113,6 +118,16 @@ const checks = [
     failed:
       realRecordingFlowSource.includes('store.save(') ||
       realRecordingFlowSource.includes('onDiscard:'),
+  },
+  {
+    name: 'demo completion reuses saved summary without save or discard controls',
+    failed:
+      !simulatedRecordingFlowSource.includes('SavedSessionSummaryView(') ||
+      !simulatedRecordingFlowSource.includes('retryCompletedSessionSave') ||
+      !simulatedRecordingFlowSource.includes('dismissSavedSummary') ||
+      simulatedRecordingFlowSource.includes('CapturedSessionSummaryView') ||
+      simulatedRecordingFlowSource.includes('saveSummary(') ||
+      simulatedRecordingFlowSource.includes('discardSummary('),
   },
   {
     name: 'real recording copy does not claim crown-press handling',

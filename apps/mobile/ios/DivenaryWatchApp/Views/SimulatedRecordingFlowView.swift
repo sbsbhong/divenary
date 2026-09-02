@@ -4,8 +4,10 @@ import SwiftUI
 enum SimulatedRecordingLifecyclePhase {
     case ready
     case recording
-    case summary(DiveSessionRecord)
+    case saving(DiveSessionRecord)
+    case savedSummary(DiveSessionRecord)
     case persistenceError
+    case savePersistenceError(DiveSessionRecord)
     case cleanupError
     case completed
 }
@@ -35,7 +37,7 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
 
     var hidesSystemBackButton: Bool {
         switch phase {
-        case .recording, .summary, .cleanupError:
+        case .recording, .saving, .savedSummary, .savePersistenceError, .cleanupError:
             return true
         case .ready, .persistenceError, .completed:
             return false
@@ -91,33 +93,18 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
             return false
         }
 
-        phase = .summary(session)
-        return true
+        return persistCompletedSession(session)
     }
 
     @discardableResult
-    func saveSummary(_ session: DiveSessionRecord) -> Bool {
-        guard case .summary = phase,
-              !didComplete,
-              store.save(session)
-        else {
-            return false
-        }
-
-        markCompleted()
-        recorder.resetCompletedSession()
-        return true
+    func retryCompletedSessionSave() -> Bool {
+        guard case let .savePersistenceError(session) = phase else { return false }
+        return persistCompletedSession(session)
     }
 
     @discardableResult
-    func discardSummary() -> Bool {
-        guard case .summary = phase,
-              !didComplete,
-              recorder.cancelSession()
-        else {
-            return false
-        }
-
+    func dismissSavedSummary() -> Bool {
+        guard case .savedSummary = phase else { return false }
         markCompleted()
         return true
     }
@@ -132,10 +119,8 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
                 return
             }
             markCompleted()
-        case .summary:
-            guard recorder.cancelSession() else { return }
-            markCompleted()
-        case .ready, .persistenceError, .cleanupError, .completed:
+        case .ready, .saving, .savedSummary, .persistenceError, .savePersistenceError,
+             .cleanupError, .completed:
             break
         }
     }
@@ -158,6 +143,19 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         }
         didStart = true
         phase = .recording
+        return true
+    }
+
+    @discardableResult
+    private func persistCompletedSession(_ session: DiveSessionRecord) -> Bool {
+        phase = .saving(session)
+        guard store.save(session) else {
+            phase = .savePersistenceError(session)
+            return false
+        }
+
+        recorder.resetCompletedSession()
+        phase = .savedSummary(session)
         return true
     }
 
@@ -221,6 +219,7 @@ struct SimulatedRecordingFlowView: View {
                 dismiss()
                 return
             }
+            guard case .recording = lifecycle.phase else { return }
             recorder.setDemoDepthMeters(controlledDepthMeters)
             installActionButtonEndOverride()
             crownDepthControlFocused = true
@@ -239,14 +238,17 @@ struct SimulatedRecordingFlowView: View {
         switch lifecycle.phase {
         case .ready, .recording:
             recordingContent
-        case .summary(let session):
-            CapturedSessionSummaryView(
+        case .saving:
+            savingView
+        case .savedSummary(let session):
+            SavedSessionSummaryView(
                 session: session,
-                onSave: { save(session) },
-                onDiscard: discard
+                onBack: dismissSavedSummary
             )
         case .persistenceError:
             persistenceErrorView
+        case .savePersistenceError:
+            savePersistenceErrorView
         case .cleanupError:
             cleanupErrorView
         case .completed:
@@ -343,19 +345,51 @@ struct SimulatedRecordingFlowView: View {
 
     @discardableResult
     private func endDive() -> Bool {
-        lifecycle.finishRecording()
+        let didFinish = lifecycle.finishRecording()
+        if case .recording = lifecycle.phase {
+            return didFinish
+        }
+        removeActionButtonEndOverride()
+        return didFinish
     }
 
-    private func save(_ session: DiveSessionRecord) {
-        guard lifecycle.saveSummary(session) else { return }
+    private func dismissSavedSummary() {
+        guard lifecycle.dismissSavedSummary() else { return }
         removeActionButtonEndOverride()
         dismiss()
     }
 
-    private func discard() {
-        guard lifecycle.discardSummary() else { return }
-        removeActionButtonEndOverride()
-        dismiss()
+    private var savingView: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(DiveWatchTheme.primary)
+            Text("Saving log")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
+    private var savePersistenceErrorView: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.danger)
+
+            Text("Keeping your captured log.")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .multilineTextAlignment(.center)
+
+            Button("Retry Save") {
+                _ = lifecycle.retryCompletedSessionSave()
+            }
+            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+        }
+        .padding(.horizontal, DiveWatchTheme.edgeMargin)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
     private func installActionButtonEndOverride() {

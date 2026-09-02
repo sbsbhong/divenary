@@ -123,32 +123,6 @@ struct SavedSessionSummaryView: View {
     }
 }
 
-struct CapturedSessionSummaryView: View {
-    let session: DiveSessionRecord
-    let onSave: () -> Void
-    let onDiscard: () -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            SessionSummaryContent(
-                session: session,
-                statusTitle: "Dive captured",
-                footer: nil
-            )
-
-            HStack(spacing: 8) {
-                Button("Save", action: onSave)
-                    .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                Button("Discard", role: .destructive, action: onDiscard)
-                    .buttonStyle(DiveActionButtonStyle(kind: .secondary))
-            }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        }
-        .background(DiveWatchTheme.background.ignoresSafeArea())
-    }
-}
-
 private struct FreeSessionSummarySection: View {
     let session: FreeDiveSession
 
