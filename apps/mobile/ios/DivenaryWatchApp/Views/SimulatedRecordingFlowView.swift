@@ -44,6 +44,13 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         }
     }
 
+    var showsEndControl: Bool {
+        if case .recording = phase {
+            return true
+        }
+        return false
+    }
+
     private let recorder: any SimulatedRecordingLifecycleRecording
     private let store: any SimulatedRecordingSessionStoring
     private var didStart = false
@@ -214,6 +221,18 @@ struct SimulatedRecordingFlowView: View {
             flowContent
         }
         .navigationBarBackButtonHidden(lifecycle.hidesSystemBackButton)
+        .toolbar {
+            if recordingMode == .demo, lifecycle.showsEndControl {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        _ = endDive()
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .accessibilityLabel(Text("End demo"))
+                }
+            }
+        }
         .onAppear {
             if lifecycle.handleFlowAppearance(plan: preparedPlan) {
                 dismiss()
@@ -262,9 +281,7 @@ struct SimulatedRecordingFlowView: View {
             plan: preparedPlan,
             maximumDepthMeters: nil,
             endControl: recordingMode.endControl,
-            onEndDive: {
-                _ = endDive()
-            }
+            showsNavigationToolbar: recordingMode == .demo
         )
         .focusable(recordingMode.controlPolicy.usesCrownDepthControl)
         .focused($crownDepthControlFocused)

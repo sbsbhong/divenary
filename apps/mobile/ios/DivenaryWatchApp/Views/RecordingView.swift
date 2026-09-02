@@ -47,7 +47,7 @@ enum WatchRecordingMode: Equatable {
         case .real:
             return .crownHint
         case .demo:
-            return .demoButton
+            return .toolbarEnd
         case .debugTest:
             return .hidden
         }
@@ -66,7 +66,7 @@ enum WatchRecordingMode: Equatable {
 
 enum RecordingEndControl: Equatable {
     case crownHint
-    case demoButton
+    case toolbarEnd
     case hidden
 }
 
@@ -93,7 +93,7 @@ struct RecordingInstrumentView: View {
     let plan: PreDivePlan
     let maximumDepthMeters: Double?
     let endControl: RecordingEndControl
-    let onEndDive: (() -> Void)?
+    var showsNavigationToolbar = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -104,10 +104,9 @@ struct RecordingInstrumentView: View {
 
                 recordingErrorFooter
 
-                if endControl != .hidden {
+                if endControl == .crownHint {
                     RecordingEndControlFooter(
-                        endControl: endControl,
-                        onEndDive: onEndDive
+                        endControl: endControl
                     )
                 }
             }
@@ -116,7 +115,7 @@ struct RecordingInstrumentView: View {
         .padding(.horizontal, 4)
         .padding(.bottom, 3)
         .background(DiveWatchTheme.background.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(showsNavigationToolbar ? .visible : .hidden, for: .navigationBar)
     }
 
     @ViewBuilder
@@ -231,7 +230,6 @@ struct RecordingInstrumentView: View {
 
 private struct RecordingEndControlFooter: View {
     let endControl: RecordingEndControl
-    let onEndDive: (() -> Void)?
 
     var body: some View {
         switch endControl {
@@ -239,18 +237,7 @@ private struct RecordingEndControlFooter: View {
             footerHint(
                 String(localized: "End with the configured Action Button or by turning off Water Lock.")
             )
-        case .demoButton:
-            VStack(spacing: 1) {
-                Button {
-                    onEndDive?()
-                } label: {
-                    Label("End Dive", systemImage: "xmark.circle.fill")
-                }
-                .buttonStyle(CompactRecordingEndButtonStyle())
-
-                footerHint(String(localized: "Use the button to end the demo session."))
-            }
-        case .hidden:
+        case .toolbarEnd, .hidden:
             EmptyView()
         }
     }
@@ -263,23 +250,6 @@ private struct RecordingEndControlFooter: View {
             .lineLimit(2)
             .minimumScaleFactor(0.72)
             .frame(maxWidth: .infinity)
-    }
-}
-
-private struct CompactRecordingEndButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.danger)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, 10)
-            .frame(minHeight: 28)
-            .background(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .fill(DiveWatchTheme.danger.opacity(configuration.isPressed ? 0.28 : 0.16))
-            )
-            .scaleEffect(configuration.isPressed ? 0.97 : 1)
     }
 }
 
@@ -325,8 +295,7 @@ struct RecordingLayoutFixtureView: View {
             recorder: recorder,
             plan: plan,
             maximumDepthMeters: fixture == .real ? 6 : nil,
-            endControl: fixture.recordingMode.endControl,
-            onEndDive: nil
+            endControl: fixture.recordingMode.endControl
         )
         .onAppear {
             recorder.startSession(plan: plan)

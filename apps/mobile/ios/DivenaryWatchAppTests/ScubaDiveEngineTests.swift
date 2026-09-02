@@ -200,7 +200,7 @@ final class WatchRecordingModeTests: XCTestCase {
 
     func testRecordingEndControlsMatchSessionType() {
         XCTAssertEqual(WatchRecordingMode.real.endControl, .crownHint)
-        XCTAssertEqual(WatchRecordingMode.demo.endControl, .demoButton)
+        XCTAssertEqual(WatchRecordingMode.demo.endControl, .toolbarEnd)
         XCTAssertEqual(WatchRecordingMode.debugTest.endControl, .hidden)
     }
 
@@ -296,6 +296,17 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
 
         XCTAssertEqual(recorder.stopCount, 0)
         assertReady(controller.phase)
+    }
+
+    func testEndControlIsVisibleOnlyWhileDemoRecordingIsActive() {
+        let (controller, _, _) = makeSystem()
+
+        XCTAssertFalse(controller.showsEndControl)
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan()))
+        XCTAssertTrue(controller.showsEndControl)
+
+        XCTAssertTrue(controller.finishRecording())
+        XCTAssertFalse(controller.showsEndControl)
     }
 
     func testCleanupErrorKeepsBackManagedUntilExternalCleanupRetrySucceeds() {

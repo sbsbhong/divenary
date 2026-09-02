@@ -935,6 +935,22 @@
         }
       }
     },
+    "End demo" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End demo"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "데모 종료"
+          }
+        }
+      }
+    },
     "End Divenary Dive" : {
       "localizations" : {
         "en" : {

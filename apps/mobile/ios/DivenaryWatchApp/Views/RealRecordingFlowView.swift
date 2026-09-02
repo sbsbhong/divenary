@@ -22,8 +22,7 @@ struct RealRecordingFlowView: View {
                     recorder: recorder,
                     plan: plan,
                     maximumDepthMeters: water.maximumDepthMeters,
-                    endControl: WatchRecordingMode.real.endControl,
-                    onEndDive: nil
+                    endControl: WatchRecordingMode.real.endControl
                 )
             case .completing:
                 savingView

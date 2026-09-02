@@ -129,9 +129,15 @@ const checks = [
       !simulatedRecordingFlowSource.includes('SavedSessionSummaryView(') ||
       !simulatedRecordingFlowSource.includes('retryCompletedSessionSave') ||
       !simulatedRecordingFlowSource.includes('dismissSavedSummary') ||
+      !simulatedRecordingFlowSource.includes('ToolbarItem(placement: .topBarLeading)') ||
+      !simulatedRecordingFlowSource.includes('Image(systemName: "xmark")') ||
+      !simulatedRecordingFlowSource.includes('endDive()') ||
       simulatedRecordingFlowSource.includes('CapturedSessionSummaryView') ||
       simulatedRecordingFlowSource.includes('saveSummary(') ||
-      simulatedRecordingFlowSource.includes('discardSummary('),
+      simulatedRecordingFlowSource.includes('discardSummary(') ||
+      recordingViewSource.includes('case .demoButton') ||
+      recordingViewSource.includes('Label("End Dive"') ||
+      recordingViewSource.includes('Use the button to end the demo session.'),
   },
   {
     name: 'immediate-start cards use play affordances and concise labels',
