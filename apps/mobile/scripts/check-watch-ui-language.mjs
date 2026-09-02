@@ -39,6 +39,10 @@ const simulatedRecordingFlowSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift'),
   'utf8',
 );
+const homeViewSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/HomeView.swift'),
+  'utf8',
+);
 const sessionListViewSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/SessionListView.swift'),
   'utf8',
@@ -128,6 +132,15 @@ const checks = [
       simulatedRecordingFlowSource.includes('CapturedSessionSummaryView') ||
       simulatedRecordingFlowSource.includes('saveSummary(') ||
       simulatedRecordingFlowSource.includes('discardSummary('),
+  },
+  {
+    name: 'immediate-start cards use play affordances and concise labels',
+    failed:
+      !homeViewSource.includes('title: "Freediving"') ||
+      !homeViewSource.includes('title: "Scuba Diving"') ||
+      (homeViewSource.match(/trailingSystemImage: "play.fill"/g) ?? []).length !== 3 ||
+      homeViewSource.includes('Supplemental log · no safety calculation') ||
+      homeViewSource.includes('Recommended safety stop reminder.'),
   },
   {
     name: 'real recording copy does not claim crown-press handling',

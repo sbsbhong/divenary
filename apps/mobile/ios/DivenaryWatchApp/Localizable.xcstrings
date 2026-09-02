@@ -1049,18 +1049,18 @@
         }
       }
     },
-    "Free Session Start" : {
+    "Freediving" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Free Session Start"
+            "value" : "Freediving"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프리 세션 시작"
+            "value" : "프리 다이빙"
           }
         }
       }
@@ -2219,18 +2219,18 @@
         }
       }
     },
-    "Scuba Start" : {
+    "Scuba Diving" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scuba Start"
+            "value" : "Scuba Diving"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스쿠버 시작"
+            "value" : "스쿠버 다이빙"
           }
         }
       }

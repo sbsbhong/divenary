@@ -26,10 +26,10 @@ struct HomeView: View {
                         startRealDive(mode: .freedive)
                     } label: {
                         StartSessionCard(
-                            title: "Free Session Start",
-                            subtitle: String(localized: "Supplemental log · no safety calculation"),
+                            title: "Freediving",
                             systemImage: "figure.pool.swim",
-                            accent: DiveWatchTheme.primary
+                            accent: DiveWatchTheme.primary,
+                            trailingSystemImage: "play.fill"
                         )
                     }
                     .buttonStyle(.plain)
@@ -39,11 +39,10 @@ struct HomeView: View {
                         startRealDive(mode: .scuba)
                     } label: {
                         StartSessionCard(
-                            title: "Scuba Start",
-                            subtitle: scubaStartSubtitle,
-                            footnote: String(localized: "Recommended safety stop reminder."),
+                            title: "Scuba Diving",
                             systemImage: "drop.fill",
-                            accent: DiveWatchTheme.secondary
+                            accent: DiveWatchTheme.secondary,
+                            trailingSystemImage: "play.fill"
                         )
                     }
                     .buttonStyle(.plain)
@@ -71,7 +70,8 @@ struct HomeView: View {
                             title: "Demo",
                             subtitle: String(localized: "Crown-controlled sample dive"),
                             systemImage: "digitalcrown.arrow.clockwise",
-                            accent: DiveWatchTheme.secondary
+                            accent: DiveWatchTheme.secondary,
+                            trailingSystemImage: "play.fill"
                         )
                     }
                     .buttonStyle(.plain)
@@ -91,7 +91,8 @@ struct HomeView: View {
                                 title: "Test Freedive",
                                 subtitle: String(localized: "Debug depth control"),
                                 systemImage: "digitalcrown.arrow.clockwise",
-                                accent: DiveWatchTheme.primary
+                                accent: DiveWatchTheme.primary,
+                                trailingSystemImage: "chevron.right"
                             )
                         }
                         .buttonStyle(.plain)
@@ -109,7 +110,8 @@ struct HomeView: View {
                                 title: "Test Scuba",
                                 subtitle: String(localized: "Debug depth control"),
                                 systemImage: "digitalcrown.arrow.clockwise",
-                                accent: DiveWatchTheme.secondary
+                                accent: DiveWatchTheme.secondary,
+                                trailingSystemImage: "chevron.right"
                             )
                         }
                         .buttonStyle(.plain)
@@ -169,14 +171,6 @@ struct HomeView: View {
         #else
         false
         #endif
-    }
-
-    private var scubaStartSubtitle: String {
-        let gasLabel = explicitStartPlan(for: .scuba).gasLabel
-        guard gasLabel != "Air" else {
-            return String(localized: "Air · Stop 5m/3:00")
-        }
-        return "\(gasLabel) · \(String(localized: "Stop 5m/3:00"))"
     }
 
     private var realRecordingFlowIsPresented: Binding<Bool> {
@@ -353,10 +347,11 @@ private extension DepthSensorReadiness {
 
 private struct StartSessionCard: View {
     let title: LocalizedStringKey
-    let subtitle: String
+    var subtitle: String?
     var footnote: String?
     let systemImage: String
     let accent: Color
+    let trailingSystemImage: String
 
     var body: some View {
         InstrumentCard(accent: accent) {
@@ -373,11 +368,13 @@ private struct StartSessionCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.65)
 
-                    Text(subtitle)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(DiveWatchTheme.mutedText)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.6)
+                    }
 
                     if let footnote {
                         Text(footnote)
@@ -390,7 +387,7 @@ private struct StartSessionCard: View {
 
                 Spacer(minLength: 4)
 
-                Image(systemName: "chevron.right")
+                Image(systemName: trailingSystemImage)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
