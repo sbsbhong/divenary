@@ -44,7 +44,7 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         }
     }
 
-    var showsEndControl: Bool {
+    var showsRecordingControls: Bool {
         if case .recording = phase {
             return true
         }
@@ -222,7 +222,7 @@ struct SimulatedRecordingFlowView: View {
         }
         .navigationBarBackButtonHidden(lifecycle.hidesSystemBackButton)
         .toolbar {
-            if recordingMode == .demo, lifecycle.showsEndControl {
+            if recordingMode == .demo, lifecycle.showsRecordingControls {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
                         _ = endDive()
@@ -231,6 +231,15 @@ struct SimulatedRecordingFlowView: View {
                     }
                     .accessibilityLabel(Text("End demo"))
                 }
+            }
+        }
+        .safeAreaInset(edge: .bottom) {
+            if recordingMode == .demo, lifecycle.showsRecordingControls {
+                Text(String(localized: "Adjust depth with the Digital Crown"))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
             }
         }
         .onAppear {

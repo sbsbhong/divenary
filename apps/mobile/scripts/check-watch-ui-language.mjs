@@ -132,6 +132,10 @@ const checks = [
       !simulatedRecordingFlowSource.includes('ToolbarItem(placement: .topBarLeading)') ||
       !simulatedRecordingFlowSource.includes('Image(systemName: "xmark")') ||
       !simulatedRecordingFlowSource.includes('endDive()') ||
+      !simulatedRecordingFlowSource.includes('.safeAreaInset(edge: .bottom)') ||
+      !simulatedRecordingFlowSource.includes('recordingMode == .demo') ||
+      !simulatedRecordingFlowSource.includes('lifecycle.showsRecordingControls') ||
+      !simulatedRecordingFlowSource.includes('Adjust depth with the Digital Crown') ||
       simulatedRecordingFlowSource.includes('CapturedSessionSummaryView') ||
       simulatedRecordingFlowSource.includes('saveSummary(') ||
       simulatedRecordingFlowSource.includes('discardSummary(') ||

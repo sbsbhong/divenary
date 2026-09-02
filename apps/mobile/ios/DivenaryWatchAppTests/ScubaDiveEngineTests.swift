@@ -298,15 +298,15 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         assertReady(controller.phase)
     }
 
-    func testEndControlIsVisibleOnlyWhileDemoRecordingIsActive() {
+    func testRecordingControlsAreVisibleOnlyWhileDemoRecordingIsActive() {
         let (controller, _, _) = makeSystem()
 
-        XCTAssertFalse(controller.showsEndControl)
+        XCTAssertFalse(controller.showsRecordingControls)
         XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan()))
-        XCTAssertTrue(controller.showsEndControl)
+        XCTAssertTrue(controller.showsRecordingControls)
 
         XCTAssertTrue(controller.finishRecording())
-        XCTAssertFalse(controller.showsEndControl)
+        XCTAssertFalse(controller.showsRecordingControls)
     }
 
     func testCleanupErrorKeepsBackManagedUntilExternalCleanupRetrySucceeds() {
