@@ -52,11 +52,11 @@ export class PersistentDivePlanRepository implements DivePlanRepository {
   }
 
   async list(): Promise<DivePlan[]> {
-    return (await this.readPlans()).map(cloneDivePlan).sort((left, right) => compareDivePlans(left, right, this.now()));
+    return (await this.readPlans()).sort((left, right) => compareDivePlans(left, right, this.now()));
   }
 
   async get(localId: string): Promise<DivePlan | undefined> {
-    const plan = (await this.readPlans()).find(currentPlan => currentPlan.localId === localId);
+    const plan = (await this.store.read()).find(currentPlan => currentPlan.localId === localId);
     return plan ? cloneDivePlan(plan) : undefined;
   }
 

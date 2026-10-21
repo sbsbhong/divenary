@@ -450,6 +450,30 @@ describe('guest claim store', () => {
     await expect(store.read()).rejects.toThrow();
   });
 
+  it('accepts a progress-only rewrite but rejects changed sidecar bytes after a verified write', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({ localId: 'log-a', title: 'Moon Island' })]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const store = new GuestClaimStore({ storage, userId, now: () => 101 });
+    await store.write(snapshot);
+
+    const progressed = (await store.read())!;
+    progressed.manifest.updatedAt = 200;
+    await expect(store.write(progressed)).resolves.toBeUndefined();
+
+    const tampered = (await store.read())!;
+    tampered.snapshots[0]!.localRecordBytes = tampered.snapshots[0]!.localRecordBytes.replace(
+      'Moon Island',
+      'Moon Islanc',
+    );
+    await expect(store.write(tampered)).rejects.toThrow();
+  });
+
   it('round-trips sanitized failure context without changing the manifest digest', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({

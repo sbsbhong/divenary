@@ -9,6 +9,10 @@ export type StoredEnvelope<T> = {
   value: T;
 };
 
+/**
+ * `pending` and `commit` are the write-journal keys older builds used; they are only read to
+ * finish a journal left behind. Unreadable stored text is copied under `quarantinePrefix`.
+ */
 export type PersistentJsonRecoveryKeys = {
   pending: string;
   commit: string;
@@ -69,6 +73,14 @@ type JournalMarker = {
   byteCount: number;
 };
 
+/**
+ * Stores one JSON value under one key. The key-value store replaces a single key atomically
+ * (AsyncStorage keeps it in one SQLite row), so a write is one `setString` plus a readback.
+ *
+ * Reading parses and migrates the stored text once and reuses that value until the text changes.
+ * `read()` can therefore return the same object to several callers: treat it as read-only and
+ * copy it before changing it.
+ */
 export class PersistentJsonStore<T> {
   private readonly key: string;
   private readonly schemaVersion: number;
@@ -79,6 +91,8 @@ export class PersistentJsonStore<T> {
   private readonly onReadError?: (error: Error) => void;
   private readonly readFailurePolicy: 'default' | 'throw';
   private readonly recoveryKeys?: PersistentJsonRecoveryKeys;
+  private legacyJournalSettled = false;
+  private cached?: {raw: string; value: T};
 
   constructor(options: PersistentJsonStoreOptions<T>) {
     this.key = options.key;
@@ -93,22 +107,34 @@ export class PersistentJsonStore<T> {
   }
 
   async read(): Promise<T> {
-    await this.recoverCommittedWrite();
+    await this.settleLegacyJournal();
     const rawValue = await this.storage.getString(this.key);
 
     if (rawValue === undefined) {
+      this.cached = undefined;
       return this.defaultValue();
+    }
+    if (this.cached?.raw === rawValue) {
+      return this.cached.value;
     }
 
     try {
       const envelope = JSON.parse(rawValue) as StoredEnvelope<unknown>;
-      return this.migrate(envelope);
+      const value = this.migrate(envelope);
+      this.cached = {raw: rawValue, value};
+      return value;
     } catch (error) {
+      this.cached = undefined;
       return this.handleReadError(rawValue, error);
     }
   }
 
+  /**
+   * A failed `setString` leaves the previous value in place. A readback failure after it means
+   * the new value may already be stored, so it is reported as {@link PersistentJsonCommittedWriteError}.
+   */
   async write(value: T): Promise<void> {
+    await this.settleLegacyJournal();
     const envelope: StoredEnvelope<T> = {
       schemaVersion: this.schemaVersion,
       updatedAt: this.now(),
@@ -116,64 +142,24 @@ export class PersistentJsonStore<T> {
     };
 
     const serialized = JSON.stringify(envelope);
-    if (!this.recoveryKeys) {
-      await this.storage.setString(this.key, serialized);
-      return;
-    }
-    await this.storage.setString(this.recoveryKeys.pending, serialized);
-    if ((await this.storage.getString(this.recoveryKeys.pending)) !== serialized) {
-      throw new PersistentJsonRecoveryError(
-        this.key,
-        'Pending write readback failed',
-      );
-    }
-    const markerRaw = JSON.stringify({
-      schemaVersion: 1,
-      digest: digest(serialized),
-      byteCount: byteCount(serialized),
-    } satisfies JournalMarker);
+    this.cached = undefined;
+    await this.storage.setString(this.key, serialized);
+    let stored: string | undefined;
     try {
-      await this.storage.setString(this.recoveryKeys.commit, markerRaw);
-      if (
-        (await this.storage.getString(this.recoveryKeys.commit)) !== markerRaw
-      ) {
-        throw new PersistentJsonRecoveryError(
-          this.key,
-          'Commit marker readback failed',
-        );
-      }
+      stored = await this.storage.getString(this.key);
     } catch (error) {
-      await this.handleUnverifiedCommit(error);
+      throw new PersistentJsonCommittedWriteError(this.key, toError(error));
     }
-    try {
-      await this.storage.setString(this.key, serialized);
-      if ((await this.storage.getString(this.key)) !== serialized) {
-        throw new PersistentJsonRecoveryError(
-          this.key,
-          'Main write readback failed',
-        );
-      }
-      await this.clearRecoveryJournal();
-    } catch {
-      try {
-        await this.recoverCommittedWrite();
-        if ((await this.storage.getString(this.key)) !== serialized) {
-          throw new PersistentJsonRecoveryError(
-            this.key,
-            'Committed main write verification failed',
-          );
-        }
-        await this.clearRecoveryJournal();
-      } catch (recoveryError) {
-        throw new PersistentJsonCommittedWriteError(
-          this.key,
-          toError(recoveryError),
-        );
-      }
+    if (stored !== serialized) {
+      throw new PersistentJsonCommittedWriteError(
+        this.key,
+        new PersistentJsonRecoveryError(this.key, 'Main write readback failed'),
+      );
     }
   }
 
   async remove(): Promise<void> {
+    this.cached = undefined;
     if (this.recoveryKeys) {
       await this.storage.remove(this.recoveryKeys.commit);
       if (
@@ -205,11 +191,29 @@ export class PersistentJsonStore<T> {
     }
   }
 
-  private async recoverCommittedWrite(): Promise<void> {
-    if (!this.recoveryKeys) {
+  /**
+   * Older builds wrote each value to a pending key and a commit marker before the main key. A
+   * crash between those steps can leave a journal behind, so it is finished (or a never-committed
+   * pending value discarded) once before this store first reads or writes.
+   */
+  private async settleLegacyJournal(): Promise<void> {
+    if (!this.recoveryKeys || this.legacyJournalSettled) {
       return;
     }
-    const markerRaw = await this.storage.getString(this.recoveryKeys.commit);
+    if ((await this.storage.getString(this.recoveryKeys.commit)) !== undefined) {
+      await this.recoverCommittedWrite(this.recoveryKeys);
+    } else if (
+      (await this.storage.getString(this.recoveryKeys.pending)) !== undefined
+    ) {
+      await this.storage.remove(this.recoveryKeys.pending);
+    }
+    this.legacyJournalSettled = true;
+  }
+
+  private async recoverCommittedWrite(
+    recoveryKeys: PersistentJsonRecoveryKeys,
+  ): Promise<void> {
+    const markerRaw = await this.storage.getString(recoveryKeys.commit);
     if (markerRaw === undefined) {
       return;
     }
@@ -222,7 +226,7 @@ export class PersistentJsonStore<T> {
         `Invalid committed JSON journal for ${this.key}`,
       );
     }
-    const pending = await this.storage.getString(this.recoveryKeys.pending);
+    const pending = await this.storage.getString(recoveryKeys.pending);
     if (
       pending === undefined ||
       byteCount(pending) !== marker.byteCount ||
@@ -240,7 +244,7 @@ export class PersistentJsonStore<T> {
         `Failed JSON journal readback for ${this.key}`,
       );
     }
-    await this.clearRecoveryJournal();
+    await this.clearLegacyJournal(recoveryKeys);
   }
 
   private async handleReadError(raw: string, error: unknown): Promise<T> {
@@ -264,46 +268,18 @@ export class PersistentJsonStore<T> {
     throw new PersistentJsonReadError(this.key, cause);
   }
 
-  private async handleUnverifiedCommit(error: unknown): Promise<never> {
-    if (!this.recoveryKeys) {
-      throw toError(error);
-    }
-    try {
-      await this.storage.remove(this.recoveryKeys.commit);
-      if (
-        (await this.storage.getString(this.recoveryKeys.commit)) !== undefined
-      ) {
-        throw new PersistentJsonRecoveryError(
-          this.key,
-          `Failed to invalidate JSON commit marker for ${this.key}`,
-        );
-      }
-    } catch (invalidationError) {
-      throw new PersistentJsonCommittedWriteError(
-        this.key,
-        toError(invalidationError),
-      );
-    }
-    throw toError(error);
-  }
-
-  private async clearRecoveryJournal(): Promise<void> {
-    if (!this.recoveryKeys) {
-      return;
-    }
-    await this.storage.remove(this.recoveryKeys.commit);
-    if (
-      (await this.storage.getString(this.recoveryKeys.commit)) !== undefined
-    ) {
+  private async clearLegacyJournal(
+    recoveryKeys: PersistentJsonRecoveryKeys,
+  ): Promise<void> {
+    await this.storage.remove(recoveryKeys.commit);
+    if ((await this.storage.getString(recoveryKeys.commit)) !== undefined) {
       throw new PersistentJsonRecoveryError(
         this.key,
         `Failed JSON commit cleanup for ${this.key}`,
       );
     }
-    await this.storage.remove(this.recoveryKeys.pending);
-    if (
-      (await this.storage.getString(this.recoveryKeys.pending)) !== undefined
-    ) {
+    await this.storage.remove(recoveryKeys.pending);
+    if ((await this.storage.getString(recoveryKeys.pending)) !== undefined) {
       throw new PersistentJsonRecoveryError(
         this.key,
         `Failed JSON pending cleanup for ${this.key}`,

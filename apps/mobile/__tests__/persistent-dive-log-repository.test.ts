@@ -114,47 +114,32 @@ class CountingMainEnvelopeStore implements PersistentKeyValueStore {
   }
 }
 
-class FailingPostCommitMainReadStore implements PersistentKeyValueStore {
+class FailingMainReadbackStore implements PersistentKeyValueStore {
   private readonly delegate = new InMemoryKeyValueStore();
-  private readonly commitKey = `${mobileStorageKeys.logbook}:journal:commit:v1`;
-  private commitPresent = false;
-  private mainReadFailureDelivered = false;
-  private recoveryFailureDelivered = false;
+  private mainWritten = false;
+  private readbackFailureDelivered = false;
 
   async getString(key: string): Promise<string | undefined> {
     if (
       key === mobileStorageKeys.logbook &&
-      this.commitPresent &&
-      !this.mainReadFailureDelivered
+      this.mainWritten &&
+      !this.readbackFailureDelivered
     ) {
-      this.mainReadFailureDelivered = true;
-      throw new Error('simulated post-commit main read failure');
+      this.readbackFailureDelivered = true;
+      throw new Error('simulated main readback failure');
     }
     return this.delegate.getString(key);
   }
 
   async setString(key: string, value: string): Promise<void> {
-    if (
-      key === mobileStorageKeys.logbook &&
-      this.mainReadFailureDelivered &&
-      !this.recoveryFailureDelivered
-    ) {
-      this.recoveryFailureDelivered = true;
-      if ((await this.delegate.getString(key)) !== undefined) {
-        throw new Error('simulated post-commit recovery failure');
-      }
-    }
     await this.delegate.setString(key, value);
-    if (key === this.commitKey) {
-      this.commitPresent = true;
+    if (key === mobileStorageKeys.logbook) {
+      this.mainWritten = true;
     }
   }
 
-  async remove(key: string): Promise<void> {
-    await this.delegate.remove(key);
-    if (key === this.commitKey) {
-      this.commitPresent = false;
-    }
+  remove(key: string): Promise<void> {
+    return this.delegate.remove(key);
   }
 }
 
@@ -492,7 +477,7 @@ describe('PersistentDiveLogRepository', () => {
   });
 
   it('keeps committed metadata and profile consistent after a post-main failure and retry', async () => {
-    const storage = new FailingPostCommitMainReadStore();
+    const storage = new FailingMainReadbackStore();
     const profileStorage = new RecordingProfileStorage();
     const profileKeyPrefix = 'post-commit-profile:';
     const contentRevision = 'revision-after-main';
@@ -533,19 +518,11 @@ describe('PersistentDiveLogRepository', () => {
       {
         name: PersistentJsonCommittedWriteError.name,
         cause: {
-          message: 'simulated post-commit recovery failure',
+          message: 'simulated main readback failure',
         },
       },
     );
 
-    const pendingKey =
-      `${mobileStorageKeys.logbook}:journal:pending:v1`;
-    const commitKey =
-      `${mobileStorageKeys.logbook}:journal:commit:v1`;
-    const pending = await storage.getString(pendingKey);
-    expect(await storage.getString(commitKey)).toBeDefined();
-    expect(pending).toBeDefined();
-    expect(await storage.getString(mobileStorageKeys.logbook)).toBe(pending);
     await expect(profileStorage.read(profileKey)).resolves.toEqual(
       message.session.samples,
     );
@@ -561,8 +538,6 @@ describe('PersistentDiveLogRepository', () => {
     await expect(profileStorage.read(profileKey)).resolves.toEqual(
       message.session.samples,
     );
-    await expect(storage.getString(commitKey)).resolves.toBeUndefined();
-    await expect(storage.getString(pendingKey)).resolves.toBeUndefined();
   });
 
   it('restores profile and metadata when the guard becomes stale during metadata persistence', async () => {

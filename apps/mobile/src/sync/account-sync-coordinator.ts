@@ -38,6 +38,7 @@ import {
   parseAccountRemoteLog,
   parseAccountRemotePlan,
 } from './account-payload';
+import {canonicalJson} from '../utils/canonical-json';
 
 export type AccountSyncDrainResult = {
   processed: number;
@@ -1807,25 +1808,9 @@ function cloneRecord(value: Record<string, unknown>): Record<string, unknown> {
 }
 
 function sameJsonValue(left: unknown, right: unknown): boolean {
-  return canonicalStringify(left) === canonicalStringify(right);
+  return canonicalJson(left) === canonicalJson(right);
 }
 
-function canonicalStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalStringify).join(',')}]`;
-  }
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, nested]) =>
-          `${JSON.stringify(key)}:${canonicalStringify(nested)}`,
-      )
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 function getDrainState(userId: string): UserDrainState {
   const existing = drainStateByUser.get(userId);

@@ -1,6 +1,7 @@
 import { createAsyncStorage } from '@react-native-async-storage/async-storage';
 import { MOBILE_STORAGE_DATABASE_NAME } from './storage-keys';
 
+/** String storage where `setString` replaces one key atomically: readers see the old or the new value. */
 export type PersistentKeyValueStore = {
   getString(key: string): Promise<string | undefined>;
   setString(key: string, value: string): Promise<void>;

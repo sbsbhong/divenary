@@ -1,4 +1,5 @@
 import type {PersistentKeyValueStore} from '../storage/persistent-key-value-store';
+import {canonicalJson} from '../utils/canonical-json';
 
 export type AccountOutboxItem = {
   operationId: string;
@@ -499,7 +500,7 @@ function sameImmutableOperation(
   left: AccountOutboxItem,
   right: AccountOutboxItem,
 ): boolean {
-  return canonicalStringify({
+  return canonicalJson({
     operationId: left.operationId,
     userId: left.userId,
     entityKind: left.entityKind,
@@ -509,7 +510,7 @@ function sameImmutableOperation(
     expectedRevision: left.expectedRevision,
     profileStorageKey: left.profileStorageKey,
     createdAt: left.createdAt,
-  }) === canonicalStringify({
+  }) === canonicalJson({
     operationId: right.operationId,
     userId: right.userId,
     entityKind: right.entityKind,
@@ -604,22 +605,6 @@ function withStorageMutationLock<T>(
   return result;
 }
 
-function canonicalStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalStringify).join(',')}]`;
-  }
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, nested]) =>
-          `${JSON.stringify(key)}:${canonicalStringify(nested)}`,
-      )
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 function hasExactKeys(
   record: Record<string, unknown>,

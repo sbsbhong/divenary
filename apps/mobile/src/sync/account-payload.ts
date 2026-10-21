@@ -8,6 +8,7 @@ import {
 
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {DivePlan} from '../types/dive-plan';
+import {canonicalJson} from '../utils/canonical-json';
 
 export const ACCOUNT_PAYLOAD_SCHEMA_VERSION = 1;
 
@@ -243,7 +244,7 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
 }
 
 export function canonicalAccountPayloadSha256(value: unknown): string {
-  return bytesToHex(sha256(utf8ToBytes(canonicalStringify(value))));
+  return bytesToHex(sha256(utf8ToBytes(canonicalJson(value))));
 }
 
 function verifiedLogPayload(
@@ -470,22 +471,6 @@ function normalizeNullableTimestamp(
   return normalizeTimestamp(value, label);
 }
 
-function canonicalStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalStringify).join(',')}]`;
-  }
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(
-        ([key, nested]) =>
-          `${JSON.stringify(key)}:${canonicalStringify(nested)}`,
-      )
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 function jsonRecord(value: Record<string, unknown>): Record<string, unknown> {
   return jsonValue(value) as Record<string, unknown>;

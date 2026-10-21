@@ -44,6 +44,7 @@ import type {
   GuestClaimRetainedItem,
   GuestClaimRetainedReason,
 } from './guest-claim-types';
+import {canonicalJson} from '../utils/canonical-json';
 
 const LEGACY_SIDECAR_SCHEMA_VERSION = 1;
 const SIDECAR_SCHEMA_VERSION = 2;
@@ -678,12 +679,34 @@ function retainedItem(
   };
 }
 
+const MAX_PARSED_LOCAL_RECORDS = 256;
+const parsedLocalRecords = new Map<string, {bytes: string; normalized: string}>();
+
+/**
+ * Validates and parses a sidecar's local record. Claim checks parse the same records again and
+ * again, so the validated result is remembered per sidecar until its bytes change. Every caller
+ * gets its own copy.
+ */
 export function parseSnapshotLocalRecord(
   sidecar: GuestClaimSnapshotItem,
 ): DiveLogEntry | DivePlan {
-  return sidecar.entityKind === 'log'
-    ? parseLocalLog(sidecar.localRecordBytes)
-    : parseLocalPlan(sidecar.localRecordBytes);
+  const cacheKey = `${sidecar.entityKind}\u0000${sidecar.key}`;
+  const remembered = parsedLocalRecords.get(cacheKey);
+  if (remembered !== undefined && remembered.bytes === sidecar.localRecordBytes) {
+    return JSON.parse(remembered.normalized) as DiveLogEntry | DivePlan;
+  }
+  const record =
+    sidecar.entityKind === 'log'
+      ? parseLocalLog(sidecar.localRecordBytes)
+      : parseLocalPlan(sidecar.localRecordBytes);
+  if (parsedLocalRecords.size >= MAX_PARSED_LOCAL_RECORDS) {
+    parsedLocalRecords.clear();
+  }
+  parsedLocalRecords.set(cacheKey, {
+    bytes: sidecar.localRecordBytes,
+    normalized: JSON.stringify(record),
+  });
+  return record;
 }
 
 export function parseSnapshotPayload(
@@ -1698,109 +1721,19 @@ function validateSnapshotSet(
     ) {
       throw new GuestClaimStorageError();
     }
-    const payload = parseSnapshotPayload(sidecar);
-    if (
-      canonicalAccountPayloadSha256(payload) !== item.payloadSha256 ||
-      digestUtf8(sidecar.localRecordBytes) !== sidecar.localRecordSha256 ||
-      canonicalJson(parseJson(sidecar.localRecordBytes)) !==
-        sidecar.localRecordBytes ||
-      digestUtf8(sourceRecordBytes(sidecar)) !== sourceRecordSha256(sidecar) ||
-      canonicalJson(parseJson(sourceRecordBytes(sidecar))) !==
-        sourceRecordBytes(sidecar)
-    ) {
-      throw new GuestClaimStorageError();
-    }
-    const local = parseSnapshotLocalRecord(sidecar);
-    const source =
-      sidecar.entityKind === 'log'
-        ? parseLocalLog(sourceRecordBytes(sidecar))
-        : parseLocalPlan(sourceRecordBytes(sidecar));
-    if (
-      local.localId !== item.clientRecordId ||
-      source.localId !== item.clientRecordId
-    ) {
-      throw new GuestClaimStorageError();
-    }
-    if (item.entityKind === 'plan') {
-      const plan = local as DivePlan;
-      if (
-        plan.convertedLogLocalId !== item.convertedLogClientRecordId ||
-        canonicalJson(mapPlanPayload(plan).payload) !== sidecar.payloadBytes ||
-        sidecar.profileBytes !== undefined ||
-        sidecar.profileSidecarStorageKey !== undefined ||
-        sidecar.profileReadback !== undefined
-      ) {
+    const content = verifySidecarContent(
+      manifest.userId,
+      schemaVersion,
+      item,
+      sidecar,
+    );
+    if (item.entityKind === 'plan' || item.profile === undefined) {
+      if (sidecar.profileReadback !== undefined) {
         throw new GuestClaimStorageError();
       }
       continue;
     }
-    const log = local as DiveLogEntry;
-    const preview = payload.profile_preview;
-    if (Array.isArray(preview) && preview.length > 160) {
-      throw new GuestClaimStorageError();
-    }
-    if (item.profile === undefined) {
-      if (
-        sidecar.profileBytes !== undefined ||
-        sidecar.profileSidecarStorageKey !== undefined ||
-        sidecar.profileReadback !== undefined ||
-        canonicalJson(mapLogPayload(boundedLogForPayload(log), manifest.userId).payload) !==
-          sidecar.payloadBytes
-      ) {
-        throw new GuestClaimStorageError();
-      }
-      continue;
-    }
-    const reference = log.watchCapture?.profile;
-    const hasExpectedProfileSnapshot =
-      schemaVersion === LEGACY_SIDECAR_SCHEMA_VERSION
-        ? sidecar.profileBytes !== undefined &&
-          sidecar.profileSidecarStorageKey === undefined
-        : sidecar.profileBytes === undefined &&
-          sidecar.profileSidecarStorageKey ===
-            claimProfileSidecarKey(
-              manifest.userId,
-              item.clientRecordId,
-              item.profile.contentRevision,
-              item.profile.sha256,
-            );
-    if (
-      !hasExpectedProfileSnapshot ||
-      !isGuestProfileStorageKey(item.profile.storageKey) ||
-      reference?.storageKey !== item.profile.storageKey ||
-      reference.contentRevision !== item.profile.contentRevision ||
-      reference.sampleCount !== item.profile.sampleCount ||
-      (reference.sha256 !== undefined &&
-        reference.sha256 !== item.profile.sha256) ||
-      log.watchCapture === undefined
-    ) {
-      throw new GuestClaimStorageError();
-    }
-    const profileByteCount = payload.profile_byte_count;
-    if (!isNonNegativeInteger(profileByteCount)) {
-      throw new GuestClaimStorageError();
-    }
-    const verified =
-      sidecar.profileBytes === undefined
-        ? undefined
-        : verifyProfileBytesSnapshot(sidecar.profileBytes, {
-            localSessionId: log.watchCapture.session.localSessionId,
-            sampleCount: item.profile.sampleCount,
-            sha256: item.profile.sha256,
-            byteCount: sidecar.profileReadback?.byteCount,
-          });
-    const payloadLog = boundedLogForPayload(log, item.profile.sha256);
-    if (
-      canonicalJson(
-        mapLogPayload(
-          payloadLog,
-          manifest.userId,
-          profileByteCount,
-        ).payload,
-      ) !== sidecar.payloadBytes
-    ) {
-      throw new GuestClaimStorageError();
-    }
+    const {profileByteCount, verifiedProfile} = content;
     if (
       sidecar.profileReadback !== undefined &&
       (!isClaimProfileReadbackPath(
@@ -1811,9 +1744,10 @@ function validateSnapshotSet(
         sidecar.profileReadback.sha256 !== item.profile.sha256 ||
         sidecar.profileReadback.sampleCount !== item.profile.sampleCount ||
         sidecar.profileReadback.byteCount !== profileByteCount ||
-        (verified !== undefined &&
-          (sidecar.profileReadback.sha256 !== verified.sha256 ||
-            sidecar.profileReadback.sampleCount !== verified.sampleCount)) ||
+        (verifiedProfile !== undefined &&
+          (sidecar.profileReadback.sha256 !== verifiedProfile.sha256 ||
+            sidecar.profileReadback.sampleCount !==
+              verifiedProfile.sampleCount)) ||
         (item.completedAt !== undefined &&
           sidecar.profileReadback.path.length === 0))
     ) {
@@ -1826,6 +1760,178 @@ function validateSnapshotSet(
       throw new GuestClaimStorageError();
     }
   }
+}
+
+type VerifiedSidecarContent = {
+  profileByteCount?: number;
+  verifiedProfile?: {sha256: string; sampleCount: number};
+};
+
+const MAX_VERIFIED_SIDECARS = 256;
+const verifiedSidecarContents = new Map<
+  string,
+  {inputs: string; verified: VerifiedSidecarContent}
+>();
+
+/**
+ * Re-deriving and hashing a sidecar's payload and records is the expensive part of validation,
+ * and a claim rewrites its snapshot after every step without changing those bytes. The last
+ * verified result for each sidecar is kept with the exact inputs it depends on, so a later read
+ * or write only re-verifies sidecars that are new or changed.
+ */
+function verifySidecarContent(
+  userId: string,
+  schemaVersion: GuestClaimSnapshot['schemaVersion'],
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem,
+): VerifiedSidecarContent {
+  const inputs = JSON.stringify([
+    userId,
+    schemaVersion,
+    item.key,
+    item.entityKind,
+    item.payloadSha256,
+    item.clientRecordId,
+    item.convertedLogClientRecordId ?? null,
+    item.profile ?? null,
+    sidecar.payloadBytes,
+    sidecar.localRecordBytes,
+    sidecar.localRecordSha256,
+    sidecar.sourceRecordBytes ?? null,
+    sidecar.sourceRecordSha256 ?? null,
+    sidecar.profileBytes ?? null,
+    sidecar.profileSidecarStorageKey ?? null,
+    sidecar.profileBytes === undefined
+      ? null
+      : sidecar.profileReadback?.byteCount ?? null,
+  ]);
+  const cacheKey = `${userId}\u0000${sidecar.key}`;
+  const remembered = verifiedSidecarContents.get(cacheKey);
+  if (remembered !== undefined && remembered.inputs === inputs) {
+    return remembered.verified;
+  }
+  const verified = computeSidecarContent(userId, schemaVersion, item, sidecar);
+  if (verifiedSidecarContents.size >= MAX_VERIFIED_SIDECARS) {
+    verifiedSidecarContents.clear();
+  }
+  verifiedSidecarContents.set(cacheKey, {inputs, verified});
+  return verified;
+}
+
+function computeSidecarContent(
+  userId: string,
+  schemaVersion: GuestClaimSnapshot['schemaVersion'],
+  item: GuestClaimItem,
+  sidecar: GuestClaimSnapshotItem,
+): VerifiedSidecarContent {
+  const payload = parseSnapshotPayload(sidecar);
+  if (
+    canonicalAccountPayloadSha256(payload) !== item.payloadSha256 ||
+    digestUtf8(sidecar.localRecordBytes) !== sidecar.localRecordSha256 ||
+    canonicalJson(parseJson(sidecar.localRecordBytes)) !==
+      sidecar.localRecordBytes ||
+    digestUtf8(sourceRecordBytes(sidecar)) !== sourceRecordSha256(sidecar) ||
+    canonicalJson(parseJson(sourceRecordBytes(sidecar))) !==
+      sourceRecordBytes(sidecar)
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  const local = parseSnapshotLocalRecord(sidecar);
+  const source =
+    sidecar.entityKind === 'log'
+      ? parseLocalLog(sourceRecordBytes(sidecar))
+      : parseLocalPlan(sourceRecordBytes(sidecar));
+  if (
+    local.localId !== item.clientRecordId ||
+    source.localId !== item.clientRecordId
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  if (item.entityKind === 'plan') {
+    const plan = local as DivePlan;
+    if (
+      plan.convertedLogLocalId !== item.convertedLogClientRecordId ||
+      canonicalJson(mapPlanPayload(plan).payload) !== sidecar.payloadBytes ||
+      sidecar.profileBytes !== undefined ||
+      sidecar.profileSidecarStorageKey !== undefined
+    ) {
+      throw new GuestClaimStorageError();
+    }
+    return {};
+  }
+  const log = local as DiveLogEntry;
+  const preview = payload.profile_preview;
+  if (Array.isArray(preview) && preview.length > 160) {
+    throw new GuestClaimStorageError();
+  }
+  if (item.profile === undefined) {
+    if (
+      sidecar.profileBytes !== undefined ||
+      sidecar.profileSidecarStorageKey !== undefined ||
+      canonicalJson(mapLogPayload(boundedLogForPayload(log), userId).payload) !==
+        sidecar.payloadBytes
+    ) {
+      throw new GuestClaimStorageError();
+    }
+    return {};
+  }
+  const reference = log.watchCapture?.profile;
+  const hasExpectedProfileSnapshot =
+    schemaVersion === LEGACY_SIDECAR_SCHEMA_VERSION
+      ? sidecar.profileBytes !== undefined &&
+        sidecar.profileSidecarStorageKey === undefined
+      : sidecar.profileBytes === undefined &&
+        sidecar.profileSidecarStorageKey ===
+          claimProfileSidecarKey(
+            userId,
+            item.clientRecordId,
+            item.profile.contentRevision,
+            item.profile.sha256,
+          );
+  if (
+    !hasExpectedProfileSnapshot ||
+    !isGuestProfileStorageKey(item.profile.storageKey) ||
+    reference?.storageKey !== item.profile.storageKey ||
+    reference.contentRevision !== item.profile.contentRevision ||
+    reference.sampleCount !== item.profile.sampleCount ||
+    (reference.sha256 !== undefined &&
+      reference.sha256 !== item.profile.sha256) ||
+    log.watchCapture === undefined
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  const profileByteCount = payload.profile_byte_count;
+  if (!isNonNegativeInteger(profileByteCount)) {
+    throw new GuestClaimStorageError();
+  }
+  const verifiedProfile =
+    sidecar.profileBytes === undefined
+      ? undefined
+      : verifyProfileBytesSnapshot(sidecar.profileBytes, {
+          localSessionId: log.watchCapture.session.localSessionId,
+          sampleCount: item.profile.sampleCount,
+          sha256: item.profile.sha256,
+          byteCount: sidecar.profileReadback?.byteCount,
+        });
+  const payloadLog = boundedLogForPayload(log, item.profile.sha256);
+  if (
+    canonicalJson(
+      mapLogPayload(payloadLog, userId, profileByteCount).payload,
+    ) !== sidecar.payloadBytes
+  ) {
+    throw new GuestClaimStorageError();
+  }
+  return {
+    profileByteCount,
+    ...(verifiedProfile === undefined
+      ? {}
+      : {
+          verifiedProfile: {
+            sha256: verifiedProfile.sha256,
+            sampleCount: verifiedProfile.sampleCount,
+          },
+        }),
+  };
 }
 
 function isClaimProfileReadbackPath(
@@ -1977,19 +2083,6 @@ function claimFailureDetail(
   };
 }
 
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(canonicalJson).join(',')}]`;
-  }
-  if (isRecord(value)) {
-    return `{${Object.entries(value)
-      .filter(([, nested]) => nested !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
-      .join(',')}}`;
-  }
-  return JSON.stringify(value) ?? 'null';
-}
 
 function digestUtf8(value: string): string {
   return sha256BytesHex(encodeUtf8(value));

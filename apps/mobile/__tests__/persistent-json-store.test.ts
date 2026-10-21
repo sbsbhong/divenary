@@ -3,6 +3,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import {
+  PersistentJsonCommittedWriteError,
   PersistentJsonReadError,
   PersistentJsonRecoveryError,
   PersistentJsonStore,
@@ -108,7 +109,6 @@ async function createInterruptedJournalFixture(
         mainKey,
         recoveryKeys,
         expected: {label: 'old'},
-        pendingBytes: expectedMainBytes,
         expectedMainBytes: oldMainBytes,
       }
     : {
@@ -117,7 +117,6 @@ async function createInterruptedJournalFixture(
         mainKey,
         recoveryKeys,
         expected: {label: 'new'},
-        pendingBytes: expectedMainBytes,
         expectedMainBytes,
       };
 }
@@ -193,7 +192,7 @@ describe('PersistentJsonStore', () => {
     expect(utf8ToBytes(raw).length).toBeGreaterThan(raw.length);
   });
 
-  it('writes an exact UTF-8 journal marker for a multibyte value', async () => {
+  it('writes the value directly under its key without journal keys', async () => {
     const storage = new RecordingKeyValueStore();
     const recoveryKeys = {
       pending: 'test:value:v1:pending',
@@ -204,20 +203,45 @@ describe('PersistentJsonStore', () => {
 
     await store.write({label: '잠수🌊'});
 
-    const pending = storage.writes.find(
-      write => write.key === recoveryKeys.pending,
-    )?.value;
-    const markerRaw = storage.writes.find(
-      write => write.key === recoveryKeys.commit,
-    )?.value;
-    expect(pending).toBeDefined();
-    expect(markerRaw).toBeDefined();
-    expect(JSON.parse(markerRaw!)).toEqual({
-      schemaVersion: 1,
-      digest: bytesToHex(sha256(utf8ToBytes(pending!))),
-      byteCount: utf8ToBytes(pending!).length,
-    });
-    expect(utf8ToBytes(pending!).length).toBeGreaterThan(pending!.length);
+    expect(storage.writes.map(write => write.key)).toEqual(['test:value:v1']);
+    await expect(store.read()).resolves.toEqual({label: '잠수🌊'});
+  });
+
+  it('reuses the parsed value until the stored text changes', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const migrate = jest.fn(
+      (envelope: {value: unknown}) => envelope.value as StoredValue,
+    );
+    const {jsonStore: store} = createStore(storage, {migrate});
+    await store.write({label: 'first'});
+
+    await store.read();
+    await store.read();
+    expect(migrate).toHaveBeenCalledTimes(1);
+
+    await storage.setString(
+      'test:value:v1',
+      JSON.stringify({schemaVersion: 1, updatedAt: 1, value: {label: 'changed'}}),
+    );
+    await expect(store.read()).resolves.toEqual({label: 'changed'});
+    expect(migrate).toHaveBeenCalledTimes(2);
+  });
+
+  it('reports a readback failure after setString as a committed write', async () => {
+    class FailingReadbackStore extends InMemoryKeyValueStore {
+      override async getString(key: string): Promise<string | undefined> {
+        if (key === 'test:value:v1') {
+          throw new Error('readback failed');
+        }
+        return super.getString(key);
+      }
+    }
+    const storage = new FailingReadbackStore();
+    const {jsonStore: store} = createStore(storage);
+
+    await expect(store.write({label: 'saved'})).rejects.toBeInstanceOf(
+      PersistentJsonCommittedWriteError,
+    );
   });
 
   it.each([
@@ -233,15 +257,10 @@ describe('PersistentJsonStore', () => {
     await expect(
       fixture.storage.getString(fixture.recoveryKeys.commit),
     ).resolves.toBeUndefined();
-    if (boundary === 'after-pending') {
-      await expect(
-        fixture.storage.getString(fixture.recoveryKeys.pending),
-      ).resolves.toBe(fixture.pendingBytes);
-    } else {
-      await expect(
-        fixture.storage.getString(fixture.recoveryKeys.pending),
-      ).resolves.toBeUndefined();
-    }
+    // A pending value without a commit marker was never committed, so it is discarded.
+    await expect(
+      fixture.storage.getString(fixture.recoveryKeys.pending),
+    ).resolves.toBeUndefined();
   });
 
   it('rejects an invalid committed marker without touching main bytes', async () => {

@@ -84,11 +84,11 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
   }
 
   async list(): Promise<DiveLogEntry[]> {
-    return (await this.readEntries()).map(cloneDiveLogEntry).sort(compareDiveLogEntries);
+    return (await this.readEntries()).sort(compareDiveLogEntries);
   }
 
   async get(localId: string): Promise<DiveLogEntry | undefined> {
-    const entry = (await this.readEntries()).find(currentEntry => currentEntry.localId === localId);
+    const entry = (await this.store.read()).find(currentEntry => currentEntry.localId === localId);
     return entry ? cloneDiveLogEntry(entry) : undefined;
   }
 
@@ -426,7 +426,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
   }
 
   async getWatchProfile(localId: string): Promise<WatchDepthSample[]> {
-    const entry = (await this.readEntries()).find(candidate => candidate.localId === localId);
+    const entry = (await this.store.read()).find(candidate => candidate.localId === localId);
     const reference = entry?.watchCapture?.profile;
     if (!reference) {
       return entry?.watchCapture?.samples.map(sample => ({ ...sample })) ?? [];
@@ -441,7 +441,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
   async readStoredWatchProfile(
     localId: string,
   ): Promise<WatchDepthSample[] | undefined> {
-    const entry = (await this.readEntries()).find(
+    const entry = (await this.store.read()).find(
       candidate => candidate.localId === localId,
     );
     const storageKey = entry?.watchCapture?.profile?.storageKey;
@@ -451,12 +451,13 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
     return this.profileStorage.read(storageKey);
   }
 
+  /** A private copy of every entry, safe to change. Read-only lookups use `store.read()` directly. */
   private async readEntries(): Promise<DiveLogEntry[]> {
     return (await this.store.read()).map(cloneDiveLogEntry);
   }
 
   private async writeEntries(entries: DiveLogEntry[]): Promise<void> {
-    await this.store.write(entries.map(cloneDiveLogEntry).sort(compareDiveLogEntries));
+    await this.store.write([...entries].sort(compareDiveLogEntries));
   }
 
   private enqueueMutation<T>(operation: () => Promise<T>): Promise<T> {
@@ -544,7 +545,7 @@ export function migrateDiveLogbookEnvelope(
 
   if (envelope.schemaVersion === DIVE_LOGBOOK_SCHEMA_VERSION) {
     assertDiveLogEntries(envelope.value, true, storageKey);
-    return (envelope.value as DiveLogEntry[]).map(cloneDiveLogEntry);
+    return envelope.value as DiveLogEntry[];
   }
 
   if (envelope.schemaVersion === 2) {
