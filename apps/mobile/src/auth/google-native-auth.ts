@@ -28,7 +28,7 @@ export async function signInWithGoogle(): Promise<NativeSocialResult> {
 
   try {
     response = await GoogleSignin.signIn();
-  } catch (error) {
+  } catch {
     throw new NativeSocialAuthError('provider');
   }
 

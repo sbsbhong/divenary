@@ -9,12 +9,14 @@
   "scripts": {
     "build": "turbo run build",
     "check:quick": "yarn generate",
-    "codex:check": "yarn check:quick && yarn mobile:typecheck && yarn watch:build",
+    "codex:check": "yarn check:quick && yarn mobile:typecheck && yarn mobile:test && yarn mobile:lint && yarn watch:ui:check && yarn supabase:unit && yarn watch:build",
     "generate": "turbo run generate",
     "generate:supabase": "yarn workspace @repo/supabase generate:types",
     "ios:build": "yarn workspace @repo/mobile ios:build",
     "lint": "turbo run lint",
     "mobile:typecheck": "yarn workspace @repo/mobile typecheck",
+    "mobile:test": "yarn workspace @repo/mobile test",
+    "mobile:lint": "yarn workspace @repo/mobile lint",
     "mobile:auth:local:prepare": "node supabase/scripts/prepare-local-mobile-auth.mjs",
     "mobile:start:local": "MOBILE_ENVIRONMENT=local yarn workspace @repo/mobile start --port 8082",
     "mobile:ios:local": "MOBILE_ENVIRONMENT=local yarn workspace @repo/mobile ios --port 8082",
@@ -37,8 +39,10 @@
     "supabase:stop": "node supabase/scripts/run-local-supabase.mjs stop",
     "supabase:test:guest-claim-concurrency": "node supabase/scripts/guest-claim-concurrency.mjs",
     "supabase:test:db": "node supabase/scripts/run-local-supabase.mjs test db",
+    "supabase:unit": "yarn workspace @repo/supabase test",
     "test": "turbo run test",
-    "watch:build": "yarn workspace @repo/mobile watch:build"
+    "watch:build": "yarn workspace @repo/mobile watch:build",
+    "watch:ui:check": "yarn workspace @repo/mobile watch:ui:check"
   },
   "devDependencies": {
     "supabase": "2.109.1",

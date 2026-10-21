@@ -95,7 +95,7 @@ function BadgeListField(props, ref): React.JSX.Element {
       <VStack space="sm">
         {props.values.length ? (
           <HStack space="xs" className="flex-wrap">
-            {props.values.map((value, index) => {
+            {props.values.map(value => {
               const badgeTone = primaryBadgeTone;
 
               return (

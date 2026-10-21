@@ -154,7 +154,7 @@ export class PersistentJsonStore<T> {
         );
       }
       await this.clearRecoveryJournal();
-    } catch (error) {
+    } catch {
       try {
         await this.recoverCommittedWrite();
         if ((await this.storage.getString(this.key)) !== serialized) {

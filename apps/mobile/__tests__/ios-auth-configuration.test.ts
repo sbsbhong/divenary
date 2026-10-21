@@ -42,6 +42,9 @@ const watchInfoPlist = readRepoFile(
 const mobileEntitlements = readOptionalRepoFile(
   'apps/mobile/ios/Divenary/Divenary.entitlements',
 );
+const watchEntitlements = readOptionalRepoFile(
+  'apps/mobile/ios/DivenaryWatchApp/DivenaryWatchApp.entitlements',
+);
 const environmentExample = readRepoFile(
   'apps/mobile/.env.development.example',
 );
@@ -75,9 +78,16 @@ describe('iOS social-auth native configuration', () => {
     ]);
 
     for (const configuration of watchConfigurations) {
-      expect(configuration).not.toContain('CODE_SIGN_ENTITLEMENTS');
-      expect(configuration).not.toContain('Divenary.entitlements');
+      expect(configuration).toContain(
+        'CODE_SIGN_ENTITLEMENTS = DivenaryWatchApp/DivenaryWatchApp.entitlements;',
+      );
+      expect(configuration).not.toContain('Divenary/Divenary.entitlements');
     }
+
+    expect(watchEntitlements.match(/<key>[^<]+<\/key>/g)).toEqual([
+      '<key>com.apple.developer.submerged-shallow-depth-and-pressure</key>',
+    ]);
+    expect(watchEntitlements).not.toContain('com.apple.developer.applesignin');
   });
 
   test('keeps the Google reversed-client callback on the iPhone target only', () => {
