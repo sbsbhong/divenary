@@ -1,22 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "Adjust depth with the Digital Crown" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Adjust depth with the Digital Crown"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Digital Crown으로 수심 조절"
-          }
-        }
-      }
-    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -150,6 +134,22 @@
         }
       }
     },
+    "Adjust depth with the Digital Crown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Adjust depth with the Digital Crown"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digital Crown으로 수심 조절"
+          }
+        }
+      }
+    },
     "Air" : {
       "localizations" : {
         "en" : {
@@ -167,6 +167,7 @@
       }
     },
     "Air · Stop 5m/3:00" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -524,6 +525,7 @@
       }
     },
     "Crown-controlled sample dive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1031,22 +1033,6 @@
         }
       }
     },
-    "End Dive" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "End Dive"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "다이브 종료"
-          }
-        }
-      }
-    },
     "End demo" : {
       "localizations" : {
         "en" : {
@@ -1059,6 +1045,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "데모 종료"
+          }
+        }
+      }
+    },
+    "End Dive" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End Dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 종료"
           }
         }
       }
@@ -1130,6 +1133,7 @@
       }
     },
     "Fail" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1189,22 +1193,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리다이빙 구간 목록"
-          }
-        }
-      }
-    },
-    "Freediving" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Freediving"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프리 다이빙"
           }
         }
       }
@@ -1271,6 +1259,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "프리다이빙 훈련 참고용입니다."
+          }
+        }
+      }
+    },
+    "Freediving" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Freediving"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리 다이빙"
           }
         }
       }
@@ -1711,6 +1715,7 @@
       }
     },
     "Pending sync" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1974,6 +1979,7 @@
       }
     },
     "Recommended safety stop reminder." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2251,6 +2257,7 @@
       }
     },
     "Safety stop" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2492,6 +2499,7 @@
       }
     },
     "Selected Plan" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2737,6 +2745,7 @@
       }
     },
     "Stop 5m/3:00" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2947,6 +2956,7 @@
       }
     },
     "Sync" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2963,6 +2973,7 @@
       }
     },
     "Sync failed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3240,6 +3251,7 @@
       }
     },
     "UNEXECUTED PLANS" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3272,6 +3284,7 @@
       }
     },
     "Use Plan" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3288,6 +3301,7 @@
       }
     },
     "Use the button to end the demo session." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

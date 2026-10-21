@@ -114,3 +114,7 @@ dist
 
 # macOS Finder metadata
 .DS_Store
+
+# Turborepo local cache and per-user editor state
+.turbo/
+.wiki/wiki/.obsidian/workspace.json
