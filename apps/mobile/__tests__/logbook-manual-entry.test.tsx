@@ -17,18 +17,21 @@ import type { WatchSession } from '../src/types/dive-session';
 import { createBlankDiveLogEntry } from '../src/utils/create-dive-log-entry';
 import { watchSessionToDiveLogEntry } from '../src/utils/watch-session-to-dive-log-entry';
 
-const mockIsWatchConnectivityAvailable = jest.fn();
-const mockDrainPendingWatchConnectivityPayloads = jest.fn();
-const mockAcknowledgeWatchConnectivityPayloads = jest.fn();
-const mockAcknowledgeImportedWatchConnectivityPayloads = jest.fn();
+const mockIsWatchLinkAvailable = jest.fn();
+const mockDrainPendingWatchPayloads = jest.fn();
+const mockDiscardWatchPayloads = jest.fn();
+const mockAcknowledgeImportedWatchPayloads = jest.fn();
 
-jest.mock('../src/native/watch-connectivity', () => ({
-  isWatchConnectivityAvailable: () => mockIsWatchConnectivityAvailable(),
-  drainPendingWatchConnectivityPayloads: () => mockDrainPendingWatchConnectivityPayloads(),
-  acknowledgeWatchConnectivityPayloads: (payloadIds: readonly string[]) => mockAcknowledgeWatchConnectivityPayloads(payloadIds),
-  acknowledgeImportedWatchConnectivityPayloads: (payloadIds: readonly string[]) =>
-    mockAcknowledgeImportedWatchConnectivityPayloads(payloadIds),
-  subscribeToWatchConnectivityPayloads: () => ({ remove: jest.fn() }),
+jest.mock('../src/companion/default-watch-link', () => ({
+  defaultWatchLink: {
+    ...jest.requireActual('../src/companion/watch-link').createUnavailableWatchLink(),
+    isAvailable: () => mockIsWatchLinkAvailable(),
+    drainPendingPayloads: () => mockDrainPendingWatchPayloads(),
+    discardPayloads: (payloadIds: readonly string[]) => mockDiscardWatchPayloads(payloadIds),
+    acknowledgeImportedPayloads: (payloadIds: readonly string[]) =>
+      mockAcknowledgeImportedWatchPayloads(payloadIds),
+    subscribeToPayloads: () => ({ remove: jest.fn() }),
+  },
 }));
 
 class ToggleFailSaveRepository extends LocalDiveLogRepository {
@@ -505,10 +508,10 @@ const formatTestDate = (value: Date): string => {
 
 describe('Logbook manual entry flow', () => {
   beforeEach(() => {
-    mockIsWatchConnectivityAvailable.mockReturnValue(false);
-    mockDrainPendingWatchConnectivityPayloads.mockResolvedValue([]);
-    mockAcknowledgeWatchConnectivityPayloads.mockResolvedValue(undefined);
-    mockAcknowledgeImportedWatchConnectivityPayloads.mockResolvedValue(undefined);
+    mockIsWatchLinkAvailable.mockReturnValue(false);
+    mockDrainPendingWatchPayloads.mockResolvedValue([]);
+    mockDiscardWatchPayloads.mockResolvedValue(undefined);
+    mockAcknowledgeImportedWatchPayloads.mockResolvedValue(undefined);
   });
 
   afterEach(async () => {
@@ -663,8 +666,8 @@ describe('Logbook manual entry flow', () => {
         endedAt: 1781359999,
       },
     };
-    mockIsWatchConnectivityAvailable.mockReturnValue(true);
-    mockDrainPendingWatchConnectivityPayloads.mockResolvedValue([
+    mockIsWatchLinkAvailable.mockReturnValue(true);
+    mockDrainPendingWatchPayloads.mockResolvedValue([
       {
         payloadId: 'button-payload-1',
         payloadJson: JSON.stringify(payload),
@@ -682,13 +685,13 @@ describe('Logbook manual entry flow', () => {
     expect(entries[0].watchCapture?.session.localSessionId).toBe('button-drain-session');
     expect(root.findByProps({ testID: 'logbook-list-item-Button Drain Reef' })).toBeTruthy();
     expect(root.findByProps({ testID: 'logbook-sync-toast' }).props.children).toBe('Imported 1 watch log.');
-    expect(mockAcknowledgeImportedWatchConnectivityPayloads).toHaveBeenCalledWith(['button-payload-1']);
+    expect(mockAcknowledgeImportedWatchPayloads).toHaveBeenCalledWith(['button-payload-1']);
   });
 
   test('manual watch sync tells the user when there are no new watch logs', async () => {
     const repository = new LocalDiveLogRepository([]);
-    mockIsWatchConnectivityAvailable.mockReturnValue(true);
-    mockDrainPendingWatchConnectivityPayloads.mockResolvedValue([]);
+    mockIsWatchLinkAvailable.mockReturnValue(true);
+    mockDrainPendingWatchPayloads.mockResolvedValue([]);
     const renderer = await renderLogbook(repository);
     const root = renderer.root;
 

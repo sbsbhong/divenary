@@ -13,11 +13,11 @@ import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-r
 import { LocalDiveLogRepository } from '../src/repositories/local-dive-log-repository';
 import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
 import { PersistentDiveLogRepository } from '../src/repositories/persistent-dive-log-repository';
+import { createNativeWatchLink, type NativeWatchLinkModule } from '../src/companion/native-watch-link';
 import {
-  preparePendingWatchConnectivityPayload,
   WatchPayloadPreparationError,
-  type WatchConnectivityPayload,
-} from '../src/native/watch-connectivity';
+  type WatchLinkPayload,
+} from '../src/companion/watch-link';
 import {
   createGuestClaimSnapshot,
   GuestClaimStore,
@@ -25,11 +25,11 @@ import {
 } from '../src/claim/guest-claim-store';
 import {GuestClaimService} from '../src/claim/guest-claim-service';
 import { diveLogbookQueryKeys } from '../src/states/use-dive-logbook-queries';
-import { WatchConnectivityImportCoordinator } from '../src/states/watch-connectivity-import-coordinator';
+import { WatchImportCoordinator } from '../src/states/watch-import-coordinator';
 import {
-  importPendingWatchConnectivityPayloads,
-  WatchConnectivitySyncProvider as RuntimeWatchConnectivitySyncProvider,
-} from '../src/states/watch-connectivity-sync';
+  importPendingWatchPayloads,
+  WatchSyncProvider as RuntimeWatchSyncProvider,
+} from '../src/states/watch-sync';
 import {
   AccountDataProviderCore,
   createAccountLocalFirstRepositories,
@@ -52,10 +52,10 @@ const immediateAfterInteractions = (
   task();
   return {cancel: jest.fn()};
 };
-const WatchConnectivitySyncProvider = (
-  props: React.ComponentProps<typeof RuntimeWatchConnectivitySyncProvider>,
+const WatchSyncProvider = (
+  props: React.ComponentProps<typeof RuntimeWatchSyncProvider>,
 ) => (
-  <RuntimeWatchConnectivitySyncProvider
+  <RuntimeWatchSyncProvider
     {...props}
     scheduleAfterInteractions={
       props.scheduleAfterInteractions ?? immediateAfterInteractions
@@ -181,7 +181,7 @@ function makePendingPayload(
   payloadId: string,
   localSessionId: string,
   digestCharacter: string,
-): WatchConnectivityPayload {
+): WatchLinkPayload {
   const payloadJson = JSON.stringify({
     ...metadataRichFixture,
     session: {
@@ -203,7 +203,7 @@ function makePendingPayload(
   };
 }
 
-describe('WatchConnectivitySyncProvider', () => {
+describe('WatchSyncProvider', () => {
   beforeEach(async () => {
     await ReactTestRenderer.act(async () => {
       await i18n.changeLanguage('ko');
@@ -225,7 +225,7 @@ describe('WatchConnectivitySyncProvider', () => {
   });
 
   it('prepares a descriptor without payload JSON exactly once', async () => {
-    const descriptor: WatchConnectivityPayload = {
+    const descriptor: WatchLinkPayload = {
       payloadId: 'pending-large',
       localSessionId: 'fixture-rich-session',
       receivedAt: 1781355000,
@@ -241,12 +241,13 @@ describe('WatchConnectivitySyncProvider', () => {
       },
     });
 
-    await expect(
-      preparePendingWatchConnectivityPayload(
-        descriptor,
-        preparePendingPayload,
-      ),
-    ).resolves.toMatchObject({
+    const link = createNativeWatchLink({
+      drainPendingPayloads: async () => [],
+      preparePendingPayload,
+      addListener: jest.fn(),
+      removeListeners: jest.fn(),
+    } as NativeWatchLinkModule);
+    await expect(link.preparePendingPayload(descriptor)).resolves.toMatchObject({
       payloadId: 'pending-large',
       preparedProfile: {sampleCount: 8_000},
     });
@@ -257,7 +258,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('passes prepared profile metadata from a descriptor into the repository import', async () => {
     const repository = new LocalDiveLogRepository();
     const queryClient = createQueryClient();
-    const descriptor: WatchConnectivityPayload = {
+    const descriptor: WatchLinkPayload = {
       payloadId: 'pending-prepared-import',
       localSessionId: 'fixture-rich-session',
       receivedAt: 1781355000,
@@ -279,7 +280,7 @@ describe('WatchConnectivitySyncProvider', () => {
     );
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: jest
@@ -304,7 +305,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('drop-acknowledges an invalid native artifact without counting an I/O failure', async () => {
     const repository = new LocalDiveLogRepository();
     const queryClient = createQueryClient();
-    const descriptor: WatchConnectivityPayload = {
+    const descriptor: WatchLinkPayload = {
       payloadId: 'invalid-native-artifact',
       localSessionId: 'invalid-native-session',
       receivedAt: 1781355000,
@@ -312,7 +313,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: jest
@@ -338,7 +339,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('keeps a raw inbox artifact retryable when prepared profile I/O fails', async () => {
     const repository = new LocalDiveLogRepository();
     const queryClient = createQueryClient();
-    const descriptor: WatchConnectivityPayload = {
+    const descriptor: WatchLinkPayload = {
       payloadId: 'corrupt-derived-profile',
       localSessionId: 'retryable-native-session',
       receivedAt: 1781355000,
@@ -349,7 +350,7 @@ describe('WatchConnectivitySyncProvider', () => {
       .mockResolvedValue(undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: jest
@@ -378,7 +379,7 @@ describe('WatchConnectivitySyncProvider', () => {
       now: () => 1781355000,
     });
     const queryClient = createQueryClient();
-    const descriptor: WatchConnectivityPayload = {
+    const descriptor: WatchLinkPayload = {
       payloadId: 'mismatched-prepared-profile',
       localSessionId: 'fixture-rich-session',
       receivedAt: 1781355000,
@@ -386,7 +387,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: jest
@@ -429,7 +430,7 @@ describe('WatchConnectivitySyncProvider', () => {
       throw new Error(parsedPayload.error.message);
     }
 
-    await importPendingWatchConnectivityPayloads({
+    await importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [{
@@ -454,7 +455,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('subscribes before draining pending payloads so startup deliveries are not missed', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const startupOrder: string[] = [];
     const afterInteractions = controlledAfterInteractionsScheduler();
     const drainPendingPayloads = jest.fn(async () => {
@@ -465,7 +466,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             coordinator={coordinator}
             drainPendingPayloads={drainPendingPayloads}
@@ -500,7 +501,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await importPendingWatchConnectivityPayloads({
+    await importPendingWatchPayloads({
       repository,
       queryClient: createQueryClient(),
       drainPendingPayloads: jest
@@ -537,7 +538,7 @@ describe('WatchConnectivitySyncProvider', () => {
       now: () => 1781355100,
     });
     const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
-    const failingPayload: WatchConnectivityPayload = {
+    const failingPayload: WatchLinkPayload = {
       payloadId: 'failing-payload-1',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: metadataRichFixture.session.localSessionId,
@@ -545,7 +546,7 @@ describe('WatchConnectivitySyncProvider', () => {
     };
     jest.spyOn(console, 'warn').mockImplementation(() => {});
     const runDrain = () =>
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient: createQueryClient(),
         drainPendingPayloads: jest.fn().mockResolvedValueOnce([failingPayload]).mockResolvedValue([]),
@@ -570,12 +571,12 @@ describe('WatchConnectivitySyncProvider', () => {
   it('waits for a settled account principal before subscribing or draining watch payloads', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const drainPendingPayloads = jest.fn(async () => []);
     const subscribeToPayloads = jest.fn(() => ({ remove: jest.fn() }));
     const render = (principalSettled: boolean) => (
       <QueryClientProvider client={queryClient}>
-        <WatchConnectivitySyncProvider
+        <WatchSyncProvider
           repository={repository}
           coordinator={coordinator}
           drainPendingPayloads={drainPendingPayloads}
@@ -614,7 +615,7 @@ describe('WatchConnectivitySyncProvider', () => {
       makePendingPayload('scheduled-payload-2', 'scheduled-session-2', 'b'),
     ];
     const drainPendingPayloads = jest
-      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .fn<Promise<WatchLinkPayload[]>, []>()
       .mockResolvedValueOnce([payloads[0]!])
       .mockResolvedValueOnce([payloads[1]!])
       .mockResolvedValue([]);
@@ -624,7 +625,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={drainPendingPayloads}
             acknowledgeImportedPayloads={acknowledgeImportedPayloads}
@@ -665,7 +666,7 @@ describe('WatchConnectivitySyncProvider', () => {
       renderers.push(
         ReactTestRenderer.create(
           <QueryClientProvider client={queryClient}>
-            <WatchConnectivitySyncProvider
+            <WatchSyncProvider
               repository={repository}
               drainPendingPayloads={drainPendingPayloads}
               scheduleAfterInteractions={afterInteractions.schedule}
@@ -711,7 +712,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={drainPendingPayloads}
             scheduleAfterInteractions={afterInteractions.schedule}
@@ -751,9 +752,9 @@ describe('WatchConnectivitySyncProvider', () => {
       renderers.push(
         ReactTestRenderer.create(
           <QueryClientProvider client={queryClient}>
-            <WatchConnectivitySyncProvider
+            <WatchSyncProvider
               repository={repository}
-              coordinator={new WatchConnectivityImportCoordinator()}
+              coordinator={new WatchImportCoordinator()}
               drainPendingPayloads={automaticDrain}
               scheduleAfterInteractions={afterInteractions.schedule}
               subscribeToPayloads={() => ({remove: jest.fn()})}
@@ -765,10 +766,10 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
-        coordinator: new WatchConnectivityImportCoordinator(),
+        coordinator: new WatchImportCoordinator(),
         drainPendingPayloads: manualDrain,
       }),
     ).resolves.toEqual({
@@ -794,7 +795,7 @@ describe('WatchConnectivitySyncProvider', () => {
       payloadJson: '{"invalid":true}',
     };
     const drainPendingPayloads = jest
-      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .fn<Promise<WatchLinkPayload[]>, []>()
       .mockResolvedValueOnce([historical, invalid])
       .mockResolvedValue([]);
     const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
@@ -803,7 +804,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads,
@@ -848,7 +849,7 @@ describe('WatchConnectivitySyncProvider', () => {
         return importWatchMessages(messages, options);
       });
     const drainPendingPayloads = jest
-      .fn<Promise<WatchConnectivityPayload[]>, []>()
+      .fn<Promise<WatchLinkPayload[]>, []>()
       .mockResolvedValueOnce([first, second])
       .mockResolvedValue([]);
     const acknowledgeImportedPayloads = jest
@@ -857,7 +858,7 @@ describe('WatchConnectivitySyncProvider', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads,
@@ -889,7 +890,7 @@ describe('WatchConnectivitySyncProvider', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: jest
@@ -954,7 +955,7 @@ describe('WatchConnectivitySyncProvider', () => {
               now: () => 1781355000,
               jitter: () => 0,
             }}>
-            <WatchConnectivitySyncProvider
+            <WatchSyncProvider
               drainPendingPayloads={async () => {
                 if (drained) {
                   return [];
@@ -1119,16 +1120,16 @@ describe('WatchConnectivitySyncProvider', () => {
     const onLocalWritesCommitted = jest.fn(async () => undefined);
     let drained = false;
     let importSummary:
-      | Awaited<ReturnType<typeof importPendingWatchConnectivityPayloads>>
+      | Awaited<ReturnType<typeof importPendingWatchPayloads>>
       | undefined;
 
     await ReactTestRenderer.act(async () => {
-      importSummary = await importPendingWatchConnectivityPayloads({
+      importSummary = await importPendingWatchPayloads({
         repository: accountData!.logbookRepository,
         planRepository: accountData!.planRepository,
         queryClient,
         queryScope,
-        coordinator: new WatchConnectivityImportCoordinator(),
+        coordinator: new WatchImportCoordinator(),
         drainPendingPayloads: async () => {
           if (drained) {
             return [];
@@ -1228,15 +1229,15 @@ describe('WatchConnectivitySyncProvider', () => {
       },
     };
     let failedImportSummary:
-      | Awaited<ReturnType<typeof importPendingWatchConnectivityPayloads>>
+      | Awaited<ReturnType<typeof importPendingWatchPayloads>>
       | undefined;
     await ReactTestRenderer.act(async () => {
-      failedImportSummary = await importPendingWatchConnectivityPayloads({
+      failedImportSummary = await importPendingWatchPayloads({
         repository: accountData!.logbookRepository,
         planRepository: accountData!.planRepository,
         queryClient,
         queryScope,
-        coordinator: new WatchConnectivityImportCoordinator(),
+        coordinator: new WatchImportCoordinator(),
         drainPendingPayloads: async () => [{
           payloadId: 'failed-deferred-plan-watch-payload',
           payloadJson: JSON.stringify(failedFixture),
@@ -1461,12 +1462,12 @@ describe('WatchConnectivitySyncProvider', () => {
         })),
       },
     };
-    await expect(importPendingWatchConnectivityPayloads({
+    await expect(importPendingWatchPayloads({
       repository: accountMutations.logbook,
       planRepository: guestPlanbook,
       queryClient: createQueryClient(),
       queryScope,
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
       drainPendingPayloads: async () => [{
         payloadId: 'racing-watch-payload',
         payloadJson: JSON.stringify(fixture),
@@ -1527,7 +1528,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => [
               {
@@ -1567,7 +1568,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => [
               {
@@ -1609,7 +1610,7 @@ describe('WatchConnectivitySyncProvider', () => {
       renderers.push(
         ReactTestRenderer.create(
           <QueryClientProvider client={queryClient}>
-            <WatchConnectivitySyncProvider
+            <WatchSyncProvider
               repository={repository}
               drainPendingPayloads={async () => {
                 if (drained) {
@@ -1665,7 +1666,7 @@ describe('WatchConnectivitySyncProvider', () => {
       renderers.push(
         ReactTestRenderer.create(
           <QueryClientProvider client={queryClient}>
-            <WatchConnectivitySyncProvider
+            <WatchSyncProvider
               repository={repository}
               drainPendingPayloads={async () => {
                 if (drained) {
@@ -1714,7 +1715,7 @@ describe('WatchConnectivitySyncProvider', () => {
     );
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: async () => [payload],
@@ -1752,7 +1753,7 @@ describe('WatchConnectivitySyncProvider', () => {
     jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 
     await expect(
-      importPendingWatchConnectivityPayloads({
+      importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: async () => [payload],
@@ -1779,7 +1780,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => [
               {
@@ -1815,7 +1816,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => []}
             acknowledgePayloads={jest.fn()}
@@ -1858,7 +1859,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => []}
             acknowledgePayloads={acknowledgePayloads}
@@ -1918,7 +1919,7 @@ describe('WatchConnectivitySyncProvider', () => {
       },
     };
 
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [
@@ -1972,7 +1973,7 @@ describe('WatchConnectivitySyncProvider', () => {
       },
     };
 
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [
@@ -2062,7 +2063,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             planRepository={planRepository}
             drainPendingPayloads={async () => []}
@@ -2154,7 +2155,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             planRepository={planRepository}
             drainPendingPayloads={async () => [
@@ -2233,7 +2234,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             planRepository={planRepository}
             drainPendingPayloads={async () => [
@@ -2274,7 +2275,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => [
               {
@@ -2315,7 +2316,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => [
               {
@@ -2351,8 +2352,8 @@ describe('WatchConnectivitySyncProvider', () => {
       await importGate;
       return originalImport(messages);
     });
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const payload: WatchConnectivityPayload = {
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const payload: WatchLinkPayload = {
       payloadId: 'shared-payload',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2362,7 +2363,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => []}
             acknowledgeImportedPayloads={acknowledgeImportedPayloads}
@@ -2377,10 +2378,10 @@ describe('WatchConnectivitySyncProvider', () => {
       await flushPromises();
     });
 
-    let manualImport: ReturnType<typeof importPendingWatchConnectivityPayloads> | undefined;
+    let manualImport: ReturnType<typeof importPendingWatchPayloads> | undefined;
     await ReactTestRenderer.act(async () => {
       listener?.(payload);
-      manualImport = importPendingWatchConnectivityPayloads({
+      manualImport = importPendingWatchPayloads({
         repository,
         queryClient,
         drainPendingPayloads: async () => [payload],
@@ -2425,8 +2426,8 @@ describe('WatchConnectivitySyncProvider', () => {
       return entries;
     });
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const makePayload = (payloadId: string, localSessionId: string): WatchConnectivityPayload => ({
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const makePayload = (payloadId: string, localSessionId: string): WatchLinkPayload => ({
       payloadId,
       localSessionId,
       receivedAt: 1781355000,
@@ -2443,7 +2444,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             drainPendingPayloads={async () => []}
             acknowledgeImportedPayloads={acknowledgeImportedPayloads}
@@ -2480,7 +2481,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('deduplicates concurrent distinct payloads that share one session import key', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     let acknowledgedCount = 0;
     let resolveAcknowledgements = () => {};
     const acknowledgementsComplete = new Promise<void>(resolve => {
@@ -2492,8 +2493,8 @@ describe('WatchConnectivitySyncProvider', () => {
         resolveAcknowledgements();
       }
     });
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const makePayload = (payloadId: string): WatchConnectivityPayload => ({
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const makePayload = (payloadId: string): WatchLinkPayload => ({
       payloadId,
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2503,7 +2504,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderers.push(ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             coordinator={coordinator}
             drainPendingPayloads={async () => []}
@@ -2532,11 +2533,11 @@ describe('WatchConnectivitySyncProvider', () => {
   it('redelivers without duplication after acknowledgement fails', async () => {
     const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const acknowledgeImportedPayloads = jest.fn()
       .mockRejectedValueOnce(new Error('watch unavailable'))
       .mockResolvedValueOnce(undefined);
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'ack-retry-payload',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2544,7 +2545,7 @@ describe('WatchConnectivitySyncProvider', () => {
     };
     jest.spyOn(console, 'warn').mockImplementation(() => {});
 
-    await expect(importPendingWatchConnectivityPayloads({
+    await expect(importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [payload],
@@ -2556,7 +2557,7 @@ describe('WatchConnectivitySyncProvider', () => {
       failedCount: 1,
     });
 
-    const result = await importPendingWatchConnectivityPayloads({
+    const result = await importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [payload],
@@ -2573,7 +2574,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const repositoryA = new LocalDiveLogRepository([], {now: () => 1781355000});
     const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const listStarted = createDeferred();
     const releaseList = createDeferred();
     const originalListA = repositoryA.list.bind(repositoryA);
@@ -2585,12 +2586,12 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
     const requestSync = jest.fn().mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const subscribeToPayloads = (handler: (payload: WatchConnectivityPayload) => void) => {
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const subscribeToPayloads = (handler: (payload: WatchLinkPayload) => void) => {
       listener = handler;
       return {remove: jest.fn()};
     };
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'principal-switch-before-save',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2601,7 +2602,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryA}
             queryScope="user:A"
             coordinator={coordinator}
@@ -2621,7 +2622,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer.update(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryB}
             queryScope="user:B"
             coordinator={coordinator}
@@ -2682,16 +2683,16 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
     const requestSync = jest.fn().mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const subscribeToPayloads = (handler: (payload: WatchConnectivityPayload) => void) => {
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const subscribeToPayloads = (handler: (payload: WatchLinkPayload) => void) => {
       listener = handler;
       return {remove: jest.fn()};
     };
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'principal-switch-during-profile-write',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2704,7 +2705,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryA}
             queryScope="user:A"
             coordinator={coordinator}
@@ -2724,7 +2725,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer.update(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryB}
             queryScope="user:B"
             coordinator={coordinator}
@@ -2756,7 +2757,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const enqueueSaved = jest.fn().mockResolvedValue(undefined);
     Object.assign(repositoryA, {enqueueSaved});
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const localSaveCompleted = createDeferred();
     const releasePostSaveList = createDeferred();
     const originalListA = repositoryA.list.bind(repositoryA);
@@ -2772,12 +2773,12 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
     const requestSync = jest.fn().mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
-    const subscribeToPayloads = (handler: (payload: WatchConnectivityPayload) => void) => {
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
+    const subscribeToPayloads = (handler: (payload: WatchLinkPayload) => void) => {
       listener = handler;
       return {remove: jest.fn()};
     };
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'principal-switch-after-save',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
@@ -2788,7 +2789,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryA}
             queryScope="user:A"
             coordinator={coordinator}
@@ -2808,7 +2809,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await ReactTestRenderer.act(async () => {
       renderer.update(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repositoryB}
             queryScope="user:B"
             coordinator={coordinator}
@@ -2846,7 +2847,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const repositoryA = new LocalDiveLogRepository([], {now: () => 1781355000});
     const repositoryB = new LocalDiveLogRepository([], {now: () => 1781355000});
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const listStarted = createDeferred();
     const releaseList = createDeferred();
     const originalListA = repositoryA.list.bind(repositoryA);
@@ -2857,14 +2858,14 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     const acknowledgeA = jest.fn().mockResolvedValue(undefined);
     const acknowledgeB = jest.fn().mockResolvedValue(undefined);
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'same-payload-different-scope',
       payloadJson: JSON.stringify(metadataRichFixture),
       localSessionId: 'fixture-rich-session',
       receivedAt: 1781355000,
     };
 
-    const importA = importPendingWatchConnectivityPayloads({
+    const importA = importPendingWatchPayloads({
       repository: repositoryA,
       queryClient,
       queryScope: 'user:A',
@@ -2874,7 +2875,7 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     await listStarted.promise;
 
-    const importB = importPendingWatchConnectivityPayloads({
+    const importB = importPendingWatchPayloads({
       repository: repositoryB,
       queryClient,
       queryScope: 'user:B',
@@ -2889,7 +2890,7 @@ describe('WatchConnectivitySyncProvider', () => {
 
     expect(results[0]).toMatchObject({
       status: 'rejected',
-      reason: {name: 'StaleWatchConnectivityImportError'},
+      reason: {name: 'StaleWatchImportError'},
     });
     expect(results[1]).toEqual({
       status: 'fulfilled',
@@ -2933,7 +2934,7 @@ describe('WatchConnectivitySyncProvider', () => {
         samples: metadataRichFixture.session.samples.map(sample => ({...sample})),
       },
     };
-    const seedPayload: WatchConnectivityPayload = {
+    const seedPayload: WatchLinkPayload = {
       payloadId: 'duplicate-seed',
       payloadJson: JSON.stringify(fixture),
       localSessionId: 'fixture-rich-session',
@@ -2941,13 +2942,13 @@ describe('WatchConnectivitySyncProvider', () => {
       sha256: 'fixture-profile-sha',
       receivedAt: 1781355000,
     };
-    await importPendingWatchConnectivityPayloads({
+    await importPendingWatchPayloads({
       repository,
       planRepository,
       queryClient,
       drainPendingPayloads: async () => [seedPayload],
       acknowledgeImportedPayloads: jest.fn().mockResolvedValue(undefined),
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
     });
     const [seededEntry] = await repository.list();
     const seededPlan = await planRepository.get('duplicate-plan');
@@ -2976,18 +2977,18 @@ describe('WatchConnectivitySyncProvider', () => {
     });
     Object.assign(repository, {saveLocalOnly: saveLocalLog, enqueueSaved: enqueueLog});
     Object.assign(planRepository, {saveLocalOnly: saveLocalPlan, enqueueSaved: enqueuePlan});
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       ...seedPayload,
       payloadId: 'duplicate-replay',
     };
     const isHistoricalWatchArtifact = jest.fn().mockResolvedValue(true);
 
-    const result = await importPendingWatchConnectivityPayloads({
+    const result = await importPendingWatchPayloads({
       repository,
       planRepository,
       queryClient,
       queryScope: 'user:duplicate-recovery',
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
       drainPendingPayloads: async () => [payload],
       acknowledgeImportedPayloads: async payloadIds => {
         order.push('ack');
@@ -3058,7 +3059,7 @@ describe('WatchConnectivitySyncProvider', () => {
     await repository.save(legacyEntry);
     const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
 
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       queryClient,
       drainPendingPayloads: async () => [{
@@ -3070,7 +3071,7 @@ describe('WatchConnectivitySyncProvider', () => {
         receivedAt: 1781355000,
       }],
       acknowledgeImportedPayloads,
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
     });
 
     expect(summary).toEqual({
@@ -3134,12 +3135,12 @@ describe('WatchConnectivitySyncProvider', () => {
       },
     };
 
-    await importPendingWatchConnectivityPayloads({
+    await importPendingWatchPayloads({
       repository,
       planRepository,
       queryClient: createQueryClient(),
       queryScope: 'user:ordered-import',
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
       drainPendingPayloads: async () => [{
         payloadId: 'ordered-import-payload',
         payloadJson: JSON.stringify(fixture),
@@ -3167,7 +3168,7 @@ describe('WatchConnectivitySyncProvider', () => {
   it('invalidates an active import when the provider is cleaned up', async () => {
     const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
     const queryClient = createQueryClient();
-    const coordinator = new WatchConnectivityImportCoordinator();
+    const coordinator = new WatchImportCoordinator();
     const listStarted = createDeferred();
     const releaseList = createDeferred();
     const originalList = repository.list.bind(repository);
@@ -3181,12 +3182,12 @@ describe('WatchConnectivitySyncProvider', () => {
     Object.assign(repository, {enqueueSaved});
     const requestSync = jest.fn().mockResolvedValue(undefined);
     jest.spyOn(console, 'warn').mockImplementation(() => {});
-    let listener: ((payload: WatchConnectivityPayload) => void) | undefined;
+    let listener: ((payload: WatchLinkPayload) => void) | undefined;
 
     await ReactTestRenderer.act(async () => {
       const renderer = ReactTestRenderer.create(
         <QueryClientProvider client={queryClient}>
-          <WatchConnectivitySyncProvider
+          <WatchSyncProvider
             repository={repository}
             queryScope="user:cleanup"
             coordinator={coordinator}
@@ -3235,7 +3236,7 @@ describe('WatchConnectivitySyncProvider', () => {
     const acknowledgeImportedPayloads = jest.fn().mockResolvedValue(undefined);
     const isWatchSessionDeleted = jest.fn().mockResolvedValue(true);
     const reconcileDeletedWatchSession = jest.fn().mockResolvedValue(undefined);
-    const payload: WatchConnectivityPayload = {
+    const payload: WatchLinkPayload = {
       payloadId: 'deleted-native-payload',
       localSessionId: 'fixture-rich-session',
       contentRevision: 'fixture-rich-revision-1',
@@ -3243,10 +3244,10 @@ describe('WatchConnectivitySyncProvider', () => {
       receivedAt: 1781355000,
     };
 
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       queryClient: createQueryClient(),
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
       drainPendingPayloads: async () => [payload],
       preparePendingPayload,
       acknowledgeImportedPayloads,
@@ -3277,10 +3278,10 @@ describe('WatchConnectivitySyncProvider', () => {
     const isWatchSessionDeleted = jest.fn().mockResolvedValue(true);
     const reconcileDeletedWatchSession = jest.fn().mockResolvedValue(undefined);
 
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       queryClient: createQueryClient(),
-      coordinator: new WatchConnectivityImportCoordinator(),
+      coordinator: new WatchImportCoordinator(),
       drainPendingPayloads: async () => [{
         payloadId: 'deleted-inline-payload',
         payloadJson: JSON.stringify(metadataRichFixture),

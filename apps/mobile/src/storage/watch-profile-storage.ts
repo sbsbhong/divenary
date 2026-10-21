@@ -1,5 +1,5 @@
 import { NativeModules, Platform } from 'react-native';
-import {adoptPreparedWatchConnectivityProfile} from '../native/watch-connectivity';
+import {defaultWatchLink} from '../companion/default-watch-link';
 import type { WatchDepthSample } from '../types/dive-session';
 import type { PersistentKeyValueStore } from './persistent-key-value-store';
 
@@ -78,7 +78,7 @@ export function createWatchProfileStorage(
         await writeRaw(destinationKey, stored);
       },
       async adoptPrepared(payloadId, destinationKey) {
-        await adoptPreparedWatchConnectivityProfile(
+        await defaultWatchLink.adoptPreparedProfile(
           payloadId,
           destinationKey,
         );

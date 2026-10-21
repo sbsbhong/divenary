@@ -8,8 +8,11 @@ import { createBlankDivePlan } from '../src/utils/create-dive-plan';
 const mockUpdatePlannedWatchDives = jest.fn(async (_plans: DivePlan[]) => 'sent' as const);
 let mockPrincipalSettled = true;
 
-jest.mock('../src/native/watch-connectivity', () => ({
-  updatePlannedWatchDives: (plans: DivePlan[]) => mockUpdatePlannedWatchDives(plans),
+jest.mock('../src/companion/default-watch-link', () => ({
+  defaultWatchLink: {
+    ...jest.requireActual('../src/companion/watch-link').createUnavailableWatchLink(),
+    updatePlannedDives: (plans: DivePlan[]) => mockUpdatePlannedWatchDives(plans),
+  },
 }));
 
 jest.mock('../src/states/account-data', () => ({

@@ -52,9 +52,12 @@ jest.mock('../src/states/use-dive-plan-queries', () => ({
   }),
 }));
 
-jest.mock('../src/native/watch-connectivity', () => ({
-  isWatchConnectivityAvailable: jest.fn(() => false),
-  updatePlannedWatchDives: jest.fn(async () => 'unavailable'),
+jest.mock('../src/companion/default-watch-link', () => ({
+  defaultWatchLink: {
+    ...jest.requireActual('../src/companion/watch-link').createUnavailableWatchLink(),
+    isAvailable: jest.fn(() => false),
+    updatePlannedDives: jest.fn(async () => 'unavailable'),
+  },
 }));
 
 import {QueryClient, QueryClientProvider} from '@tanstack/react-query';

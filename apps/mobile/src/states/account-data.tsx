@@ -37,10 +37,8 @@ import {
   type WatchLogDeletionStore,
   type WatchLogDeletionTombstone,
 } from '../deletion/watch-log-deletion-store';
-import {
-  listWatchSessionDeletionAcknowledgements,
-  queueWatchSessionDeletion,
-} from '../native/watch-connectivity';
+import { defaultWatchLink } from '../companion/default-watch-link';
+import type { WatchLink } from '../companion/watch-link';
 import type {
   GuestClaimProgress,
   GuestClaimViewState,
@@ -166,9 +164,8 @@ export type AccountDataDependencies = PrincipalRepositoryDependencies & {
   createId: () => string;
   now: () => number;
   jitter: () => number;
-  queueWatchSessionDeletion: typeof queueWatchSessionDeletion;
-  listWatchSessionDeletionAcknowledgements:
-    typeof listWatchSessionDeletionAcknowledgements;
+  queueWatchSessionDeletion: WatchLink['queueSessionDeletion'];
+  listWatchSessionDeletionAcknowledgements: WatchLink['listSessionDeletionAcknowledgements'];
 };
 
 type AccountLocalFirstRepositoryOptions = {
@@ -3111,8 +3108,8 @@ function getDefaultDependencies(): AccountDataDependencies {
     createId: createUuid,
     now: () => Date.now() / 1_000,
     jitter: Math.random,
-    queueWatchSessionDeletion,
-    listWatchSessionDeletionAcknowledgements,
+    queueWatchSessionDeletion: defaultWatchLink.queueSessionDeletion,
+    listWatchSessionDeletionAcknowledgements: defaultWatchLink.listSessionDeletionAcknowledgements,
   };
   return defaultDependencies;
 }

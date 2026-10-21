@@ -6,12 +6,15 @@ import PlanningScreen from '../src/screens/planning/screen';
 import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import { createBlankDivePlan } from '../src/utils/create-dive-plan';
 
-jest.mock('../src/native/watch-connectivity', () => ({
-  isWatchConnectivityAvailable: () => false,
-  drainPendingWatchConnectivityPayloads: jest.fn(),
-  acknowledgeWatchConnectivityPayloads: jest.fn(),
-  acknowledgeImportedWatchConnectivityPayloads: jest.fn(),
-  subscribeToWatchConnectivityPayloads: () => ({ remove: jest.fn() }),
+jest.mock('../src/companion/default-watch-link', () => ({
+  defaultWatchLink: {
+    ...jest.requireActual('../src/companion/watch-link').createUnavailableWatchLink(),
+    isAvailable: () => false,
+    drainPendingPayloads: jest.fn(),
+    discardPayloads: jest.fn(),
+    acknowledgeImportedPayloads: jest.fn(),
+    subscribeToPayloads: () => ({ remove: jest.fn() }),
+  },
 }));
 
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];

@@ -1,6 +1,6 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
-import type {PreparedWatchProfile} from '../native/watch-connectivity';
+import type {PreparedWatchProfile} from '../companion/watch-link';
 import type {
   ConditionalDeleteResult,
   DeletePredicate,

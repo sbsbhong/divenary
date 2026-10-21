@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import React from 'react';
-import { isWatchConnectivityAvailable } from '../native/watch-connectivity';
+import { defaultWatchLink } from '../companion/default-watch-link';
 import { defaultDiveLogRepository } from '../repositories/default-dive-log-repository';
 import type { DiveLogRepository } from '../repositories/dive-log-repository';
 import {
@@ -10,7 +10,7 @@ import {
 } from './use-dive-logbook-queries';
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DiveSessionFilter, MobileDiveSession } from '../types/dive-session';
-import { importPendingWatchConnectivityPayloads, type WatchConnectivityImportSummary } from './watch-connectivity-sync';
+import { importPendingWatchPayloads, type WatchImportSummary } from './watch-sync';
 import { firstNonBlankText } from '../utils/notes';
 import { useOptionalAccountData } from './account-data';
 
@@ -23,7 +23,7 @@ type DiveLogRepositoryWithSyncList = DiveLogRepository & {
   listSync?: () => DiveLogEntry[];
 };
 
-export type WatchSyncActionResult = WatchConnectivityImportSummary & {
+export type WatchSyncActionResult = WatchImportSummary & {
   unavailable: boolean;
 };
 
@@ -83,7 +83,7 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
   const filteredSessions = React.useMemo(() => filteredEntries.map(diveLogEntryToMobileSession), [filteredEntries]);
 
   const syncWatchPayloads = React.useCallback(async (): Promise<WatchSyncActionResult> => {
-    const summary = await importPendingWatchConnectivityPayloads({
+    const summary = await importPendingWatchPayloads({
       repository,
       planRepository,
       queryClient,
@@ -93,7 +93,7 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
 
     return {
       ...summary,
-      unavailable: !isWatchConnectivityAvailable(),
+      unavailable: !defaultWatchLink.isAvailable(),
     };
   }, [accountData?.requestSync, options.repository, planRepository, queryClient, queryScope, repository]);
 

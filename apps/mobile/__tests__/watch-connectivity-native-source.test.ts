@@ -170,7 +170,7 @@ describe('WatchConnectivity native source contract', () => {
 
   it('uses fixed privacy-safe slow-stage measurements with a 100ms threshold', () => {
     const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
-    const watchSync = readRepoFile('apps/mobile/src/states/watch-connectivity-sync.tsx');
+    const watchSync = readRepoFile('apps/mobile/src/states/watch-sync.tsx');
     const accountSync = readRepoFile('apps/mobile/src/sync/account-sync-coordinator.ts');
     const measurements = `${inbox}\n${watchSync}\n${accountSync}`;
 
@@ -357,15 +357,15 @@ describe('WatchConnectivity native source contract', () => {
   });
 
   it('syncs planned dives from mobile to the watch companion', () => {
-    const mobileNative = readRepoFile('apps/mobile/src/native/watch-connectivity.ts');
+    const mobileNative = readRepoFile('apps/mobile/src/companion/watch-link.ts') + readRepoFile('apps/mobile/src/companion/native-watch-link.ts');
     const useDivePlans = readRepoFile('apps/mobile/src/states/use-dive-plans.ts');
     const module = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModule.swift');
     const bridge = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModuleBridge.m');
     const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');
     const envelope = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sync/WatchSyncEnvelope.swift');
 
-    expect(mobileNative).toContain('updatePlannedWatchDives');
-    expect(useDivePlans).toContain('updatePlannedWatchDives(plans');
+    expect(mobileNative).toContain('updatePlannedDives');
+    expect(useDivePlans).toContain('defaultWatchLink.updatePlannedDives(plans');
     expect(module).toContain('@objc(updatePlannedDives:resolver:rejecter:)');
     expect(bridge).toContain('updatePlannedDives');
     expect(inbox).toContain('updateApplicationContext');
@@ -419,7 +419,7 @@ describe('WatchConnectivity native source contract', () => {
   });
 
   it('exposes linked watch status to the settings screen', () => {
-    const mobileNative = readRepoFile('apps/mobile/src/native/watch-connectivity.ts');
+    const mobileNative = readRepoFile('apps/mobile/src/companion/watch-link.ts') + readRepoFile('apps/mobile/src/companion/native-watch-link.ts');
     const module = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModule.swift');
     const bridge = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityModuleBridge.m');
     const inbox = readRepoFile('apps/mobile/ios/Divenary/WatchConnectivityInbox.swift');

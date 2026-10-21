@@ -6,7 +6,7 @@ import { HStack } from '../src/components/ui/hstack';
 import { Icon } from '../src/components/ui/icon';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/screen';
-import type { LinkedWatchInfo } from '../src/native/watch-connectivity';
+import type { LinkedWatchInfo } from '../src/companion/watch-link';
 import type { AuthContextValue } from '../src/states/auth';
 import type { GuestClaimViewState } from '../src/claim/guest-claim-types';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';

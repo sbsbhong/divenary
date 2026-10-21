@@ -1,6 +1,6 @@
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { WatchDepthSample, WatchSyncMessage } from '../types/dive-session';
-import {WatchPayloadPreparationError} from '../native/watch-connectivity';
+import {WatchPayloadPreparationError} from '../companion/watch-link';
 import { parseWatchSyncMessageValue } from '../utils/watch-sync-message-validation';
 import {createWatchProfileDigest} from '../utils/watch-profile-digest';
 import { watchSessionToDiveLogEntry } from '../utils/watch-session-to-dive-log-entry';

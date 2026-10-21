@@ -13,7 +13,8 @@ import { Switch } from '../../components/ui/switch';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { SupportedLanguage } from '../../i18n';
-import { getLinkedWatchInfo, type LinkedWatchInfo } from '../../native/watch-connectivity';
+import { defaultWatchLink } from '../../companion/default-watch-link';
+import type { LinkedWatchInfo } from '../../companion/watch-link';
 import {
   hasWatchSyncNotificationPermission as hasDefaultWatchSyncNotificationPermission,
   requestWatchSyncNotificationPermission as requestDefaultWatchSyncNotificationPermission,
@@ -68,7 +69,7 @@ const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
 const languageOptions: SupportedLanguage[] = ['ko', 'en'];
 
 export default function SettingsScreen({
-  loadLinkedWatchInfo = getLinkedWatchInfo,
+  loadLinkedWatchInfo = defaultWatchLink.getLinkedWatchInfo,
   onBack,
   onOpenLogin,
   onOpenRoute,

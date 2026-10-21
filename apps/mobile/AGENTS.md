@@ -44,8 +44,9 @@
 - `src/screens/memory/screen.tsx`: static memory/share preview. 아직 navigation에 연결되지 않았다.
 - `src/states/use-dive-logbook.ts`: React Query 기반 logbook state와 WatchConnectivity pending inbox sync action
 - `src/states/use-dive-plans.ts`: React Query 기반 Planbook state와 실행하지 않은 planned dive의 watch companion 전달
-- `src/states/watch-connectivity-sync.tsx`: iOS WatchConnectivity payload drain/subscribe와 validated repository import
-- `src/native/watch-connectivity.ts`: React Native WatchConnectivity wrapper
+- `src/companion/watch-link.ts`: 모바일과 companion watch 사이의 플랫폼 중립 `WatchLink` 인터페이스와 메시지 타입. 앱 코드는 이 인터페이스에만 의존한다.
+- `src/companion/native-watch-link.ts`: native module 계약(`NativeWatchLinkModule`)과 adapter. iOS는 `WatchConnectivityModule`, Android는 같은 계약의 `WearableCompanionModule`을 구현해 꽂는다. 이 폴더 밖에서는 platform watch module을 참조하지 않는다.
+- `src/states/watch-sync.tsx`: `WatchLink`로 받은 payload drain/subscribe와 validated repository import
 - `src/types/dive-session.ts`: generated watch contract type 기반 mobile session type
 - `src/utils/`: formatter, watch fixture helper, summary 계산
 - `ios/Divenary.xcodeproj`: iPhone app target `Divenary`과 companion watch target `DivenaryWatchApp`

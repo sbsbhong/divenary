@@ -42,7 +42,7 @@ import {
 import { useAuth, type AuthState } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
 import { useDivePlans } from '../../states/use-dive-plans';
-import { WatchConnectivitySyncProvider } from '../../states/watch-connectivity-sync';
+import { WatchSyncProvider } from '../../states/watch-sync';
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
@@ -594,7 +594,7 @@ export default function RootNavigation(): React.JSX.Element {
   );
 
   return (
-    <WatchConnectivitySyncProvider
+    <WatchSyncProvider
       preferencesHydrated={isHydrated}
       notifyImportedEntry={showImportedEntryNotification}
       onImportedEntry={showImportedEntryToast}>
@@ -807,7 +807,7 @@ export default function RootNavigation(): React.JSX.Element {
           </Box>
         ) : null}
       </VStack>
-    </WatchConnectivitySyncProvider>
+    </WatchSyncProvider>
   );
 }
 

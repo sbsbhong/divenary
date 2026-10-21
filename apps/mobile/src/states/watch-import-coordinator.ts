@@ -1,39 +1,39 @@
-import type { WatchConnectivityPayload } from '../native/watch-connectivity';
+import type { WatchLinkPayload } from '../companion/watch-link';
 
-export type WatchConnectivityImportScope = {
+export type WatchImportScope = {
   readonly queryScope: string | undefined;
   readonly generation: number;
 };
 
-export type WatchConnectivityImportGuard = {
+export type WatchImportGuard = {
   assertActive(): void;
 };
 
-export class StaleWatchConnectivityImportError extends Error {
+export class StaleWatchImportError extends Error {
   constructor() {
     super('Watch connectivity import principal is stale');
-    this.name = 'StaleWatchConnectivityImportError';
+    this.name = 'StaleWatchImportError';
   }
 }
 
-export function isStaleWatchConnectivityImportError(
+export function isStaleWatchImportError(
   error: unknown,
-): error is StaleWatchConnectivityImportError {
-  return error instanceof StaleWatchConnectivityImportError;
+): error is StaleWatchImportError {
+  return error instanceof StaleWatchImportError;
 }
 
-export class WatchConnectivityImportCoordinator {
+export class WatchImportCoordinator {
   private nextGeneration = 0;
-  private activeScope: WatchConnectivityImportScope | undefined;
+  private activeScope: WatchImportScope | undefined;
   private readonly tailByGeneration = new Map<number, Promise<void>>();
   private readonly inFlightByImportKey = new Map<string, Promise<unknown>>();
 
-  activateScope(queryScope?: string): WatchConnectivityImportScope {
+  activateScope(queryScope?: string): WatchImportScope {
     if (this.activeScope && this.activeScope.queryScope === queryScope) {
       return this.activeScope;
     }
 
-    const scope: WatchConnectivityImportScope = {
+    const scope: WatchImportScope = {
       queryScope,
       generation: this.nextGeneration + 1,
     };
@@ -42,7 +42,7 @@ export class WatchConnectivityImportCoordinator {
     return scope;
   }
 
-  invalidateScope(scope: WatchConnectivityImportScope): void {
+  invalidateScope(scope: WatchImportScope): void {
     if (this.activeScope?.generation !== scope.generation) {
       return;
     }
@@ -52,9 +52,9 @@ export class WatchConnectivityImportCoordinator {
   }
 
   run<T>(
-    scope: WatchConnectivityImportScope,
-    payload: WatchConnectivityPayload,
-    operation: (guard: WatchConnectivityImportGuard) => Promise<T>,
+    scope: WatchImportScope,
+    payload: WatchLinkPayload,
+    operation: (guard: WatchImportGuard) => Promise<T>,
   ): Promise<T> {
     const payloadId = payload.payloadId;
     const importKey = payloadId
@@ -68,7 +68,7 @@ export class WatchConnectivityImportCoordinator {
       return existing as Promise<T>;
     }
 
-    const guard: WatchConnectivityImportGuard = {
+    const guard: WatchImportGuard = {
       assertActive: () => this.assertScopeActive(scope),
     };
     const execute = () => {
@@ -102,14 +102,14 @@ export class WatchConnectivityImportCoordinator {
     return result;
   }
 
-  private assertScopeActive(scope: WatchConnectivityImportScope): void {
+  private assertScopeActive(scope: WatchImportScope): void {
     if (
       this.activeScope?.generation !== scope.generation ||
       this.activeScope.queryScope !== scope.queryScope
     ) {
-      throw new StaleWatchConnectivityImportError();
+      throw new StaleWatchImportError();
     }
   }
 }
 
-export const defaultWatchConnectivityImportCoordinator = new WatchConnectivityImportCoordinator();
+export const defaultWatchImportCoordinator = new WatchImportCoordinator();

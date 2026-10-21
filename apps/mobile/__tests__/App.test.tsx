@@ -143,9 +143,9 @@ const waitForRenderedTestID = async (renderer: ReactTestRenderer.ReactTestRender
   }
 };
 
-const waitForWatchConnectivitySubscription = async () => {
+const waitForWatchLinkSubscription = async () => {
   for (let attempt = 0; attempt < 10; attempt += 1) {
-    if (mockWatchConnectivityHandler) {
+    if (mockWatchLinkHandler) {
       return;
     }
 
@@ -155,14 +155,14 @@ const waitForWatchConnectivitySubscription = async () => {
   }
 };
 
-const mockDrainPendingWatchConnectivityPayloads = jest.fn();
-const mockAcknowledgeWatchConnectivityPayloads = jest.fn();
-const mockAcknowledgeImportedWatchConnectivityPayloads = jest.fn();
+const mockDrainPendingWatchPayloads = jest.fn();
+const mockDiscardWatchPayloads = jest.fn();
+const mockAcknowledgeImportedWatchPayloads = jest.fn();
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 let mockNotificationForegroundHandler:
   | ((event: { type: number; detail: { notification: { data: Record<string, string> } } }) => void)
   | undefined;
-let mockWatchConnectivityHandler:
+let mockWatchLinkHandler:
   | ((payload: { payloadId?: string; payloadJson: string; localSessionId?: string; receivedAt?: number }) => void)
   | undefined;
 let mockSafeAreaMetrics = {
@@ -170,27 +170,30 @@ let mockSafeAreaMetrics = {
   insets: { left: 0, right: 0, bottom: 0, top: 0 },
 };
 
-jest.mock('../src/native/watch-connectivity', () => ({
-  acknowledgeImportedWatchConnectivityPayloads: (payloadIds: readonly string[]) =>
-    mockAcknowledgeImportedWatchConnectivityPayloads(payloadIds),
-  acknowledgeWatchConnectivityPayloads: (payloadIds: readonly string[]) => mockAcknowledgeWatchConnectivityPayloads(payloadIds),
-  drainPendingWatchConnectivityPayloads: () => mockDrainPendingWatchConnectivityPayloads(),
-  getLinkedWatchInfo: () =>
-    Promise.resolve({
-      isSupported: true,
-      isPaired: true,
-      isWatchAppInstalled: true,
-      isReachable: true,
-      name: 'Test Apple Watch',
-    }),
-  isWatchConnectivityAvailable: () => true,
-  subscribeToWatchConnectivityPayloads: (
-    handler: (payload: { payloadId?: string; payloadJson: string; localSessionId?: string; receivedAt?: number }) => void,
-  ) => {
-    mockWatchConnectivityHandler = handler;
-    return { remove: jest.fn() };
+jest.mock('../src/companion/default-watch-link', () => ({
+  defaultWatchLink: {
+    ...jest.requireActual('../src/companion/watch-link').createUnavailableWatchLink(),
+    acknowledgeImportedPayloads: (payloadIds: readonly string[]) =>
+      mockAcknowledgeImportedWatchPayloads(payloadIds),
+    discardPayloads: (payloadIds: readonly string[]) => mockDiscardWatchPayloads(payloadIds),
+    drainPendingPayloads: () => mockDrainPendingWatchPayloads(),
+    getLinkedWatchInfo: () =>
+      Promise.resolve({
+        isSupported: true,
+        isPaired: true,
+        isWatchAppInstalled: true,
+        isReachable: true,
+        name: 'Test Apple Watch',
+      }),
+    isAvailable: () => true,
+    subscribeToPayloads: (
+      handler: (payload: { payloadId?: string; payloadJson: string; localSessionId?: string; receivedAt?: number }) => void,
+    ) => {
+      mockWatchLinkHandler = handler;
+      return { remove: jest.fn() };
+    },
+    updatePlannedDives: jest.fn(() => Promise.resolve()),
   },
-  updatePlannedWatchDives: jest.fn(() => Promise.resolve()),
 }));
 
 jest.mock('react-native-reanimated', () => {
@@ -248,10 +251,10 @@ describe('App navigation', () => {
     };
 
     asyncStorageMock.__resetAsyncStorageMock();
-    mockDrainPendingWatchConnectivityPayloads.mockResolvedValue([]);
-    mockAcknowledgeWatchConnectivityPayloads.mockResolvedValue(undefined);
-    mockAcknowledgeImportedWatchConnectivityPayloads.mockResolvedValue(undefined);
-    mockWatchConnectivityHandler = undefined;
+    mockDrainPendingWatchPayloads.mockResolvedValue([]);
+    mockDiscardWatchPayloads.mockResolvedValue(undefined);
+    mockAcknowledgeImportedWatchPayloads.mockResolvedValue(undefined);
+    mockWatchLinkHandler = undefined;
     mockNotificationForegroundHandler = undefined;
     mockAuthState = { status: 'guest' };
     mockAuthConfigured = false;
@@ -769,11 +772,11 @@ describe('App navigation', () => {
     });
 
     const root = renderer!.root;
-    await waitForWatchConnectivitySubscription();
-    expect(mockWatchConnectivityHandler).toBeTruthy();
+    await waitForWatchLinkSubscription();
+    expect(mockWatchLinkHandler).toBeTruthy();
 
     await ReactTestRenderer.act(async () => {
-      mockWatchConnectivityHandler?.({
+      mockWatchLinkHandler?.({
         payloadId: 'app-toast-payload',
         payloadJson: JSON.stringify(fixture),
         localSessionId: 'app-toast-session',
@@ -825,10 +828,10 @@ describe('App navigation', () => {
     });
 
     const root = renderer!.root;
-    await waitForWatchConnectivitySubscription();
+    await waitForWatchLinkSubscription();
 
     await ReactTestRenderer.act(async () => {
-      mockWatchConnectivityHandler?.({
+      mockWatchLinkHandler?.({
         payloadId: 'app-safe-area-toast-payload',
         payloadJson: JSON.stringify(fixture),
         localSessionId: 'app-safe-area-toast-session',

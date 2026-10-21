@@ -4,7 +4,7 @@ import {bytesToHex, utf8ToBytes} from '@noble/hashes/utils';
 import type {
   WatchSessionDeletionAcknowledgement,
   WatchSessionDeletionCommand,
-} from '../native/watch-connectivity';
+} from '../companion/watch-link';
 import type {DiveLogRepository} from '../repositories/dive-log-repository';
 import type {DiveLogEntry} from '../types/dive-log-entry';
 import type {
@@ -12,7 +12,7 @@ import type {
   WatchLogDeletionTombstone,
 } from './watch-log-deletion-store';
 
-export type {WatchSessionDeletionCommand} from '../native/watch-connectivity';
+export type {WatchSessionDeletionCommand} from '../companion/watch-link';
 
 export type WatchLogDeletionCoordinator = {
   delete(entry: DiveLogEntry): Promise<void>;

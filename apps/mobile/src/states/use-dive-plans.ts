@@ -1,5 +1,6 @@
 import React from 'react';
-import { updatePlannedWatchDives, type PlannedWatchDivesUpdateStatus } from '../native/watch-connectivity';
+import { defaultWatchLink } from '../companion/default-watch-link';
+import type { PlannedWatchDivesUpdateStatus } from '../companion/watch-link';
 import type { DivePlan } from '../types/dive-plan';
 import type { DivePlanRepository } from '../repositories/dive-plan-repository';
 import { defaultDivePlanRepository } from '../repositories/default-dive-plan-repository';
@@ -73,7 +74,7 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
     }
     let isCurrent = true;
 
-    void updatePlannedWatchDives(plans)
+    void defaultWatchLink.updatePlannedDives(plans)
       .then(status => {
         if (isCurrent) {
           setPlannedWatchSyncStatus(status);
