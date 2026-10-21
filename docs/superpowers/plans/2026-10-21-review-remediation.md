@@ -120,26 +120,26 @@
 ## Phase 8 — UI/UX
 
 ### Task 8.1: Watch UI
-- [ ] Caution color token; safety stop paused/incomplete uses caution + "Recommended stop" label.
-- [ ] Persistent Demo marker on live screen; unsupported marker in summary/list/detail.
-- [ ] Dive Plans screen; `--` for missing plan depth.
-- [ ] Sync status labels (waiting / awaiting confirmation / synced / failed) + resend on failed rows.
-- [ ] VoiceOver labels for safety-stop timer, metrics, custom back.
+- [x] Caution color token; safety stop paused/incomplete uses caution + "Recommended stop" label. (Phase 2)
+- [x] Persistent Demo marker on live screen; unsupported marker in summary/list/detail.
+- [x] Dive Plans screen; `--` for missing plan depth (`--.- m`, the live readout placeholder).
+- [x] Sync status labels + Send Again on the failed session's detail screen. ~~Awaiting confirmation~~ not split: the status enum is in the sync contract and a transport-level state needs paired hardware; recorded as an open question.
+- [x] VoiceOver labels for safety-stop timer, metrics, custom back.
 
 ### Task 8.2: Mobile UI
-- [ ] Home: latest dive first, count not primary, provenance/unsupported markers, tap to detail; padding via `contentContainerStyle`.
-- [ ] Safety stop incomplete → warning tone + recommended wording.
-- [ ] Chart colors from theme tokens.
-- [ ] Sync toast shows partial failures; claim refresh failure state; error vs empty vs no-results.
-- [ ] Accessibility: tab/pill selected state, star label, profile summary label, wheel increment/decrement, 44 pt targets.
-- [ ] Hardcoded strings → i18n.
+- [x] Home: latest dive first, count not primary, provenance/unsupported markers, tap to detail. Padding already used `contentContainerClassName`.
+- [x] Safety stop incomplete → warning tone + recommended wording. StatusPill `warning` now uses the amber token (it rendered as primary blue).
+- [x] Chart colors from theme tokens (also refresh tints).
+- [x] Sync toast shows partial failures; claim refresh failure state; error vs empty vs no-results.
+- [x] Accessibility: tab/pill selected state, star label, profile summary label, wheel increment/decrement, 44 pt targets.
+- [x] Hardcoded strings → i18n, including zod validation messages with Korean particle selection. Left as data, not UI: default checklist labels and the default watch site name saved into records.
 
 ## Phase 9 — Docs and wiki
 
-- [ ] AGENTS.md (root, mobile) and wiki UI doc: Memory tab → current state; verification commands.
-- [ ] `.wiki/raw/architecture/2026-10-21-review-remediation.md`; update `watch-app.md`, `sync-flow.md`, `mobile.md`, `design/mobile-watch-ui-language.md`, `domains/safety-rules.md`, `index.md`, `log.md`.
-- [ ] Device checklist rows: consecutive dive without dismissing summary, beyond-sensor-range display, offline cold start auth.
-- [ ] `.DS_Store` untracked + `.gitignore`.
+- [x] AGENTS.md (root, mobile) and wiki UI doc: Memory tab → current state; verification commands.
+- [x] `.wiki/raw/architecture/2026-10-21-review-remediation.md`; update `watch-app.md`, `sync-flow.md`, `mobile.md`, `design/mobile-watch-ui-language.md`, `domains/safety-rules.md`, `questions/open-questions.md`, `index.md`, `log.md`.
+- [x] Device checklist rows: Watch D14-D19; mobile auth/sync items in the guest claim checklist.
+- [x] `.DS_Store` untracked + `.gitignore`.
 
 ## Phase 10 — Full verification
 

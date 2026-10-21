@@ -10,13 +10,24 @@ Sources: Guest claim semantic canonical reuse physical verification evidence, 20
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
 Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
-Updated: 2026-08-02
+Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
+Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
+Updated: 2026-10-21
 
 ## 요약
 
 `apps/mobile`은 watch에서 기록한 레크리에이션 다이빙 로그를 확인하고 모바일에서 수동 로그를 작성하기 위한 bare React Native 앱이며, iPhone app과 embedded watchOS companion target을 함께 소유한다. React Navigation, React Query, principal-partitioned persistent repository, account local-first outbox/sync, resumable guest data claim, generated watch contract, Gluestack UI v4/NativeWind와 Supabase/Auth client 경계를 사용한다. Durable Logbook/Planbook은 fail-closed로 읽고, 자동 Watch drain과 account hydration은 로컬 화면 공개와 첫 상호작용 뒤에 시작한다. Watch full profile과 claim profile evidence는 metadata envelope 밖 파일 sidecar에 둔다. Production cloud backup과 account deletion은 아직 없다.
 
 모바일은 Watch 로그 삭제의 유일한 사용자 조작 지점이다. `src/deletion/`은 `localSessionId` 기반 device-wide 묘비와 삭제 coordinator를 소유한다. 묘비 readback이 repository delete보다 먼저 끝나야 하며, 이후 실패가 있어도 화면·import·hydration에서 해당 session을 다시 게시하지 않는다. 수동 로그 삭제는 Watch command를 만들지 않는다.
+
+## 2026-10-21 리뷰 후속 경계
+
+- Auth 구독은 event를 함께 전달하고, 로컬 세션은 `SIGNED_OUT`일 때만 닫는다. 만료 세션을 오프라인에서 갱신하지 못한 null `INITIAL_SESSION`은 복원 흐름에 맡겨 guest로 바꾸지 않는다. signOut이 실패하면 Keychain 세션을 직접 지운다.
+- `isPrincipalSettled`(guest, authenticated, authenticatedOffline)가 참이 된 뒤에만 Watch payload 구독·drain과 계획 전송을 시작하고, 계획 목록을 처음 읽기 전에는 Watch로 보내지 않는다.
+- 로그·계획 삭제는 `confirmDestructiveAction` 시스템 Alert로 확인하고, root editor route는 `usePreventRemove`로 저장하지 않은 변경 폐기를 확인한다.
+- 형식이 맞지 않거나 세 번 연속 import에 실패한 Watch payload는 `watch-rejected-payload-store`에 세션 ID·사유·시각만 남기고 Settings 기기 화면에 보인다.
+- 충돌 행은 상세 화면 `SyncConflictBanner`에서 해결하고, 원격 삭제 전파와 삭제 충돌 규칙은 [동기화 흐름 구조](sync-flow.md)를 따른다.
+- Home, 상태 색, 목록 상태, 접근성, 폼 검증 번역 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)에 정리했다.
 
 ## 현재 상태
 

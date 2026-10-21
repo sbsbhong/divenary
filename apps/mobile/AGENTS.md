@@ -36,12 +36,12 @@
 - `src/storage/data-principal.ts`: `guest`와 `user:<uuid>` local namespace 정의
 - `src/states/auth.tsx`: restore/revalidation/concurrency를 포함한 Auth state provider
 - `src/screens/auth/`: guest-preserving login과 versioned mandatory-consent 화면
-- `src/components/navigation/index.tsx`: React Navigation 기반 custom bottom-tab navigator
+- `src/components/navigation/index.tsx`: React Navigation 기반 custom bottom-tab navigator. 탭은 Home, Logbook, Planning, Settings다.
 - `src/components/ui/`: reusable primitives, instruments, cards, session profile, theme tokens
 - `src/screens/home/screen.tsx`: latest session과 high-level metrics
 - `src/screens/logbook/screen.tsx`: imported session list, search/filter, detail review
 - `src/screens/planning/screen.tsx`: non-certified planning reminder UI
-- `src/screens/memory/screen.tsx`: static memory/share preview
+- `src/screens/memory/screen.tsx`: static memory/share preview. 아직 navigation에 연결되지 않았다.
 - `src/states/use-dive-logbook.ts`: React Query 기반 logbook state와 WatchConnectivity pending inbox sync action
 - `src/states/use-dive-plans.ts`: React Query 기반 Planbook state와 실행하지 않은 planned dive의 watch companion 전달
 - `src/states/watch-connectivity-sync.tsx`: iOS WatchConnectivity payload drain/subscribe와 validated repository import
@@ -64,7 +64,7 @@
 - iOS WatchConnectivity receiver와 companion watch target embed 구조
 - Supabase account Logbook/Planbook/profile data sync orchestration
 - 명시적으로 선택한 guest Logbook/Planbook의 resumable account claim과 commit 이후 local cleanup
-- non-certified planning reminder, memory/share preview, statistics
+- non-certified planning reminder, statistics, 향후 memory/share preview
 
 모바일 앱에 넣지 않는다.
 
@@ -132,8 +132,9 @@ Xcode를 열 때는 full iOS app 작업 기준으로 `ios/Divenary.xcworkspace`�
 
 ## Verification
 
-- TypeScript/mobile-only 변경: `yarn mobile:typecheck`
-- mobile test 대상 변경: `yarn workspace @repo/mobile test`
+- TypeScript/mobile-only 변경: `yarn mobile:typecheck`, `yarn mobile:lint`
+- mobile test 대상 변경: `yarn mobile:test`
+- watch Swift 동작 변경: `DivenaryWatchAppTests` scheme XCTest (root `AGENTS.md`의 명령 참고)
 - watchOS companion 변경: `yarn watch:build`
 - watch UI localization/style boundary 변경: `yarn workspace @repo/mobile watch:ui:check`
 - iOS native 변경: `yarn ios:build`를 실행하되, Pods나 local Xcode setup이 없으면 그 상태를 정확히 보고한다.

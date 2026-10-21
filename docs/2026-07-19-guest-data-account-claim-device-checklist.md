@@ -166,6 +166,18 @@ Apple Watch regression은 iPhone에서 guest와 account A 상태로 각각 수�
 10. [ ] `PENDING` Watch import 도중 background/foreground와 force-quit/relaunch를 각각 수행해 원본 또는 prepared source가 ACK 전에 사라지지 않는지 확인한다.
 11. [ ] `PENDING` 같은 8,000 sample 가져오기를 Release configuration에서도 반복하고, 부팅 직후·수동 가져오기 중 탭 전환과 버튼 반응이 막히지 않는지 Debug 관찰과 구분해 기록한다.
 
+## 2026-10-21 리뷰 후속 확인
+
+자동 gate(jest, supabase unit, watch XCTest)로 동작을 고정했지만 실기기·staging에서만 볼 수 있는 항목이다.
+
+1. [ ] `PENDING` access token이 만료된 계정 상태에서 비행기 모드로 앱을 cold start한다. guest로 바뀌지 않고 기기에 있는 계정 데이터가 보이며, 연결을 복구해도 로그아웃되지 않는다.
+2. [ ] `PENDING` 오프라인에서 로그아웃한 뒤 앱을 다시 실행한다. Keychain 세션이 지워져 로그아웃 상태가 유지된다.
+3. [ ] `PENDING` 앱이 Auth를 복원하는 동안 Watch payload를 받는다. 복원이 끝난 뒤 올바른 principal partition에만 저장되고, 계획 목록이 처음 로드되기 전에는 Watch 계획이 빈 목록으로 바뀌지 않는다.
+4. [ ] `PENDING` 두 기기에서 같은 계정 로그를 각각 수정해 충돌을 만든다. 상세 화면 배너의 "이 기기 버전 유지"와 "다른 기기 버전 사용"이 각각 한 번의 원격 revision으로 수렴한다.
+5. [ ] `PENDING` 기기 B에서 계정 로그를 삭제한 뒤 기기 A를 새로고침한다. 대기 작업이 없는 A의 사본만 사라지고, A에서 수정 중이던 로그는 남는다.
+6. [ ] `PENDING` 네트워크를 끈 상태로 claim sheet를 연다. 무한 준비 스피너 대신 오류와 다시 시도가 보이고, 연결 복구 뒤 다시 시도로 선택 화면이 열린다.
+7. [ ] `PENDING` 형식이 맞지 않는 Watch payload(가능한 fault harness가 있으면)를 받는다. Settings 기기 화면에 가져오지 못한 기록 수와 안내가 보이고 정상 payload import는 막히지 않는다.
+
 ## 완료 Claim 압축과 재실행 Regression
 
 1. [ ] `PENDING` profile을 포함한 guest claim을 완료하고 local guest row/profile과 claim sidecar가 정리되는지 확인한다.

@@ -111,3 +111,6 @@ dist
 .svelte-kit
 
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+# macOS Finder metadata
+.DS_Store

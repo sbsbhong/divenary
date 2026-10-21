@@ -30,12 +30,12 @@
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Google·claim 실기기, Watch 회귀, account deletion과 개인정보 최소화 device-local 진단 기반을 P0로 두고 원격 수집을 별도 2단계로 분리한다. | 2026-08-02 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md)                                             | 모바일이 Watch 로그 삭제 묘비를 먼저 영속화하고 claim, account outbox, native Watch command와 stale import 차단을 재조정한다. | 2026-08-02 |
+| [모바일 구조](architecture/mobile.md) | SIGNED_OUT만 로컬 세션을 닫고 principal이 정해진 뒤 Watch import·계획 전송을 시작하며, 삭제 확인·편집 폐기 확인·거부 payload 목록·충돌 배너를 갖는다. | 2026-10-21 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 JavaScript와 같은 bytes의 prepared profile을 native file로 채택하며 derived-file 손상 시 raw artifact를 보존한다. | 2026-07-28 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단한다. | 2026-08-02 |
-| [동기화 흐름 구조](architecture/sync-flow.md)                                       | Device-wide deletion tombstone이 Watch stale import, guest claim 부활, account delete와 Watch artifact 제거를 분리된 idempotent 경계로 수렴시킨다. | 2026-08-02 |
-| [Watch 앱 구조](architecture/watch-app.md)                                      | Watch는 모바일 삭제 명령을 ledger에 먼저 기록하고 transfer, manifest, artifact와 saved session을 제거한 뒤 ACK하며, Wet Ready와 runtime adoption으로 recording mode를 고정하고 sampled real completion을 자동 저장한다. | 2026-09-01 |
+| [동기화 흐름 구조](architecture/sync-flow.md) | 충돌 배너의 이 기기/다른 기기 버전 선택, 충돌 행 삭제의 원격 revision 기준, soft-delete 원격 행 전파, 거부·반복 실패 Watch payload 분리와 claim 오류 status 분류를 포함한다. | 2026-10-21 |
+| [Watch 앱 구조](architecture/watch-app.md) | Watch는 실시간 수심이 현재 값일 때만 숫자를 보이고, 저장 상승 속도를 smoothing estimator로 계산하며, 스탑 적립 5초 상한·수온 60초 신선도·captureMode 기본 demo·notSubmerged 전용 Action Button 종료와 Dive Plans 화면을 갖는다. | 2026-10-21 |
 
 ## domains
 
@@ -50,7 +50,7 @@
 | [다이브 로그 도메인](domains/dive-log.md) | Watch session 삭제 identity는 `localSessionId`이며 mobile tombstone, account/claim과 Watch artifact 제거는 별도 완료 경계다. | 2026-08-02 |
 | [다이브 계획 도메인](domains/dive-planning.md) | 모바일 Planbook은 비중요 계획 알림이며, optional planned pressure는 준비 맥락 metadata일 뿐 실제 측정값이나 안전 계산 결과가 아니다. | 2026-06-28 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
-| [안전 규칙](domains/safety-rules.md) | 이 앱은 레크리에이션 다이빙 로그 companion 앱이며, debug sample과 미수신 수온을 실측값처럼 표시하지 않는다. | 2026-07-12 |
+| [안전 규칙](domains/safety-rules.md) | stale·오류 수심을 실측값처럼 표시하지 않고, 보지 못한 시간을 권장 스탑으로 적립하지 않으며, 권장 스탑 미완료는 caution 앰버로, captureMode 없는 옛 기록은 demo로 다룬다. | 2026-10-21 |
 
 ## design
 
@@ -58,7 +58,7 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | system appearance와 native sheet background를 일관되게 적용하고, 복구는 compact banner와 비파괴 retry 화면으로 표시한다. | 2026-07-22 |
+| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | amber warning은 확인이 필요한 상태에만 쓰고 권장 스탑 미완료를 빨강으로 표시하지 않으며, 목록 상태 구분, 삭제 확인, 접근성(selected·44pt·VoiceOver)과 Watch Dive Plans·동기화 라벨 규칙을 둔다. | 2026-10-21 |
 
 ## decisions
 
@@ -78,4 +78,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | 남은 claim·Watch·production gate와 함께 device-local 진단 1단계 및 동의 기반 원격 수집 2단계의 미구현·실기기 검증 항목을 기록한다. | 2026-08-02 |
+| [열린 질문](questions/open-questions.md) | 남은 claim·Watch·production gate와 진단 단계에 더해 오프라인 membership 신뢰 기한, Watch 수신 확인 대기 표시, 2026-10-21 리뷰의 실기기 항목(D14-D19)을 추적한다. | 2026-10-21 |
