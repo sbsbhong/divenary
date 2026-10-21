@@ -25,11 +25,11 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
     }
 
     @MainActor
-    func testLaterSuccessfulAppendClearsObservablePersistenceErrorAfterPendingRecovery() async throws {
+    func testLaterSuccessfulAppendClearsPersistenceErrorWithoutDuplicatingALandedSample() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let fileManager = FailFirstRecorderPendingRemovalFileManager()
-        let profileStore = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let artifactStore = DiveProfileArtifactStore(rootURL: rootURL)
+        let profileStore = FailFirstAppendAfterDelegationStore(delegate: artifactStore)
         let sensor = ManualDepthSensorProvider()
         let recorder = DiveSessionRecorder(
             sensorProvider: sensor,
@@ -48,7 +48,7 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
         await Task.yield()
 
         XCTAssertNil(recorder.recordingPersistenceError)
-        XCTAssertEqual(try profileStore.loadActiveRecordings().first?.samples.count, 2)
+        XCTAssertEqual(try artifactStore.loadActiveRecordings().first?.samples.count, 2)
         XCTAssertTrue(recorder.cancelSession())
     }
 
@@ -540,15 +540,29 @@ private final class FailingBeginProfileRecordingStore: DiveProfileRecordingStori
     }
 }
 
-private final class FailFirstRecorderPendingRemovalFileManager: FileManager {
-    private var didFailPendingRemoval = false
+/// Lets the write land, then reports a failure once, as a storage error after the bytes are written would.
+private final class FailFirstAppendAfterDelegationStore: DiveProfileRecordingStoring {
+    private let delegate: DiveProfileRecordingStoring
+    private var shouldFailNextAppend = true
 
-    override func removeItem(at URL: URL) throws {
-        if !didFailPendingRemoval, URL.lastPathComponent == "recording-pending.json" {
-            didFailPendingRemoval = true
+    init(delegate: DiveProfileRecordingStoring) {
+        self.delegate = delegate
+    }
+
+    func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
+        try delegate.beginRecording(metadata)
+    }
+
+    func append(_ sample: DepthSample, to sessionID: UUID) throws {
+        try delegate.append(sample, to: sessionID)
+        if shouldFailNextAppend {
+            shouldFailNextAppend = false
             throw CocoaError(.fileWriteNoPermission)
         }
-        try super.removeItem(at: URL)
+    }
+
+    func clearActiveRecording(sessionID: UUID) throws {
+        try delegate.clearActiveRecording(sessionID: sessionID)
     }
 }
 

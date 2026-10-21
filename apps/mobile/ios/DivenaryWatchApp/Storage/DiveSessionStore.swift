@@ -47,7 +47,7 @@ final class DiveSessionStore: ObservableObject {
         loadPlannedDives()
         self.syncTransport.onTransferStatusChanged = { [weak self] artifact, syncStatus in
             Task { @MainActor in
-                self?.updateSyncStatus(for: artifact, to: syncStatus)
+                self?.applySyncStatuses([(artifact, syncStatus)])
             }
         }
         self.syncTransport.onActivationCompleted = { [weak self] in
@@ -89,7 +89,7 @@ final class DiveSessionStore: ObservableObject {
             fileURL: profileStore.artifactURL(for: entry.artifact)
         )
         let displayRecord = entry.displayRecord.withSyncStatus(syncStatus).sanitizedForPersistence()
-        try? profileStore.updateDisplayRecord(displayRecord)
+        try? profileStore.updateSyncStatuses([displayRecord.id: syncStatus])
         sessions.removeAll { $0.id == displayRecord.id }
         sessions.insert(displayRecord, at: 0)
         // A demo recording never executes a real planned dive.
@@ -165,25 +165,41 @@ final class DiveSessionStore: ObservableObject {
         userDefaults.set(nextDiveMode.rawValue, forKey: Self.preferredDiveModeStorageKey)
     }
 
-    private func updateSyncStatus(for artifact: DiveProfileArtifactIdentity, to syncStatus: DiveSyncStatus) {
+    /// Applies transfer results in one pass: one `sessions` publish and at most one manifest write.
+    /// A late failure never downgrades a session the phone already confirmed.
+    private func applySyncStatuses(
+        _ updates: [(artifact: DiveProfileArtifactIdentity, status: DiveSyncStatus)]
+    ) {
         guard deletionRecoverySucceeded,
-              let entry = try? profileStore.loadEntries().first(where: {
-            $0.id == artifact.localSessionId
-                && $0.artifact.contentRevision == artifact.contentRevision
-                && $0.artifact.sha256 == artifact.sha256
-        }), let index = sessions.firstIndex(where: { $0.id == artifact.localSessionId }) else {
+              !updates.isEmpty,
+              let entries = try? profileStore.loadEntries() else {
             return
         }
-
-        let effectiveStatus: DiveSyncStatus
-        if syncStatus == .failed, sessions[index].syncStatus == .synced {
-            effectiveStatus = .synced
-        } else {
-            effectiveStatus = syncStatus
+        var nextSessions = sessions
+        var persistedStatuses: [UUID: DiveSyncStatus] = [:]
+        for (artifact, status) in updates {
+            guard let entry = entries.first(where: {
+                $0.id == artifact.localSessionId
+                    && $0.artifact.contentRevision == artifact.contentRevision
+                    && $0.artifact.sha256 == artifact.sha256
+            }), let index = nextSessions.firstIndex(where: { $0.id == artifact.localSessionId }) else {
+                continue
+            }
+            let effectiveStatus: DiveSyncStatus =
+                status == .failed && nextSessions[index].syncStatus == .synced ? .synced : status
+            if nextSessions[index].syncStatus != effectiveStatus {
+                nextSessions[index] = nextSessions[index].withSyncStatus(effectiveStatus)
+            }
+            if entry.displayRecord.syncStatus != effectiveStatus {
+                persistedStatuses[artifact.localSessionId] = effectiveStatus
+            }
         }
-
-        sessions[index] = sessions[index].withSyncStatus(effectiveStatus).sanitizedForPersistence()
-        try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(effectiveStatus))
+        if nextSessions.map(\.syncStatus) != sessions.map(\.syncStatus) {
+            sessions = nextSessions
+        }
+        if !persistedStatuses.isEmpty {
+            try? profileStore.updateSyncStatuses(persistedStatuses)
+        }
     }
 
     /// Sends one saved session again after its transfer failed.
@@ -197,22 +213,24 @@ final class DiveSessionStore: ObservableObject {
             artifact: entry.artifact,
             fileURL: profileStore.artifactURL(for: entry.artifact)
         )
-        updateSyncStatus(for: entry.artifact, to: syncStatus)
+        applySyncStatuses([(entry.artifact, syncStatus)])
     }
 
     private func retryPendingSyncs() {
         guard deletionRecoverySucceeded,
               let entries = try? profileStore.loadEntries() else { return }
-        for entry in entries {
-            guard entry.displayRecord.syncStatus != .synced else {
-                continue
+        let updates = entries
+            .filter { $0.displayRecord.syncStatus != .synced }
+            .map { entry in
+                (
+                    artifact: entry.artifact,
+                    status: syncTransport.enqueue(
+                        artifact: entry.artifact,
+                        fileURL: profileStore.artifactURL(for: entry.artifact)
+                    )
+                )
             }
-            let syncStatus = syncTransport.enqueue(
-                artifact: entry.artifact,
-                fileURL: profileStore.artifactURL(for: entry.artifact)
-            )
-            updateSyncStatus(for: entry.artifact, to: syncStatus)
-        }
+        applySyncStatuses(updates)
     }
 
     private func handleSessionDeletion(

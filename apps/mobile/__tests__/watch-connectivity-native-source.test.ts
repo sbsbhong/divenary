@@ -219,9 +219,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(transport).toContain('handleAcknowledgement(userInfo: message)');
     expect(envelope).toContain('watchSyncAcknowledgement');
     expect(transport).toContain('acknowledgementKind');
-    expect(store).toContain('updateSyncStatus');
+    expect(store).toContain('updateSyncStatuses');
     expect(store).toContain('onTransferStatusChanged');
-    expect(store).toMatch(/if syncStatus == \.failed, sessions\[index\]\.syncStatus == \.synced\s*\{\s*effectiveStatus = \.synced/);
+    expect(store).toMatch(/status == \.failed && nextSessions\[index\]\.syncStatus == \.synced \? \.synced : status/);
   });
 
   it('persists mobile deletion commands until the Watch acknowledges exact session removal', () => {
@@ -892,8 +892,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('RecordingDepthPolicy.sensorDisplayLimit(maximumDepthMeters: maximumDepthMeters)');
     expect(displayPolicy).toMatch(/min\(\s*maximumDepthMeters \?\? DiveDepthSupport\.supportedWatchDepthLimitMeters,\s*DiveDepthSupport\.supportedWatchDepthLimitMeters\s*\)/);
     expect(record).toContain('guard maxDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters else');
-    expect(append).toContain('currentDepth = sample.depthMeters');
-    expect(append).toContain('maxDepth = max(maxDepth, sample.depthMeters)');
+    expect(append).toContain('publish(\\.currentDepth, sample.depthMeters)');
+    expect(append).toContain('publish(\\.maxDepth, max(maxDepth, sample.depthMeters))');
     expect(append).toContain('profileSampler?.append(sample)');
     expect(append).toContain('freeEngine?.append(sample)');
     expect(append).toContain('scubaEngine?.append(sample)');

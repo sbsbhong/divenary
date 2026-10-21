@@ -66,7 +66,11 @@ struct SessionDetailView: View {
                         if let averageTemperature = summary.averageWaterTemperatureCelsius {
                             SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(averageTemperature))
                         }
-                        SummaryRow(title: String(localized: "Samples"), value: "\(summary.sampleCount)")
+                        // Saved sessions keep a short preview; the profile metadata has the full count.
+                        SummaryRow(
+                            title: String(localized: "Samples"),
+                            value: "\(session.profile?.sampleCount ?? summary.sampleCount)"
+                        )
                         SummaryRow(
                             title: String(localized: "Ascent reminder max"),
                             value: DiveFormatters.ascentRate(summary.maxAscentRateMetersPerMinute)

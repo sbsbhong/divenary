@@ -44,12 +44,13 @@ struct FreeDiveSessionEngine {
     }
 
     var snapshot: FreeDiveSessionSnapshot {
-        FreeDiveSessionSnapshot(
+        let active = activeSegment
+        return FreeDiveSessionSnapshot(
             state: state,
             segments: segments,
-            activeSegment: activeSegment,
-            diveCount: segments.count + (activeSegment == nil ? 0 : 1),
-            maxDepthMeters: max(segments.map(\.maxDepthMeters).max() ?? 0, activeSegment?.maxDepthMeters ?? 0),
+            activeSegment: active,
+            diveCount: segments.count + (active == nil ? 0 : 1),
+            maxDepthMeters: max(segments.map(\.maxDepthMeters).max() ?? 0, active?.maxDepthMeters ?? 0),
             currentDepthMeters: samples.last?.depthMeters ?? 0
         )
     }

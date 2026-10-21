@@ -16,7 +16,7 @@ struct UnsupportedDepthRecord: Codable, Equatable {
     let firstExceededAt: Date?
 
     static func from(samples: [DepthSample], payload: DiveSessionPayload) -> UnsupportedDepthRecord? {
-        let sampleMaxDepthMeters = samples.map(\.depthMeters).max() ?? 0
+        let sampleMaxDepthMeters = samples.lazy.map(\.depthMeters).max() ?? 0
         let maxDepthMeters = max(sampleMaxDepthMeters, payload.maxDepthMeters)
 
         guard maxDepthMeters > DiveDepthSupport.supportedWatchDepthLimitMeters else {

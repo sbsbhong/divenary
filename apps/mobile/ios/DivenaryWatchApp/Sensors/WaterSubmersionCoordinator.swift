@@ -184,9 +184,9 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     }
 
     func receiveEvent(state: WaterSubmersionState, at timestamp: Date) {
-        latestState = state
+        publish(\.latestState, state)
         if state == .notSubmerged {
-            latestDepthMeters = nil
+            publish(\.latestDepthMeters, nil)
             latestTemperature = nil
         }
         onEvent?(state, timestamp)
@@ -198,7 +198,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         pressureKPa: Double?,
         depthState: WaterDepthState
     ) {
-        latestDepthState = depthState
+        publish(\.latestDepthState, depthState)
         onDepthState?(depthState, timestamp)
         guard let sample = Self.makeSample(
             timestamp: timestamp,
@@ -208,12 +208,12 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
             depthState: depthState
         ) else {
             if depthState == .notSubmerged || depthState == .sensorDepthError {
-                latestDepthMeters = nil
+                publish(\.latestDepthMeters, nil)
             }
             return
         }
 
-        latestDepthMeters = sample.depthMeters
+        publish(\.latestDepthMeters, sample.depthMeters)
         onSample?(sample)
     }
 
@@ -243,7 +243,17 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     }
 
     private func receiveMaximumDepth(_ maximumDepthMeters: Double?) {
-        self.maximumDepthMeters = maximumDepthMeters
+        publish(\.maximumDepthMeters, maximumDepthMeters)
+    }
+
+    /// Sensor callbacks repeat unchanged values; publishing them would re-render every observer.
+    private func publish<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<WaterSubmersionCoordinator, Value>,
+        _ value: Value
+    ) {
+        if self[keyPath: keyPath] != value {
+            self[keyPath: keyPath] = value
+        }
     }
 
     #if DEBUG

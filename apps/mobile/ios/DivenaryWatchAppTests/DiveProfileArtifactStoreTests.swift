@@ -69,57 +69,69 @@ final class DiveProfileArtifactStoreTests: XCTestCase {
         XCTAssertEqual(recovered.first?.samples.map(\.depthMeters), [3, 8])
     }
 
-    func testRetryAfterFullyWrittenAppendFailureDoesNotDuplicateSample() throws {
+    func testRetryOfALandedSampleDoesNotDuplicateIt() throws {
         let rootURL = temporaryDirectory()
-        let fileManager = FailFirstPendingRemovalFileManager()
-        let store = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let store = DiveProfileArtifactStore(rootURL: rootURL)
         let metadata = makeMetadata(
             sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000113")!
         )
         let sample = EngineTestFixtures.sample(0.8, depth: 6)
         try store.beginRecording(metadata)
-
-        XCTAssertThrowsError(try store.append(sample, to: metadata.localSessionId))
-        XCTAssertTrue(
-            fileManager.fileExists(
-                atPath: sessionDirectory(rootURL: rootURL, sessionID: metadata.localSessionId)
-                    .appendingPathComponent("recording-pending.json")
-                    .path
-            )
-        )
-
+        try store.append(sample, to: metadata.localSessionId)
         XCTAssertNoThrow(try store.append(sample, to: metadata.localSessionId))
 
-        let recovered = try store.loadActiveRecordings()
+        // A store that did not see the write succeed, as after a reported failure, re-reads the journal.
+        let retryingStore = DiveProfileArtifactStore(rootURL: rootURL)
+        XCTAssertNoThrow(try retryingStore.append(sample, to: metadata.localSessionId))
+
+        let recovered = try retryingStore.loadActiveRecordings()
         XCTAssertEqual(recovered.first?.samples.count, 1)
         XCTAssertEqual(recovered.first?.samples.first?.timestamp, sample.timestamp)
         XCTAssertEqual(recovered.first?.samples.first?.depthMeters, sample.depthMeters)
     }
 
-    func testRetryRepairsPartialJournalWriteFromPendingAppend() throws {
+    func testReopeningRepairsATornFinalLineBeforeAppending() throws {
         let rootURL = temporaryDirectory()
-        let fileManager = FailFirstPendingRemovalFileManager()
-        let store = DiveProfileArtifactStore(rootURL: rootURL, fileManager: fileManager)
+        let store = DiveProfileArtifactStore(rootURL: rootURL)
         let metadata = makeMetadata(
             sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000114")!
         )
-        let sample = EngineTestFixtures.sample(0.8, depth: 7)
+        let first = EngineTestFixtures.sample(0.8, depth: 7)
+        let second = EngineTestFixtures.sample(1.8, depth: 8)
         try store.beginRecording(metadata)
-        XCTAssertThrowsError(try store.append(sample, to: metadata.localSessionId))
+        try store.append(first, to: metadata.localSessionId)
 
-        let sessionURL = sessionDirectory(rootURL: rootURL, sessionID: metadata.localSessionId)
-        let journalURL = sessionURL.appendingPathComponent("recording.ndjson")
-        let completeLine = try Data(contentsOf: journalURL)
-        XCTAssertGreaterThan(completeLine.count, 1)
-        try Data(completeLine.prefix(completeLine.count / 2)).write(to: journalURL, options: .atomic)
+        let journalURL = sessionDirectory(rootURL: rootURL, sessionID: metadata.localSessionId)
+            .appendingPathComponent("recording.ndjson")
+        let handle = try FileHandle(forWritingTo: journalURL)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: try JSONEncoder().encode(second).prefix(5))
+        try handle.close()
 
-        XCTAssertNoThrow(try store.append(sample, to: metadata.localSessionId))
+        let reopenedStore = DiveProfileArtifactStore(rootURL: rootURL)
+        XCTAssertNoThrow(try reopenedStore.append(second, to: metadata.localSessionId))
 
-        let recovered = try store.loadActiveRecordings()
-        XCTAssertEqual(recovered.first?.samples.count, 1)
-        XCTAssertEqual(recovered.first?.samples.first?.timestamp, sample.timestamp)
-        XCTAssertEqual(recovered.first?.samples.first?.depthMeters, sample.depthMeters)
+        let recovered = try reopenedStore.loadActiveRecordings()
+        XCTAssertEqual(recovered.first?.samples.map(\.depthMeters), [7, 8])
         XCTAssertEqual(try Data(contentsOf: journalURL).last, 0x0A)
+    }
+
+    func testDiscardsALegacyPendingAppendSidecar() throws {
+        let rootURL = temporaryDirectory()
+        let store = DiveProfileArtifactStore(rootURL: rootURL)
+        let metadata = makeMetadata(
+            sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000117")!
+        )
+        try store.beginRecording(metadata)
+        try store.append(EngineTestFixtures.sample(0.8, depth: 4), to: metadata.localSessionId)
+        let sidecarURL = sessionDirectory(rootURL: rootURL, sessionID: metadata.localSessionId)
+            .appendingPathComponent("recording-pending.json")
+        try Data("{}".utf8).write(to: sidecarURL)
+
+        let recovered = try DiveProfileArtifactStore(rootURL: rootURL).loadActiveRecordings()
+
+        XCTAssertEqual(recovered.first?.samples.map(\.depthMeters), [4])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sidecarURL.path))
     }
 
     func testLoadDropsOnlyTruncatedFinalRecordAndPreservesValidJournalPrefix() throws {
@@ -407,18 +419,6 @@ private final class FailingJournalCreationFileManager: FileManager {
             return false
         }
         return super.createFile(atPath: path, contents: data, attributes: attr)
-    }
-}
-
-private final class FailFirstPendingRemovalFileManager: FileManager {
-    private var didFailPendingRemoval = false
-
-    override func removeItem(at URL: URL) throws {
-        if !didFailPendingRemoval, URL.lastPathComponent == "recording-pending.json" {
-            didFailPendingRemoval = true
-            throw CocoaError(.fileWriteNoPermission)
-        }
-        try super.removeItem(at: URL)
     }
 }
 

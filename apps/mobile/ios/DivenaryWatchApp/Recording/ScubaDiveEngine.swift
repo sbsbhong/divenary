@@ -4,7 +4,11 @@ struct ScubaDiveEngine {
     private let sessionID: UUID
     private let startedAt: Date
     private let gasLabel: String?
-    private var samples: [DepthSample] = []
+    private var currentDepth: Double = 0
+    private var sampleCount = 0
+    private var depthSum: Double = 0
+    private var temperatureCount = 0
+    private var temperatureSum: Double = 0
     private var safetyStopController = SafetyStopController()
     private var ascentRateEstimator = DisplayAscentRateEstimator()
     private var maxDepthMeters: Double = 0
@@ -18,7 +22,7 @@ struct ScubaDiveEngine {
     }
 
     var currentDepthMeters: Double {
-        samples.last?.depthMeters ?? 0
+        currentDepth
     }
 
     var safetyStopRecord: SafetyStopRecord {
@@ -30,7 +34,13 @@ struct ScubaDiveEngine {
             return
         }
 
-        samples.append(sample)
+        currentDepth = sample.depthMeters
+        sampleCount += 1
+        depthSum += sample.depthMeters
+        if let temperature = sample.waterTemperatureCelsius {
+            temperatureCount += 1
+            temperatureSum += temperature
+        }
         maxDepthMeters = max(maxDepthMeters, sample.depthMeters)
         latestAscentRateMetersPerMinute = ascentRateEstimator.append(sample)
         maxAscentRateMetersPerMinute = max(maxAscentRateMetersPerMinute, latestAscentRateMetersPerMinute)
@@ -57,14 +67,14 @@ struct ScubaDiveEngine {
         )
     }
 
+    // Running sums add samples in arrival order, so the averages match summing a stored array.
     private var averageDepth: Double {
-        guard !samples.isEmpty else { return 0 }
-        return samples.reduce(0) { $0 + $1.depthMeters } / Double(samples.count)
+        guard sampleCount > 0 else { return 0 }
+        return depthSum / Double(sampleCount)
     }
 
     private var averageTemperature: Double? {
-        let temperatures = samples.compactMap(\.waterTemperatureCelsius)
-        guard !temperatures.isEmpty else { return nil }
-        return temperatures.reduce(0, +) / Double(temperatures.count)
+        guard temperatureCount > 0 else { return nil }
+        return temperatureSum / Double(temperatureCount)
     }
 }

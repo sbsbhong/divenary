@@ -57,21 +57,44 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         var entries: [DiveProfileManifestEntry]
     }
 
-    private struct PendingJournalAppend: Codable {
-        let journalOffset: UInt64
-        let line: Data
-    }
-
     private struct DeletedSessionLedger: Codable {
         let formatVersion: Int
         let sessionIds: [UUID]
     }
+
+    /// Identifies one version of a file, so a decoded copy can be reused until the file changes.
+    private struct FileStamp: Equatable {
+        let modificationDate: Date
+        let byteCount: Int
+    }
+
+    /// The recording journal of an active session, kept open while samples arrive.
+    private final class OpenJournal {
+        let handle: FileHandle
+        /// Bytes known to hold complete sample lines. A failed write may leave bytes after it.
+        var durableLength: UInt64
+        var lastSample: DepthSample?
+        var appendsSinceSync = 0
+
+        init(handle: FileHandle, durableLength: UInt64, lastSample: DepthSample?) {
+            self.handle = handle
+            self.durableLength = durableLength
+            self.lastSample = lastSample
+        }
+    }
+
+    /// Samples arrive about once a second. Flushing to storage every few samples bounds what an
+    /// OS crash can lose; an app crash loses nothing because written bytes stay in the OS cache.
+    private static let appendsPerSync = 10
 
     private let rootURL: URL
     private let fileManager: FileManager
     private let makeRevision: () -> String
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
+    private var cachedManifest: (stamp: FileStamp, entries: [DiveProfileManifestEntry])?
+    private var cachedDeletedSessionIds: (stamp: FileStamp, sessionIds: Set<UUID>)?
+    private var openJournals: [UUID: OpenJournal] = [:]
 
     init(
         rootURL: URL? = nil,
@@ -115,7 +138,10 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             sampleCount: profiledRecord.samples.count,
             relativePath: relativePath
         )
-        try verifyArtifact(identity)
+        // The identity was computed from these exact bytes, so reading them back proves the file.
+        guard try Data(contentsOf: finalURL) == artifactData else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
 
         let entry = DiveProfileManifestEntry(
             displayRecord: profiledRecord.withSamples(Self.makePreview(from: profiledRecord.samples)),
@@ -131,15 +157,23 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         return entry
     }
 
+    /// Decodes the manifest once and reuses it until the file changes on disk.
     func loadEntries() throws -> [DiveProfileManifestEntry] {
         guard fileManager.fileExists(atPath: manifestURL.path) else {
+            cachedManifest = nil
             return []
+        }
+        let stamp = fileStamp(at: manifestURL)
+        if let cachedManifest, cachedManifest.stamp == stamp {
+            return cachedManifest.entries
         }
         let manifest = try decoder.decode(Manifest.self, from: Data(contentsOf: manifestURL))
         guard manifest.formatVersion == 1 else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        return manifest.entries.sorted { $0.displayRecord.startedAt > $1.displayRecord.startedAt }
+        let entries = Self.newestFirst(manifest.entries)
+        cachedManifest = stamp.map { (stamp: $0, entries: entries) }
+        return entries
     }
 
     func artifactURL(for identity: DiveProfileArtifactIdentity) -> URL {
@@ -164,6 +198,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
 
         let sessionURL = sessionDirectory(for: localSessionId)
+        closeJournal(for: localSessionId)
         if fileManager.fileExists(atPath: sessionURL.path) {
             try fileManager.removeItem(at: sessionURL)
         }
@@ -181,8 +216,13 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
     }
 
+    /// Finishes deletions an earlier run recorded but did not complete. Finished ones stay in the
+    /// ledger as tombstones and are skipped without touching the manifest.
     func resumePendingDeletions() throws {
-        for localSessionId in try loadDeletedSessionIds() {
+        let remainingIds = Set(try loadEntries().map(\.id))
+        for localSessionId in try loadDeletedSessionIds()
+        where remainingIds.contains(localSessionId)
+            || fileManager.fileExists(atPath: sessionDirectory(for: localSessionId).path) {
             try deleteSession(localSessionId: localSessionId)
         }
     }
@@ -332,6 +372,12 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             else {
                 throw CocoaError(.fileWriteUnknown)
             }
+            closeJournal(for: metadata.localSessionId)
+            openJournals[metadata.localSessionId] = OpenJournal(
+                handle: try FileHandle(forWritingTo: journalURL),
+                durableLength: 0,
+                lastSample: nil
+            )
         } catch {
             let setupError = error
             try? clearActiveRecording(sessionID: metadata.localSessionId)
@@ -339,28 +385,33 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
     }
 
+    /// Appends one sample line to the session's journal. The journal stays open between samples.
+    /// After a failed write the journal is re-read from disk on the next call, which drops a torn
+    /// line and skips a retried sample whose line had already landed.
     func append(_ sample: DepthSample, to sessionID: UUID) throws {
-        guard try !isSessionDeleted(sessionID),
-              sample.isValidRecordingSample,
-              fileManager.fileExists(atPath: activeMetadataURL(for: sessionID).path),
-              fileManager.fileExists(atPath: recordingJournalURL(for: sessionID).path)
-        else {
+        guard try !isSessionDeleted(sessionID), sample.isValidRecordingSample else {
             throw CocoaError(.fileNoSuchFile)
         }
-
-        let line = try journalLine(for: sample)
-        if let resolvedSample = try resolvePendingAppend(sessionID: sessionID), resolvedSample == sample {
+        let journal = try openJournal(for: sessionID)
+        if journal.lastSample == sample {
             return
         }
 
-        let journalURL = recordingJournalURL(for: sessionID)
-        let pending = PendingJournalAppend(
-            journalOffset: try journalLength(at: journalURL),
-            line: line
-        )
-        try encoder.encode(pending).write(to: pendingAppendURL(for: sessionID), options: .atomic)
-        try appendPendingLine(pending, to: journalURL)
-        try fileManager.removeItem(at: pendingAppendURL(for: sessionID))
+        let line = try journalLine(for: sample)
+        do {
+            try journal.handle.seek(toOffset: journal.durableLength)
+            try journal.handle.write(contentsOf: line)
+            journal.appendsSinceSync += 1
+            if journal.appendsSinceSync >= Self.appendsPerSync {
+                try journal.handle.synchronize()
+                journal.appendsSinceSync = 0
+            }
+        } catch {
+            closeJournal(for: sessionID)
+            throw error
+        }
+        journal.durableLength += UInt64(line.count)
+        journal.lastSample = sample
     }
 
     func loadActiveRecordings() throws -> [ActiveDiveRecording] {
@@ -393,7 +444,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
                     try fileManager.removeItem(at: directory)
                     continue
                 }
-                _ = try resolvePendingAppend(sessionID: metadata.localSessionId)
+                try discardLegacyPendingAppend(sessionID: metadata.localSessionId)
                 let journalURL = directory.appendingPathComponent("recording.ndjson")
                 let samples = try loadJournalSamples(at: journalURL)
                 recordings.append(ActiveDiveRecording(metadata: metadata, samples: samples))
@@ -407,6 +458,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     }
 
     func clearActiveRecording(sessionID: UUID) throws {
+        closeJournal(for: sessionID)
         for url in [
             pendingAppendURL(for: sessionID),
             recordingJournalURL(for: sessionID),
@@ -417,21 +469,24 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         }
     }
 
-    func updateDisplayRecord(_ displayRecord: DiveSessionRecord) throws {
-        guard try !isSessionDeleted(displayRecord.id) else {
-            throw CocoaError(.fileWriteFileExists)
-        }
+    /// Records new sync statuses in one manifest write. Deleted sessions and unchanged
+    /// statuses are skipped, so a repeated acknowledgement writes nothing.
+    func updateSyncStatuses(_ statuses: [UUID: DiveSyncStatus]) throws {
         var entries = try loadEntries()
-        guard let index = entries.firstIndex(where: { $0.id == displayRecord.id }) else {
-            throw CocoaError(.fileNoSuchFile)
+        var changed = false
+        for index in entries.indices {
+            let sessionID = entries[index].id
+            guard let status = statuses[sessionID],
+                  entries[index].displayRecord.syncStatus != status,
+                  try !isSessionDeleted(sessionID) else {
+                continue
+            }
+            entries[index].displayRecord = entries[index].displayRecord.withSyncStatus(status)
+            changed = true
         }
-        let existing = entries[index].displayRecord
-        var updated = displayRecord.withSamples(existing.samples)
-        if let profile = existing.profile {
-            updated = updated.withProfile(profile)
+        if changed {
+            try save(entries: entries)
         }
-        entries[index].displayRecord = updated.sanitizedForPersistence()
-        try save(entries: entries)
     }
 
     private var manifestURL: URL {
@@ -450,9 +505,15 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         try saveDeletedSessionIds(sessionIds)
     }
 
+    /// Every recorded sample checks the ledger, so it is decoded once and reused until it changes.
     private func loadDeletedSessionIds() throws -> Set<UUID> {
         guard fileManager.fileExists(atPath: deletionLedgerURL.path) else {
+            cachedDeletedSessionIds = nil
             return []
+        }
+        let stamp = fileStamp(at: deletionLedgerURL)
+        if let cachedDeletedSessionIds, cachedDeletedSessionIds.stamp == stamp {
+            return cachedDeletedSessionIds.sessionIds
         }
         let ledger = try decoder.decode(
             DeletedSessionLedger.self,
@@ -462,7 +523,9 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
               Set(ledger.sessionIds).count == ledger.sessionIds.count else {
             throw CocoaError(.fileReadCorruptFile)
         }
-        return Set(ledger.sessionIds)
+        let sessionIds = Set(ledger.sessionIds)
+        cachedDeletedSessionIds = stamp.map { (stamp: $0, sessionIds: sessionIds) }
+        return sessionIds
     }
 
     private func saveDeletedSessionIds(_ sessionIds: Set<UUID>) throws {
@@ -485,7 +548,24 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     private func save(entries: [DiveProfileManifestEntry]) throws {
         try fileManager.createDirectory(at: rootURL, withIntermediateDirectories: true)
         let manifest = Manifest(formatVersion: 1, entries: entries)
+        cachedManifest = nil
         try encoder.encode(manifest).write(to: manifestURL, options: .atomic)
+        cachedManifest = fileStamp(at: manifestURL).map {
+            (stamp: $0, entries: Self.newestFirst(entries))
+        }
+    }
+
+    private func fileStamp(at url: URL) -> FileStamp? {
+        guard let attributes = try? fileManager.attributesOfItem(atPath: url.path),
+              let modificationDate = attributes[.modificationDate] as? Date,
+              let byteCount = (attributes[.size] as? NSNumber)?.intValue else {
+            return nil
+        }
+        return FileStamp(modificationDate: modificationDate, byteCount: byteCount)
+    }
+
+    private static func newestFirst(_ entries: [DiveProfileManifestEntry]) -> [DiveProfileManifestEntry] {
+        entries.sorted { $0.displayRecord.startedAt > $1.displayRecord.startedAt }
     }
 
     private func sessionDirectory(for sessionID: UUID) -> URL {
@@ -512,71 +592,44 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         return line
     }
 
-    private func journalLength(at journalURL: URL) throws -> UInt64 {
-        let handle = try FileHandle(forWritingTo: journalURL)
-        defer { try? handle.close() }
-        return try handle.seekToEnd()
-    }
-
-    private func resolvePendingAppend(sessionID: UUID) throws -> DepthSample? {
-        let pendingURL = pendingAppendURL(for: sessionID)
-        guard fileManager.fileExists(atPath: pendingURL.path) else {
-            return nil
+    /// Returns the open journal of an active recording, re-reading it from disk when this store
+    /// has not opened it yet or a write failed.
+    private func openJournal(for sessionID: UUID) throws -> OpenJournal {
+        if let journal = openJournals[sessionID] {
+            return journal
         }
-
-        let pending = try decoder.decode(
-            PendingJournalAppend.self,
-            from: Data(contentsOf: pendingURL)
-        )
-        guard pending.line.last == 0x0A,
-              let sample = try? decoder.decode(DepthSample.self, from: pending.line.dropLast()),
-              sample.isValidRecordingSample
-        else {
-            throw CocoaError(.fileReadCorruptFile)
-        }
-
         let journalURL = recordingJournalURL(for: sessionID)
-        let journalLength = try journalLength(at: journalURL)
-        if journalLength == pending.journalOffset {
-            try appendPendingLine(pending, to: journalURL)
-        } else if journalLength == pending.journalOffset + UInt64(pending.line.count) {
-            let handle = try FileHandle(forReadingFrom: journalURL)
-            defer { try? handle.close() }
-            try handle.seek(toOffset: pending.journalOffset)
-            guard try handle.readToEnd() == pending.line else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-        } else if journalLength > pending.journalOffset,
-                  journalLength < pending.journalOffset + UInt64(pending.line.count) {
-            let readHandle = try FileHandle(forReadingFrom: journalURL)
-            try readHandle.seek(toOffset: pending.journalOffset)
-            let partialLine = try readHandle.readToEnd() ?? Data()
-            try readHandle.close()
-            guard pending.line.starts(with: partialLine) else {
-                throw CocoaError(.fileReadCorruptFile)
-            }
-
-            let writeHandle = try FileHandle(forWritingTo: journalURL)
-            try writeHandle.truncate(atOffset: pending.journalOffset)
-            try writeHandle.synchronize()
-            try writeHandle.close()
-            try appendPendingLine(pending, to: journalURL)
-        } else {
-            throw CocoaError(.fileReadCorruptFile)
+        guard fileManager.fileExists(atPath: activeMetadataURL(for: sessionID).path),
+              fileManager.fileExists(atPath: journalURL.path) else {
+            throw CocoaError(.fileNoSuchFile)
         }
-
-        try fileManager.removeItem(at: pendingURL)
-        return sample
+        try discardLegacyPendingAppend(sessionID: sessionID)
+        let durableSamples = try loadJournalSamples(at: journalURL)
+        let handle = try FileHandle(forWritingTo: journalURL)
+        let journal = OpenJournal(
+            handle: handle,
+            durableLength: try handle.seekToEnd(),
+            lastSample: durableSamples.last
+        )
+        openJournals[sessionID] = journal
+        return journal
     }
 
-    private func appendPendingLine(_ pending: PendingJournalAppend, to journalURL: URL) throws {
-        let handle = try FileHandle(forWritingTo: journalURL)
-        defer { try? handle.close() }
-        guard try handle.seekToEnd() == pending.journalOffset else {
-            throw CocoaError(.fileReadCorruptFile)
+    private func closeJournal(for sessionID: UUID) {
+        guard let journal = openJournals.removeValue(forKey: sessionID) else {
+            return
         }
-        try handle.write(contentsOf: pending.line)
-        try handle.synchronize()
+        try? journal.handle.synchronize()
+        try? journal.handle.close()
+    }
+
+    /// Older builds staged each sample in a sidecar before appending it. Reading the journal
+    /// already repairs a torn final line, so a leftover sidecar is only removed.
+    private func discardLegacyPendingAppend(sessionID: UUID) throws {
+        let pendingURL = pendingAppendURL(for: sessionID)
+        if fileManager.fileExists(atPath: pendingURL.path) {
+            try fileManager.removeItem(at: pendingURL)
+        }
     }
 
     private func loadJournalSamples(at journalURL: URL) throws -> [DepthSample] {

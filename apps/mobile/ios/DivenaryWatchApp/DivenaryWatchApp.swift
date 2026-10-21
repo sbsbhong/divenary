@@ -6,18 +6,20 @@ struct DivenaryWatchApp: App {
     @WKApplicationDelegateAdaptor(DivenaryWatchApplicationDelegate.self)
     private var applicationDelegate
 
-    @StateObject private var sessionStore: DiveSessionStore
-    @StateObject private var water: WaterSubmersionCoordinator
-    @StateObject private var realRecorder: DiveSessionRecorder
-    @StateObject private var realCoordinator: RealDiveSessionCoordinator
+    // DiveAppServices keeps these alive for the whole process. The app root holds them without
+    // observing, so a published change re-renders only the views that read it.
+    private let sessionStore: DiveSessionStore
+    private let water: WaterSubmersionCoordinator
+    private let realRecorder: DiveSessionRecorder
+    private let realCoordinator: RealDiveSessionCoordinator
 
     init() {
         let services = DiveAppServices.shared
         AppDependencyManager.shared.add(dependency: services.actionButtonBridge)
-        _sessionStore = StateObject(wrappedValue: services.store)
-        _water = StateObject(wrappedValue: services.water)
-        _realRecorder = StateObject(wrappedValue: services.realRecorder)
-        _realCoordinator = StateObject(wrappedValue: services.realCoordinator)
+        sessionStore = services.store
+        water = services.water
+        realRecorder = services.realRecorder
+        realCoordinator = services.realCoordinator
     }
 
     var body: some Scene {

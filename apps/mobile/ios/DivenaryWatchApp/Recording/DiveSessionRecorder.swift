@@ -12,7 +12,8 @@ enum LiveDepthSignal: Equatable {
 
 @MainActor
 final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
-    @Published private(set) var samples: [DepthSample] = []
+    /// The 1 Hz profile of the current session. No view shows it, so it is not published.
+    private(set) var samples: [DepthSample] = []
     @Published private(set) var currentDepth: Double = 0
     @Published private(set) var maxDepth: Double = 0
     @Published private(set) var waterTemperatureCelsius: Double?
@@ -22,7 +23,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var safetyStopRemainingSeconds: TimeInterval = 180
     @Published private(set) var safetyStopActive = false
     @Published private(set) var ascentWarningActive = false
-    @Published private(set) var currentRecordPayload: DiveSessionPayload?
+    private(set) var currentRecordPayload: DiveSessionPayload?
     @Published private(set) var freeSnapshot: FreeDiveSessionSnapshot?
     @Published private(set) var scubaSafetyStop: SafetyStopRecord = .legacyUnknown
     @Published private(set) var isRecording = false
@@ -314,13 +315,14 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             )
         }
         lastRawSample = sample
-        currentDepth = sample.depthMeters
-        maxDepth = max(maxDepth, sample.depthMeters)
+        // Each published change re-renders the recording screen, so only changed values are set.
+        publish(\.currentDepth, sample.depthMeters)
         if let measuredTemperature = sample.waterTemperatureCelsius {
-            waterTemperatureCelsius = measuredTemperature
+            publish(\.waterTemperatureCelsius, measuredTemperature)
         }
-        latestAscentRateMetersPerMinute = displayAscentRateEstimator.append(sample)
-        ascentWarningActive = latestAscentRateMetersPerMinute > recommendedAscentRateMetersPerMinute
+        let ascentRate = displayAscentRateEstimator.append(sample)
+        publish(\.latestAscentRateMetersPerMinute, ascentRate)
+        publish(\.ascentWarningActive, ascentRate > recommendedAscentRateMetersPerMinute)
 
         if let finalized = profileSampler?.append(sample) {
             persistProfileSample(finalized)
@@ -329,19 +331,30 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         switch activePlan.diveMode {
         case .freedive:
             freeEngine?.append(sample)
-            freeSnapshot = freeEngine?.snapshot
-            maxDepth = max(maxDepth, sample.depthMeters, freeSnapshot?.maxDepthMeters ?? 0)
-            scubaSafetyStop = .legacyUnknown
-            safetyStopRemainingSeconds = SafetyStopRecord.legacyUnknown.remainingSeconds
-            safetyStopActive = false
+            let snapshot = freeEngine?.snapshot
+            publish(\.freeSnapshot, snapshot)
+            publish(\.maxDepth, max(maxDepth, sample.depthMeters, snapshot?.maxDepthMeters ?? 0))
+            publish(\.scubaSafetyStop, .legacyUnknown)
+            publish(\.safetyStopRemainingSeconds, SafetyStopRecord.legacyUnknown.remainingSeconds)
+            publish(\.safetyStopActive, false)
         case .scuba:
             scubaEngine?.append(sample)
-            scubaSafetyStop = scubaEngine?.safetyStopRecord ?? .legacyUnknown
-            maxDepth = max(maxDepth, sample.depthMeters)
-            safetyStopRemainingSeconds = scubaSafetyStop.remainingSeconds
-            safetyStopActive = scubaSafetyStop.status == .active
+            let safetyStop = scubaEngine?.safetyStopRecord ?? .legacyUnknown
+            publish(\.scubaSafetyStop, safetyStop)
+            publish(\.maxDepth, max(maxDepth, sample.depthMeters))
+            publish(\.safetyStopRemainingSeconds, safetyStop.remainingSeconds)
+            publish(\.safetyStopActive, safetyStop.status == .active)
         }
         refreshLiveDepthSignal()
+    }
+
+    private func publish<Value: Equatable>(
+        _ keyPath: ReferenceWritableKeyPath<DiveSessionRecorder, Value>,
+        _ value: Value
+    ) {
+        if self[keyPath: keyPath] != value {
+            self[keyPath: keyPath] = value
+        }
     }
 
     private func updateElapsedTime() {
@@ -382,7 +395,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         }
 
         unconfirmedProfileSamples = []
-        recordingPersistenceError = nil
+        publish(\.recordingPersistenceError, nil)
     }
 
     private func normalizeFreediveSession(

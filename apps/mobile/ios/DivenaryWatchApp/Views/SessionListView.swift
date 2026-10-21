@@ -5,7 +5,7 @@ struct SessionListView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 10) {
+            LazyVStack(spacing: 10) {
                 if store.sessions.isEmpty {
                     EmptySessionsView()
                 } else {
@@ -50,11 +50,10 @@ private struct EmptySessionsView: View {
 private struct SessionRow: View {
     let session: DiveSessionRecord
 
-    private var summary: DiveSessionSummary {
-        session.summary
-    }
-
     var body: some View {
+        // The summary replays the depth profile, so it is computed once per render.
+        let summary = session.summary
+        let profileColor = Self.profileColor(maxDepthMeters: summary.maxDepthMeters)
         InstrumentCard {
             HStack(alignment: .center, spacing: 7) {
                 DepthProfileSparkline(samples: session.samples, color: profileColor)
@@ -103,12 +102,12 @@ private struct SessionRow: View {
         }
     }
 
-    private var profileColor: Color {
-        if summary.maxDepthMeters >= 20 {
+    private static func profileColor(maxDepthMeters: Double) -> Color {
+        if maxDepthMeters >= 20 {
             return DiveWatchTheme.primary
         }
 
-        if summary.maxDepthMeters >= 10 {
+        if maxDepthMeters >= 10 {
             return DiveWatchTheme.primary
         }
 

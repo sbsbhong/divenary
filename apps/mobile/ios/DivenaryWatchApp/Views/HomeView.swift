@@ -2,8 +2,10 @@ import SwiftUI
 
 struct HomeView: View {
     @ObservedObject var store: DiveSessionStore
-    @ObservedObject var water: WaterSubmersionCoordinator
-    @ObservedObject var realRecorder: DiveSessionRecorder
+    // Home only forwards these and reacts to submersion changes, so it does not observe them:
+    // depth samples arrive every second and would rebuild this screen under the recording view.
+    let water: WaterSubmersionCoordinator
+    let realRecorder: DiveSessionRecorder
     @ObservedObject var realCoordinator: RealDiveSessionCoordinator
     let actionButtonBridge: DiveActionButtonBridge
     let actionButtonDonor: DiveActionButtonDonating
@@ -71,13 +73,15 @@ struct HomeView: View {
                     }
 
                     NavigationLink {
-                        SimulatedRecordingFlowView(
-                            store: store,
-                            plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
-                            recordingMode: .demo,
-                            actionButtonBridge: actionButtonBridge,
-                            actionButtonDonor: actionButtonDonor
-                        )
+                        DeferredView {
+                            SimulatedRecordingFlowView(
+                                store: store,
+                                plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
+                                recordingMode: .demo,
+                                actionButtonBridge: actionButtonBridge,
+                                actionButtonDonor: actionButtonDonor
+                            )
+                        }
                     } label: {
                         StartSessionCard(
                             title: "Demo",
@@ -91,13 +95,15 @@ struct HomeView: View {
                     #if DEBUG
                     if showsDebugControls {
                         NavigationLink {
-                            SimulatedRecordingFlowView(
-                                store: store,
-                                plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
-                                recordingMode: .debugTest,
-                                actionButtonBridge: actionButtonBridge,
-                                actionButtonDonor: actionButtonDonor
-                            )
+                            DeferredView {
+                                SimulatedRecordingFlowView(
+                                    store: store,
+                                    plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
+                                    recordingMode: .debugTest,
+                                    actionButtonBridge: actionButtonBridge,
+                                    actionButtonDonor: actionButtonDonor
+                                )
+                            }
                         } label: {
                             StartSessionCard(
                                 title: "Test Freedive",
@@ -110,13 +116,15 @@ struct HomeView: View {
                         .buttonStyle(.plain)
 
                         NavigationLink {
-                            SimulatedRecordingFlowView(
-                                store: store,
-                                plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
-                                recordingMode: .debugTest,
-                                actionButtonBridge: actionButtonBridge,
-                                actionButtonDonor: actionButtonDonor
-                            )
+                            DeferredView {
+                                SimulatedRecordingFlowView(
+                                    store: store,
+                                    plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
+                                    recordingMode: .debugTest,
+                                    actionButtonBridge: actionButtonBridge,
+                                    actionButtonDonor: actionButtonDonor
+                                )
+                            }
                         } label: {
                             StartSessionCard(
                                 title: "Test Scuba",
@@ -171,7 +179,7 @@ struct HomeView: View {
                 autoLaunchAuthorization.refresh()
                 realCoordinator.receiveWaterState(water.latestState)
             }
-            .onChange(of: water.latestState) { _, nextState in
+            .onReceive(water.$latestState.removeDuplicates().dropFirst()) { nextState in
                 realCoordinator.receiveWaterState(nextState)
             }
             .onChange(of: scenePhase) { _, nextPhase in
@@ -449,9 +457,12 @@ private struct StartSessionCard: View {
 
 private struct LatestSessionCard: View {
     let session: DiveSessionRecord
+    /// The summary replays the depth profile, so it is computed once per view value.
+    private let summary: DiveSessionSummary
 
-    private var summary: DiveSessionSummary {
-        session.summary
+    init(session: DiveSessionRecord) {
+        self.session = session
+        summary = session.summary
     }
 
     var body: some View {
@@ -501,5 +512,15 @@ private struct LatestMetric: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
+    }
+}
+
+/// Builds its content only when shown. A `NavigationLink` destination is otherwise created on
+/// every render of the list, and the demo flow creates its own recorder and storage when made.
+private struct DeferredView<Content: View>: View {
+    let content: () -> Content
+
+    var body: some View {
+        content()
     }
 }

@@ -4,9 +4,14 @@ struct SessionSummaryContent: View {
     let session: DiveSessionRecord
     let statusTitle: LocalizedStringKey
     let footer: LocalizedStringKey?
+    /// The summary replays the whole depth profile, so it is computed once per view value.
+    private let summary: DiveSessionSummary
 
-    private var summary: DiveSessionSummary {
-        session.summary
+    init(session: DiveSessionRecord, statusTitle: LocalizedStringKey, footer: LocalizedStringKey?) {
+        self.session = session
+        self.statusTitle = statusTitle
+        self.footer = footer
+        summary = session.summary
     }
 
     var body: some View {
