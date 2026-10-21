@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { Box } from '../../components/ui/box';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
@@ -50,6 +51,7 @@ type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
+  const palette = useGluestackColors();
   const [route, setRoute] = React.useState<LocalRoute>('list');
   const [draftEntry, setDraftEntry] = React.useState<DiveLogEntry | undefined>();
   const [syncToastMessage, setSyncToastMessage] = React.useState<string | undefined>();
@@ -208,7 +210,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor="#0a84ff" />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="md">

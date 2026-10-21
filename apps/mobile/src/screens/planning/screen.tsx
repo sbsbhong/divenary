@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
 import { Box } from '../../components/ui/box';
@@ -47,6 +48,7 @@ type PlanFilter = 'all' | DivePlanStatus;
 
 export default function PlanningScreen(props: PlanningScreenProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
+  const palette = useGluestackColors();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const plans = React.useMemo(() => props.plans ?? [], [props.plans]);
   const [route, setRoute] = React.useState<LocalRoute>('list');
@@ -210,7 +212,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor="#0a84ff" />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="sm">

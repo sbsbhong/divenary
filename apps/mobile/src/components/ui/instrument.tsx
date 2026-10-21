@@ -22,7 +22,7 @@ const pillStyles = tva({
       primary: 'bg-primary/10 text-primary',
       secondary: 'bg-secondary/60 text-muted-foreground',
       success: 'bg-primary/10 text-primary',
-      warning: 'bg-primary/10 text-primary',
+      warning: 'bg-warning/10 text-warning',
       danger: 'bg-destructive/10 text-destructive',
       muted: 'bg-muted text-muted-foreground',
     },

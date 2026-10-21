@@ -7,6 +7,8 @@ const resources = {
         planning: '계획',
         memory: '메모리',
         settings: '설정',
+        missingRouteTitle: '화면을 열 수 없습니다',
+        missingRouteBody: '항목이 삭제되었거나 이 기기에서 더 이상 사용할 수 없습니다.',
       },
       common: {
         back: '뒤로',
@@ -25,6 +27,11 @@ const resources = {
           useRemote: '다른 기기 버전 사용',
           failed: '충돌을 해결하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
         },
+      },
+      sessionProfile: {
+        noSamples: '샘플 없음',
+        depthSummary: '최대 수심 {{max}} · 샘플 {{count}}개',
+        temperatureSummary: '수온 {{min}}–{{max}} · 샘플 {{count}}개',
       },
       recovery: {
         loading: {
@@ -195,6 +202,7 @@ const resources = {
         logsImported: '개의 기록',
         latestWatchImport: '최근 로그',
         latestLog: '최근 로그',
+        openLatestLogHint: '로그 상세를 엽니다',
         importWatchDive: '최근 로그 없음',
         noRecentLog: '최근 로그가 없습니다',
         date: '날짜',
@@ -342,7 +350,7 @@ const resources = {
             pausedTooDeep: '깊이 이탈로 일시중지',
             pausedTooShallow: '얕은 수심으로 일시중지',
             completed: '권장 스탑 완료',
-            skippedOrIncomplete: '스탑 미완료',
+            skippedOrIncomplete: '권장 스탑 미완료',
           },
         },
         backToList: '목록으로',
@@ -501,6 +509,8 @@ const resources = {
         planning: 'Plan',
         memory: 'Memory',
         settings: 'Settings',
+        missingRouteTitle: 'Screen unavailable',
+        missingRouteBody: 'The item may have been deleted or is no longer available on this device.',
       },
       common: {
         back: 'Back',
@@ -519,6 +529,11 @@ const resources = {
           useRemote: 'Use Other Device’s Version',
           failed: 'Couldn’t resolve the conflict. Check your connection and try again.',
         },
+      },
+      sessionProfile: {
+        noSamples: 'No samples',
+        depthSummary: 'Max depth {{max}} · Samples: {{count}}',
+        temperatureSummary: 'Water temperature {{min}}–{{max}} · Samples: {{count}}',
       },
       recovery: {
         loading: {
@@ -689,6 +704,7 @@ const resources = {
         logsImported: 'logs',
         latestWatchImport: 'Recent log',
         latestLog: 'Recent log',
+        openLatestLogHint: 'Opens the log detail',
         importWatchDive: 'No recent log',
         noRecentLog: 'No recent log',
         date: 'Date',
@@ -838,7 +854,7 @@ const resources = {
             pausedTooDeep: 'Paused too deep',
             pausedTooShallow: 'Paused too shallow',
             completed: 'Recommended stop completed',
-            skippedOrIncomplete: 'Stop incomplete',
+            skippedOrIncomplete: 'Recommended stop incomplete',
           },
         },
         backToList: 'Back to list',

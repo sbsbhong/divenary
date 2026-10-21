@@ -625,6 +625,8 @@ export default function RootNavigation(): React.JSX.Element {
                     {() => (
                       <HomeScreen
                         sessions={logbook.sessions}
+                        latestEntry={logbook.entries[0]}
+                        onOpenLog={openLogEntryDetail}
                         onOpenLogbook={openLogbook}
                         onOpenPlanning={openPlanning}
                         onOpenLogin={openAuthLogin}

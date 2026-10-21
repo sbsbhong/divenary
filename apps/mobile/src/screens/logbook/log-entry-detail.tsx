@@ -75,7 +75,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
         <StatusPill
           testID={isDebugTestCapture ? 'log-entry-detail-test-capture' : 'log-entry-detail-demo-capture'}
           label={isDebugTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
-          tone="warning"
+          tone="muted"
         />
       ) : null}
     </HStack>
@@ -288,7 +288,11 @@ function WatchScubaMetadata(props: { session: WatchSessionCommon }): React.JSX.E
     <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
       <HStack className="items-center justify-between">
         <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
-        <StatusPill label={t('logbook.watchScuba.safetyStopRecommended')} tone={getSafetyStopTone(safetyStop.status)} />
+        <StatusPill
+          testID="log-entry-detail-safety-stop-pill"
+          label={t('logbook.watchScuba.safetyStopRecommended')}
+          tone={getSafetyStopTone(safetyStop.status)}
+        />
       </HStack>
       <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
     </VStack>
@@ -448,16 +452,19 @@ function getSafetyStopStatusLabel(status: SafetyStopStatus, t: ReturnType<typeof
   return t(`logbook.watchScuba.safetyStopStatuses.${status}`, { defaultValue: status });
 }
 
+/** A recommended stop that did not finish is a caution, never the danger tone reserved for errors. */
 function getSafetyStopTone(status: SafetyStopStatus): StatusPillTone {
   if (status === 'completed') {
     return 'success';
   }
 
-  if (status === 'skippedOrIncomplete') {
-    return 'danger';
-  }
-
-  if (status === 'active' || status === 'armed' || status === 'pausedTooDeep' || status === 'pausedTooShallow') {
+  if (
+    status === 'skippedOrIncomplete' ||
+    status === 'active' ||
+    status === 'armed' ||
+    status === 'pausedTooDeep' ||
+    status === 'pausedTooShallow'
+  ) {
     return 'warning';
   }
 

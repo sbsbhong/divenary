@@ -3,7 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { Button, ButtonIcon, ButtonSpinner } from '../../components/ui/button';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, SafetyText } from '../../components/ui/instrument';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
+import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
+import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { HStack } from '../../components/ui/hstack';
 import {
   AlertCircleIcon,
@@ -27,12 +29,17 @@ import { type HomeConditionsProvider, type HomeConditionsSnapshot } from '../../
 import { type LocationService } from '../../conditions/location-service';
 import { createOpenMeteoHomeConditionsProvider } from '../../conditions/open-meteo-home-conditions-provider';
 import { useHomeConditions } from '../../conditions/use-home-conditions';
+import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { MobileDiveSession } from '../../types/dive-session';
 import { formatDate, formatDepth, formatDuration, formatTemperature } from '../../utils/dive-formatters';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
+import { getUnsupportedDepthForLogEntry, getUnsupportedDepthForWatchSession } from '../../utils/unsupported-depth';
 
 type HomeScreenProps = {
   sessions: MobileDiveSession[];
+  /** The entry behind `sessions[0]`, so the latest log card can open its detail. */
+  latestEntry?: DiveLogEntry;
+  onOpenLog?: (entry: DiveLogEntry) => void;
   onOpenLogbook: () => void;
   onOpenPlanning: () => void;
   onOpenLogin?: () => void;
@@ -70,6 +77,8 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   });
   const scrollViewRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
+  const palette = useGluestackColors();
+  const { latestEntry, onOpenLog } = props;
 
   React.useEffect(() => {
     const reselectToken = props.reselectToken ?? 0;
@@ -88,7 +97,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor="#0a84ff" />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="md" className="pt-2">
@@ -106,12 +115,27 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
             ) : null}
           </HStack>
           <HStack space="xs" className="items-baseline">
-            <Text className="text-2xl font-semibold text-primary">{props.sessions.length}</Text>
+            <Text className="text-2xl font-semibold text-foreground">{props.sessions.length}</Text>
             <Text className="text-sm font-semibold text-muted-foreground">{t('home.logsImported')}</Text>
           </HStack>
         </VStack>
 
         {props.recovery ? <HomeRecoveryCard {...props.recovery} /> : null}
+
+        {props.isLoading ? (
+          <LatestLogLoadingCard />
+        ) : recentSession ? (
+          <LatestLogCard
+            session={recentSession}
+            entry={latestEntry}
+            locale={locale}
+            recentMaxDepthMeters={recentMaxDepthMeters}
+            recentDurationSeconds={recentDurationSeconds}
+            onOpen={latestEntry && onOpenLog ? () => onOpenLog(latestEntry) : undefined}
+          />
+        ) : (
+          <LatestLogEmptyCard />
+        )}
 
         <HomeConditionsBand
           snapshot={conditionsController.snapshot}
@@ -120,19 +144,6 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           onRetry={conditionsController.retry}
           onOpenSettings={conditionsController.openSettings}
         />
-
-        {props.isLoading ? (
-          <LatestLogLoadingCard />
-        ) : recentSession ? (
-          <LatestLogCard
-            session={recentSession}
-            locale={locale}
-            recentMaxDepthMeters={recentMaxDepthMeters}
-            recentDurationSeconds={recentDurationSeconds}
-          />
-        ) : (
-          <LatestLogEmptyCard />
-        )}
 
         <VStack space="md">
           <InstrumentButton
@@ -211,17 +222,40 @@ function LatestLogEmptyCard(): React.JSX.Element {
 
 function LatestLogCard(props: {
   session: MobileDiveSession;
+  entry?: DiveLogEntry;
   locale: string;
   recentMaxDepthMeters: number | undefined;
   recentDurationSeconds: number | undefined;
+  onOpen?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  const isDemoCapture = props.session.captureMode === 'demo';
+  const isTestCapture = isDemoCapture && (props.session.tags?.includes('debug-test-capture') ?? false);
+  const unsupportedDepth = props.entry
+    ? getUnsupportedDepthForLogEntry(props.entry)
+    : getUnsupportedDepthForWatchSession(props.session);
+  const markers =
+    isDemoCapture || unsupportedDepth ? (
+      <HStack space="xs" className="flex-wrap items-center justify-end">
+        {isDemoCapture ? (
+          <ListStatusBadge
+            testID="home-latest-demo-badge"
+            kind="demo"
+            label={isTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
+          />
+        ) : null}
+        {unsupportedDepth ? (
+          <StatusPill testID="home-latest-unsupported-depth" label={t('logbook.unsupportedDepthMarker')} tone="muted" />
+        ) : null}
+      </HStack>
+    ) : undefined;
 
-  return (
+  const card = (
     <DiveSummaryCard>
       <DiveSummaryCard.Header
         eyebrow={t('home.latestLog')}
-        title={props.session.siteName ?? t('home.noRecentLog')}
+        title={props.session.siteName ?? t('logbook.untitledDive')}
+        right={markers}
       />
       <DiveSummaryCard.Body>
         <DiveSummaryCard.Metric
@@ -236,6 +270,21 @@ function LatestLogCard(props: {
       </DiveSummaryCard.Body>
     </DiveSummaryCard>
   );
+
+  if (!props.onOpen) {
+    return card;
+  }
+
+  return (
+    <Pressable
+      testID="home-latest-log-card"
+      accessibilityRole="button"
+      accessibilityHint={t('home.openLatestLogHint')}
+      className="rounded-2xl active:opacity-70"
+      onPress={props.onOpen}>
+      {card}
+    </Pressable>
+  );
 }
 
 function HomeConditionsBand(props: {
@@ -246,6 +295,7 @@ function HomeConditionsBand(props: {
   onOpenSettings: () => Promise<void>;
 }): React.JSX.Element {
   const { t } = useTranslation();
+  const palette = useGluestackColors();
   const snapshot = props.snapshot;
 
   if (snapshot.status === 'loading' || snapshot.status === 'idle') {
@@ -340,7 +390,7 @@ function HomeConditionsBand(props: {
               className="rounded-full bg-muted"
               onPress={props.onRetry}>
               {props.isRefreshing ? (
-                <ButtonSpinner testID="home-conditions-refresh-spinner" color="#0a84ff" />
+                <ButtonSpinner testID="home-conditions-refresh-spinner" color={palette.primary} />
               ) : (
                 <ButtonIcon as={RepeatIcon} className="text-primary" />
               )}
