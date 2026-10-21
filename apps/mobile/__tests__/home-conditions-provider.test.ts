@@ -244,7 +244,7 @@ describe('Open-Meteo Home conditions provider', () => {
     }
   });
 
-  it('returns an error when required Weather work reaches its deadline', async () => {
+  it('returns an error when required Weather work reaches its deadline twice', async () => {
     jest.useFakeTimers();
 
     try {
@@ -282,17 +282,51 @@ describe('Open-Meteo Home conditions provider', () => {
       expect(settled).toBe(false);
       expect(weatherSignal?.aborted).toBe(false);
 
+      const firstSignal = weatherSignal;
       await jest.advanceTimersByTimeAsync(1);
+      await flushMicrotasks();
+      expect(firstSignal?.aborted).toBe(true);
+      expect(settled).toBe(false);
+      expect(weatherSignal).not.toBe(firstSignal);
+      await jest.advanceTimersByTimeAsync(8000);
       expect(weatherSignal?.aborted).toBe(true);
       await expect(conditions).resolves.toMatchObject({
         status: 'error',
         source: 'openMeteo',
         errorMessage: 'Open-Meteo weather request timed out.',
       });
+      expect(
+        fetcher.mock.calls.filter(([request]) => String(request).includes('/v1/forecast')),
+      ).toHaveLength(2);
       expect(jest.getTimerCount()).toBe(0);
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('retries a failed Weather request once before reporting an error', async () => {
+    let weatherCalls = 0;
+    const fetcher = jest
+      .fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>()
+      .mockImplementation(request => {
+        if (String(request).includes('/v1/forecast')) {
+          weatherCalls += 1;
+          return weatherCalls === 1
+            ? Promise.reject(new Error('network lost'))
+            : Promise.resolve(createJsonResponse(weatherResponse));
+        }
+        return Promise.resolve(createJsonResponse(marineResponse));
+      });
+    const provider = createOpenMeteoHomeConditionsProvider({
+      fetcher,
+      reverseGeocode: async () => undefined,
+      now: () => 1783512000,
+    });
+
+    await expect(
+      provider.getCurrentConditions({ latitude: 33.5, longitude: 126.5 }),
+    ).resolves.toMatchObject({ status: 'ready' });
+    expect(weatherCalls).toBe(2);
   });
 
   it('returns error when weather response is invalid', async () => {

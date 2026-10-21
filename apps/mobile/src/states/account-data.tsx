@@ -1538,50 +1538,76 @@ export function AccountDataProviderCore({
   const bootstrap =
     bootstrapPresentation.queryScope === desiredScope
       ? bootstrapPresentation.state
-      : ({status: 'loading'} as const);
+      : LOADING_BOOTSTRAP;
+  const isPrincipalSettled = isPrincipalSettledAuthState(auth.state);
+  const accountRepository = auth.accountDataRepository;
+  const guestClaimRemoteRepository = auth.guestClaimRemoteRepository;
+  // Every screen reads this context, so it keeps its identity until something in it changes.
+  const contextValue = React.useMemo<AccountDataContextValue | undefined>(() => {
+    if (!published || published.queryScope !== desiredScope) {
+      return undefined;
+    }
+    return {
+      principal: published.principal,
+      queryScope: published.queryScope,
+      logbookRepository: published.logbook,
+      planRepository: published.planbook,
+      isHydrated: true,
+      isOnline,
+      isPrincipalSettled,
+      outbox: published.outbox,
+      accountRepository,
+      guestClaimRemoteRepository,
+      bootstrap,
+      retryBootstrap,
+      claim:
+        claimPresentation.queryScope === desiredScope
+          ? {
+              eligible: claimPresentation.eligible,
+              state: claimPresentation.state,
+              start: () => runClaim('start'),
+              retry: () => runClaim('retry'),
+              recheckRetained: () => runClaim('recheckRetained'),
+              keepOnDevice: () => runClaim('defer'),
+              refresh: async () => {
+                await refreshClaim(published, {resumeActive: false});
+              },
+            }
+          : hiddenClaimController(),
+      isHistoricalWatchArtifact,
+      isWatchSessionDeleted,
+      reconcileDeletedWatchSession,
+      requestSync,
+      refreshCloudData,
+      resolveConflict,
+    };
+  }, [
+    accountRepository,
+    bootstrap,
+    claimPresentation,
+    desiredScope,
+    guestClaimRemoteRepository,
+    isHistoricalWatchArtifact,
+    isOnline,
+    isPrincipalSettled,
+    isWatchSessionDeleted,
+    published,
+    reconcileDeletedWatchSession,
+    refreshClaim,
+    refreshCloudData,
+    requestSync,
+    resolveConflict,
+    retryBootstrap,
+    runClaim,
+  ]);
 
-  if (!published || published.queryScope !== desiredScope) {
+  if (!contextValue) {
     return bootstrap.status === 'recoveryRequired' ? (
       <RecoveryScreen kind="accountData" onRetry={retryBootstrap} />
     ) : (
       <RecoveryScreen kind="loading" />
     );
   }
-
-  const contextValue: AccountDataContextValue = {
-    principal: published.principal,
-    queryScope: published.queryScope,
-    logbookRepository: published.logbook,
-    planRepository: published.planbook,
-    isHydrated: true,
-    isOnline,
-    isPrincipalSettled: isPrincipalSettledAuthState(auth.state),
-    outbox: published.outbox,
-    accountRepository: auth.accountDataRepository,
-    guestClaimRemoteRepository: auth.guestClaimRemoteRepository,
-    bootstrap,
-    retryBootstrap,
-    claim:
-      claimPresentation.queryScope === desiredScope
-        ? {
-            eligible: claimPresentation.eligible,
-            state: claimPresentation.state,
-            start: () => runClaim('start'),
-            retry: () => runClaim('retry'),
-            recheckRetained: () => runClaim('recheckRetained'),
-            keepOnDevice: () => runClaim('defer'),
-            refresh: async () => {
-              await refreshClaim(published, {resumeActive: false});
-            },
-          }
-        : hiddenClaimController(),
-    isHistoricalWatchArtifact,
-    isWatchSessionDeleted,
-    reconcileDeletedWatchSession,
-    requestSync,
-    refreshCloudData,
-    resolveConflict,
-  };
 
   return (
     <AccountDataContext.Provider value={contextValue}>
@@ -2233,6 +2259,8 @@ function hiddenClaimPresentation(queryScope: string): AccountClaimPresentation {
     state: { status: 'hidden' },
   };
 }
+
+const LOADING_BOOTSTRAP = {status: 'loading'} as const;
 
 function hiddenClaimController(): AccountClaimController {
   return {

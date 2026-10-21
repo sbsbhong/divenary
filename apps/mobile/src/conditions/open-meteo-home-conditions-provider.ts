@@ -54,14 +54,18 @@ export function createOpenMeteoHomeConditionsProvider(
       }
 
       try {
-        const weatherRequest = rejectOnAbortableTimeout(
-          signal => fetchJson<OpenMeteoWeatherResponse>(
-            fetcher,
-            buildWeatherUrl(input, apiKey),
-            signal,
+        // The deadline is a JS timer. When the JS thread stalls, it can fire before an already
+        // finished response is delivered, so a failed or timed-out request is tried once more.
+        const weatherRequest = retryOnce(() =>
+          rejectOnAbortableTimeout(
+            signal => fetchJson<OpenMeteoWeatherResponse>(
+              fetcher,
+              buildWeatherUrl(input, apiKey),
+              signal,
+            ),
+            weatherRequestTimeoutMs,
+            'Open-Meteo weather request timed out.',
           ),
-          weatherRequestTimeoutMs,
-          'Open-Meteo weather request timed out.',
         );
         const marineRequest = fallbackOnAbortableTimeout(
           signal => fetchMarine(fetcher, buildMarineUrl(input, apiKey), signal),
@@ -112,6 +116,14 @@ export function createOpenMeteoHomeConditionsProvider(
       }
     },
   };
+}
+
+async function retryOnce<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch {
+    return operation();
+  }
 }
 
 function rejectOnAbortableTimeout<T>(

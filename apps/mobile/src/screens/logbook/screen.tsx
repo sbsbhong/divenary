@@ -132,18 +132,19 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
     setRoute('edit');
   }, []);
 
+  const { onOpenEntry } = props;
   const openDetail = React.useCallback(
     (entry: DiveLogEntry) => {
       setSelectedId(entry.localId);
 
-      if (props.onOpenEntry) {
-        props.onOpenEntry(entry);
+      if (onOpenEntry) {
+        onOpenEntry(entry);
         return;
       }
 
       setRoute('detail');
     },
-    [props],
+    [onOpenEntry],
   );
 
   const saveDraft = React.useCallback(
@@ -323,7 +324,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
                   key={entry.localId}
                   entry={entry}
                   showsDeviceOnlyBadge={Boolean(props.isAuthenticated && entry.ownerUserId === undefined)}
-                  onPress={() => openDetail(entry)}
+                  onOpen={openDetail}
                 />
               ))}
             </VStack>
@@ -381,11 +382,14 @@ function LogbookLoadingState(): React.JSX.Element {
   );
 }
 
-function SessionListItem(props: {
+// Memoized so a refetch only re-renders rows whose entry object changed.
+const SessionListItem = React.memo(function SessionListItem(props: {
   entry: DiveLogEntry;
   showsDeviceOnlyBadge: boolean;
-  onPress: () => void;
+  onOpen: (entry: DiveLogEntry) => void;
 }): React.JSX.Element {
+  const { entry, onOpen } = props;
+  const openEntry = React.useCallback(() => onOpen(entry), [entry, onOpen]);
   const session = diveLogEntryToMobileSession(props.entry);
   const listMetrics = getListMetrics(props.entry);
   const { i18n, t } = useTranslation();
@@ -422,7 +426,7 @@ function SessionListItem(props: {
     <Pressable
       testID={`logbook-list-item-${siteName}`}
       accessibilityRole="button"
-      onPress={props.onPress}
+      onPress={openEntry}
       accessible={badges.length ? true : undefined}
       accessibilityLabel={badges.length ? accessibilityLabel : undefined}
       className="rounded-2xl bg-card px-4 py-4"
@@ -474,7 +478,7 @@ function SessionListItem(props: {
       </VStack>
     </Pressable>
   );
-}
+});
 
 function getListMetrics(entry: DiveLogEntry): { durationSeconds?: number; maxDepthMeters?: number } {
   if (entry.watchCapture) {
