@@ -137,6 +137,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     @discardableResult
     func startFromActionButton() -> Bool {
+        guard prepareForNewSession() else {
+            return false
+        }
         let plan: PreDivePlan
         switch phase {
         case .idle:
@@ -163,6 +166,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
         switch state {
         case .submerged:
             wetReadyExitScheduler.cancel()
+            if case .savedSummary = phase {
+                phase = .idle
+            }
             guard case .idle = phase else { return }
             phase = .wetReady(mode: preferredMode())
         case .notSubmerged:
@@ -251,6 +257,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func startAdoptedSystemSession() {
+        guard prepareForNewSession() else {
+            return
+        }
         let plan: PreDivePlan
         switch phase {
         case .idle:
@@ -273,6 +282,34 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     private func preferredPlan() -> PreDivePlan {
         PreDivePlan(diveMode: preferredMode())
+    }
+
+    /// Clears a finished-session screen so the next dive can start, because the diver
+    /// cannot dismiss it underwater. Returns false while a recording or runtime handoff is in progress.
+    private func prepareForNewSession() -> Bool {
+        switch phase {
+        case .idle, .wetReady:
+            return true
+        case .savedSummary:
+            phase = .idle
+            return true
+        case .noSamples, .startPersistenceError:
+            guard recorder.cancelSession() else {
+                return false
+            }
+            phase = .idle
+            return true
+        case let .savePersistenceError(record):
+            persistCompletedRecord(record)
+            if case .savePersistenceError = phase {
+                // Keep the unsaved journal on disk; launch recovery restores it as an interrupted session.
+                recorder.resetCompletedSession()
+            }
+            phase = .idle
+            return true
+        case .recording, .completing, .awaitingRuntimeInvalidation:
+            return false
+        }
     }
 
     private var canEndFromCurrentSurfaceState: Bool {

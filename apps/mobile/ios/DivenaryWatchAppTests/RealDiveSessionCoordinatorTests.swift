@@ -666,6 +666,130 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertWetReady(coordinator, mode: .scuba)
     }
 
+    func testAdoptedSystemSessionFromSavedSummaryStartsNextDive() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let donor = FakeActionButtonDonor(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, donor: donor)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertSavedSummary(coordinator)
+
+        runtime.emit(.adoptedSystemSession)
+
+        assertRecording(coordinator, source: .systemAutoLaunch, plan: PreDivePlan(diveMode: .scuba))
+        XCTAssertEqual(recorder.startedPlans.count, 2)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+        XCTAssertEqual(donor.callCount, 2)
+    }
+
+    func testActionButtonStartFromSavedSummaryStartsNextDive() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertSavedSummary(coordinator)
+
+        XCTAssertTrue(coordinator.startFromActionButton())
+
+        assertRecording(coordinator, source: .actionButton)
+        XCTAssertEqual(recorder.startedPlans.count, 2)
+    }
+
+    func testAdoptedSystemSessionFromNoSamplesClearsTheEmptySessionThenStarts() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: false)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertNoSamples(coordinator)
+
+        runtime.emit(.adoptedSystemSession)
+
+        assertRecording(coordinator, source: .systemAutoLaunch)
+        XCTAssertEqual(recorder.cancelCallCount, 2)
+    }
+
+    func testAdoptedSystemSessionFromStartPersistenceErrorClearsThenStarts() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, startResults: [false, true])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        assertStartPersistenceError(coordinator, source: .manual)
+
+        runtime.emit(.adoptedSystemSession)
+
+        assertRecording(coordinator, source: .systemAutoLaunch)
+        XCTAssertEqual(recorder.cancelCallCount, 1)
+    }
+
+    func testAdoptedSystemSessionAfterSaveFailureRetriesSaveBeforeStarting() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true, stopResult: record)
+        let sessionStore = FakeDiveSessionStore(saveResults: [false, true])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, sessionStore: sessionStore)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertSavePersistenceError(coordinator, recordID: record.id)
+
+        runtime.emit(.adoptedSystemSession)
+
+        XCTAssertEqual(sessionStore.saveAttempts.map(\.id), [record.id, record.id])
+        assertRecording(coordinator, source: .systemAutoLaunch)
+    }
+
+    func testAdoptedSystemSessionAfterRepeatedSaveFailureKeepsJournalAndStartsNextDive() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true, stopResult: record)
+        let sessionStore = FakeDiveSessionStore(saveResults: [false, false])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, sessionStore: sessionStore)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        runtime.emit(.adoptedSystemSession)
+
+        XCTAssertEqual(sessionStore.saveAttempts.count, 2)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
+        XCTAssertEqual(recorder.cancelCallCount, 0, "The unsaved journal must stay on disk for launch recovery.")
+        assertRecording(coordinator, source: .systemAutoLaunch)
+    }
+
+    func testSubmersionFromSavedSummaryEntersWetReady() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let coordinator = makeCoordinator(preferredMode: .freedive, runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertSavedSummary(coordinator)
+
+        coordinator.receiveWaterState(.submerged)
+
+        assertWetReady(coordinator, mode: .freedive)
+    }
+
+    func testAdoptedSystemSessionIsIgnoredWhileRecording() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+
+        runtime.emit(.adoptedSystemSession)
+
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(recorder.startedPlans.count, 1)
+    }
+
     func testNoSampleAutoLaunchStillDoesNotSave() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
