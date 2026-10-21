@@ -1,8 +1,8 @@
 # Mobile/Watch UI 언어
 
-Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22
-Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md)
-Updated: 2026-07-22
+Sources: pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
+Raw: [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
+Updated: 2026-10-21
 
 ## 요약
 
@@ -44,6 +44,9 @@ watchOS 앱의 기준은 다음과 같다.
 - 큰 graph와 큰 숫자를 한 화면에 여러 개 동시에 두지 않는다.
 - safety 관련 copy는 항상 `review`, `reminder`, `non-certified assistant` 범위로 제한한다.
 - v1 safety stop 권장은 보조 caution tone으로 표시하고, mandatory/decompression stop 같은 future 필수 상태와 같은 색상이나 위계로 표시하지 않는다.
+- 모바일 `StatusPill`의 `warning` tone은 amber `--warning` token을 쓴다. 권장 스탑 미완료·일시정지, 동기화 부분 실패처럼 확인이 필요한 상태에만 쓰고, 오류·위험은 `danger`(destructive), 완료와 정상은 primary 또는 muted로 둔다. 권장 스탑 미완료를 빨강으로 표시하지 않는다.
+- 되돌릴 수 없는 삭제는 시스템 Alert로 확인하고, 함께 지워지는 대상(Watch 원본, 다른 기기 사본)을 알린다. 수정 중인 편집 화면을 벗어날 때는 변경 폐기를 확인한다.
+- 목록은 조회 실패(다시 시도), 검색·필터 결과 없음(검색어 지우기·모든 계획 보기), 처음부터 빈 상태를 서로 다른 문구와 action으로 구분한다.
 
 ### 모바일 화면 규칙
 
@@ -69,12 +72,12 @@ watchOS 앱의 기준은 다음과 같다.
 
 화면별 역할은 다음처럼 좁힌다.
 
-- Home: 최근 watch dive 하나를 확인하고 Logbook으로 들어가는 시작 화면.
+- Home: 최근 dive 하나를 위치 조건보다 먼저 보여 주고, 누르면 로그 상세로 가는 시작 화면. 데모·테스트와 지원 수심 밖 표식을 같이 보이고, 로그 개수는 강조 파랑을 쓰지 않는다.
 - Logbook: 검색, session list, 선택된 session detail을 한 화면에서 모두 크게 보이게 하지 않는다. list와 detail의 시각 무게를 분리한다.
 - Planning: 큰 설명이 아니라 수동 planning reminder 입력 구조를 grouped rows로 보여준다.
 - Memory: share preview 하나만 시각적으로 살리고 future workflow나 analytics는 낮은 grouped rows로 축소한다.
 
-구현할 때는 최상위 화면 padding을 공통 `Screen` 또는 native `contentContainerStyle`로 보장한다. `contentContainerClassName`만 믿고 화면 여백을 보장하지 않는다. 화면이 edge에 붙어 보이는 회귀를 막기 위해 padding, section gap, row height는 공통 component에서 관리한다.
+구현할 때는 최상위 화면 padding을 공통 `Screen` 또는 native `contentContainerStyle`로 보장한다. `contentContainerClassName`만 믿고 화면 여백을 보장하지 않는다. 현재 Home, Logbook, Planning은 React Native `ScrollView`의 `contentContainerClassName`을 쓰고 NativeWind가 이를 `contentContainerStyle`로 바꾼다. 다른 scroll container를 쓰면 이 변환이 되는지 먼저 확인한다. 화면이 edge에 붙어 보이는 회귀를 막기 위해 padding, section gap, row height는 공통 component에서 관리한다.
 
 ### 다이빙 계기 요소
 
@@ -96,6 +99,16 @@ watchOS는 같은 제품 언어를 더 압축해서 쓴다.
 - action은 watchOS control 크기에 맞추되, 한 화면에 과도하게 많이 두지 않는다.
 - post-dive rating, effort, visibility처럼 1-5 정수 평가를 받는 값은 watch에서 긴 wheel picker보다 짧은 별점 row를 우선한다.
 - safety stop, ascent, no-fly 관련 표현은 인증된 판단이 아니라 assistant/reminder 상태로만 둔다.
+- 권장 스탑의 일시정지·미완료는 `DiveWatchTheme.caution` 앰버와 "Recommended stop" 문구를 쓴다. 실시간 수심이 현재 값이 아니면 숫자 대신 `--.- m`와 짧은 상태 chip을 보인다.
+- 계획 목록은 Home에 펼치지 않고 Dive Plans 화면 한 행으로 들어간다. 저장 세션의 동기화 상태는 Waiting for iPhone, Saved on iPhone, Not sent to iPhone처럼 무엇이 일어나는지로 표시하고, 실패한 세션 상세에만 Send Again을 둔다. 지원 수심을 넘은 기록에는 Outside watch support 표식을 붙인다.
+
+### 접근성
+
+- 탭과 선택 pill은 selected 상태를 노출하고, 목록 행은 button role을 갖는다.
+- 아이콘만 있는 컨트롤과 별점·pill·chip은 44pt 터치 영역을 갖는다. 시각 크기를 유지해야 하면 `hitSlop`으로 넓힌다.
+- 별점은 "5점 중 3점", 프로필 차트는 범위와 샘플 수 요약, number wheel은 VoiceOver 증감 동작을 제공한다. 상세 화면의 뒤로 버튼은 모두 "뒤로"로 읽힌다.
+- Watch metric card와 summary row는 제목과 값을 하나의 요소로 읽는다.
+- 폼 검증 메시지는 검증 시점의 언어로 만들고, 한국어는 라벨 받침에 맞춰 을/를·은/는을 고른다.
 
 ### 회귀 방지
 

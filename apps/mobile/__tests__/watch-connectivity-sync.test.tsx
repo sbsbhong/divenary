@@ -37,6 +37,7 @@ import {
 } from '../src/states/account-data';
 import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
 import { dataStorageKeys } from '../src/storage/data-principal';
+import { createWatchRejectedPayloadStore } from '../src/storage/watch-rejected-payload-store';
 import type { WatchProfileStorage } from '../src/storage/watch-profile-storage';
 import { AccountOutbox } from '../src/sync/account-outbox';
 import type { WatchDepthSample } from '../src/types/dive-session';
@@ -488,6 +489,120 @@ describe('WatchConnectivitySyncProvider', () => {
     });
 
     expect(startupOrder.slice(0, 2)).toEqual(['subscribe', 'drain']);
+  });
+
+  it('records an invalid watch payload in the rejected ledger before dropping it locally', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const rejectedPayloadStore = createWatchRejectedPayloadStore({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 1781355100,
+    });
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+    await importPendingWatchConnectivityPayloads({
+      repository,
+      queryClient: createQueryClient(),
+      drainPendingPayloads: jest
+        .fn()
+        .mockResolvedValueOnce([
+          {
+            payloadId: 'invalid-payload-1',
+            payloadJson: '{"type":"sessionEnded","session":{"startedAt":1781352000,"samples":[]}}',
+            localSessionId: 'broken-session',
+            receivedAt: 1781355000,
+          },
+        ])
+        .mockResolvedValue([]),
+      acknowledgePayloads,
+      rejectedPayloadStore,
+    });
+
+    expect(acknowledgePayloads).toHaveBeenCalledWith(['invalid-payload-1']);
+    await expect(rejectedPayloadStore.list()).resolves.toEqual([
+      {
+        payloadId: 'invalid-payload-1',
+        localSessionId: 'broken-session',
+        reason: 'invalidMessage',
+        rejectedAt: 1781355100,
+      },
+    ]);
+  });
+
+  it('sets a payload aside after three consecutive import failures so later payloads are not blocked', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    jest.spyOn(repository, 'importWatchMessages').mockRejectedValue(new Error('storage unavailable'));
+    const rejectedPayloadStore = createWatchRejectedPayloadStore({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 1781355100,
+    });
+    const acknowledgePayloads = jest.fn().mockResolvedValue(undefined);
+    const failingPayload: WatchConnectivityPayload = {
+      payloadId: 'failing-payload-1',
+      payloadJson: JSON.stringify(metadataRichFixture),
+      localSessionId: metadataRichFixture.session.localSessionId,
+      receivedAt: 1781355000,
+    };
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const runDrain = () =>
+      importPendingWatchConnectivityPayloads({
+        repository,
+        queryClient: createQueryClient(),
+        drainPendingPayloads: jest.fn().mockResolvedValueOnce([failingPayload]).mockResolvedValue([]),
+        acknowledgePayloads,
+        acknowledgeImportedPayloads: jest.fn().mockResolvedValue(undefined),
+        rejectedPayloadStore,
+      });
+
+    await runDrain();
+    await runDrain();
+    expect(acknowledgePayloads).not.toHaveBeenCalled();
+
+    await runDrain();
+
+    expect(acknowledgePayloads).toHaveBeenCalledWith(['failing-payload-1']);
+    await expect(rejectedPayloadStore.list()).resolves.toEqual([
+      expect.objectContaining({ payloadId: 'failing-payload-1', reason: 'repeatedImportFailure' }),
+    ]);
+    await expect(rejectedPayloadStore.recordImportFailure('failing-payload-1')).resolves.toBe(1);
+  });
+
+  it('waits for a settled account principal before subscribing or draining watch payloads', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const drainPendingPayloads = jest.fn(async () => []);
+    const subscribeToPayloads = jest.fn(() => ({ remove: jest.fn() }));
+    const render = (principalSettled: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <WatchConnectivitySyncProvider
+          repository={repository}
+          coordinator={coordinator}
+          drainPendingPayloads={drainPendingPayloads}
+          acknowledgePayloads={jest.fn()}
+          subscribeToPayloads={subscribeToPayloads}
+          principalSettled={principalSettled}
+        />
+      </QueryClientProvider>
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(render(false));
+      renderers.push(renderer);
+      await flushPromises();
+    });
+
+    expect(subscribeToPayloads).not.toHaveBeenCalled();
+    expect(drainPendingPayloads).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(render(true));
+      await flushPromises();
+    });
+
+    expect(subscribeToPayloads).toHaveBeenCalledTimes(1);
+    expect(drainPendingPayloads).toHaveBeenCalled();
   });
 
   it('yields to the runtime only between automatically imported payloads', async () => {

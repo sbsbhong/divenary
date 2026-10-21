@@ -1,5 +1,6 @@
 import DateTimePickerNative, { type DateTimePickerChangeEvent } from '@react-native-community/datetimepicker';
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Platform } from 'react-native';
 import { Box } from '../../../components/ui/box';
 import { HStack } from '../../../components/ui/hstack';
@@ -19,9 +20,10 @@ type DateTimeFieldProps = {
 };
 
 export function DateTimeField(props: DateTimeFieldProps): React.JSX.Element {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = React.useState(false);
-  const displayDate = props.value ? formatDatePart(props.value) : '날짜';
-  const displayTime = props.value ? formatTimePart(props.value) : '시간';
+  const displayDate = props.value ? formatDatePart(props.value) : t('form.datePlaceholder');
+  const displayTime = props.value ? formatTimePart(props.value) : t('form.timePlaceholder');
 
   const handleValueChange = React.useCallback(
     (_event: DateTimePickerChangeEvent, selectedDate: Date) => {

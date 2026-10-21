@@ -6,7 +6,6 @@ import Animated, {
   FadeIn,
   FadeOut,
   ZoomIn,
-  ZoomOut,
   Easing,
 } from 'react-native-reanimated';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';

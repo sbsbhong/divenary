@@ -324,6 +324,39 @@ describe('AccountClaimScreen', () => {
     ).toBeTruthy();
   });
 
+  test('explains a failed mount refresh and retries it instead of spinning forever', async () => {
+    mockClaim = claimFixture({
+      status: 'choice',
+      logCount: 24,
+      planCount: 8,
+    });
+    mockClaim.refresh = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('inventory unavailable'))
+      .mockResolvedValueOnce(undefined);
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-preparing'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-refresh-failed'}),
+    ).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({testID: 'account-claim-refresh-retry'}).props.onPress();
+      await Promise.resolve();
+    });
+
+    expect(mockClaim.refresh).toHaveBeenCalledTimes(2);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-refresh-failed'}),
+    ).toHaveLength(0);
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-import'}).length,
+    ).toBeGreaterThan(0);
+  });
+
   test.each([
     {
       status: 'retained',

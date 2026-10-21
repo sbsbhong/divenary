@@ -60,11 +60,11 @@ enum DiveSyncStatus: String, Codable {
     var label: String {
         switch self {
         case .pending:
-            return String(localized: "Pending sync")
+            return String(localized: "Waiting for iPhone")
         case .synced:
-            return String(localized: "Synced")
+            return String(localized: "Saved on iPhone")
         case .failed:
-            return String(localized: "Sync failed")
+            return String(localized: "Not sent to iPhone")
         }
     }
 }
@@ -103,6 +103,15 @@ struct PreDivePlan: Codable, Equatable {
             values.append("planned-\(Int(plannedMaxDepthMeters))m")
         }
         return values
+    }
+
+    /// Keeps the diver's settings but drops the link that would mark a planned dive executed.
+    var withoutPlannedDiveLink: PreDivePlan {
+        var next = self
+        next.sourcePlanLocalId = nil
+        next.title = ""
+        next.userTags = userTags.filter { !$0.hasPrefix("plan-") }
+        return next
     }
 
     private func normalizedToken(from value: String) -> String? {

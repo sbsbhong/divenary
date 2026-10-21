@@ -74,7 +74,7 @@ export function PlanModeFields(props: PlanModeFieldsProps): React.JSX.Element {
               min={0}
               max={240}
               step={1}
-              unitLabel="min"
+              unitLabel={t('units.minutesShort')}
               valueType="int"
               required
               error={props.errors.plannedDurationMinutes?.message}
@@ -211,7 +211,7 @@ function WaterConditionPicker(props: {
             key={condition}
             testID={`planning-editor-water-condition-${condition}`}
             className="min-w-24 flex-1"
-            label={condition}
+            label={t(`waterConditions.${condition}`)}
             selected={props.value === condition}
             onPress={() => props.onChange(props.value === condition ? undefined : condition)}
           />

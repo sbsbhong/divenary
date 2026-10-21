@@ -1,6 +1,15 @@
 import Combine
 import Foundation
 
+/// Whether the live screen may show the latest depth as a current measurement.
+enum LiveDepthSignal: Equatable {
+    case awaitingFirstSample
+    case live
+    case stale
+    case sensorError
+    case beyondSensorRange
+}
+
 @MainActor
 final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var samples: [DepthSample] = []
@@ -18,6 +27,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var scubaSafetyStop: SafetyStopRecord = .legacyUnknown
     @Published private(set) var isRecording = false
     @Published private(set) var recordingPersistenceError: String?
+    @Published private(set) var liveDepthSignal: LiveDepthSignal = .awaitingFirstSample
 
     private let sensorProvider: DepthSensorProvider
     private let captureMode: DiveCaptureMode
@@ -34,6 +44,12 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     private var displayAscentRateEstimator = DisplayAscentRateEstimator()
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
+    private var sensorCondition: DepthSensorCondition?
+    private var sensorRangeExceededAt: Date?
+    private var sensorRangeLimitMeters: Double?
+    private var longestSampleGapSeconds: TimeInterval = 0
+    private static let staleSampleSeconds: TimeInterval = 5
+    private static let unreliableSampleGapSeconds: TimeInterval = 30
 
     init(
         sensorProvider: DepthSensorProvider,
@@ -66,6 +82,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         recordingPersistenceError = nil
         displayAscentRateEstimator.reset()
         unconfirmedProfileSamples = []
+        resetSensorCoverage()
         let startedAt = now()
         let sessionID = UUID()
         lastRawSample = nil
@@ -98,6 +115,9 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         sensorProvider.onSample = { [weak self] sample in
             self?.append(sample)
         }
+        (sensorProvider as? DepthSensorConditionReporting)?.onCondition = { [weak self] condition in
+            self?.receive(condition)
+        }
         sensorProvider.start()
 
         elapsedTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -113,6 +133,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
 
         sensorProvider.stop()
         sensorProvider.onSample = nil
+        (sensorProvider as? DepthSensorConditionReporting)?.onCondition = nil
         elapsedTimer?.invalidate()
         elapsedTimer = nil
         flushFinalProfileSample()
@@ -144,9 +165,21 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             )
         case .scuba:
             guard var engine = scubaEngine else { return nil }
-            payload = .scuba(normalizeScubaSession(engine.finish(at: endedAt), samples: samples))
+            payload = .scuba(normalizeScubaSession(
+                engine.finish(at: endedAt),
+                samples: samples,
+                depthCoverageIsUnreliable: depthCoverageIsUnreliable
+            ))
         }
         currentRecordPayload = payload
+        let sensorRangeUnsupportedDepth = sensorRangeExceededAt.map { firstExceededAt in
+            UnsupportedDepthRecord(
+                exceeded: true,
+                limitMeters: sensorRangeLimitMeters ?? DiveDepthSupport.supportedWatchDepthLimitMeters,
+                maxDepthMeters: maxDepth,
+                firstExceededAt: firstExceededAt
+            )
+        }
 
         return DiveSessionRecord(
             id: recordID,
@@ -171,7 +204,8 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             startedAt: startedAt,
             endedAt: endedAt,
             samples: samples,
-            payload: payload
+            payload: payload,
+            unsupportedDepth: sensorRangeUnsupportedDepth
         )
     }
 
@@ -200,6 +234,8 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     private func stopCaptureAndResetSessionState() {
         sensorProvider.stop()
         sensorProvider.onSample = nil
+        (sensorProvider as? DepthSensorConditionReporting)?.onCondition = nil
+        resetSensorCoverage()
         elapsedTimer?.invalidate()
         elapsedTimer = nil
         displayAscentRateEstimator.reset()
@@ -221,11 +257,62 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         (sensorProvider as? DemoDepthSensorProvider)?.setDepthMeters(depthMeters)
     }
 
+    func refreshLiveDepthSignal() {
+        let nextSignal: LiveDepthSignal
+        switch sensorCondition {
+        case .sensorError:
+            nextSignal = .sensorError
+        case .beyondSensorRange:
+            nextSignal = .beyondSensorRange
+        case .normal, nil:
+            if let lastRawSample {
+                let sampleAge = now().timeIntervalSince(lastRawSample.timestamp)
+                nextSignal = sampleAge > Self.staleSampleSeconds ? .stale : .live
+            } else {
+                nextSignal = .awaitingFirstSample
+            }
+        }
+        if liveDepthSignal != nextSignal {
+            liveDepthSignal = nextSignal
+        }
+    }
+
+    private var depthCoverageIsUnreliable: Bool {
+        sensorRangeExceededAt != nil || longestSampleGapSeconds > Self.unreliableSampleGapSeconds
+    }
+
+    private func resetSensorCoverage() {
+        sensorCondition = nil
+        sensorRangeExceededAt = nil
+        sensorRangeLimitMeters = nil
+        longestSampleGapSeconds = 0
+        liveDepthSignal = .awaitingFirstSample
+    }
+
+    private func receive(_ condition: DepthSensorCondition) {
+        guard isRecording else {
+            return
+        }
+
+        sensorCondition = condition
+        if case let .beyondSensorRange(limitMeters, timestamp) = condition {
+            sensorRangeExceededAt = sensorRangeExceededAt ?? timestamp
+            sensorRangeLimitMeters = limitMeters ?? sensorRangeLimitMeters
+        }
+        refreshLiveDepthSignal()
+    }
+
     private func append(_ sample: DepthSample) {
         guard isRecording, sample.isValidRecordingSample else {
             return
         }
 
+        if let previousSample = lastRawSample {
+            longestSampleGapSeconds = max(
+                longestSampleGapSeconds,
+                sample.timestamp.timeIntervalSince(previousSample.timestamp)
+            )
+        }
         lastRawSample = sample
         currentDepth = sample.depthMeters
         maxDepth = max(maxDepth, sample.depthMeters)
@@ -254,6 +341,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             safetyStopRemainingSeconds = scubaSafetyStop.remainingSeconds
             safetyStopActive = scubaSafetyStop.status == .active
         }
+        refreshLiveDepthSignal()
     }
 
     private func updateElapsedTime() {
@@ -263,6 +351,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         }
 
         elapsedTime = max(0, now().timeIntervalSince(startedAt))
+        refreshLiveDepthSignal()
     }
 
     private func flushFinalProfileSample() {
@@ -336,7 +425,8 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
 
     private func normalizeScubaSession(
         _ session: ScubaDiveSession,
-        samples: [DepthSample]
+        samples: [DepthSample],
+        depthCoverageIsUnreliable: Bool
     ) -> ScubaDiveSession {
         let averageDepth = samples.isEmpty
             ? 0
@@ -357,7 +447,26 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             gasLabel: session.gasLabel,
             latestAscentRateMetersPerMinute: session.latestAscentRateMetersPerMinute,
             maxAscentRateMetersPerMinute: session.maxAscentRateMetersPerMinute,
-            safetyStop: session.safetyStop
+            safetyStop: depthCoverageIsUnreliable ? unknownSafetyStop(from: session.safetyStop) : session.safetyStop
+        )
+    }
+
+    /// Missing depth coverage means the reminder state cannot be known, so never claim
+    /// "not required" or "completed" from partial data.
+    private func unknownSafetyStop(from record: SafetyStopRecord) -> SafetyStopRecord {
+        SafetyStopRecord(
+            status: .unknown,
+            required: record.required,
+            recommendationType: record.recommendationType,
+            completed: false,
+            targetDepthMeters: record.targetDepthMeters,
+            minDepthMeters: record.minDepthMeters,
+            maxDepthMeters: record.maxDepthMeters,
+            durationSeconds: record.durationSeconds,
+            startedAt: record.startedAt,
+            completedAt: nil,
+            remainingSeconds: record.remainingSeconds,
+            timeInZoneSeconds: record.timeInZoneSeconds
         )
     }
 }

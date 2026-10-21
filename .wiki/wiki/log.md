@@ -1147,3 +1147,20 @@
 - Pending: physical Water Lock Crown focus, actual When Submerged ordering, touchless save, forced save-retry는 지원 hardware evidence가 필요하다.
 
 ## [2026-09-01] lint | 0 issues found, 0 auto-fixed
+
+## [2026-10-21] ingest | 2026-10-21 프로젝트 리뷰 후속 수정 경계
+- Added: 2026-10-21 프로젝트 리뷰 후속 수정 경계 raw source
+- Updated: Watch 앱 구조
+- Updated: 동기화 흐름 구조
+- Updated: 모바일 구조
+- Updated: Mobile/Watch UI 언어
+- Updated: 안전 규칙
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Recorded: 실시간 수심은 유효 sample이 5초 안에 있을 때만 숫자로 보이고, sensor 범위 초과·30초 넘는 공백 기록의 권장 스탑은 `unknown`이다.
+- Recorded: 저장 상승 속도는 실시간과 같은 estimator로 계산하고(2026-07-18 결정 변경), 권장 스탑은 sample 간격마다 최대 5초만 적립하며, 수온은 60초 이내 값만 붙인다.
+- Recorded: `captureMode` 없는 옛 기록은 demo로 읽고, demo 기록은 계획을 실행됨으로 표시하지 않으며, Action Button 종료는 `notSubmerged`에서만 허용한다.
+- Recorded: Auth는 `SIGNED_OUT`에서만 로컬 세션을 닫고, 충돌 배너·삭제 충돌·원격 삭제 전파와 claim 오류 status 분류 규칙을 정했다.
+- Clarified: 안전 규칙의 Home 3m 자동 시작 설명은 2026-09-01 Wet Ready 도입으로 대체된 내용이라 바로잡았다.
+- Pending: Watch 체크리스트 D14-D19와 claim 체크리스트의 2026-10-21 항목은 실기기·staging 증거가 필요하다.
+

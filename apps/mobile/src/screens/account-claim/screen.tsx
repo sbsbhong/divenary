@@ -24,6 +24,7 @@ export default function AccountClaimScreen(): React.JSX.Element {
   const [busyAction, setBusyAction] = React.useState<ClaimAction>();
   const [isMountRefreshPending, setIsMountRefreshPending] =
     React.useState(true);
+  const [mountRefreshFailed, setMountRefreshFailed] = React.useState(false);
   const announcedCompletion = React.useRef(false);
   const isMounted = React.useRef(true);
   const claimRef = React.useRef(claim);
@@ -43,6 +44,9 @@ export default function AccountClaimScreen(): React.JSX.Element {
       claim.state.status === 'failed' ||
       claim.state.status === 'retained' ||
       claim.state.status === 'complete');
+  const showsMountRefreshFailure =
+    mountRefreshFailed &&
+    (isRefreshingStaleActionState || claim.state.status === 'hidden');
 
   React.useEffect(() => {
     isMounted.current = true;
@@ -51,24 +55,49 @@ export default function AccountClaimScreen(): React.JSX.Element {
     };
   }, []);
 
-  React.useEffect(() => {
-    let isActive = true;
+  const runMountRefresh = React.useCallback((restart: boolean) => {
+    if (restart) {
+      mountRefreshPromise.current = undefined;
+    }
     mountRefreshPromise.current ??= claimRef.current
       .refresh()
       .then(
         () => true,
         () => false,
       );
-    const refresh = mountRefreshPromise.current;
-    void refresh.then(succeeded => {
-      if (succeeded && isActive && isMounted.current) {
+    return mountRefreshPromise.current;
+  }, []);
+
+  React.useEffect(() => {
+    let isActive = true;
+    void runMountRefresh(false).then(succeeded => {
+      if (!isActive || !isMounted.current) {
+        return;
+      }
+      if (succeeded) {
         setIsMountRefreshPending(false);
+      } else {
+        setMountRefreshFailed(true);
       }
     });
     return () => {
       isActive = false;
     };
-  }, []);
+  }, [runMountRefresh]);
+
+  const retryMountRefresh = React.useCallback(() => {
+    setMountRefreshFailed(false);
+    void runMountRefresh(true).then(succeeded => {
+      if (!isMounted.current) {
+        return;
+      }
+      if (succeeded) {
+        setIsMountRefreshPending(false);
+      } else {
+        setMountRefreshFailed(true);
+      }
+    });
+  }, [runMountRefresh]);
 
   React.useEffect(() => {
     if (
@@ -160,9 +189,17 @@ export default function AccountClaimScreen(): React.JSX.Element {
           />
         ) : null}
 
-        {claim.state.status === 'hidden' ||
-        isPreparing ||
-        isRefreshingStaleActionState ? (
+        {showsMountRefreshFailure ? (
+          <RefreshFailedContent
+            onRetry={retryMountRefresh}
+            onClose={() => navigation.goBack()}
+          />
+        ) : null}
+
+        {!showsMountRefreshFailure &&
+        (claim.state.status === 'hidden' ||
+          isPreparing ||
+          isRefreshingStaleActionState) ? (
           <PreparingContent onClose={() => navigation.goBack()} />
         ) : null}
 
@@ -448,6 +485,46 @@ function PreparingContent({
           {t('accountClaim.preparingDescription')}
         </Text>
       </VStack>
+      <CloseButton onPress={onClose} />
+    </VStack>
+  );
+}
+
+function RefreshFailedContent({
+  onRetry,
+  onClose,
+}: {
+  onRetry(): void;
+  onClose(): void;
+}): React.JSX.Element {
+  const {t} = useTranslation();
+
+  return (
+    <VStack
+      testID="account-claim-refresh-failed"
+      space="lg"
+      className="items-center py-8">
+      <VStack space="xs" className="items-center">
+        <Text
+          accessibilityRole="header"
+          size="xl"
+          bold
+          className="text-center text-foreground">
+          {t('accountClaim.refreshFailedTitle')}
+        </Text>
+        <Text size="sm" className="text-center text-muted-foreground">
+          {t('accountClaim.refreshFailedDescription')}
+        </Text>
+      </VStack>
+      <Button
+        testID="account-claim-refresh-retry"
+        accessibilityRole="button"
+        className="min-h-11 w-full"
+        onPress={onRetry}>
+        <ButtonText className="text-base font-semibold">
+          {t('common.retry')}
+        </ButtonText>
+      </Button>
       <CloseButton onPress={onClose} />
     </VStack>
   );

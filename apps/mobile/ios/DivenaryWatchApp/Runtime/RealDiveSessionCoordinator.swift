@@ -57,7 +57,6 @@ final class TaskWetReadyExitScheduler: WetReadyExitScheduling {
 @MainActor
 protocol DiveSessionRecording: AnyObject {
     var elapsedTime: TimeInterval { get }
-    var currentDepth: Double { get }
     var hasCapturedDepthSample: Bool { get }
 
     @discardableResult
@@ -92,7 +91,6 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let actionButtonDonor: DiveActionButtonDonating
     private let wetReadyExitScheduler: WetReadyExitScheduling
     private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
-    private let surfaceEndDepthMeters = 1.0
 
     init(
         preferredMode: @escaping () -> DiveMode,
@@ -137,6 +135,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
     @discardableResult
     func startFromActionButton() -> Bool {
+        guard prepareForNewSession() else {
+            return false
+        }
         let plan: PreDivePlan
         switch phase {
         case .idle:
@@ -163,6 +164,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
         switch state {
         case .submerged:
             wetReadyExitScheduler.cancel()
+            if case .savedSummary = phase {
+                phase = .idle
+            }
             guard case .idle = phase else { return }
             phase = .wetReady(mode: preferredMode())
         case .notSubmerged:
@@ -194,7 +198,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     func requestActionButtonEnd() -> Bool {
         guard case .recording = phase,
               recorder.elapsedTime >= minimumHardwareEndElapsedSeconds,
-              canEndFromCurrentSurfaceState
+              water.latestState == .notSubmerged
         else {
             return false
         }
@@ -251,6 +255,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func startAdoptedSystemSession() {
+        guard prepareForNewSession() else {
+            return
+        }
         let plan: PreDivePlan
         switch phase {
         case .idle:
@@ -275,13 +282,30 @@ final class RealDiveSessionCoordinator: ObservableObject {
         PreDivePlan(diveMode: preferredMode())
     }
 
-    private var canEndFromCurrentSurfaceState: Bool {
-        switch water.latestState {
-        case .notSubmerged:
+    /// Clears a finished-session screen so the next dive can start, because the diver
+    /// cannot dismiss it underwater. Returns false while a recording or runtime handoff is in progress.
+    private func prepareForNewSession() -> Bool {
+        switch phase {
+        case .idle, .wetReady:
             return true
-        case .unknown:
-            return recorder.currentDepth <= surfaceEndDepthMeters
-        case .submerged:
+        case .savedSummary:
+            phase = .idle
+            return true
+        case .noSamples, .startPersistenceError:
+            guard recorder.cancelSession() else {
+                return false
+            }
+            phase = .idle
+            return true
+        case let .savePersistenceError(record):
+            persistCompletedRecord(record)
+            if case .savePersistenceError = phase {
+                // Keep the unsaved journal on disk; launch recovery restores it as an interrupted session.
+                recorder.resetCompletedSession()
+            }
+            phase = .idle
+            return true
+        case .recording, .completing, .awaitingRuntimeInvalidation:
             return false
         }
     }

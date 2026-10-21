@@ -1659,6 +1659,216 @@ describe('AccountSyncCoordinator', () => {
     ]);
   });
 
+  it('removes a synced local log and plan that another device deleted', async () => {
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const syncedLog = localLog({cloudSyncStatus: 'synced'});
+    const syncedPlan = localPlan({cloudSyncStatus: 'synced'});
+    const logbook = new LocalDiveLogRepository([syncedLog]);
+    const planbook = new LocalDivePlanRepository([syncedPlan]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listDeletedLogs: jest.fn(async () => ({items: [{id: remoteId, localId: syncedLog.localId, revision: 3}]})),
+        listDeletedPlans: jest.fn(async () => ({items: [{id: remoteId, localId: syncedPlan.localId, revision: 3}]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: planbook,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(2);
+    await expect(logbook.get(syncedLog.localId)).resolves.toBeUndefined();
+    await expect(planbook.get(syncedPlan.localId)).resolves.toBeUndefined();
+  });
+
+  it('keeps unsynced local edits when the remote copy was deleted elsewhere', async () => {
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const pendingLog = localLog({cloudSyncStatus: 'pending'});
+    const conflictedPlan = localPlan({cloudSyncStatus: 'conflict'});
+    const logbook = new LocalDiveLogRepository([pendingLog]);
+    const planbook = new LocalDivePlanRepository([conflictedPlan]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        listDeletedLogs: jest.fn(async () => ({items: [{id: remoteId, localId: pendingLog.localId, revision: 3}]})),
+        listDeletedPlans: jest.fn(async () => ({items: [{id: remoteId, localId: conflictedPlan.localId, revision: 3}]})),
+      }),
+      logbookRepository: logbook,
+      planRepository: planbook,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(0);
+    await expect(logbook.get(pendingLog.localId)).resolves.toEqual(pendingLog);
+    await expect(planbook.get(conflictedPlan.localId)).resolves.toEqual(conflictedPlan);
+  });
+
+  it('keeps a delete conflict visible instead of overwriting the other device edit', async () => {
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const current = localLog({cloudSyncStatus: 'synced'});
+    await outbox.enqueue(operation(0, {
+      entityLocalId: current.localId,
+      mutation: 'delete',
+      payload: {local: current, remote: remoteLog()},
+    }));
+    const deleteLog = jest
+      .fn()
+      .mockResolvedValue({status: 'conflict', remote: remoteLog({revision: 3})});
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({deleteLog}),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+    });
+
+    await coordinator.drain({online: true});
+
+    expect(deleteLog).toHaveBeenCalledTimes(1);
+    await expect(logbook.get(current.localId)).resolves.toMatchObject({cloudSyncStatus: 'conflict'});
+  });
+
+  it('clears stored conflicts once the remote accepts the delete of a conflicted log', async () => {
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    const current = localLog({cloudSyncStatus: 'conflict'});
+    await outbox.recordConflict(operation(), {...current}, {...remoteLog({revision: 3})});
+    await outbox.enqueue(operation(0, {
+      operationId: 'operation-delete',
+      entityLocalId: current.localId,
+      mutation: 'delete',
+      payload: {local: current, remote: remoteLog()},
+      expectedRevision: 3,
+    }));
+    const deleteLog = jest.fn(async () => ({status: 'saved' as const, value: remoteLog({revision: 4})}));
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({deleteLog}),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+    });
+
+    await coordinator.drain({online: true});
+
+    expect(deleteLog).toHaveBeenCalledWith(remoteLog().id, 3);
+    await expect(logbook.get(current.localId)).resolves.toBeUndefined();
+    await expect(outbox.list(userId)).resolves.toEqual([]);
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('adopts the latest remote version when the user resolves a log conflict that way', async () => {
+    const current = localLog({
+      cloudSyncStatus: 'conflict',
+      manual: {...localLog().manual, notes: 'Local edit'},
+    });
+    const latest = remoteLog({
+      revision: 3,
+      payload: {
+        ...remoteLog().payload,
+        manual_data: {...remoteLog().payload.manual_data as Record<string, unknown>, notes: 'Remote edit'},
+      },
+    });
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    await outbox.recordConflict(operation(), {...current}, {...remoteLog({revision: 2})});
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        getLog: jest.fn(async () => ({value: latest, deleted: false})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    await coordinator.resolveConflictUsingRemote('log', current.localId);
+
+    await expect(logbook.get(current.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'synced',
+      remoteRevision: 3,
+      manual: {notes: 'Remote edit'},
+    });
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('rebases a kept local plan onto the latest remote revision', async () => {
+    const current = localPlan({
+      cloudSyncStatus: 'conflict',
+      remoteRevision: 1,
+      site: {name: 'Local edit'},
+    });
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    await outbox.recordConflict(
+      {...operation(), entityKind: 'plan', entityLocalId: current.localId},
+      {...current},
+      {...remotePlan({revision: 2})},
+    );
+    const planbook = new LocalDivePlanRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        getPlan: jest.fn(async () => ({value: remotePlan({revision: 5}), deleted: false})),
+      }),
+      logbookRepository: new LocalDiveLogRepository(),
+      planRepository: planbook,
+    });
+
+    const rebased = await coordinator.prepareKeepLocalPlan(current.localId);
+
+    expect(rebased).toMatchObject({cloudSyncStatus: 'pending', remoteRevision: 5, site: {name: 'Local edit'}});
+    await expect(planbook.get(current.localId)).resolves.toMatchObject({cloudSyncStatus: 'pending', remoteRevision: 5});
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('keeps a local version as a new remote copy when the remote copy was deleted', async () => {
+    const current = localLog({cloudSyncStatus: 'conflict', remoteRevision: 2});
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    await outbox.recordConflict(operation(), {...current}, {...remoteLog({revision: 3})});
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        getLog: jest.fn(async () => ({value: remoteLog({revision: 3}), deleted: true})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    const rebased = await coordinator.prepareKeepLocalLog(current.localId);
+
+    expect(rebased?.remoteId).toBeUndefined();
+    expect(rebased?.remoteRevision).toBeUndefined();
+    expect(rebased?.cloudSyncStatus).toBe('pending');
+  });
+
+  it('falls back to the stored conflict copy when the latest remote cannot be read', async () => {
+    const current = localLog({cloudSyncStatus: 'conflict', remoteRevision: 1});
+    const outbox = new AccountOutbox({storage: new InMemoryKeyValueStore(), storageKey: 'outbox'});
+    await outbox.recordConflict(operation(), {...current}, {...remoteLog({revision: 4})});
+    const logbook = new LocalDiveLogRepository([current]);
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        getLog: jest.fn(async () => {
+          throw new Error('offline');
+        }),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+    });
+
+    const rebased = await coordinator.prepareKeepLocalLog(current.localId);
+
+    expect(rebased?.remoteRevision).toBe(4);
+  });
+
   it('rolls back conflict recovery when conflict metadata removal fails', async () => {
     const current = localLog({
       cloudSyncStatus: 'conflict',

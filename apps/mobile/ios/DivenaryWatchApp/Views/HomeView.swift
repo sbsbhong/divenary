@@ -7,6 +7,7 @@ struct HomeView: View {
     @ObservedObject var realCoordinator: RealDiveSessionCoordinator
     let actionButtonBridge: DiveActionButtonBridge
     let actionButtonDonor: DiveActionButtonDonating
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
     @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
@@ -49,18 +50,30 @@ struct HomeView: View {
                     .disabled(!sensorAvailability.canStartRealDive)
 
                     if !store.plannedDives.isEmpty {
-                        PlannedDivesSection(
-                            plannedDives: store.plannedDives,
-                            selectedPlanLocalId: plan.sourcePlanLocalId,
-                            isSelectionEnabled: sensorAvailability.canSelectPlannedDives,
-                            onSelect: apply(plannedDive:)
-                        )
+                        NavigationLink {
+                            DivePlansView(
+                                plannedDives: store.plannedDives,
+                                selectedPlanLocalId: plan.sourcePlanLocalId,
+                                isSelectionEnabled: sensorAvailability.canSelectPlannedDives,
+                                onSelect: apply(plannedDive:),
+                                onClearSelection: clearPlannedDive
+                            )
+                        } label: {
+                            StartSessionCard(
+                                title: "Dive Plans",
+                                subtitle: selectedPlanSubtitle,
+                                systemImage: "list.bullet.clipboard",
+                                accent: DiveWatchTheme.primary,
+                                trailingSystemImage: "chevron.right"
+                            )
+                        }
+                        .buttonStyle(.plain)
                     }
 
                     NavigationLink {
                         SimulatedRecordingFlowView(
                             store: store,
-                            plan: explicitStartPlan(for: .scuba),
+                            plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                             recordingMode: .demo,
                             actionButtonBridge: actionButtonBridge,
                             actionButtonDonor: actionButtonDonor
@@ -80,7 +93,7 @@ struct HomeView: View {
                         NavigationLink {
                             SimulatedRecordingFlowView(
                                 store: store,
-                                plan: explicitStartPlan(for: .freedive),
+                                plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
                                 recordingMode: .debugTest,
                                 actionButtonBridge: actionButtonBridge,
                                 actionButtonDonor: actionButtonDonor
@@ -99,7 +112,7 @@ struct HomeView: View {
                         NavigationLink {
                             SimulatedRecordingFlowView(
                                 store: store,
-                                plan: explicitStartPlan(for: .scuba),
+                                plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                                 recordingMode: .debugTest,
                                 actionButtonBridge: actionButtonBridge,
                                 actionButtonDonor: actionButtonDonor
@@ -161,6 +174,11 @@ struct HomeView: View {
             .onChange(of: water.latestState) { _, nextState in
                 realCoordinator.receiveWaterState(nextState)
             }
+            .onChange(of: scenePhase) { _, nextPhase in
+                if nextPhase == .active {
+                    store.resumePendingDeletionsIfNeeded()
+                }
+            }
         }
     }
 
@@ -186,12 +204,7 @@ struct HomeView: View {
         if diveMode == .scuba {
             next.gasLabel = next.gasLabel.isEmpty ? "Air" : next.gasLabel
         }
-        if !preservesSelectedPlan {
-            next.sourcePlanLocalId = nil
-            next.title = ""
-            next.userTags = next.userTags.filter { !$0.hasPrefix("plan-") }
-        }
-        return next
+        return preservesSelectedPlan ? next : next.withoutPlannedDiveLink
     }
 
     private func applyPreferredDiveMode() {
@@ -216,63 +229,100 @@ struct HomeView: View {
         plan = plannedDive.preDivePlan
         store.updatePreferredDiveMode(plan.diveMode)
     }
+
+    private func clearPlannedDive() {
+        plan = PreDivePlan(diveMode: store.preferredDiveMode)
+    }
+
+    private var selectedPlanSubtitle: String {
+        guard let selectedPlanLocalId = plan.sourcePlanLocalId else {
+            return String(localized: "None selected")
+        }
+        return store.plannedDives.first { $0.localId == selectedPlanLocalId }?.displayTitle
+            ?? String(localized: "Planned dive")
+    }
 }
 
-private struct PlannedDivesSection: View {
+struct DivePlansView: View {
     let plannedDives: [WatchPlannedDive]
     let selectedPlanLocalId: String?
     let isSelectionEnabled: Bool
     let onSelect: (WatchPlannedDive) -> Void
+    let onClearSelection: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.primary) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("UNEXECUTED PLANS")
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.primary)
-
+        ScrollView {
+            VStack(spacing: 8) {
                 ForEach(plannedDives) { plannedDive in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(plannedDive.displayTitle)
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.72)
-
-                        HStack(spacing: 8) {
-                            PlannedDiveMetric(title: String(localized: "Mode"), value: (plannedDive.diveMode ?? .scuba).label)
-                            PlannedDiveMetric(title: String(localized: "Max"), value: DiveFormatters.depth(plannedDive.plannedMaxDepthMeters ?? 0))
-                        }
-
-                        if let plannedAt = plannedDive.plannedAt {
-                            Text(DiveFormatters.sessionDate.string(from: Date(timeIntervalSince1970: plannedAt)))
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(DiveWatchTheme.mutedText)
-                                .lineLimit(1)
-                        }
-
-                        Button {
-                            guard isSelectionEnabled else {
-                                return
-                            }
+                    let isSelected = selectedPlanLocalId == plannedDive.localId
+                    Button {
+                        if isSelected {
+                            onClearSelection()
+                        } else {
                             onSelect(plannedDive)
-                        } label: {
-                            Label(
-                                selectedPlanLocalId == plannedDive.localId ? String(localized: "Selected Plan") : String(localized: "Use Plan"),
-                                systemImage: selectedPlanLocalId == plannedDive.localId ? "checkmark.circle.fill" : "checkmark.circle"
-                            )
                         }
-                        .buttonStyle(DiveActionButtonStyle(kind: selectedPlanLocalId == plannedDive.localId ? .primary : .secondary))
-                        .disabled(!isSelectionEnabled)
+                        dismiss()
+                    } label: {
+                        PlannedDiveRow(plannedDive: plannedDive, isSelected: isSelected)
                     }
+                    .buttonStyle(.plain)
+                    .disabled(!isSelectionEnabled)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
 
-                    if plannedDive.id != plannedDives.last?.id {
-                        Divider().opacity(0.35)
+                Text(isSelectionEnabled
+                    ? String(localized: "Tap a plan to use it for the next dive. Tap it again to clear.")
+                    : String(localized: "Plans start real dives on a supported Apple Watch."))
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+            }
+            .padding(.horizontal, DiveWatchTheme.edgeMargin)
+            .padding(.vertical, 10)
+        }
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+        .navigationTitle("Dive Plans")
+    }
+}
+
+private struct PlannedDiveRow: View {
+    let plannedDive: WatchPlannedDive
+    let isSelected: Bool
+
+    var body: some View {
+        InstrumentCard(accent: isSelected ? DiveWatchTheme.primary : nil) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(plannedDive.displayTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.text)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.72)
+                    Spacer(minLength: 4)
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(DiveWatchTheme.primary)
+                            .accessibilityHidden(true)
                     }
+                }
+
+                HStack(spacing: 8) {
+                    PlannedDiveMetric(title: String(localized: "Mode"), value: (plannedDive.diveMode ?? .scuba).label)
+                    PlannedDiveMetric(title: String(localized: "Max"), value: DiveFormatters.depth(plannedDive.plannedMaxDepthMeters))
+                }
+
+                if let plannedAt = plannedDive.plannedAt {
+                    Text(DiveFormatters.sessionDate.string(from: Date(timeIntervalSince1970: plannedAt)))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(1)
                 }
             }
         }
-        .opacity(isSelectionEnabled ? 1 : 0.48)
+        .accessibilityElement(children: .combine)
     }
 }
 

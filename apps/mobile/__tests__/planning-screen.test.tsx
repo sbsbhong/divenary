@@ -270,10 +270,10 @@ describe('Planning screen planbook flow', () => {
     await press(root, 'planning-create-action');
     await press(root, 'planning-editor-save-planned');
 
-    expect(root.findByProps({ testID: 'planning-editor-planned-at-error' }).props.children).toBe('계획 날짜와 시간을 선택해주세요.');
-    expect(root.findByProps({ testID: 'planning-editor-site-name-error' }).props.children).toBe('사이트 이름을 입력해주세요.');
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-error' }).props.children).toBe('계획 시간(분)을 선택해주세요.');
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-error' }).props.children).toBe('계획 최대 수심(m)을 선택해주세요.');
+    expect(root.findByProps({ testID: 'planning-editor-planned-at-error' }).props.children).toBe('Choose a planned date and time.');
+    expect(root.findByProps({ testID: 'planning-editor-site-name-error' }).props.children).toBe('Enter a site name.');
+    expect(root.findByProps({ testID: 'planning-editor-planned-duration-error' }).props.children).toBe('Planned duration (min) is required.');
+    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-error' }).props.children).toBe('Planned max depth (m) is required.');
     expect(await repository.list()).toEqual([]);
   });
 

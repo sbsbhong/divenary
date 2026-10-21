@@ -23,6 +23,11 @@ enum EngineTestFixtures {
         )
     }
 
+    /// One sample per second, the cadence of the live depth callback.
+    static func samples(from start: TimeInterval, through end: TimeInterval, depth: Double) -> [DepthSample] {
+        stride(from: start, through: end, by: 1).map { sample($0, depth: depth) }
+    }
+
     private static func sampleID(_ secondsAfterStart: TimeInterval) -> UUID {
         let milliseconds = UInt64((secondsAfterStart * 1_000).rounded())
         let uuidString = String(format: "00000000-0000-0000-0000-%012llX", milliseconds)

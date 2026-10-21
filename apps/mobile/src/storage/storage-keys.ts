@@ -6,4 +6,6 @@ export const mobileStorageKeys = {
   preferences: 'dive-app:preferences:v1',
   legacyGuestMigration: 'dive-app:data:legacy-to-guest:v1',
   watchLogDeletions: 'dive-app:watch-log-deletions:v1',
+  watchRejectedPayloads: 'dive-app:watch-rejected-payloads:v1',
+  watchImportFailures: 'dive-app:watch-import-failures:v1',
 } as const;

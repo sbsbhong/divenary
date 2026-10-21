@@ -26,6 +26,12 @@ enum DiveFormatters {
         String(format: "%.1f m", meters)
     }
 
+    /// `nil` means the reading is not current, so no number is shown.
+    static func depth(_ meters: Double?) -> String {
+        guard let meters else { return "--.- m" }
+        return depth(meters)
+    }
+
     static func temperature(_ celsius: Double?) -> String {
         guard let celsius else { return "--.- °C" }
         return String(format: "%.1f °C", celsius)
@@ -33,6 +39,11 @@ enum DiveFormatters {
 
     static func ascentRate(_ metersPerMinute: Double) -> String {
         String(format: "%.1f m/min", max(0, metersPerMinute))
+    }
+
+    static func ascentRate(_ metersPerMinute: Double?) -> String {
+        guard let metersPerMinute else { return "--.- m/min" }
+        return ascentRate(metersPerMinute)
     }
 
     static func rating(_ value: Int?) -> String {
@@ -49,6 +60,8 @@ enum DiveWatchTheme {
     static let primary = Color(red: 0.161, green: 0.592, blue: 1.0)
     static let secondary = Color(red: 0.8, green: 0.8, blue: 0.8)
     static let danger = Color(red: 1.0, green: 0.42, blue: 0.38)
+    /// Supplementary tone for recommended reminders; never used for mandatory states.
+    static let caution = Color(red: 1.0, green: 0.78, blue: 0.3)
     static let text = Color.white
     static let mutedText = Color(red: 0.8, green: 0.8, blue: 0.8)
 
@@ -121,6 +134,7 @@ struct MetricCard: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var metricSize: CGFloat {
@@ -155,6 +169,27 @@ struct SummaryRow: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Marks a saved dive that went deeper than the app supports on Apple Watch.
+struct UnsupportedDepthNotice: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Outside watch support", systemImage: "exclamationmark.triangle.fill")
+                .font(DiveWatchTheme.labelFont())
+                .foregroundStyle(DiveWatchTheme.caution)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("Deeper than this app supports on Apple Watch. Kept for review only.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(3)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 

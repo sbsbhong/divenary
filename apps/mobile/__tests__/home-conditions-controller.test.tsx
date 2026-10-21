@@ -43,13 +43,15 @@ function Harness(props: HarnessProps): null {
     openSettings: props.openSettings,
   });
 
-  React.useEffect(() => {
-    props.onSnapshot(controller.snapshot);
-  }, [controller.snapshot, props.onSnapshot]);
+  const {onSnapshot, onController} = props;
 
   React.useEffect(() => {
-    props.onController?.(controller);
-  }, [controller, props.onController]);
+    onSnapshot(controller.snapshot);
+  }, [controller.snapshot, onSnapshot]);
+
+  React.useEffect(() => {
+    onController?.(controller);
+  }, [controller, onController]);
 
   return null;
 }

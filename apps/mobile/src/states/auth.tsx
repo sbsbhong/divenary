@@ -108,10 +108,15 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     updateState({status: 'guest'});
 
     if (mobileAuth !== undefined) {
-      await Promise.allSettled([
+      const [signOutResult] = await Promise.allSettled([
         mobileAuth.repository.signOut(),
         mobileAuth.membershipCache.remove(),
       ]);
+
+      if (signOutResult.status === 'rejected') {
+        // Supabase keeps an expired session when it cannot refresh before signing out.
+        await mobileAuth.clearPersistedSession?.().catch(() => undefined);
+      }
     }
   }, [mobileAuth, updateState]);
 
@@ -393,8 +398,12 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       })
       .catch(() => undefined);
 
-    const unsubscribe = mobileAuth.repository.subscribe(nextSession => {
+    const unsubscribe = mobileAuth.repository.subscribe((nextSession, event) => {
       if (nextSession === null) {
+        if (event !== 'SIGNED_OUT') {
+          // A null initial session also means "could not load or refresh"; revalidation decides.
+          return;
+        }
         operationIdRef.current += 1;
         intentEpochRef.current += 1;
         acceptsAuthenticatedSessionRef.current = false;

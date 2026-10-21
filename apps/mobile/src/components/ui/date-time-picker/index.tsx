@@ -10,7 +10,6 @@ import {
   Modal,
 } from 'react-native';
 import DateTimePickerNative from '@react-native-community/datetimepicker';
-import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import {
   withStyleContext,
   useStyleContext,

@@ -2,6 +2,7 @@ import {
   isAuthError,
   isAuthRetryableFetchError,
   isAuthSessionMissingError,
+  type AuthChangeEvent,
   type Session,
   type SupabaseClient,
 } from '@supabase/supabase-js';
@@ -72,7 +73,9 @@ export interface AuthRepository {
   signOut(): Promise<void>;
   startAutoRefresh(): void;
   stopAutoRefresh(): void;
-  subscribe(listener: (session: Session | null) => void): () => void;
+  subscribe(
+    listener: (session: Session | null, event: AuthChangeEvent) => void,
+  ): () => void;
 }
 
 const invalidSessionCodes = new Set([
@@ -352,8 +355,8 @@ export function createAuthRepository(
     },
 
     subscribe(listener) {
-      const {data} = client.auth.onAuthStateChange((_event, session) => {
-        listener(session);
+      const {data} = client.auth.onAuthStateChange((event, session) => {
+        listener(session, event);
       });
 
       return () => data.subscription.unsubscribe();

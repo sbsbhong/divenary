@@ -29,6 +29,7 @@ type PlanEditorProps = {
   onSave: (plan: DivePlan) => Promise<DivePlan>;
   onFieldLayout?: (fieldName: string, y: number) => void;
   onInvalidSubmit?: (fieldName: string) => void;
+  onDirtyChange?: (isDirty: boolean) => void;
 };
 
 const diveModes: NonNullable<WatchSession['diveMode']>[] = ['scuba', 'freedive'];
@@ -46,9 +47,15 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
   const activeDiveMode = form.watch('diveMode') ?? 'scuba';
   const mode = props.mode ?? 'create';
   const errors = form.formState.errors;
+  const isDirty = form.formState.isDirty;
+  const { onDirtyChange } = props;
   const bodyOffsetRef = React.useRef(0);
   const buddiesRef = React.useRef<BadgeListFieldHandle>(null);
   const gearIdsRef = React.useRef<BadgeListFieldHandle>(null);
+
+  React.useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
   const tagsRef = React.useRef<BadgeListFieldHandle>(null);
 
   const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {

@@ -6,6 +6,7 @@ import { HStack } from '../../components/ui/hstack';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import type { DiveFieldSource, DiveLogEntry, DiveLogManualMeasuredValues, DiveLogWatchMeasuredValues } from '../../types/dive-log-entry';
 import type { WatchSession, WatchSessionCommon } from '../../types/dive-session';
 import {
@@ -16,8 +17,25 @@ import {
   formatRating,
   formatTemperature,
 } from '../../utils/dive-formatters';
+import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { firstNonBlankText } from '../../utils/notes';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
+
+function deleteLogMessageKey(entry: DiveLogEntry): string {
+  const removesWatchOriginal = entry.watchCapture !== undefined;
+  const removesAccountCopy = entry.ownerUserId !== undefined;
+
+  if (removesWatchOriginal && removesAccountCopy) {
+    return 'logbook.deleteConfirm.watchAndAccountMessage';
+  }
+  if (removesWatchOriginal) {
+    return 'logbook.deleteConfirm.watchMessage';
+  }
+  if (removesAccountCopy) {
+    return 'logbook.deleteConfirm.accountMessage';
+  }
+  return 'logbook.deleteConfirm.message';
+}
 
 type LogEntryDetailProps = {
   entry: DiveLogEntry;
@@ -25,6 +43,7 @@ type LogEntryDetailProps = {
   onBack?: () => void;
   onEdit?: (entry: DiveLogEntry) => void;
   onDelete?: (localId: string) => Promise<void>;
+  onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
 export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
@@ -56,7 +75,7 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
         <StatusPill
           testID={isDebugTestCapture ? 'log-entry-detail-test-capture' : 'log-entry-detail-demo-capture'}
           label={isDebugTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
-          tone="warning"
+          tone="muted"
         />
       ) : null}
     </HStack>
@@ -77,6 +96,9 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
         right={headerPills}
       />
       <DiveSummaryCard.Body>
+        {props.entry.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+          <SyncConflictBanner onResolve={props.onResolveConflict} />
+        ) : null}
         <Text className="text-sm leading-5 text-muted-foreground">
           {formatDate(startedAt, locale, t('formatters.unknownDate'))}
         </Text>
@@ -147,7 +169,13 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
           <Text className="text-sm leading-5 text-muted-foreground">
             {t('logbook.observedMarineLife')}: {marineLife}
           </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
+          <Text
+            accessibilityLabel={`${t('logbook.rating')}: ${
+              props.entry.manual.rating
+                ? t('form.ratingStar', { value: props.entry.manual.rating, total: 5 })
+                : t('formatters.notRated')
+            }`}
+            className="text-sm leading-5 text-muted-foreground">
             {t('logbook.rating')}: {formatRating(props.entry.manual.rating, t('formatters.notRated'))}
           </Text>
           <ModeSpecificMetadata entry={props.entry} />
@@ -157,9 +185,20 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
           ) : null}
           {props.onDelete ? (
             <InstrumentButton
+              testID="log-entry-detail-delete"
               label={t('logbook.deleteLog')}
               variant="danger"
-              onPress={() => props.onDelete?.(props.entry.localId)}
+              onPress={() =>
+                confirmDestructiveAction({
+                  title: t('logbook.deleteConfirm.title'),
+                  message: t(deleteLogMessageKey(props.entry)),
+                  cancelLabel: t('common.cancel'),
+                  confirmLabel: t('logbook.deleteConfirm.confirm'),
+                  onConfirm: () => {
+                    void props.onDelete?.(props.entry.localId);
+                  },
+                })
+              }
             />
           ) : null}
         </VStack>
@@ -255,7 +294,11 @@ function WatchScubaMetadata(props: { session: WatchSessionCommon }): React.JSX.E
     <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
       <HStack className="items-center justify-between">
         <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
-        <StatusPill label={t('logbook.watchScuba.safetyStopRecommended')} tone={getSafetyStopTone(safetyStop.status)} />
+        <StatusPill
+          testID="log-entry-detail-safety-stop-pill"
+          label={t('logbook.watchScuba.safetyStopRecommended')}
+          tone={getSafetyStopTone(safetyStop.status)}
+        />
       </HStack>
       <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
     </VStack>
@@ -299,7 +342,11 @@ function getModeFacts(entry: DiveLogEntry, t: ReturnType<typeof useTranslation>[
       entryStyleFact,
       { id: 'gas-label', label: t('logbook.gasLabel'), value: measuredValues.gasLabel ?? t('logbook.airGas', { defaultValue: 'Air' }) },
       { id: 'gear', label: t('logbook.gear'), value: entry.manual.gearIds.length ? entry.manual.gearIds.join(', ') : undefined },
-      { id: 'water-condition', label: t('logbook.waterCondition'), value: measuredValues.waterCondition },
+      {
+        id: 'water-condition',
+        label: t('logbook.waterCondition'),
+        value: measuredValues.waterCondition ? t(`waterConditions.${measuredValues.waterCondition}`) : undefined,
+      },
       { id: 'visibility-rating', label: t('logbook.visibilityRating'), value: numberToText(measuredValues.visibilityRating) },
       { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: numberToText(measuredValues.perceivedExertion) },
       { id: 'pressure', label: t('logbook.pressure', { defaultValue: 'Pressure' }), value: formatPressure(measuredValues.pressure) },
@@ -415,16 +462,19 @@ function getSafetyStopStatusLabel(status: SafetyStopStatus, t: ReturnType<typeof
   return t(`logbook.watchScuba.safetyStopStatuses.${status}`, { defaultValue: status });
 }
 
+/** A recommended stop that did not finish is a caution, never the danger tone reserved for errors. */
 function getSafetyStopTone(status: SafetyStopStatus): StatusPillTone {
   if (status === 'completed') {
     return 'success';
   }
 
-  if (status === 'skippedOrIncomplete') {
-    return 'danger';
-  }
-
-  if (status === 'active' || status === 'armed' || status === 'pausedTooDeep' || status === 'pausedTooShallow') {
+  if (
+    status === 'skippedOrIncomplete' ||
+    status === 'active' ||
+    status === 'armed' ||
+    status === 'pausedTooDeep' ||
+    status === 'pausedTooShallow'
+  ) {
     return 'warning';
   }
 

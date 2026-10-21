@@ -42,3 +42,17 @@ export const supabaseSessionStorage: SupportedStorage = {
     }
   },
 };
+
+export async function clearPersistedSupabaseSession(): Promise<void> {
+  const credentials = await Keychain.getGenericPassword({service});
+
+  if (!credentials) {
+    return;
+  }
+
+  const didRemove = await Keychain.resetGenericPassword({service});
+
+  if (!didRemove) {
+    throw secureStorageFailure();
+  }
+}

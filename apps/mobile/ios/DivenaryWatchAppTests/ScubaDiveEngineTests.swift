@@ -17,8 +17,7 @@ final class ScubaDiveEngineTests: XCTestCase {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
         engine.append(EngineTestFixtures.sample(0, depth: 0))
         engine.append(EngineTestFixtures.sample(60, depth: 21.2))
-        engine.append(EngineTestFixtures.sample(600, depth: 5))
-        engine.append(EngineTestFixtures.sample(780, depth: 5))
+        EngineTestFixtures.samples(from: 600, through: 780, depth: 5).forEach { engine.append($0) }
 
         let session = engine.finish(at: EngineTestFixtures.date(900))
 
@@ -28,7 +27,7 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertEqual(session.safetyStop.remainingSeconds, 0, accuracy: 0.01)
     }
 
-    func testEngineTracksDepthTemperatureAndAscentRates() {
+    func testEngineTracksDepthAndTemperature() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Nitrox 32")
         engine.append(EngineTestFixtures.sample(0, depth: 0, temperature: 20))
         engine.append(EngineTestFixtures.sample(60, depth: 12, temperature: 22))
@@ -40,8 +39,22 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertEqual(engine.currentDepthMeters, 3)
         XCTAssertEqual(session.averageDepthMeters, 5.25)
         XCTAssertEqual(session.waterTemperatureCelsius, 23)
-        XCTAssertEqual(session.latestAscentRateMetersPerMinute, 3)
-        XCTAssertEqual(session.maxAscentRateMetersPerMinute, 6)
+    }
+
+    func testEngineStoresSmoothedAscentRatesInsteadOfSampleSpikes() {
+        var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
+        for second in 0...10 {
+            engine.append(EngineTestFixtures.sample(TimeInterval(second), depth: 12 - 0.1 * Double(second)))
+        }
+        // A one-second 0.5 m jump reads as 36 m/min sample-to-sample.
+        engine.append(EngineTestFixtures.sample(11, depth: 10.4))
+        engine.append(EngineTestFixtures.sample(12, depth: 10.8))
+        engine.append(EngineTestFixtures.sample(13, depth: 10.7))
+
+        let session = engine.finish(at: EngineTestFixtures.date(14))
+
+        XCTAssertEqual(session.maxAscentRateMetersPerMinute, 12, accuracy: 0.01)
+        XCTAssertEqual(session.latestAscentRateMetersPerMinute, 6, accuracy: 0.01)
     }
 
     func testEngineAveragesOnlyAvailableTemperatures() {
@@ -102,8 +115,7 @@ final class ScubaDiveEngineTests: XCTestCase {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))
         engine.append(EngineTestFixtures.sample(60, depth: 18))
-        engine.append(EngineTestFixtures.sample(120, depth: 5))
-        engine.append(EngineTestFixtures.sample(300, depth: 5))
+        EngineTestFixtures.samples(from: 120, through: 300, depth: 5).forEach { engine.append($0) }
         engine.append(EngineTestFixtures.sample(360, depth: 0.4))
 
         let session = engine.finish(at: EngineTestFixtures.date(420))

@@ -39,6 +39,18 @@ struct DisplayAscentRateEstimator {
         samples.removeAll(keepingCapacity: true)
     }
 
+    /// Replays recorded samples so stored and summarized rates match the smoothed live readout.
+    static func rates(for samples: [DepthSample]) -> (latest: Double, maximum: Double) {
+        var estimator = DisplayAscentRateEstimator()
+        var latest: Double = 0
+        var maximum: Double = 0
+        for sample in samples where sample.isValidRecordingSample {
+            latest = estimator.append(sample)
+            maximum = max(maximum, latest)
+        }
+        return (latest, maximum)
+    }
+
     private func isUsable(_ sample: DepthSample) -> Bool {
         sample.isValidRecordingSample
             && sample.timestamp.timeIntervalSinceReferenceDate.isFinite

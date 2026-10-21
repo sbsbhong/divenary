@@ -16,6 +16,11 @@ import { defaultDiveLogRepository } from '../repositories/default-dive-log-repos
 import { defaultDivePlanRepository } from '../repositories/default-dive-plan-repository';
 import type { DiveLogRepository } from '../repositories/dive-log-repository';
 import type { DivePlanRepository } from '../repositories/dive-plan-repository';
+import {
+  defaultWatchRejectedPayloadStore,
+  type WatchPayloadRejectionReason,
+  type WatchRejectedPayloadStore,
+} from '../storage/watch-rejected-payload-store';
 import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DivePlan } from '../types/dive-plan';
 import type { WatchSyncMessage } from '../types/dive-session';
@@ -49,6 +54,8 @@ type WatchConnectivitySyncProviderProps = {
   subscribeToPayloads?: (handler: (payload: WatchConnectivityPayload) => void) => WatchConnectivitySubscription;
   coordinator?: WatchConnectivityImportCoordinator;
   preferencesHydrated?: boolean;
+  principalSettled?: boolean;
+  rejectedPayloadStore?: WatchRejectedPayloadStore;
   onLocalWritesCommitted?: () => Promise<unknown>;
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
@@ -81,6 +88,7 @@ type WatchConnectivityImportOptions = {
   isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
   reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
   yieldToRuntime?: () => Promise<void>;
+  rejectedPayloadStore?: WatchRejectedPayloadStore;
 };
 
 export type WatchConnectivityImportSummary = {
@@ -117,6 +125,7 @@ type WatchConnectivityPayloadImportOptions = {
   ) => Promise<boolean>;
   isWatchSessionDeleted?: (localSessionId: string) => Promise<boolean>;
   reconcileDeletedWatchSession?: (localSessionId: string) => Promise<void>;
+  rejectedPayloadStore?: WatchRejectedPayloadStore;
 };
 
 type WatchConnectivityPayloadImportOnceOptions = Omit<
@@ -172,6 +181,8 @@ export function WatchConnectivitySyncProvider(
   const subscribeToPayloads = props.subscribeToPayloads ?? subscribeToWatchConnectivityPayloads;
   const coordinator = props.coordinator ?? defaultWatchConnectivityImportCoordinator;
   const preferencesHydrated = props.preferencesHydrated ?? true;
+  const principalSettled = props.principalSettled ?? accountData?.isPrincipalSettled ?? true;
+  const rejectedPayloadStore = props.rejectedPayloadStore ?? defaultWatchRejectedPayloadStore;
   const onLocalWritesCommitted = props.onLocalWritesCommitted
     ?? (props.repository ? undefined : accountData?.requestSync);
   const isHistoricalWatchArtifact = props.isHistoricalWatchArtifact
@@ -192,7 +203,8 @@ export function WatchConnectivitySyncProvider(
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
-    if (!preferencesHydrated) {
+    // The watch keeps unacknowledged sessions, so waiting for auth only delays import.
+    if (!preferencesHydrated || !principalSettled) {
       return;
     }
     const scope = coordinator.activateScope(queryScope);
@@ -216,6 +228,7 @@ export function WatchConnectivitySyncProvider(
           isHistoricalWatchArtifact,
           isWatchSessionDeleted,
           reconcileDeletedWatchSession,
+          rejectedPayloadStore,
         }),
       );
 
@@ -256,12 +269,14 @@ export function WatchConnectivitySyncProvider(
             }
             try {
               await importPayload(payload);
+              await clearPayloadImportFailures(rejectedPayloadStore, payload);
               importedPreviousPayload = true;
             } catch (error) {
               if (isStaleWatchConnectivityImportError(error)) {
                 return;
               }
               console.warn('Failed to import watch sync payload', error);
+              await setAsideRepeatedlyFailingPayload(rejectedPayloadStore, payload, acknowledgePayloads);
               importedPreviousPayload = true;
             }
           }
@@ -317,8 +332,10 @@ export function WatchConnectivitySyncProvider(
     planRepository,
     preparePendingPayload,
     preferencesHydrated,
+    principalSettled,
     queryClient,
     queryScope,
+    rejectedPayloadStore,
     repository,
     reconcileDeletedWatchSession,
     scheduleAfterInteractions,
@@ -345,6 +362,7 @@ export async function importPendingWatchConnectivityPayloads({
   isWatchSessionDeleted,
   reconcileDeletedWatchSession,
   yieldToRuntime = defaultYieldToRuntime,
+  rejectedPayloadStore = defaultWatchRejectedPayloadStore,
 }: WatchConnectivityImportOptions): Promise<WatchConnectivityImportSummary> {
   let importedCount = 0;
   let receivedCount = 0;
@@ -388,17 +406,20 @@ export async function importPendingWatchConnectivityPayloads({
             isHistoricalWatchArtifact,
             isWatchSessionDeleted,
             reconcileDeletedWatchSession,
+            rejectedPayloadStore,
           }),
         );
         if (importedEntry) {
           importedCount += 1;
         }
+        await clearPayloadImportFailures(rejectedPayloadStore, payload);
       } catch (error) {
         if (isStaleWatchConnectivityImportError(error)) {
           throw error;
         }
         failedCount += 1;
         console.warn('Failed to import watch sync payload', error);
+        await setAsideRepeatedlyFailingPayload(rejectedPayloadStore, payload, acknowledgePayloads);
       }
       importedPreviousPayload = true;
     }
@@ -427,6 +448,7 @@ async function importWatchConnectivityPayload({
   isHistoricalWatchArtifact,
   isWatchSessionDeleted,
   reconcileDeletedWatchSession,
+  rejectedPayloadStore,
 }: WatchConnectivityPayloadImportOptions): Promise<DiveLogEntry | undefined> {
   return coordinator.run(scope, payload, async guard => {
     try {
@@ -462,6 +484,7 @@ async function importWatchConnectivityPayload({
         isHistoricalWatchArtifact,
         isWatchSessionDeleted,
         reconcileDeletedWatchSession,
+        rejectedPayloadStore,
       });
     } catch (error) {
       if (
@@ -469,12 +492,76 @@ async function importWatchConnectivityPayload({
         isInvalidPreparedWatchPayloadError(error)
       ) {
         guard.assertActive();
+        await recordWatchPayloadRejection(rejectedPayloadStore, payload, 'invalidPreparedPayload');
         await acknowledgePayload(payload, acknowledgePayloads);
         return undefined;
       }
       throw error;
     }
   });
+}
+
+const MAX_CONSECUTIVE_IMPORT_FAILURES = 3;
+
+async function recordWatchPayloadRejection(
+  store: WatchRejectedPayloadStore | undefined,
+  payload: WatchConnectivityPayload,
+  reason: WatchPayloadRejectionReason,
+): Promise<void> {
+  try {
+    await store?.recordRejection({
+      payloadId: payload.payloadId,
+      localSessionId: payload.localSessionId,
+      reason,
+    });
+  } catch (error) {
+    console.warn('Failed to record a rejected watch payload', error);
+  }
+}
+
+function importFailureKey(payload: WatchConnectivityPayload): string | undefined {
+  return payload.payloadId ?? payload.localSessionId;
+}
+
+async function clearPayloadImportFailures(
+  store: WatchRejectedPayloadStore,
+  payload: WatchConnectivityPayload,
+): Promise<void> {
+  const key = importFailureKey(payload);
+  if (key === undefined) {
+    return;
+  }
+  try {
+    await store.clearImportFailures(key);
+  } catch {
+    // Failure counts only decide when to set a payload aside.
+  }
+}
+
+/**
+ * Removes a payload that keeps failing from the phone inbox so the payloads behind it can import.
+ * The watch keeps the unacknowledged original and sends it again later.
+ */
+async function setAsideRepeatedlyFailingPayload(
+  store: WatchRejectedPayloadStore,
+  payload: WatchConnectivityPayload,
+  acknowledgePayloads: WatchConnectivityAcknowledgement,
+): Promise<void> {
+  const key = importFailureKey(payload);
+  if (key === undefined) {
+    return;
+  }
+  try {
+    const failures = await store.recordImportFailure(key);
+    if (failures < MAX_CONSECUTIVE_IMPORT_FAILURES) {
+      return;
+    }
+    await recordWatchPayloadRejection(store, payload, 'repeatedImportFailure');
+    await acknowledgePayload(payload, acknowledgePayloads);
+    await store.clearImportFailures(key);
+  } catch (error) {
+    console.warn('Failed to set aside a failing watch payload', error);
+  }
 }
 
 async function importWatchConnectivityPayloadOnce({
@@ -491,11 +578,13 @@ async function importWatchConnectivityPayloadOnce({
   isHistoricalWatchArtifact,
   isWatchSessionDeleted,
   reconcileDeletedWatchSession,
+  rejectedPayloadStore,
 }: WatchConnectivityPayloadImportOnceOptions): Promise<DiveLogEntry | undefined> {
   const result = parseWatchSyncMessageJson(payload.payloadJson);
 
   if (!result.ok) {
     console.warn('Dropped invalid watch sync payload', result.error);
+    await recordWatchPayloadRejection(rejectedPayloadStore, payload, 'invalidMessage');
     await acknowledgePayload(payload, acknowledgePayloads);
     return undefined;
   }

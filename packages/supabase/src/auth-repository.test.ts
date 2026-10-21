@@ -697,6 +697,25 @@ describe('AuthRepository', () => {
     assert.deepEqual(calls.signOut, [{scope: 'local'}]);
     assert.equal(calls.unsubscribe, 1);
   });
+
+  test('forwards the auth event with each session change', () => {
+    const {client, calls} = createClientMock();
+    const repository = createAuthRepository(client);
+    const observed: Array<[string | null, string]> = [];
+    repository.subscribe((session, event) =>
+      observed.push([session?.user.id ?? null, event]),
+    );
+
+    calls.listener?.('INITIAL_SESSION', null);
+    calls.listener?.('TOKEN_REFRESHED', createSession());
+    calls.listener?.('SIGNED_OUT', null);
+
+    assert.deepEqual(observed, [
+      [null, 'INITIAL_SESSION'],
+      [USER_ID, 'TOKEN_REFRESHED'],
+      [null, 'SIGNED_OUT'],
+    ]);
+  });
 });
 
 describe('parseOnboardingStatus', () => {

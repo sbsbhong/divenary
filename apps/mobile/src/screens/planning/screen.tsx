@@ -1,5 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
+import { ListStateCard } from '../../components/ui/list-state-card';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
 import { Box } from '../../components/ui/box';
@@ -23,6 +25,7 @@ import { PlanEditor } from './plan-editor';
 type PlanningScreenProps = {
   sessions: MobileDiveSession[];
   plans?: DivePlan[];
+  loadError?: Error | null;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -47,6 +50,7 @@ type PlanFilter = 'all' | DivePlanStatus;
 
 export default function PlanningScreen(props: PlanningScreenProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
+  const palette = useGluestackColors();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const plans = React.useMemo(() => props.plans ?? [], [props.plans]);
   const [route, setRoute] = React.useState<LocalRoute>('list');
@@ -210,7 +214,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor="#0a84ff" />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="sm">
@@ -288,7 +292,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
                   icon={CalendarDaysIcon}
                   variant="primary"
                   onPress={openCreate}
-                  className="min-h-10 px-4 py-2"
+                  className="min-h-11 px-4 py-2"
                 />
               </HStack>
               <HStack space="xs" className="rounded-full bg-muted p-1">
@@ -304,6 +308,21 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
               </HStack>
               {props.isLoading ? (
                 <PlanningLoadingState />
+              ) : !plans.length && props.loadError ? (
+                <ListStateCard
+                  testID="planning-error-state"
+                  title={t('planning.loadFailed')}
+                  message={t('planning.loadFailedMessage')}
+                  actionLabel={t('common.retry')}
+                  onAction={() => void props.onRefresh()}
+                />
+              ) : !visiblePlans.length && plans.length ? (
+                <ListStateCard
+                  testID="planning-filter-empty-state"
+                  title={t('planning.noFilteredPlans')}
+                  actionLabel={t('planning.showAllPlans')}
+                  onAction={() => setFilter('all')}
+                />
               ) : visiblePlans.length ? (
                 <VStack space="md">
                   {visiblePlans.map(plan => (
@@ -459,6 +478,7 @@ function PlanRow(props: {
   return (
     <Pressable
       testID={`planning-plan-row-${siteName}`}
+      accessibilityRole="button"
       onPress={props.onPress}
       accessible={props.showsDeviceOnlyBadge ? true : undefined}
       accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}
@@ -531,13 +551,7 @@ function CompletionPrompt(props: { plan: DivePlan; onLater: () => void; onCreate
 function EmptyPlanbook(): React.JSX.Element {
   const { t } = useTranslation();
 
-  return (
-    <DiveSummaryCard>
-      <VStack testID="planning-empty-state" space="lg">
-        <DiveSummaryCard.Header title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />
-      </VStack>
-    </DiveSummaryCard>
-  );
+  return <ListStateCard testID="planning-empty-state" title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />;
 }
 
 function PlanningLoadingState(): React.JSX.Element {

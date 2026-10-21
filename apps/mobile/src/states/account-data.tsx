@@ -89,6 +89,8 @@ export type AccountDataContextValue = {
   planRepository: DivePlanRepository;
   isHydrated: boolean;
   isOnline: boolean;
+  /** False while Auth is still deciding between guest and account data. */
+  isPrincipalSettled?: boolean;
   outbox?: AccountOutbox;
   accountRepository?: AccountDataRepository;
   guestClaimRemoteRepository?: GuestClaimRemoteRepository;
@@ -102,6 +104,11 @@ export type AccountDataContextValue = {
   reconcileDeletedWatchSession(localSessionId: string): Promise<void>;
   requestSync(): Promise<AccountSyncDrainResult>;
   refreshCloudData(): Promise<void>;
+  resolveConflict?(
+    kind: 'log' | 'plan',
+    localId: string,
+    choice: 'keepLocal' | 'useRemote',
+  ): Promise<void>;
 };
 
 export type AccountClaimController = {
@@ -824,6 +831,7 @@ export function AccountDataProviderCore({
     isOnline,
     notifyGuestInventoryChanged,
     queryClient,
+    watchDeletionStore,
   ]);
 
   const scheduleZeroInventoryAudit = React.useCallback(
@@ -1220,6 +1228,44 @@ export function AccountDataProviderCore({
     return result;
   }, [isOnline, published]);
 
+  const resolveConflict = React.useCallback(
+    async (
+      kind: 'log' | 'plan',
+      localId: string,
+      choice: 'keepLocal' | 'useRemote',
+    ) => {
+      const publication = publishedRef.current;
+      const coordinator = publication?.coordinator;
+      if (!publication || publication.principal.kind !== 'user' || !coordinator) {
+        throw new Error('Account sync is unavailable for conflict resolution');
+      }
+      if (choice === 'useRemote') {
+        await coordinator.resolveConflictUsingRemote(kind, localId);
+      } else if (kind === 'log') {
+        const rebased = await coordinator.prepareKeepLocalLog(localId);
+        const logbook = publication.accountRepositories?.logbook as
+          | Partial<AccountQueueRepository<DiveLogEntry>>
+          | undefined;
+        if (!rebased || !logbook?.reconcileSaved) {
+          throw new Error('The local log could not be kept');
+        }
+        await logbook.reconcileSaved(rebased);
+      } else {
+        const rebased = await coordinator.prepareKeepLocalPlan(localId);
+        const planbook = publication.accountRepositories?.planbook as
+          | Partial<AccountQueueRepository<DivePlan>>
+          | undefined;
+        if (!rebased || !planbook?.reconcileSaved) {
+          throw new Error('The local plan could not be kept');
+        }
+        await planbook.reconcileSaved(rebased);
+      }
+      await invalidatePrincipalQueries(queryClient, publication.queryScope);
+      void coordinator.drain({online: isOnline}).catch(() => undefined);
+    },
+    [isOnline, queryClient],
+  );
+
   const refreshCloudData = React.useCallback(async () => {
     const publication = publishedRef.current;
     const generation = publication?.claimGeneration;
@@ -1509,6 +1555,7 @@ export function AccountDataProviderCore({
     planRepository: published.planbook,
     isHydrated: true,
     isOnline,
+    isPrincipalSettled: isPrincipalSettledAuthState(auth.state),
     outbox: published.outbox,
     accountRepository: auth.accountDataRepository,
     guestClaimRemoteRepository: auth.guestClaimRemoteRepository,
@@ -1533,6 +1580,7 @@ export function AccountDataProviderCore({
     reconcileDeletedWatchSession,
     requestSync,
     refreshCloudData,
+    resolveConflict,
   };
 
   return (
@@ -2513,7 +2561,7 @@ function createAccountLogbookRepository(options: {
                 'log',
                 current,
                 toRemoteLog(current, options.userId),
-                current.remoteRevision,
+                await deleteBaseRevision(options.outbox, options.userId, 'log', current),
                 options.now,
               ),
             );
@@ -2563,7 +2611,7 @@ function createAccountLogbookRepository(options: {
                 'log',
                 current,
                 toRemoteLog(current, options.userId),
-                current.remoteRevision,
+                await deleteBaseRevision(options.outbox, options.userId, 'log', current),
                 options.now,
               ),
             );
@@ -2737,7 +2785,7 @@ function createAccountPlanRepository(options: {
                 'plan',
                 current,
                 toRemotePlan(current),
-                current.remoteRevision,
+                await deleteBaseRevision(options.outbox, options.userId, 'plan', current),
                 options.now,
               ),
             );
@@ -2787,7 +2835,7 @@ function createAccountPlanRepository(options: {
                 'plan',
                 current,
                 toRemotePlan(current),
-                current.remoteRevision,
+                await deleteBaseRevision(options.outbox, options.userId, 'plan', current),
                 options.now,
               ),
             );
@@ -2962,6 +3010,32 @@ function deterministicOperationId(
   })}`;
 }
 
+/**
+ * Deleting a row that is already in conflict means the diver saw the other device's version and
+ * still chose deletion, so the delete is based on that remote revision instead of the stale one.
+ */
+async function deleteBaseRevision(
+  outbox: AccountOutbox,
+  userId: string,
+  entityKind: AccountOutboxItem['entityKind'],
+  current: DiveLogEntry | DivePlan,
+): Promise<number | undefined> {
+  if (current.cloudSyncStatus !== 'conflict') {
+    return current.remoteRevision;
+  }
+  const reviewed = (await outbox.listConflicts(userId))
+    .filter(
+      conflict =>
+        conflict.entityKind === entityKind &&
+        conflict.entityLocalId === current.localId,
+    )
+    .sort((left, right) => left.recordedAt - right.recordedAt)
+    .at(-1)?.remote.revision;
+  return typeof reviewed === 'number' && Number.isSafeInteger(reviewed) && reviewed > 0
+    ? reviewed
+    : current.remoteRevision;
+}
+
 function deleteOperation(
   userId: string,
   entityKind: AccountOutboxItem['entityKind'],
@@ -3003,6 +3077,14 @@ function toRemoteLog(
 
 function toRemotePlan(plan: DivePlan, convertedLogId?: string): RemoteDivePlan {
   return createAccountRemotePlan(plan, convertedLogId);
+}
+
+function isPrincipalSettledAuthState(state: AuthState): boolean {
+  return (
+    state.status === 'guest' ||
+    state.status === 'authenticated' ||
+    state.status === 'authenticatedOffline'
+  );
 }
 
 function principalForAuthState(state: AuthState): DataPrincipal {

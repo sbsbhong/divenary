@@ -10,8 +10,10 @@ Sources: Guest claim semantic canonical reuse physical verification evidence, 20
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
 Sources: 사용자 승인 진단 설계, 2026-08-02
 Raw: [개인정보 최소화 모바일·Watch 진단 결정](../../raw/decisions/2026-08-02-privacy-minimized-diagnostics.md)
-Updated: 2026-08-02
-Last reviewed: 2026-08-02
+Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
+Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
+Updated: 2026-10-21
+Last reviewed: 2026-10-21
 
 ## 요약
 
@@ -46,6 +48,9 @@ Last reviewed: 2026-08-02
 - `CMWaterSubmersionManager` temperature update는 optional로 처리된다. 얕은 물 실기기에서 첫 update 지연, 미수신, 실제 값 표시와 저장 동작을 확인해야 한다.
 - Supabase/Auth 제품 정책, Divenary App ID/bundle identifier, signed provisioning, Google iOS callback, staging legal/current pointer와 hosted guest-claim automated verifier는 검증됐다. `mclvhwzsuvsxjerdouka`는 production이 아니며 production project와 production 약관/개인정보 문서는 future work다. Apple login은 사용자 확인을 근거로 성공으로 기록하지만 Google login은 provider enabled flag나 signed build만으로 성공으로 간주하지 않는다. Physical guest claim, post-Auth Watch regression과 앱 내 즉시 영구 account deletion 전에는 release하지 않는다.
 - Memory/share의 tab 위치, media metadata redaction, export format, 실패·취소 UX는 별도 spec이 필요하다.
+- 오프라인 membership은 저장 세션의 `expires_at`이 남아 있을 때만 허용하는 bounded local trust이고, 일반 서버 오류(5xx 포함)는 오프라인 인증으로 쓰지 않는다. 장기 오프라인(여행 중 다이빙 등)에서 계정 데이터 접근을 어디까지 허용할지는 보안 결정이라 2026-10-21 리뷰에서 바꾸지 않았다.
+- Watch 저장 세션의 동기화 표시는 `pending`, `synced`, `failed`만 구분한다. 전송 완료 뒤 iPhone 수신 확인을 기다리는 상태를 따로 보일지, 보인다면 sync 계약 밖 transport 상태로 둘지는 paired hardware 검증과 함께 결정해야 한다.
+- 2026-10-21 리뷰의 실기기 항목(stale/오류 수심 표시, 연속 다이브 시작, 5초 스탑 적립, 수온 신선도, Send Again, Dive Plans 선택)은 [실기기 검증 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md) D14-D19로 남아 있다.
 - Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, depth sensor sampling/background 검증, 수심 필터, CNS table, Bühlmann coefficient source, mandatory deco 처리, tank transmitter, export format은 별도 제품 질문으로 남아 있다.
 
 ## 상세

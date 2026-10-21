@@ -173,7 +173,8 @@ struct DiveSessionRecord: Codable, Identifiable {
         self.init(
             id: try container.decode(UUID.self, forKey: .id),
             schemaVersion: try container.decode(Int.self, forKey: .schemaVersion),
-            captureMode: try container.decodeIfPresent(DiveCaptureMode.self, forKey: .captureMode) ?? .real,
+            // Records without a capture mode predate the real sensor provider, so they hold demo data.
+            captureMode: try container.decodeIfPresent(DiveCaptureMode.self, forKey: .captureMode) ?? .demo,
             diveMode: try container.decode(DiveMode.self, forKey: .diveMode),
             siteId: try container.decodeIfPresent(String.self, forKey: .siteId),
             siteName: try container.decodeIfPresent(String.self, forKey: .siteName),
@@ -499,7 +500,7 @@ extension DiveSessionRecord {
         self.init(
             id: session.id,
             schemaVersion: 2,
-            captureMode: .real,
+            captureMode: .demo,
             diveMode: session.diveMode,
             siteId: session.siteId,
             siteName: session.siteName,
@@ -596,17 +597,9 @@ private struct DiveSampleStats {
         averageWaterTemperatureCelsius = temperatures.isEmpty
             ? nil
             : temperatures.reduce(0, +) / Double(temperatures.count)
-        latestAscentRateMetersPerMinute = Self.ascentRate(from: samples.dropLast().last, to: samples.last)
-        maxAscentRateMetersPerMinute = samples.indices.dropFirst().reduce(0) { maxRate, index in
-            max(maxRate, Self.ascentRate(from: samples[index - 1], to: samples[index]))
-        }
-    }
-
-    private static func ascentRate(from previous: DepthSample?, to current: DepthSample?) -> Double {
-        guard let previous, let current else { return 0 }
-        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
-        return (previous.depthMeters - current.depthMeters) / elapsed * 60
+        let ascentRates = DisplayAscentRateEstimator.rates(for: samples)
+        latestAscentRateMetersPerMinute = ascentRates.latest
+        maxAscentRateMetersPerMinute = ascentRates.maximum
     }
 }
 
@@ -1012,6 +1005,10 @@ private struct RecordWatchDepthSamplePayload: Encodable {
 }
 
 extension DiveSessionRecord {
+    var exceedsSupportedDepth: Bool {
+        unsupportedDepth?.exceeded == true
+    }
+
     var captureProvenanceLabel: String? {
         guard captureMode == .demo else {
             return nil

@@ -5,8 +5,6 @@ import { View, Text, Pressable } from 'react-native';
 import {
   createCalendar,
   type ICalendarProps,
-  type CalendarMode,
-  type CalendarMarkers,
 } from '@gluestack-ui/core/calendar/creator';
 import { cssInterop } from 'nativewind';
 import {

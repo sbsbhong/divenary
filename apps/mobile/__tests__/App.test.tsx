@@ -5,7 +5,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import ReactTestRenderer from 'react-test-renderer';
-import { AppState } from 'react-native';
+import { Alert, AppState, type AlertButton } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
 import { resolveAuthLoginSheetAllowedDetents } from '../src/components/navigation';
@@ -353,6 +353,9 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'nav-tab-planning' })).toBeTruthy();
     expect(root.findByProps({ testID: 'nav-tab-settings' })).toBeTruthy();
     expect(() => root.findByProps({ testID: 'nav-tab-memory' })).toThrow();
+    expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityRole).toBe('tab');
+    expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityState).toEqual({ selected: true });
+    expect(root.findByProps({ testID: 'nav-tab-logbook' }).props.accessibilityState).toEqual({ selected: false });
     expect(root.findByProps({ testID: 'home-login-action' })).toBeTruthy();
     expect(root.findAllByProps({ testID: 'language-menu-trigger' })).toHaveLength(0);
 
@@ -602,6 +605,105 @@ describe('App navigation', () => {
     });
 
     expect(root.findByProps({ testID: 'logbook-create-action' })).toBeTruthy();
+  });
+
+  const openRoutedLogCreate = async (root: ReactTestRenderer.ReactTestInstance) => {
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'home-open-planning-action' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'planning-open-logbook-action' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'logbook-create-action' }).props.onPress();
+    });
+    await waitForTestID(root, 'log-entry-editor-site-name');
+  };
+
+  test('asks before discarding unsaved edits in the routed log editor', async () => {
+    const alertCalls: Array<{ title: string; message?: string; buttons: AlertButton[] }> = [];
+    jest.spyOn(Alert, 'alert').mockImplementation((title, message, buttons) => {
+      alertCalls.push({ title, message, buttons: buttons ?? [] });
+    });
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    await openRoutedLogCreate(root);
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'log-entry-editor-site-name' }).props.onChangeText('Blue Hole');
+    });
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'log-entry-editor-back' }).props.onPress();
+    });
+
+    expect(alertCalls).toHaveLength(1);
+    expect(alertCalls[0].title).toBe('변경 사항을 버릴까요?');
+    expect(alertCalls[0].message).toBe('저장하지 않은 입력은 사라집니다.');
+    expect(alertCalls[0].buttons.map(button => [button.text, button.style])).toEqual([
+      ['계속 편집', 'cancel'],
+      ['버리기', 'destructive'],
+    ]);
+    expect(root.findAllByProps({ testID: 'log-entry-editor-site-name' }).length).toBeGreaterThan(0);
+
+    await ReactTestRenderer.act(async () => {
+      alertCalls[0].buttons.find(button => button.style === 'destructive')?.onPress?.();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(root.findAllByProps({ testID: 'log-entry-editor-site-name' })).toHaveLength(0);
+    jest.restoreAllMocks();
+  });
+
+  test('leaves the routed log editor without asking when nothing changed', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    await openRoutedLogCreate(root);
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'log-entry-editor-back' }).props.onPress();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(alert).not.toHaveBeenCalled();
+    expect(root.findAllByProps({ testID: 'log-entry-editor-site-name' })).toHaveLength(0);
+    jest.restoreAllMocks();
+  });
+
+  test('scrolls the routed log editor to the first invalid field on a failed save', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    await openRoutedLogCreate(root);
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'routed-editor-anchor' }).props.onLayout({ nativeEvent: { layout: { y: 24 } } });
+      root.findByProps({ testID: 'log-entry-editor-body' }).props.onLayout({ nativeEvent: { layout: { y: 96 } } });
+      root.findByProps({ testID: 'log-entry-editor-site-name-anchor' }).props.onLayout({ nativeEvent: { layout: { y: 210 } } });
+    });
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'log-entry-editor-save' }).props.onPress();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(root.findByProps({ testID: 'routed-editor-scroll-target' }).props.children).toBe('314');
   });
 
   test('opens login from Home while the user is a guest', async () => {

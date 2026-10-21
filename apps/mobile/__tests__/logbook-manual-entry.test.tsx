@@ -794,9 +794,9 @@ describe('Logbook manual entry flow', () => {
     await press(root, 'logbook-create-action');
     await press(root, 'log-entry-editor-save');
 
-    expect(root.findByProps({ testID: 'log-entry-editor-site-name-error' }).props.children).toBe('사이트 이름을 입력해주세요.');
-    expect(root.findByProps({ testID: 'log-entry-editor-duration-error' }).props.children).toBe('시간을 선택해주세요.');
-    expect(root.findByProps({ testID: 'log-entry-editor-max-depth-error' }).props.children).toBe('최대 수심(m)을 선택해주세요.');
+    expect(root.findByProps({ testID: 'log-entry-editor-site-name-error' }).props.children).toBe('Enter a site name.');
+    expect(root.findByProps({ testID: 'log-entry-editor-duration-error' }).props.children).toBe('Duration is required.');
+    expect(root.findByProps({ testID: 'log-entry-editor-max-depth-error' }).props.children).toBe('Max depth (m) is required.');
     expect(await repository.list()).toEqual([]);
   });
 
@@ -992,12 +992,13 @@ describe('Logbook manual entry flow', () => {
     await changeText(root, 'log-entry-editor-site-name', 'Blank Metrics Reef');
     await press(root, 'log-entry-editor-save');
 
-    expect(root.findByProps({ testID: 'log-entry-editor-duration-error' }).props.children).toBe('시간을 선택해주세요.');
-    expect(root.findByProps({ testID: 'log-entry-editor-max-depth-error' }).props.children).toBe('최대 수심(m)을 선택해주세요.');
+    expect(root.findByProps({ testID: 'log-entry-editor-duration-error' }).props.children).toBe('Duration is required.');
+    expect(root.findByProps({ testID: 'log-entry-editor-max-depth-error' }).props.children).toBe('Max depth (m) is required.');
     expect((await repository.list()).find(entry => entry.manual.site.name === 'Blank Metrics Reef')).toBeUndefined();
   });
 
-  test('explains invalid manual numeric schema values instead of returning generic messages', () => {
+  test('explains invalid manual numeric schema values instead of returning generic messages', async () => {
+    await i18n.changeLanguage('ko');
     const result = logEntryFormSchema.safeParse({
       startedAt: new Date('2026-06-20T09:30:00'),
       diveMode: 'freedive',
@@ -1716,7 +1717,7 @@ describe('Logbook manual entry flow', () => {
 
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gas-label-EAN32' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-gear-bcd-1,computer-1' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'log-entry-detail-mode-value-water-condition-mild' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'log-entry-detail-mode-value-water-condition-Mild' })).toBeTruthy();
     expect(root.findByProps({ testID: 'log-entry-detail-mode-value-pressure-200bar->70bar' })).toBeTruthy();
   });
 

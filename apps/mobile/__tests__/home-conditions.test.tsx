@@ -3,6 +3,8 @@ import { AppState } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import i18n from '../src/i18n';
 import HomeScreen from '../src/screens/home/screen';
+import { diveLogEntryToMobileSession } from '../src/states/use-dive-logbook';
+import { watchSessionToDiveLogEntry } from '../src/utils/watch-session-to-dive-log-entry';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import type { AppPreferencesStorage } from '../src/states/app-preferences-storage';
 import type { HomeConditionsProvider, HomeConditionsSnapshot } from '../src/conditions/home-conditions';
@@ -59,6 +61,8 @@ const renderHome = async (
     openSettings?: () => Promise<void>;
     preferencesStorage?: AppPreferencesStorage;
     sessions?: React.ComponentProps<typeof HomeScreen>['sessions'];
+    latestEntry?: React.ComponentProps<typeof HomeScreen>['latestEntry'];
+    onOpenLog?: jest.Mock;
     isLoading?: boolean;
     recovery?: React.ComponentProps<typeof HomeScreen>['recovery'];
   } = {},
@@ -80,6 +84,8 @@ const renderHome = async (
           openSettings={options.openSettings}
           onOpenLogbook={options.onOpenLogbook ?? jest.fn()}
           onOpenPlanning={options.onOpenPlanning ?? jest.fn()}
+          latestEntry={options.latestEntry}
+          onOpenLog={options.onOpenLog}
           onRefresh={jest.fn()}
           recovery={options.recovery}
         />
@@ -210,6 +216,52 @@ describe('Home conditions interface', () => {
 
     expect(root.findByProps({ testID: 'home-latest-empty-state' })).toBeTruthy();
     expect(root.findAllByProps({ testID: 'home-latest-date' })).toHaveLength(0);
+  });
+
+  it('puts the latest dive first, marks demo and unsupported depth, and opens its detail', async () => {
+    const session = {
+      localSessionId: 'demo-deep-1',
+      captureMode: 'demo' as const,
+      siteName: 'Blue Hole',
+      startedAt: 1782440000,
+      endedAt: 1782442000,
+      maxDepthMeters: 42.5,
+      samples: [
+        { localSessionId: 'demo-deep-1', timestamp: 1782440000, depthMeters: 0 },
+        { localSessionId: 'demo-deep-1', timestamp: 1782441000, depthMeters: 42.5 },
+      ],
+    };
+    const latestEntry = watchSessionToDiveLogEntry({ session, now: 1782443000, localId: 'log-1' });
+    const onOpenLog = jest.fn();
+    const { renderer } = await renderHome({
+      status: 'ready',
+      cityName: 'Jeju City',
+      localTime: 1782444600,
+      airTemperatureCelsius: 24.2,
+      source: 'mock',
+      updatedAt: 1782444300,
+    }, {
+      sessions: [diveLogEntryToMobileSession(latestEntry)],
+      latestEntry,
+      onOpenLog,
+    });
+    const root = renderer.root;
+    const testIds = root
+      .findAll(node => typeof node.props.testID === 'string' && typeof node.type === 'string')
+      .map(node => node.props.testID as string);
+
+    expect(testIds.indexOf('home-latest-log-card')).toBeGreaterThanOrEqual(0);
+    expect(testIds.indexOf('home-latest-log-card')).toBeLessThan(
+      testIds.findIndex(id => id.startsWith('home-conditions')),
+    );
+    expect(root.findAllByProps({ testID: 'home-latest-demo-badge' }).length).toBeGreaterThan(0);
+    expect(root.findAllByProps({ testID: 'home-latest-unsupported-depth' }).length).toBeGreaterThan(0);
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'home-latest-log-card' }).props.onPress();
+    });
+
+    expect(onOpenLog).toHaveBeenCalledWith(latestEntry);
   });
 
   it('shows a latest log skeleton while logbook data is loading', async () => {

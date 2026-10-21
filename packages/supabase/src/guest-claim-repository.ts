@@ -103,14 +103,23 @@ function duplicateObject(error: unknown): boolean {
   return status === 409 || status === '409';
 }
 
-function claimError(error: unknown, operation: GuestClaimRepositoryOperation): GuestClaimRepositoryError {
+/**
+ * PostgREST puts the HTTP status on the query result rather than on the error body, so callers
+ * pass `result.status` to keep gateway and session failures retryable.
+ */
+function claimError(
+  error: unknown,
+  operation: GuestClaimRepositoryOperation,
+  responseStatus?: number,
+): GuestClaimRepositoryError {
   if (error instanceof GuestClaimRepositoryError) return error;
-  const status = safeStatus(error);
+  const status = safeStatus(error) ?? (Number.isInteger(responseStatus) ? responseStatus : undefined);
   const code = safeCode(error);
   if (
     status === 401 ||
     status === 403 ||
     code === 'PGRST301' ||
+    code === 'PGRST303' ||
     code === 'invalid_jwt'
   ) {
     return new GuestClaimRepositoryError(operation, 'session_expired');
@@ -271,10 +280,10 @@ export function createGuestClaimRemoteRepository(
         row = single<BatchRow>(inserted.data, 'batch');
       } else if (safeCode(inserted.error) === '23505') {
         const existing = await client.from('guest_claim_batches').select().eq('user_id', userId).eq('client_batch_id', input.clientBatchId).maybeSingle();
-        if (errorResult(existing)) throw claimError(existing.error, 'batch');
+        if (errorResult(existing)) throw claimError(existing.error, 'batch', existing.status);
         row = single<BatchRow>(existing.data, 'batch');
       } else {
-        throw claimError(inserted.error, 'batch');
+        throw claimError(inserted.error, 'batch', inserted.status);
       }
       assertBatchRow(row, input, userId);
       return {
@@ -291,9 +300,9 @@ export function createGuestClaimRemoteRepository(
       assertStageInput(input);
       const payload = toJsonPayload(input.entityKind === 'log' ? boundProfilePreview(input.payload) : input.payload);
       const inserted = await client.from('guest_claim_records').upsert({user_id: userId, batch_id: input.batchId, entity_kind: input.entityKind, client_record_id: input.clientRecordId, payload_sha256: input.payloadSha256, payload, ...(input.sourcePlanClientRecordId === undefined ? {} : {source_plan_client_record_id: input.sourcePlanClientRecordId}), ...(input.convertedLogClientRecordId === undefined ? {} : {converted_log_client_record_id: input.convertedLogClientRecordId})}, {onConflict: 'batch_id,entity_kind,client_record_id', ignoreDuplicates: true});
-      if (errorResult(inserted)) throw claimError(inserted.error, 'stage');
+      if (errorResult(inserted)) throw claimError(inserted.error, 'stage', inserted.status);
       const existing = await client.from('guest_claim_records').select().eq('batch_id', input.batchId).eq('entity_kind', input.entityKind).eq('client_record_id', input.clientRecordId).maybeSingle();
-      if (errorResult(existing)) throw claimError(existing.error, 'stage');
+      if (errorResult(existing)) throw claimError(existing.error, 'stage', existing.status);
       const row = single<ClaimRow>(existing.data, 'stage');
       assertClaimRow(row, input, userId, payload);
       return {stagingRecordId: row.id, targetRecordId: row.target_record_id};
@@ -306,11 +315,11 @@ export function createGuestClaimRemoteRepository(
     try {
       assertProfileInput(input);
       const update = await client.from('guest_claim_records').update({profile_path: input.path, profile_content_revision: input.contentRevision, profile_sha256: input.sha256, profile_byte_count: input.byteCount, profile_sample_count: input.sampleCount}).eq('id', input.stagingRecordId).eq('user_id', userId).is('profile_path', null).select().maybeSingle();
-      if (errorResult(update)) throw claimError(update.error, 'profile');
+      if (errorResult(update)) throw claimError(update.error, 'profile', update.status);
       let row: ClaimRow;
       if (update.data === null) {
         const existing = await client.from('guest_claim_records').select().eq('id', input.stagingRecordId).eq('user_id', userId).maybeSingle();
-        if (errorResult(existing)) throw claimError(existing.error, 'profile');
+        if (errorResult(existing)) throw claimError(existing.error, 'profile', existing.status);
         row = single<ClaimRow>(existing.data, 'profile');
       } else {
         row = single<ClaimRow>(update.data, 'profile');
@@ -395,7 +404,7 @@ export function createGuestClaimRemoteRepository(
     try {
       if (!validUuid(batchId)) return fail('list');
       const batch = await client.from('guest_claim_batches').select().eq('id', batchId).eq('user_id', userId).maybeSingle();
-      if (errorResult(batch)) throw claimError(batch.error, 'list');
+      if (errorResult(batch)) throw claimError(batch.error, 'list', batch.status);
       assertCommittedBatchRow(single<BatchRow>(batch.data, 'list'), batchId, userId);
       const recordsResult = await client
         .from('guest_claim_records')
@@ -404,7 +413,7 @@ export function createGuestClaimRemoteRepository(
         .eq('user_id', userId)
         .order('entity_kind', {ascending: true})
         .order('client_record_id', {ascending: true});
-      if (errorResult(recordsResult)) throw claimError(recordsResult.error, 'list');
+      if (errorResult(recordsResult)) throw claimError(recordsResult.error, 'list', recordsResult.status);
       const records = array<ClaimRow>(recordsResult.data, 'list');
       const {plans: stagedPlans, logs: stagedLogs} = committedRecordsByKind(records, batchId, userId);
       const planIds = stagedPlans.map(record => record.target_record_id);

@@ -37,11 +37,13 @@ import { useAppPreferences } from '../../states/app-preferences';
 import {
   setAccountClaimNavigationReady,
   useAccountData,
+  useOptionalAccountData,
 } from '../../states/account-data';
 import { useAuth, type AuthState } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
 import { useDivePlans } from '../../states/use-dive-plans';
 import { WatchConnectivitySyncProvider } from '../../states/watch-connectivity-sync';
+import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
 import { divePlanToDiveLogEntryDraft } from '../../utils/dive-plan-to-log-entry';
@@ -623,6 +625,8 @@ export default function RootNavigation(): React.JSX.Element {
                     {() => (
                       <HomeScreen
                         sessions={logbook.sessions}
+                        latestEntry={logbook.entries[0]}
+                        onOpenLog={openLogEntryDetail}
                         onOpenLogbook={openLogbook}
                         onOpenPlanning={openPlanning}
                         onOpenLogin={openAuthLogin}
@@ -639,6 +643,8 @@ export default function RootNavigation(): React.JSX.Element {
                     {() => (
                       <LogbookScreen
                         entries={logbook.filteredEntries}
+                        totalEntryCount={logbook.entries.length}
+                        loadError={logbook.listError}
                         filter={logbook.filter}
                         onFilterChange={logbook.setFilter}
                         onSyncWatch={logbook.syncWatchPayloads}
@@ -661,6 +667,7 @@ export default function RootNavigation(): React.JSX.Element {
                       <PlanningScreen
                         sessions={logbook.sessions}
                         plans={planning.plans}
+                        loadError={planning.listError}
                         onRefresh={planning.refresh}
                         isLoading={planning.isLoading}
                         isRefreshing={planning.isRefreshing}
@@ -786,13 +793,13 @@ export default function RootNavigation(): React.JSX.Element {
                     })}
                     variant="primary"
                     onPress={openImportedLogToast}
-                    className="min-h-10 flex-1 px-4 py-2"
+                    className="min-h-11 flex-1 px-4 py-2"
                   />
                   <InstrumentButton
                     testID="watch-auto-import-dismiss"
                     label={t('watchSync.dismiss', { defaultValue: 'Close' })}
                     onPress={() => setAutoImportToast(undefined)}
-                    className="min-h-10 flex-1 px-4 py-2"
+                    className="min-h-11 flex-1 px-4 py-2"
                   />
                 </HStack>
               </VStack>
@@ -859,7 +866,7 @@ function AppTabNavigator({ children, initialRouteName, onRouteReselect }: AppTab
     <NavigationContent>
       <VStack className="flex-1 bg-background">{descriptors[focusedRoute.key].render()}</VStack>
 
-      <HStack className="bg-card px-2 pt-1" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
+      <HStack accessibilityRole="tablist" className="bg-card px-2 pt-1" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
         {state.routes.map(route => {
           const selected = route.key === focusedRoute.key;
           const routeName = route.name as DiveLogbookSection;
@@ -907,23 +914,30 @@ function LogbookCreateRoute(
   });
 
   return (
-    <RoutedScrollScreen>
-      <LogEntryEditor
-        entry={entry}
-        mode="create"
-        isSaving={props.logbook.isSaving}
-        saveError={props.logbook.saveError}
-        onCancel={() => props.navigation.goBack()}
-        onSave={async nextEntry => {
-          const savedEntry = await props.logbook.saveEntry(nextEntry);
-          await props.onPendingDraftSaved(savedEntry, props.route.params?.sourcePlanLocalId);
-          props.navigation.replace('logbookDetail', {
-            localId: savedEntry.localId,
-          });
-          return savedEntry;
-        }}
-      />
-    </RoutedScrollScreen>
+    <RoutedEditorScreen navigation={props.navigation}>
+      {controls => (
+        <LogEntryEditor
+          entry={entry}
+          mode="create"
+          isSaving={props.logbook.isSaving}
+          saveError={props.logbook.saveError}
+          onCancel={controls.onCancel}
+          onFieldLayout={controls.onFieldLayout}
+          onInvalidSubmit={controls.onInvalidSubmit}
+          onDirtyChange={controls.onDirtyChange}
+          onSave={async nextEntry => {
+            const savedEntry = await props.logbook.saveEntry(nextEntry);
+            await props.onPendingDraftSaved(savedEntry, props.route.params?.sourcePlanLocalId);
+            controls.leaveAfterSave(() =>
+              props.navigation.replace('logbookDetail', {
+                localId: savedEntry.localId,
+              }),
+            );
+            return savedEntry;
+          }}
+        />
+      )}
+    </RoutedEditorScreen>
   );
 }
 
@@ -935,6 +949,7 @@ function LogbookDetailRoute(
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
   const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
   const { loadWatchProfile } = props.logbook;
+  const accountData = useOptionalAccountData();
 
   React.useEffect(() => {
     let mounted = true;
@@ -967,6 +982,11 @@ function LogbookDetailRoute(
           await props.logbook.deleteEntry(localId);
           props.navigation.goBack();
         }}
+        onResolveConflict={
+          accountData?.resolveConflict
+            ? choice => accountData.resolveConflict!('log', entry.localId, choice)
+            : undefined
+        }
       />
     </RoutedScrollScreen>
   );
@@ -984,22 +1004,29 @@ function LogbookEditRoute(
   }
 
   return (
-    <RoutedScrollScreen>
-      <LogEntryEditor
-        entry={entry}
-        mode="edit"
-        isSaving={props.logbook.isSaving}
-        saveError={props.logbook.saveError}
-        onCancel={() => props.navigation.goBack()}
-        onSave={async nextEntry => {
-          const savedEntry = await props.logbook.saveEntry(nextEntry);
-          props.navigation.replace('logbookDetail', {
-            localId: savedEntry.localId,
-          });
-          return savedEntry;
-        }}
-      />
-    </RoutedScrollScreen>
+    <RoutedEditorScreen navigation={props.navigation}>
+      {controls => (
+        <LogEntryEditor
+          entry={entry}
+          mode="edit"
+          isSaving={props.logbook.isSaving}
+          saveError={props.logbook.saveError}
+          onCancel={controls.onCancel}
+          onFieldLayout={controls.onFieldLayout}
+          onInvalidSubmit={controls.onInvalidSubmit}
+          onDirtyChange={controls.onDirtyChange}
+          onSave={async nextEntry => {
+            const savedEntry = await props.logbook.saveEntry(nextEntry);
+            controls.leaveAfterSave(() =>
+              props.navigation.replace('logbookDetail', {
+                localId: savedEntry.localId,
+              }),
+            );
+            return savedEntry;
+          }}
+        />
+      )}
+    </RoutedEditorScreen>
   );
 }
 
@@ -1011,22 +1038,29 @@ function PlanningCreateRoute(
   const [plan] = React.useState(() => createBlankDivePlan());
 
   return (
-    <RoutedScrollScreen>
-      <PlanEditor
-        plan={plan}
-        mode="create"
-        isSaving={props.planning.isSaving}
-        saveError={props.planning.saveError}
-        onCancel={() => props.navigation.goBack()}
-        onSave={async nextPlan => {
-          const savedPlan = await props.planning.savePlan(nextPlan);
-          props.navigation.replace('planningDetail', {
-            localId: savedPlan.localId,
-          });
-          return savedPlan;
-        }}
-      />
-    </RoutedScrollScreen>
+    <RoutedEditorScreen navigation={props.navigation}>
+      {controls => (
+        <PlanEditor
+          plan={plan}
+          mode="create"
+          isSaving={props.planning.isSaving}
+          saveError={props.planning.saveError}
+          onCancel={controls.onCancel}
+          onFieldLayout={controls.onFieldLayout}
+          onInvalidSubmit={controls.onInvalidSubmit}
+          onDirtyChange={controls.onDirtyChange}
+          onSave={async nextPlan => {
+            const savedPlan = await props.planning.savePlan(nextPlan);
+            controls.leaveAfterSave(() =>
+              props.navigation.replace('planningDetail', {
+                localId: savedPlan.localId,
+              }),
+            );
+            return savedPlan;
+          }}
+        />
+      )}
+    </RoutedEditorScreen>
   );
 }
 
@@ -1039,6 +1073,7 @@ function PlanningDetailRoute(
   },
 ): React.JSX.Element {
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
+  const accountData = useOptionalAccountData();
   const hasExistingConvertedLog = Boolean(
     plan?.convertedLogLocalId && props.logbook.entries.some(entry => entry.localId === plan.convertedLogLocalId),
   );
@@ -1090,6 +1125,11 @@ function PlanningDetailRoute(
         }}
         onCreateLogFromPlan={props.onCreateLogFromPlan}
         hasExistingConvertedLog={hasExistingConvertedLog}
+        onResolveConflict={
+          accountData?.resolveConflict
+            ? choice => accountData.resolveConflict!('plan', plan.localId, choice)
+            : undefined
+        }
       />
     </RoutedScrollScreen>
   );
@@ -1107,33 +1147,122 @@ function PlanningEditRoute(
   }
 
   return (
-    <RoutedScrollScreen>
-      <PlanEditor
-        plan={plan}
-        mode="edit"
-        isSaving={props.planning.isSaving}
-        saveError={props.planning.saveError}
-        onCancel={() => props.navigation.goBack()}
-        onSave={async nextPlan => {
-          const savedPlan = await props.planning.savePlan(nextPlan);
-          props.navigation.replace('planningDetail', {
-            localId: savedPlan.localId,
-          });
-          return savedPlan;
-        }}
-      />
-    </RoutedScrollScreen>
+    <RoutedEditorScreen navigation={props.navigation}>
+      {controls => (
+        <PlanEditor
+          plan={plan}
+          mode="edit"
+          isSaving={props.planning.isSaving}
+          saveError={props.planning.saveError}
+          onCancel={controls.onCancel}
+          onFieldLayout={controls.onFieldLayout}
+          onInvalidSubmit={controls.onInvalidSubmit}
+          onDirtyChange={controls.onDirtyChange}
+          onSave={async nextPlan => {
+            const savedPlan = await props.planning.savePlan(nextPlan);
+            controls.leaveAfterSave(() =>
+              props.navigation.replace('planningDetail', {
+                localId: savedPlan.localId,
+              }),
+            );
+            return savedPlan;
+          }}
+        />
+      )}
+    </RoutedEditorScreen>
   );
 }
 
-function RoutedScrollScreen(props: { children: React.ReactNode }): React.JSX.Element {
+type ScrollViewHandle = React.ComponentRef<typeof KeyboardAwareScrollView>;
+
+function RoutedScrollScreen(props: {
+  children: React.ReactNode;
+  scrollViewRef?: React.Ref<ScrollViewHandle>;
+}): React.JSX.Element {
   return (
     <KeyboardAwareScrollView
+      ref={props.scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">{props.children}</VStack>
     </KeyboardAwareScrollView>
+  );
+}
+
+type RoutedEditorControls = {
+  onCancel: () => void;
+  onFieldLayout: (fieldName: string, y: number) => void;
+  onInvalidSubmit: (fieldName: string) => void;
+  onDirtyChange: (isDirty: boolean) => void;
+  leaveAfterSave: (navigate: () => void) => void;
+};
+
+function RoutedEditorScreen(props: {
+  navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'goBack' | 'dispatch'>;
+  children: (controls: RoutedEditorControls) => React.ReactNode;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { navigation } = props;
+  const scrollViewRef = React.useRef<ScrollViewHandle>(null);
+  const editorOffsetRef = React.useRef(0);
+  const fieldOffsetsRef = React.useRef<Record<string, number>>({});
+  const leavingAfterSaveRef = React.useRef(false);
+  const [isDirty, setIsDirty] = React.useState(false);
+  const [lastScrollTarget, setLastScrollTarget] = React.useState<number>();
+
+  usePreventRemove(isDirty, ({ data }) => {
+    if (leavingAfterSaveRef.current) {
+      navigation.dispatch(data.action);
+      return;
+    }
+
+    confirmDestructiveAction({
+      title: t('common.discardChanges.title'),
+      message: t('common.discardChanges.message'),
+      cancelLabel: t('common.discardChanges.keepEditing'),
+      confirmLabel: t('common.discardChanges.discard'),
+      onConfirm: () => navigation.dispatch(data.action),
+    });
+  });
+
+  const controls = React.useMemo<RoutedEditorControls>(
+    () => ({
+      onCancel: () => navigation.goBack(),
+      onFieldLayout: (fieldName, y) => {
+        fieldOffsetsRef.current[fieldName] = y;
+      },
+      onInvalidSubmit: fieldName => {
+        const fieldOffset = fieldOffsetsRef.current[fieldName];
+        if (fieldOffset === undefined) {
+          return;
+        }
+        const nextOffset = Math.max(0, editorOffsetRef.current + fieldOffset - 16);
+        setLastScrollTarget(nextOffset);
+        scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
+      },
+      onDirtyChange: setIsDirty,
+      leaveAfterSave: navigate => {
+        leavingAfterSaveRef.current = true;
+        navigate();
+      },
+    }),
+    [navigation],
+  );
+
+  return (
+    <RoutedScrollScreen scrollViewRef={scrollViewRef}>
+      {lastScrollTarget === undefined ? null : (
+        <Text testID="routed-editor-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
+      )}
+      <Box
+        testID="routed-editor-anchor"
+        onLayout={event => {
+          editorOffsetRef.current = event.nativeEvent.layout.y;
+        }}>
+        {props.children(controls)}
+      </Box>
+    </RoutedScrollScreen>
   );
 }
 
@@ -1211,6 +1340,9 @@ function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolea
     <Pressable
       onPress={props.onPress}
       testID={`nav-tab-${props.id}`}
+      accessibilityRole="tab"
+      accessibilityLabel={props.label}
+      accessibilityState={{ selected: props.selected }}
       className={navTabStyles({ selected: props.selected })}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <Box className={navTabIndicatorStyles({ selected: props.selected })} />

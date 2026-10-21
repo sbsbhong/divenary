@@ -19,6 +19,18 @@ export type AccountMutationResult<T> =
   | {status: 'saved'; value: T}
   | {status: 'conflict'; remote: T};
 
+/** Identity of a soft-deleted remote row, used to remove synced copies on other devices. */
+export type RemoteDeletedRecord = {
+  id: string;
+  localId: string;
+  revision: number;
+};
+
+export type RemoteRecordState<T> = {
+  value: T;
+  deleted: boolean;
+};
+
 export type AccountDataRepository = {
   listLogs(input?: {cursor?: AccountDataCursor; limit?: number}): Promise<AccountDataPage<RemoteDiveLog>>;
   listPlans(input?: {cursor?: AccountDataCursor; limit?: number}): Promise<AccountDataPage<RemoteDivePlan>>;
@@ -26,6 +38,10 @@ export type AccountDataRepository = {
   savePlan(value: RemoteDivePlan, expectedRevision?: number): Promise<AccountMutationResult<RemoteDivePlan>>;
   deleteLog(id: string, expectedRevision: number): Promise<AccountMutationResult<RemoteDiveLog>>;
   deletePlan(id: string, expectedRevision: number): Promise<AccountMutationResult<RemoteDivePlan>>;
+  getLog?(id: string): Promise<RemoteRecordState<RemoteDiveLog> | undefined>;
+  getPlan?(id: string): Promise<RemoteRecordState<RemoteDivePlan> | undefined>;
+  listDeletedLogs?(input?: {cursor?: AccountDataCursor; limit?: number}): Promise<AccountDataPage<RemoteDeletedRecord>>;
+  listDeletedPlans?(input?: {cursor?: AccountDataCursor; limit?: number}): Promise<AccountDataPage<RemoteDeletedRecord>>;
 };
 
 export type GuestClaimBatchInput = {

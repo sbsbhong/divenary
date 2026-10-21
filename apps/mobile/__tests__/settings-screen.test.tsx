@@ -9,6 +9,11 @@ import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/scre
 import type { LinkedWatchInfo } from '../src/native/watch-connectivity';
 import type { AuthContextValue } from '../src/states/auth';
 import type { GuestClaimViewState } from '../src/claim/guest-claim-types';
+import { InMemoryKeyValueStore } from '../src/storage/in-memory-key-value-store';
+import {
+  createWatchRejectedPayloadStore,
+  type WatchRejectedPayloadStore,
+} from '../src/storage/watch-rejected-payload-store';
 
 const mockUseAuth = jest.fn<AuthContextValue, []>();
 
@@ -53,6 +58,7 @@ const renderSettings = async (options?: {
     state: GuestClaimViewState;
   };
   onOpenAccountClaim?: () => void;
+  rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
 }) => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
@@ -60,6 +66,10 @@ const renderSettings = async (options?: {
     renderer = ReactTestRenderer.create(
       <AppPreferencesProvider>
         <SettingsScreen
+          rejectedWatchPayloadStore={
+            options?.rejectedWatchPayloadStore ??
+            createWatchRejectedPayloadStore({ storage: new InMemoryKeyValueStore() })
+          }
           loadLinkedWatchInfo={options?.loadLinkedWatchInfo ?? (() => Promise.resolve(linkedWatchInfo))}
           requestWatchSyncNotificationPermission={options?.requestWatchSyncNotificationPermission}
           hasWatchSyncNotificationPermission={options?.hasWatchSyncNotificationPermission}
@@ -457,7 +467,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings({ route: 'theme' });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('설정');
+    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('뒤로');
     expect(root.findByProps({ testID: 'settings-back-icon' })).toBeTruthy();
   });
 
@@ -545,6 +555,48 @@ describe('SettingsScreen', () => {
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('기기 관리');
     expect(root.findByProps({ testID: 'settings-linked-watch-icon' })).toBeTruthy();
     expect(root.findByProps({ testID: 'settings-linked-watch-name' }).props.children).toBe('Seongbin Apple Watch');
+  });
+
+  test('lists watch recordings the phone set aside and lets the user clear them', async () => {
+    const rejectedWatchPayloadStore = createWatchRejectedPayloadStore({ storage: new InMemoryKeyValueStore() });
+    await rejectedWatchPayloadStore.recordRejection({ payloadId: 'p1', localSessionId: 's1', reason: 'invalidMessage' });
+    await rejectedWatchPayloadStore.recordRejection({ payloadId: 'p2', localSessionId: 's2', reason: 'repeatedImportFailure' });
+    const renderer = await renderSettings({ route: 'devices', rejectedWatchPayloadStore });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-rejected-watch-title' }).props.children).toBe(
+      '가져오지 못한 워치 기록 2건',
+    );
+    expect(root.findByProps({ testID: 'settings-rejected-watch-guidance' }).props.children).toBe(
+      '워치에는 원본이 남아 있습니다. iPhone과 워치 앱을 최신 버전으로 업데이트한 뒤 워치에서 다시 동기화하세요.',
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-rejected-watch-clear' }).props.onPress();
+    });
+
+    expect(root.findAllByProps({ testID: 'settings-rejected-watch-title' })).toHaveLength(0);
+    await expect(rejectedWatchPayloadStore.list()).resolves.toEqual([]);
+  });
+
+  test('reports a watch status lookup failure and retries it on refresh', async () => {
+    const loadLinkedWatchInfo = jest
+      .fn<Promise<LinkedWatchInfo>, []>()
+      .mockRejectedValueOnce(new Error('bridge busy'))
+      .mockResolvedValue(linkedWatchInfo);
+    const renderer = await renderSettings({ route: 'devices', loadLinkedWatchInfo });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe(
+      '워치 상태를 확인하지 못했습니다',
+    );
+
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-linked-watch-refresh' }).props.onPress();
+    });
+
+    expect(loadLinkedWatchInfo).toHaveBeenCalledTimes(2);
+    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
   });
 
   test('explains when no watch is paired', async () => {

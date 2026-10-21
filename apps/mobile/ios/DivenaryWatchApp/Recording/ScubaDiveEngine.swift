@@ -6,6 +6,7 @@ struct ScubaDiveEngine {
     private let gasLabel: String?
     private var samples: [DepthSample] = []
     private var safetyStopController = SafetyStopController()
+    private var ascentRateEstimator = DisplayAscentRateEstimator()
     private var maxDepthMeters: Double = 0
     private var latestAscentRateMetersPerMinute: Double = 0
     private var maxAscentRateMetersPerMinute: Double = 0
@@ -29,10 +30,9 @@ struct ScubaDiveEngine {
             return
         }
 
-        let previous = samples.last
         samples.append(sample)
         maxDepthMeters = max(maxDepthMeters, sample.depthMeters)
-        latestAscentRateMetersPerMinute = Self.ascentRate(from: previous, to: sample)
+        latestAscentRateMetersPerMinute = ascentRateEstimator.append(sample)
         maxAscentRateMetersPerMinute = max(maxAscentRateMetersPerMinute, latestAscentRateMetersPerMinute)
         safetyStopController.update(maxDepthMeters: maxDepthMeters, sample: sample)
     }
@@ -66,12 +66,5 @@ struct ScubaDiveEngine {
         let temperatures = samples.compactMap(\.waterTemperatureCelsius)
         guard !temperatures.isEmpty else { return nil }
         return temperatures.reduce(0, +) / Double(temperatures.count)
-    }
-
-    private static func ascentRate(from previous: DepthSample?, to current: DepthSample) -> Double {
-        guard let previous else { return 0 }
-        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
-        return (previous.depthMeters - current.depthMeters) / elapsed * 60
     }
 }

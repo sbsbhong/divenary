@@ -170,6 +170,21 @@ describe('GuestClaimRemoteRepository', () => {
         response: {data: null, error: new Error('private transport detail')},
         expectedKind: 'network_unavailable',
       },
+      {
+        name: 'gateway failure with the status on the PostgREST result',
+        response: {data: null, error: {message: 'Service Unavailable'}, status: 503},
+        expectedKind: 'network_unavailable',
+      },
+      {
+        name: 'expired JWT with the status on the PostgREST result',
+        response: {data: null, error: {code: 'PGRST303', message: 'JWT expired'}, status: 401},
+        expectedKind: 'session_expired',
+      },
+      {
+        name: 'expired JWT code without a status',
+        response: {data: null, error: {code: 'PGRST303', message: 'JWT expired'}},
+        expectedKind: 'session_expired',
+      },
     ];
 
     for (const item of cases) {

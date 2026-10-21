@@ -11,7 +11,7 @@
 ## 현재 목표
 
 - Apple Watch에서 다이빙 세션을 가볍게 기록하고 로컬에서 확인할 수 있는 watchOS 앱 PoC를 유지한다.
-- 모바일 앱에서 워치에서 온 세션을 리뷰하고, 로그북/계획/메모리 화면을 확장할 기반을 만든다.
+- 모바일 앱에서 워치에서 온 세션을 리뷰하고, Home/로그북/계획/설정 탭을 확장할 기반을 만든다. `src/screens/memory`의 메모리 화면은 아직 navigation에 연결되지 않은 미리보기다.
 - `packages/contracts`의 JSON Schema를 watch-mobile sync contract의 기준으로 유지한다.
 - 구현된 Supabase/Auth foundation과 account Logbook/Planbook schema, principal-partitioned local repository, account outbox/sync, explicit guest claim 경계를 유지한다. Account-data migrations와 claim Edge Function은 staging `mclvhwzsuvsxjerdouka`에 배포됐고 automated staging verifier를 통과했다. Physical claim과 production 승격은 별도 gate다.
 - WatchConnectivity import acknowledgement는 모바일 local repository 저장만 뜻하며 account cloud sync나 guest claim 완료와 섞지 않는다.
@@ -98,9 +98,10 @@ ascent, safety stop, no-fly, underwater warning을 언급하는 watch/mobile sur
 가장 작은 관련 gate부터 실행하고, 필요하면 넓힌다.
 
 - Contract/schema/generator 변경: `yarn check:quick`
-- watchOS, Swift, Xcode project, scheme, entitlement, native 변경: `yarn watch:build`
-- agentic, contract, watchOS, wiki, architecture-rule 변경 후 일반 handoff: `yarn codex:check`
-- React Native/iOS mobile 변경: `yarn mobile:typecheck` 먼저 실행한 뒤, CocoaPods workspace가 준비되어 있으면 `yarn ios:build`
-- Supabase 변경: local Supabase script를 먼저 확인한 뒤 가능한 가장 작은 migration/type-generation/repository gate 실행
+- watchOS, Swift, Xcode project, scheme, entitlement, native 변경: `yarn watch:build`. Watch 동작이 바뀌면 `DivenaryWatchAppTests` scheme의 XCTest도 실행한다: `xcodebuild test -project apps/mobile/ios/Divenary.xcodeproj -scheme DivenaryWatchAppTests -destination 'platform=watchOS Simulator,name=<설치된 watch simulator>' CODE_SIGNING_ALLOWED=NO`
+- agentic, contract, watchOS, wiki, architecture-rule 변경 후 일반 handoff: `yarn codex:check`. contract generation, mobile typecheck/test/lint, watch UI check, Supabase unit test, watch build를 차례로 실행한다.
+- React Native/iOS mobile 변경: `yarn mobile:typecheck`, `yarn mobile:test`, `yarn mobile:lint`를 실행한 뒤, CocoaPods workspace가 준비되어 있으면 `yarn ios:build`
+- Supabase 변경: `yarn supabase:unit`으로 package repository test를 먼저 실행하고, local Supabase script를 확인한 뒤 가능한 가장 작은 migration/type-generation/pgTAP gate를 실행한다.
+- CI(`.github/workflows/ci.yml`)는 macOS가 필요 없는 mobile typecheck/jest/lint, watch UI check, Supabase unit test와 typecheck만 실행한다. Watch build와 XCTest는 로컬에서 실행한다.
 
 현재 환경에서 실제로 실행하지 않은 command를 pass했다고 보고하지 않는다.

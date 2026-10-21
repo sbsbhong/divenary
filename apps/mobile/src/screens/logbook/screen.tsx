@@ -1,5 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
+import { ListStateCard } from '../../components/ui/list-state-card';
 import { Box } from '../../components/ui/box';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
@@ -24,7 +26,11 @@ import { LogEntryDetail } from './log-entry-detail';
 import { LogEntryEditor } from './log-entry-editor';
 
 type LogbookScreenProps = {
+  /** Entries after the search filter. */
   entries: DiveLogEntry[];
+  /** Entries before the search filter, to tell "no matches" from "no logs". */
+  totalEntryCount?: number;
+  loadError?: Error | null;
   filter: DiveSessionFilter;
   onFilterChange: (filter: DiveSessionFilter) => void;
   onSyncWatch: () => Promise<WatchSyncActionResult>;
@@ -50,9 +56,10 @@ type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
+  const palette = useGluestackColors();
   const [route, setRoute] = React.useState<LocalRoute>('list');
   const [draftEntry, setDraftEntry] = React.useState<DiveLogEntry | undefined>();
-  const [syncToastMessage, setSyncToastMessage] = React.useState<string | undefined>();
+  const [syncToast, setSyncToast] = React.useState<{ message: string; tone: 'success' | 'attention' } | undefined>();
   const [isSyncingWatch, setIsSyncingWatch] = React.useState(false);
   const consumedPendingDraftKey = React.useRef<string | undefined>(undefined);
   const scrollViewRef = React.useRef<React.ComponentRef<typeof KeyboardAwareScrollView>>(null);
@@ -182,22 +189,27 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
 
   const syncWatch = React.useCallback(async () => {
     setIsSyncingWatch(true);
-    setSyncToastMessage(undefined);
+    setSyncToast(undefined);
 
     try {
       const result = await props.onSyncWatch();
 
-      if (result.importedCount > 0) {
-        setSyncToastMessage(t('logbook.syncWatchImported', { count: result.importedCount }));
+      if (result.importedCount > 0 && result.failedCount > 0) {
+        setSyncToast({
+          message: t('logbook.syncWatchPartial', { count: result.importedCount, failed: result.failedCount }),
+          tone: 'attention',
+        });
+      } else if (result.importedCount > 0) {
+        setSyncToast({ message: t('logbook.syncWatchImported', { count: result.importedCount }), tone: 'success' });
       } else if (result.failedCount > 0) {
-        setSyncToastMessage(t('logbook.syncWatchFailed'));
+        setSyncToast({ message: t('logbook.syncWatchFailed'), tone: 'attention' });
       } else if (result.unavailable) {
-        setSyncToastMessage(t('logbook.syncWatchUnavailable'));
+        setSyncToast({ message: t('logbook.syncWatchUnavailable'), tone: 'attention' });
       } else {
-        setSyncToastMessage(t('logbook.syncWatchNone'));
+        setSyncToast({ message: t('logbook.syncWatchNone'), tone: 'success' });
       }
     } catch {
-      setSyncToastMessage(t('logbook.syncWatchFailed'));
+      setSyncToast({ message: t('logbook.syncWatchFailed'), tone: 'attention' });
     } finally {
       setIsSyncingWatch(false);
     }
@@ -208,7 +220,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor="#0a84ff" />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack space="md">
@@ -221,22 +233,28 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
                 icon={EditIcon}
                 variant="primary"
                 onPress={openCreate}
-                className="min-h-10 px-4 py-2"
+                className="min-h-11 px-4 py-2"
               />
               <InstrumentButton
                 testID="logbook-import-action"
                 label={isSyncingWatch ? t('logbook.syncWatchLoading') : t('logbook.syncWatch')}
                 onPress={syncWatch}
                 disabled={isSyncingWatch}
-                className="min-h-10 px-4 py-2"
+                className="min-h-11 px-4 py-2"
               />
             </HStack>
           </HStack>
-          {syncToastMessage ? (
+          {syncToast ? (
             <Text
               testID="logbook-sync-toast"
-              className="rounded-2xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary">
-              {syncToastMessage}
+              accessibilityLiveRegion="polite"
+              accessibilityRole={syncToast.tone === 'attention' ? 'alert' : undefined}
+              className={
+                syncToast.tone === 'attention'
+                  ? 'rounded-2xl bg-warning/10 px-4 py-3 text-sm font-semibold text-warning'
+                  : 'rounded-2xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary'
+              }>
+              {syncToast.message}
             </Text>
           ) : null}
           {lastScrollTarget === undefined ? null : (
@@ -280,6 +298,22 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
         {route === 'list' ? (
           props.isLoading ? (
             <LogbookLoadingState />
+          ) : visibleEntries.length === 0 && props.loadError ? (
+            <ListStateCard
+              testID="logbook-error-state"
+              title={t('logbook.loadFailed')}
+              message={t('logbook.loadFailedMessage')}
+              actionLabel={t('common.retry')}
+              onAction={() => void props.onRefresh()}
+            />
+          ) : visibleEntries.length === 0 && (props.totalEntryCount ?? 0) > 0 ? (
+            <ListStateCard
+              testID="logbook-no-results-state"
+              title={t('logbook.noSearchResults', { query: props.filter.query.trim() })}
+              message={t('logbook.noSearchResultsMessage')}
+              actionLabel={t('logbook.clearSearch')}
+              onAction={() => props.onFilterChange({ ...props.filter, query: '' })}
+            />
           ) : visibleEntries.length === 0 ? (
             <EmptyLogbook />
           ) : (
@@ -329,13 +363,7 @@ function getLogEntryEditorFieldOffset(fieldName: string): number {
 function EmptyLogbook(): React.JSX.Element {
   const { t } = useTranslation();
 
-  return (
-    <DiveSummaryCard>
-      <VStack testID="logbook-empty-state" space="lg">
-        <DiveSummaryCard.Header title={t('logbook.noImportedDives')} />
-      </VStack>
-    </DiveSummaryCard>
-  );
+  return <ListStateCard testID="logbook-empty-state" title={t('logbook.noImportedDives')} />;
 }
 
 function LogbookLoadingState(): React.JSX.Element {
@@ -393,6 +421,7 @@ function SessionListItem(props: {
   return (
     <Pressable
       testID={`logbook-list-item-${siteName}`}
+      accessibilityRole="button"
       onPress={props.onPress}
       accessible={badges.length ? true : undefined}
       accessibilityLabel={badges.length ? accessibilityLabel : undefined}

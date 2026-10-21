@@ -27,13 +27,9 @@ struct DiveSessionSummary: Codable {
         self.averageDepthMeters = averageDepthMeters
         self.averageWaterTemperatureCelsius = averageWaterTemperatureCelsius
         self.sampleCount = sampleCount
-        self.latestAscentRateMetersPerMinute = DiveSessionSummary.ascentRate(
-            from: session.samples.dropLast().last,
-            to: session.samples.last
-        )
-        self.maxAscentRateMetersPerMinute = session.samples.indices.dropFirst().reduce(0) { maxRate, index in
-            max(maxRate, DiveSessionSummary.ascentRate(from: session.samples[index - 1], to: session.samples[index]))
-        }
+        let ascentRates = DisplayAscentRateEstimator.rates(for: session.samples)
+        self.latestAscentRateMetersPerMinute = ascentRates.latest
+        self.maxAscentRateMetersPerMinute = ascentRates.maximum
     }
 
     init(record: DiveSessionRecord) {
@@ -46,13 +42,9 @@ struct DiveSessionSummary: Codable {
         let averageWaterTemperatureCelsius = temperatures.isEmpty
             ? nil
             : temperatures.reduce(0, +) / Double(temperatures.count)
-        let latestAscentRateMetersPerMinute = DiveSessionSummary.ascentRate(
-            from: record.samples.dropLast().last,
-            to: record.samples.last
-        )
-        let maxAscentRateMetersPerMinute = record.samples.indices.dropFirst().reduce(0) { maxRate, index in
-            max(maxRate, DiveSessionSummary.ascentRate(from: record.samples[index - 1], to: record.samples[index]))
-        }
+        let ascentRates = DisplayAscentRateEstimator.rates(for: record.samples)
+        let latestAscentRateMetersPerMinute = ascentRates.latest
+        let maxAscentRateMetersPerMinute = ascentRates.maximum
 
         switch record.payload {
         case .freedive(let session):
@@ -72,13 +64,6 @@ struct DiveSessionSummary: Codable {
             self.latestAscentRateMetersPerMinute = session.latestAscentRateMetersPerMinute
             self.maxAscentRateMetersPerMinute = session.maxAscentRateMetersPerMinute
         }
-    }
-
-    private static func ascentRate(from previous: DepthSample?, to current: DepthSample?) -> Double {
-        guard let previous, let current else { return 0 }
-        let elapsed = current.timestamp.timeIntervalSince(previous.timestamp)
-        guard elapsed > 0, current.depthMeters < previous.depthMeters else { return 0 }
-        return (previous.depthMeters - current.depthMeters) / elapsed * 60
     }
 }
 

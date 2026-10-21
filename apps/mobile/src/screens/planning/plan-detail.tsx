@@ -2,10 +2,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import { HStack } from '../../components/ui/hstack';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DivePlan } from '../../types/dive-plan';
+import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { formatDate, formatDepth, formatPressure } from '../../utils/dive-formatters';
 import { getUnsupportedDepthForPlan } from '../../utils/unsupported-depth';
 
@@ -18,6 +20,7 @@ type PlanDetailProps = {
   onDelete?: (localId: string) => Promise<void>;
   onCreateLogFromPlan: (plan: DivePlan) => void;
   hasExistingConvertedLog?: boolean;
+  onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
 export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
@@ -41,6 +44,9 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
         right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone="secondary" />}
       />
       <DiveSummaryCard.Body>
+        {props.plan.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+          <SyncConflictBanner onResolve={props.onResolveConflict} />
+        ) : null}
         <Text className="text-sm leading-5 text-muted-foreground">
           {formatDate(props.plan.plannedAt, locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
         </Text>
@@ -109,9 +115,24 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
           <InstrumentButton testID="planning-detail-edit" label={t('planning.editPlan', { defaultValue: 'Edit plan' })} onPress={() => props.onEdit(props.plan)} />
           {props.onDelete ? (
             <InstrumentButton
+              testID="planning-detail-delete"
               label={t('planning.deletePlan', { defaultValue: 'Delete plan' })}
               variant="danger"
-              onPress={() => props.onDelete?.(props.plan.localId)}
+              onPress={() =>
+                confirmDestructiveAction({
+                  title: t('planning.deleteConfirm.title'),
+                  message: t(
+                    props.plan.ownerUserId === undefined
+                      ? 'planning.deleteConfirm.message'
+                      : 'planning.deleteConfirm.accountMessage',
+                  ),
+                  cancelLabel: t('common.cancel'),
+                  confirmLabel: t('planning.deleteConfirm.confirm'),
+                  onConfirm: () => {
+                    void props.onDelete?.(props.plan.localId);
+                  },
+                })
+              }
             />
           ) : null}
         </VStack>
@@ -128,7 +149,11 @@ function ModeFacts(props: { plan: DivePlan }): React.JSX.Element {
   const facts = [
     { id: 'planned-max', label: t('planning.plannedMax', { defaultValue: 'Planned max' }), value: formatDepth(values.plannedMaxDepthMeters) },
     values.plannedDurationMinutes !== undefined
-      ? { id: 'duration', label: t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' }), value: `${values.plannedDurationMinutes} min` }
+      ? {
+          id: 'duration',
+          label: t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' }),
+          value: `${values.plannedDurationMinutes} ${t('units.minutesShort')}`,
+        }
       : undefined,
     props.plan.diveMode === 'scuba'
       ? { id: 'gas', label: t('planning.gasLabel', { defaultValue: 'Gas label' }), value: t('logbook.airGas', { defaultValue: 'Air' }) }

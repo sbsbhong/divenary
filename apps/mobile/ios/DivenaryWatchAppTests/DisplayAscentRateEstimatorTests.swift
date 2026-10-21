@@ -3,6 +3,24 @@ import XCTest
 @testable import DivenaryWatchApp
 
 final class DisplayAscentRateEstimatorTests: XCTestCase {
+    func testReplayingSamplesReportsLatestAndMaximumLiveEstimates() {
+        let samples = [
+            sample(at: 0, depth: 12.0),
+            sample(at: 1, depth: 11.9),
+            sample(at: 2, depth: 11.4),
+            sample(at: 3, depth: 11.4),
+            sample(at: 4, depth: 11.4),
+            sample(at: 5, depth: 11.4),
+            sample(at: 6, depth: 11.4),
+            sample(at: 7, depth: 11.4),
+        ]
+
+        let rates = DisplayAscentRateEstimator.rates(for: samples)
+
+        XCTAssertEqual(rates.maximum, 12, accuracy: 0.000001)
+        XCTAssertEqual(rates.latest, 0, accuracy: 0.000001)
+    }
+
     func testFirstSampleReturnsZero() {
         var estimator = DisplayAscentRateEstimator()
 

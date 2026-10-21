@@ -74,8 +74,14 @@ Signing 또는 provisioning이 없으면 exact build failure를 기록하고 이
 | D9 | surface 후 `600s (10 minutes)` 전에 다시 submerge한다. | 기존 local session ID와 recorder가 계속되고 summary가 새 session으로 분리되지 않는다. | 새 ID/새 summary, event timeline. | required |
 | D10 | manual 및 Action Button start를 valid depth sample 없이 종료하고, 별도 system auto-launch no-sample attempt도 종료한다. | manual/Action Button은 한 번의 compact no-sample result와 저장 log 없음. system auto-launch는 silent cancellation과 저장 log 없음. | empty record, unexpected summary/UI, duplicate result. | required |
 | D11 | demo/debug recording을 실행해 Crown으로 depth를 조절하고 surface-gated touch end를 사용한다. | Water Lock 없이 demo/test marker, Crown control, touch end summary. `WKExtendedRuntimeSession`을 쓰지 않은 debug path. | Water Lock/runtime 호출, touch end 누락, marker 누락. | regression gate |
-| D12 | 42mm, 46mm, 49mm에서 real helper row와 demo end row, depth rail, metrics, disclaimer를 확인한다. | 각 size의 screenshot에서 clipping/overlap 없음. | model/size/build별 screenshot과 겹침 위치. | required UI coverage |
+| D12 | 42mm, 46mm, 49mm에서 real helper row와 demo end row, depth rail, metrics, disclaimer, live 상태 chip, Dive Plans 화면, 지원 수심 밖 표식, Send Again 버튼을 확인한다. | 각 size의 screenshot에서 clipping/overlap 없음. | model/size/build별 screenshot과 겹침 위치. | required UI coverage |
 | D13 | Debug-only forced local-save failure로 sample이 있는 real session을 종료한 뒤 같은 화면에서 자동 retry와 수동 Retry를 각각 실행한다. | `Saved`가 조기 표시되지 않고 같은 local session ID가 유지되며, 성공 뒤 saved session은 정확히 하나다. recorder cleanup은 성공 뒤 한 번만 발생한다. | 실패 record 소실, ID 변경, 중복 session, 조기 cleanup, retry log. | required recovery gate |
+| D14 | 얕은 물 real recording에서 depth sample이 5초 넘게 끊기는 상황과, 가능하면 `sensorDepthError`·`pastMaxDepth` 상태를 만든다. | 실시간 화면이 숫자 대신 `--.- m`와 Depth unavailable, Depth sensor error, Outside sensor-authorized depth 중 맞는 상태를 표시하고 상승 속도 숫자를 숨긴다. 30초 넘는 공백이 있었던 저장 기록의 권장 스탑은 `unknown`이다. | 숫자가 계속 남은 화면, 상태 문구, timeline, local session ID. | required |
+| D15 | Saved summary가 보이는 상태에서 다시 입수하거나 Home에서 새 real recording을 시작한다. | 이전 summary가 닫히고 새 local session ID로 recording이 시작되며 이전 기록은 정확히 하나만 저장돼 있다. | 시작 거부, summary 잔류, 중복 또는 누락 기록. | required |
+| D16 | 권장 스탑 구간(3-6 m)에 머무는 real recording에서 sample 간격과 타이머 감소를 기록한다. | 약 1Hz cadence에서 타이머가 실제 경과 시간과 맞게 줄고, 5초 넘는 sample 공백은 스탑 시간으로 적립되지 않는다. | cadence log, 타이머 화면, local session ID. | required |
+| D17 | 입수 전, 입수 중, 출수 뒤의 수온 표시와 저장 sample 수온을 비교한다. | 이전 다이빙이나 recording 시작 전 수온이 새 recording sample에 붙지 않고, 60초 넘게 갱신되지 않은 수온도 sample에 붙지 않는다. | sample JSON, 수온 timeline. | required |
+| D18 | iPhone 연결을 끊은 상태로 recording을 저장해 전송을 실패시킨 뒤, 연결을 복구하고 상세 화면의 Send Again을 누른다. | Not sent to iPhone 뒤 Send Again으로 Waiting for iPhone, iPhone import 뒤 Saved on iPhone으로 바뀌고 iPhone에는 기록이 하나만 생긴다. | 상태 전이, iPhone import log, 중복 기록. | required for sync UX |
+| D19 | iPhone에서 계획 두 개를 보낸 뒤 Watch Dive Plans 화면에서 선택, 다시 눌러 해제, 선택 상태의 데모 실행을 각각 해 본다. | 선택한 계획으로 시작한 real 기록만 계획을 실행됨으로 표시하고, 데모 기록은 계획을 소모하지 않는다. 수심이 없는 계획은 `--.- m`로 표시된다. | 계획 목록 변화, 기록의 `sourcePlanLocalId`, 화면 캡처. | required |
 
 ## 종료 규칙 확인
 
@@ -89,7 +95,7 @@ real recording에는 touch end action이 없다. 종료는 다음 세 경로가 
 
 ## 배포 판정
 
-- D1-D13의 각 required 행은 pass/fail/not-run과 evidence path를 남긴다.
+- D1-D19의 각 required 행은 pass/fail/not-run과 evidence path를 남긴다.
 - signing, `When Submerged`, Water Lock/Crown, timeout, Action Button hardware가 not-run 또는 fail이면 physical runtime success를 주장하거나 release gate를 통과로 표시하지 않는다.
 - managed deeper entitlement/provisioning이 없으면 shallow public entitlement 상태로만 기록하고 full-depth behavior는 외부 승인 gate로 둔다.
 - 물리 시험 중 sensor/Water Lock/Action Button failure, crash, unexpected multiple summary, no-sample persistence, layout clipping이 나오면 build, device/OS, steps, screenshots/logs, local session ID를 issue에 첨부한다.

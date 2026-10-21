@@ -9,7 +9,10 @@ jest.mock('react-native-keychain', () => ({
 }));
 
 import * as Keychain from 'react-native-keychain';
-import {supabaseSessionStorage} from '../src/auth/keychain-session-storage';
+import {
+  clearPersistedSupabaseSession,
+  supabaseSessionStorage,
+} from '../src/auth/keychain-session-storage';
 
 const mockSetGenericPassword = jest.mocked(Keychain.setGenericPassword);
 const mockGetGenericPassword = jest.mocked(Keychain.getGenericPassword);
@@ -123,5 +126,24 @@ describe('Supabase Keychain session storage', () => {
     await expect(
       supabaseSessionStorage.removeItem('supabase.auth.token'),
     ).rejects.toThrow('Secure session storage failed');
+  });
+
+  test('clears any persisted session without needing the Supabase storage key', async () => {
+    mockGetGenericPassword.mockResolvedValueOnce({
+      service,
+      storage: 'KeystoreAESGCM_NoAuth' as Keychain.STORAGE_TYPE,
+      username: 'sb-project-auth-token',
+      password: 'session',
+    });
+
+    await clearPersistedSupabaseSession();
+
+    expect(mockResetGenericPassword).toHaveBeenCalledWith({service});
+  });
+
+  test('treats an already empty session store as cleared', async () => {
+    await clearPersistedSupabaseSession();
+
+    expect(mockResetGenericPassword).not.toHaveBeenCalled();
   });
 });

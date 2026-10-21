@@ -7,6 +7,7 @@ import type {
   AccountDataCursor,
   AccountDataRepository,
   AccountMutationResult,
+  RemoteDeletedRecord,
   RemoteDiveLog,
   RemoteDivePlan,
 } from '@repo/supabase';
@@ -447,6 +448,7 @@ export class AccountSyncCoordinator {
         await this.yieldToRuntime();
       }
     }
+    changed += await this.removeRemotelyDeletedRows(assertCanCommit, failures);
     if (failures.length > 0) {
       throw new AccountHydrationError(
         changed,
@@ -455,6 +457,217 @@ export class AccountSyncCoordinator {
       );
     }
     return changed;
+  }
+
+  /**
+   * Removes synced local copies of rows another device soft-deleted. Rows with local
+   * changes, conflicts, or a different remote identity are left for the outbox or the user.
+   */
+  private async removeRemotelyDeletedRows(
+    assertCanCommit: AssertCanCommit,
+    failures: AccountHydrationFailure[],
+  ): Promise<number> {
+    const listDeletedLogs = this.accountRepository.listDeletedLogs?.bind(this.accountRepository);
+    const listDeletedPlans = this.accountRepository.listDeletedPlans?.bind(this.accountRepository);
+    const [deletedLogsResult, deletedPlansResult] = await Promise.all([
+      listDeletedLogs
+        ? settleHydrationCollection(
+            collectPages(cursor => listDeletedLogs({cursor, limit: PAGE_SIZE}), assertCanCommit),
+          )
+        : Promise.resolve({status: 'fulfilled' as const, value: [] as RemoteDeletedRecord[]}),
+      listDeletedPlans
+        ? settleHydrationCollection(
+            collectPages(cursor => listDeletedPlans({cursor, limit: PAGE_SIZE}), assertCanCommit),
+          )
+        : Promise.resolve({status: 'fulfilled' as const, value: [] as RemoteDeletedRecord[]}),
+    ]);
+    assertCanCommit();
+    let removed = 0;
+    if (deletedPlansResult.status === 'rejected') {
+      failures.push({entityKind: 'plan', phase: 'listing', error: deletedPlansResult.reason});
+    } else {
+      for (const record of deletedPlansResult.value) {
+        try {
+          removed += await withAccountEntityMutationLock(this.userId, 'plan', record.localId, async () => {
+            assertCanCommit();
+            if ((await this.outbox.listEntity(this.userId, 'plan', record.localId)).length > 0) {
+              return 0;
+            }
+            const current = await this.planRepository.get(record.localId);
+            if (!isSyncedCopyOf(current, record, this.userId)) {
+              return 0;
+            }
+            await this.commitPlanDelete(record.localId, assertCanCommit, async () => undefined);
+            return 1;
+          });
+        } catch (error) {
+          if (isStaleAccountSyncCommitError(error)) {
+            throw error;
+          }
+          failures.push({entityKind: 'plan', phase: 'row', error});
+        }
+      }
+    }
+    if (deletedLogsResult.status === 'rejected') {
+      failures.push({entityKind: 'log', phase: 'listing', error: deletedLogsResult.reason});
+    } else {
+      for (const record of deletedLogsResult.value) {
+        try {
+          removed += await withAccountEntityMutationLock(this.userId, 'log', record.localId, async () => {
+            assertCanCommit();
+            if ((await this.outbox.listEntity(this.userId, 'log', record.localId)).length > 0) {
+              return 0;
+            }
+            const current = await this.logbookRepository.get(record.localId);
+            if (!isSyncedCopyOf(current, record, this.userId)) {
+              return 0;
+            }
+            await this.commitLogDelete(current, record.localId, assertCanCommit, async () => undefined);
+            return 1;
+          });
+        } catch (error) {
+          if (isStaleAccountSyncCommitError(error)) {
+            throw error;
+          }
+          failures.push({entityKind: 'log', phase: 'row', error});
+        }
+      }
+    }
+    return removed;
+  }
+
+  /** Replaces a conflicted row with the latest remote version (or removes it if deleted remotely). */
+  async resolveConflictUsingRemote(kind: 'log' | 'plan', localId: string): Promise<void> {
+    const assertCanCommit = this.captureCommitGuard();
+    const clearConflicts = () =>
+      this.outbox.removeEntityConflicts(this.userId, kind, localId, {assertCanCommit});
+    await withAccountEntityMutationLock(this.userId, kind, localId, async () => {
+      assertCanCommit();
+      if (kind === 'log') {
+        const current = await this.logbookRepository.get(localId);
+        if (!current) {
+          await clearConflicts();
+          return;
+        }
+        const latest = await this.latestRemoteState('log', current);
+        if (!latest) {
+          throw new Error('No remote version is available for this conflict');
+        }
+        await this.outbox.removePendingEntity(this.userId, 'log', localId, {assertCanCommit});
+        if (latest.deleted) {
+          await this.commitLogDelete(current, localId, assertCanCommit, clearConflicts);
+          return;
+        }
+        const prepared = await this.prepareHydratedLog(parseRemoteLog(latest.value), current, assertCanCommit);
+        try {
+          await this.commitLogSave(current, prepared.local, assertCanCommit, clearConflicts);
+        } catch (error) {
+          await prepared.rollbackProfile?.();
+          throw error;
+        }
+        return;
+      }
+      const current = await this.planRepository.get(localId);
+      if (!current) {
+        await clearConflicts();
+        return;
+      }
+      const latest = await this.latestRemoteState('plan', current);
+      if (!latest) {
+        throw new Error('No remote version is available for this conflict');
+      }
+      await this.outbox.removePendingEntity(this.userId, 'plan', localId, {assertCanCommit});
+      if (latest.deleted) {
+        await this.commitPlanDelete(localId, assertCanCommit, clearConflicts);
+        return;
+      }
+      await this.commitPlanSave(
+        current,
+        remotePlanToLocal(parseRemotePlan(latest.value), this.userId),
+        assertCanCommit,
+        clearConflicts,
+      );
+    });
+  }
+
+  /**
+   * Rebases a conflicted row onto the latest remote revision and marks it pending. The caller
+   * enqueues the upsert through the account repository so the normal outbox path delivers it.
+   */
+  async prepareKeepLocalLog(localId: string): Promise<DiveLogEntry | undefined> {
+    return (await this.prepareKeepLocal('log', localId)) as DiveLogEntry | undefined;
+  }
+
+  async prepareKeepLocalPlan(localId: string): Promise<DivePlan | undefined> {
+    return (await this.prepareKeepLocal('plan', localId)) as DivePlan | undefined;
+  }
+
+  private async prepareKeepLocal(
+    kind: 'log' | 'plan',
+    localId: string,
+  ): Promise<DiveLogEntry | DivePlan | undefined> {
+    const assertCanCommit = this.captureCommitGuard();
+    const clearConflicts = () =>
+      this.outbox.removeEntityConflicts(this.userId, kind, localId, {assertCanCommit});
+    return withAccountEntityMutationLock(this.userId, kind, localId, async () => {
+      assertCanCommit();
+      const current = kind === 'log'
+        ? await this.logbookRepository.get(localId)
+        : await this.planRepository.get(localId);
+      if (!current) {
+        return undefined;
+      }
+      const latest = await this.latestRemoteState(kind, current);
+      if (!latest) {
+        return undefined;
+      }
+      await this.outbox.removePendingEntity(this.userId, kind, localId, {assertCanCommit});
+      const rebasedIdentity = latest.deleted
+        ? {remoteId: undefined, remoteRevision: undefined}
+        : {remoteId: latest.value.id, remoteRevision: latest.value.revision};
+      if (kind === 'log') {
+        const rebased: DiveLogEntry = {
+          ...(current as DiveLogEntry),
+          ...rebasedIdentity,
+          cloudSyncStatus: 'pending',
+        };
+        await this.commitLogSave(current as DiveLogEntry, rebased, assertCanCommit, clearConflicts);
+        return rebased;
+      }
+      const rebased: DivePlan = {
+        ...(current as DivePlan),
+        ...rebasedIdentity,
+        cloudSyncStatus: 'pending',
+      };
+      await this.commitPlanSave(current as DivePlan, rebased, assertCanCommit, clearConflicts);
+      return rebased;
+    });
+  }
+
+  private async latestRemoteState(
+    kind: 'log' | 'plan',
+    current: DiveLogEntry | DivePlan,
+  ): Promise<{deleted: true} | {deleted: false; value: RemoteDiveLog | RemoteDivePlan} | undefined> {
+    const read = kind === 'log'
+      ? this.accountRepository.getLog?.bind(this.accountRepository)
+      : this.accountRepository.getPlan?.bind(this.accountRepository);
+    if (current.remoteId && read) {
+      try {
+        const latest = await read(current.remoteId);
+        return latest === undefined || latest.deleted
+          ? {deleted: true}
+          : {deleted: false, value: latest.value};
+      } catch {
+        // Offline: fall back to the remote copy stored with the conflict.
+      }
+    }
+    const conflict = (await this.outbox.listConflicts(this.userId))
+      .filter(candidate => candidate.entityKind === kind && candidate.entityLocalId === current.localId)
+      .sort((left, right) => left.recordedAt - right.recordedAt)
+      .at(-1);
+    return conflict === undefined
+      ? undefined
+      : {deleted: false, value: kind === 'log' ? parseRemoteLog(conflict.remote) : parseRemotePlan(conflict.remote)};
   }
 
   private async drainPass(
@@ -653,6 +866,9 @@ export class AccountSyncCoordinator {
         await this.outbox.complete(item.userId, item.operationId, {
           assertCanCommit,
         });
+        await this.outbox.removeEntityConflicts(item.userId, 'log', item.entityLocalId, {
+          assertCanCommit,
+        });
       },
     );
   }
@@ -744,6 +960,9 @@ export class AccountSyncCoordinator {
     await this.commitPlanDelete(item.entityLocalId, assertCanCommit, async () => {
       assertCanCommit();
       await this.outbox.complete(item.userId, item.operationId, {
+        assertCanCommit,
+      });
+      await this.outbox.removeEntityConflicts(item.userId, 'plan', item.entityLocalId, {
         assertCanCommit,
       });
     });
@@ -1102,6 +1321,19 @@ async function collectPages<T>(
     cursor = page.nextCursor;
   } while (cursor !== undefined);
   return items;
+}
+
+function isSyncedCopyOf(
+  current: DiveLogEntry | DivePlan | undefined,
+  record: RemoteDeletedRecord,
+  userId: string,
+): current is DiveLogEntry | DivePlan {
+  return (
+    current !== undefined &&
+    current.cloudSyncStatus === 'synced' &&
+    current.ownerUserId === userId &&
+    current.remoteId === record.id
+  );
 }
 
 async function settleHydrationCollection<T>(

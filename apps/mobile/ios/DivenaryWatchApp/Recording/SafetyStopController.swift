@@ -10,6 +10,7 @@ struct SafetyStopConfiguration: Equatable {
     var durationSeconds: TimeInterval = 180
     var stableTransitionDuration: TimeInterval = 2
     var outOfZoneResetSeconds: TimeInterval = 30
+    var maximumCreditedSampleInterval: TimeInterval = 5
 }
 
 struct SafetyStopController {
@@ -72,7 +73,9 @@ struct SafetyStopController {
                 startedAt = sample.timestamp
             }
             let elapsed = wasActive ? elapsedSinceLastSample(to: sample) : 0
-            let creditedElapsed = min(elapsed, remainingSeconds)
+            // Time between samples beyond the live cadence was not observed, so it never counts.
+            let observedElapsed = min(elapsed, configuration.maximumCreditedSampleInterval)
+            let creditedElapsed = min(observedElapsed, remainingSeconds)
             remainingSeconds = max(0, remainingSeconds - creditedElapsed)
             timeInZoneSeconds += creditedElapsed
             status = remainingSeconds <= 0 ? .completed : .active
