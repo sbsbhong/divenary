@@ -204,10 +204,30 @@ export class GuestClaimStore implements GuestClaimStoreLike {
   private async readUnlocked(): Promise<GuestClaimSnapshot | undefined> {
     const raw = await this.options.storage.getString(this.key);
     if (raw === undefined) {
+      validatedSnapshotCache.delete(this.key);
       return undefined;
     }
-    const snapshot = parseStoredSnapshot(raw, this.options.userId);
+    const snapshot = this.parseWithCache(raw);
     await this.backfillCheckpointHint(snapshot);
+    return snapshot;
+  }
+
+  /**
+   * Full validation re-hashes every sidecar, which takes seconds for large claims on a phone.
+   * The same stored text always validates the same way, so a verified copy is reused until the
+   * stored text changes. Callers get their own copy and cannot mutate the cached one.
+   */
+  private parseWithCache(raw: string): GuestClaimSnapshot {
+    const cached = validatedSnapshotCache.get(this.key);
+    if (cached && cached.raw === raw && cached.userId === this.options.userId) {
+      return JSON.parse(cached.normalized) as GuestClaimSnapshot;
+    }
+    const snapshot = parseStoredSnapshot(raw, this.options.userId);
+    validatedSnapshotCache.set(this.key, {
+      raw,
+      userId: this.options.userId,
+      normalized: JSON.stringify(snapshot),
+    });
     return snapshot;
   }
 
@@ -238,7 +258,13 @@ export class GuestClaimStore implements GuestClaimStoreLike {
     );
     await this.readCheckpointHintUnlocked();
     await this.invalidateNonRecoverableHintBeforeRecoverableWrite(parsed);
-    await this.options.storage.setString(this.key, JSON.stringify(parsed));
+    const serialized = JSON.stringify(parsed);
+    await this.options.storage.setString(this.key, serialized);
+    validatedSnapshotCache.set(this.key, {
+      raw: serialized,
+      userId: this.options.userId,
+      normalized: serialized,
+    });
     try {
       await this.persistCheckpointHint(parsed);
     } catch {
@@ -247,6 +273,7 @@ export class GuestClaimStore implements GuestClaimStoreLike {
   }
 
   private async removeUnlocked(): Promise<void> {
+    validatedSnapshotCache.delete(this.key);
     await this.options.storage.remove(this.key);
     try {
       await this.options.storage.remove(this.checkpointHintKey);
@@ -1127,6 +1154,11 @@ function validateRelationships(
   }
   return sourcePlanByLog;
 }
+
+const validatedSnapshotCache = new Map<
+  string,
+  { raw: string; userId: string; normalized: string }
+>();
 
 function parseStoredSnapshot(
   raw: string,

@@ -426,6 +426,30 @@ describe('guest claim store', () => {
     ]);
   });
 
+  it('reuses a verified read but still rejects stored text that changed', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([diveLog({ localId: 'log-a', title: 'Moon Island' })]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    const store = new GuestClaimStore({ storage, userId, now: () => 101 });
+    await store.write(snapshot);
+    const first = await store.read();
+    const second = await store.read();
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
+
+    const key = dataStorageKeys({ kind: 'user', userId }).claim;
+    const stored = JSON.parse((await storage.getString(key))!);
+    stored.snapshots[0].localRecordSha256 = '0'.repeat(64);
+    await storage.setString(key, JSON.stringify(stored));
+
+    await expect(store.read()).rejects.toThrow();
+  });
+
   it('round-trips sanitized failure context without changing the manifest digest', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({
