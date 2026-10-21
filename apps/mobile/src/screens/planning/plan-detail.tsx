@@ -6,6 +6,7 @@ import { HStack } from '../../components/ui/hstack';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DivePlan } from '../../types/dive-plan';
+import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { formatDate, formatDepth, formatPressure } from '../../utils/dive-formatters';
 import { getUnsupportedDepthForPlan } from '../../utils/unsupported-depth';
 
@@ -109,9 +110,24 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
           <InstrumentButton testID="planning-detail-edit" label={t('planning.editPlan', { defaultValue: 'Edit plan' })} onPress={() => props.onEdit(props.plan)} />
           {props.onDelete ? (
             <InstrumentButton
+              testID="planning-detail-delete"
               label={t('planning.deletePlan', { defaultValue: 'Delete plan' })}
               variant="danger"
-              onPress={() => props.onDelete?.(props.plan.localId)}
+              onPress={() =>
+                confirmDestructiveAction({
+                  title: t('planning.deleteConfirm.title'),
+                  message: t(
+                    props.plan.ownerUserId === undefined
+                      ? 'planning.deleteConfirm.message'
+                      : 'planning.deleteConfirm.accountMessage',
+                  ),
+                  cancelLabel: t('common.cancel'),
+                  confirmLabel: t('planning.deleteConfirm.confirm'),
+                  onConfirm: () => {
+                    void props.onDelete?.(props.plan.localId);
+                  },
+                })
+              }
             />
           ) : null}
         </VStack>

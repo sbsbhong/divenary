@@ -16,8 +16,25 @@ import {
   formatRating,
   formatTemperature,
 } from '../../utils/dive-formatters';
+import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { firstNonBlankText } from '../../utils/notes';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
+
+function deleteLogMessageKey(entry: DiveLogEntry): string {
+  const removesWatchOriginal = entry.watchCapture !== undefined;
+  const removesAccountCopy = entry.ownerUserId !== undefined;
+
+  if (removesWatchOriginal && removesAccountCopy) {
+    return 'logbook.deleteConfirm.watchAndAccountMessage';
+  }
+  if (removesWatchOriginal) {
+    return 'logbook.deleteConfirm.watchMessage';
+  }
+  if (removesAccountCopy) {
+    return 'logbook.deleteConfirm.accountMessage';
+  }
+  return 'logbook.deleteConfirm.message';
+}
 
 type LogEntryDetailProps = {
   entry: DiveLogEntry;
@@ -157,9 +174,20 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
           ) : null}
           {props.onDelete ? (
             <InstrumentButton
+              testID="log-entry-detail-delete"
               label={t('logbook.deleteLog')}
               variant="danger"
-              onPress={() => props.onDelete?.(props.entry.localId)}
+              onPress={() =>
+                confirmDestructiveAction({
+                  title: t('logbook.deleteConfirm.title'),
+                  message: t(deleteLogMessageKey(props.entry)),
+                  cancelLabel: t('common.cancel'),
+                  confirmLabel: t('logbook.deleteConfirm.confirm'),
+                  onConfirm: () => {
+                    void props.onDelete?.(props.entry.localId);
+                  },
+                })
+              }
             />
           ) : null}
         </VStack>

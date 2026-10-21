@@ -12,6 +12,12 @@ const resources = {
         back: '뒤로',
         cancel: '취소',
         retry: '다시 시도',
+        discardChanges: {
+          title: '변경 사항을 버릴까요?',
+          message: '저장하지 않은 입력은 사라집니다.',
+          keepEditing: '계속 편집',
+          discard: '버리기',
+        },
       },
       recovery: {
         loading: {
@@ -328,6 +334,14 @@ const resources = {
         backToList: '목록으로',
         editLog: '기록 수정',
         deleteLog: '기록 삭제',
+        deleteConfirm: {
+          title: '로그를 삭제할까요?',
+          message: '이 작업은 되돌릴 수 없습니다.',
+          watchMessage: '워치의 원본 기록도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+          accountMessage: '계정에 동기화된 사본도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+          watchAndAccountMessage: '워치의 원본 기록과 계정에 동기화된 사본도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+          confirm: '삭제',
+        },
         safetyText: '로그 리뷰 전용. 인증된 장비가 아닌 보조 도구.',
       },
       planning: {
@@ -358,6 +372,12 @@ const resources = {
         detailEyebrow: '계획 상세',
         editPlan: '계획 수정',
         deletePlan: '계획 삭제',
+        deleteConfirm: {
+          title: '계획을 삭제할까요?',
+          message: '이 작업은 되돌릴 수 없습니다.',
+          accountMessage: '계정에 동기화된 사본도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+          confirm: '삭제',
+        },
         promoteToPlan: '계획으로 승격',
         markCompleted: '완료로 표시',
         createLogFromPlan: '계획에서 로그 작성',
@@ -472,6 +492,12 @@ const resources = {
         back: 'Back',
         cancel: 'Cancel',
         retry: 'Try again',
+        discardChanges: {
+          title: 'Discard changes?',
+          message: 'Unsaved changes will be lost.',
+          keepEditing: 'Keep Editing',
+          discard: 'Discard',
+        },
       },
       recovery: {
         loading: {
@@ -790,6 +816,15 @@ const resources = {
         backToList: 'Back to list',
         editLog: 'Edit log',
         deleteLog: 'Delete log',
+        deleteConfirm: {
+          title: 'Delete this log?',
+          message: 'This can’t be undone.',
+          watchMessage: 'The original recording on your watch will also be deleted. This can’t be undone.',
+          accountMessage: 'The copy synced to your account will also be deleted. This can’t be undone.',
+          watchAndAccountMessage:
+            'The original recording on your watch and the copy synced to your account will also be deleted. This can’t be undone.',
+          confirm: 'Delete',
+        },
         safetyText: 'LOG REVIEW ONLY. NON-CERTIFIED ASSISTANT.',
       },
       planning: {
@@ -820,6 +855,12 @@ const resources = {
         detailEyebrow: 'Plan detail',
         editPlan: 'Edit plan',
         deletePlan: 'Delete plan',
+        deleteConfirm: {
+          title: 'Delete this plan?',
+          message: 'This can’t be undone.',
+          accountMessage: 'The copy synced to your account will also be deleted. This can’t be undone.',
+          confirm: 'Delete',
+        },
         promoteToPlan: 'Promote to plan',
         markCompleted: 'Mark completed',
         createLogFromPlan: 'Create log from plan',
