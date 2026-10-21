@@ -109,13 +109,13 @@
 
 ### Task 7.1: Recording math and provenance
 - Files: `Recording/ScubaDiveEngine.swift`, `Recording/SafetyStopController.swift`, `Sensors/WaterSubmersionCoordinator.swift`, `Models/DiveSessionRecord.swift`, `Runtime/RealDiveSessionCoordinator.swift`, `Views/HomeView.swift`, `Storage/DiveSessionStore.swift`, matching tests
-- [ ] Stored max ascent = max smoothed estimator output.
-- [ ] Safety stop credits ≤ 5 s per sample interval.
-- [ ] Temperature reset on session start / notSubmerged; ignore > 60 s old.
-- [ ] Missing `captureMode` decodes as `.demo`.
-- [ ] Action Button end only when `notSubmerged`.
-- [ ] Demo sessions never carry `sourcePlanLocalId` nor mark plans executed.
-- [ ] Deletion recovery retried before save and on activation.
+- [x] Stored max ascent = max smoothed estimator output. Summary and sanitizer fallbacks replay samples through the same estimator.
+- [x] Safety stop credits ≤ 5 s per sample interval (matches the 5 s stale-depth threshold); tests now hold depth at 1 Hz.
+- [x] Temperature reset on session start / notSubmerged; ignore > 60 s old.
+- [x] Missing `captureMode` decodes as `.demo`. Verified in git history: the real provider was a stub until the commit that added `captureMode` (e667202).
+- [x] Action Button end only when `notSubmerged`, matching the lifecycle spec, wiki, and device checklist.
+- [x] Demo sessions never carry `sourcePlanLocalId` nor mark plans executed.
+- [x] Deletion recovery retried before save, on companion refresh/activation, and when the app becomes active. A late success reloads saved sessions only; interrupted-recording recovery waits for the next launch so it cannot touch a live recording.
 
 ## Phase 8 — UI/UX
 

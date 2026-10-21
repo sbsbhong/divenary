@@ -586,9 +586,25 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).toContain('let startPlan = explicitStartPlan(for: diveMode)');
     expect(home).toContain('realCoordinator.startManual(plan: startPlan)');
     expect(explicitStartPlan).toContain('plan.sourcePlanLocalId == nil || plan.diveMode == diveMode');
-    expect(explicitStartPlan).toContain('next.sourcePlanLocalId = nil');
-    expect(explicitStartPlan).toContain('next.title = ""');
-    expect(explicitStartPlan).toContain('next.userTags = next.userTags.filter { !$0.hasPrefix("plan-") }');
+    expect(explicitStartPlan).toContain('return preservesSelectedPlan ? next : next.withoutPlannedDiveLink');
+  });
+
+  it('keeps demo and debug recordings away from planned dives', () => {
+    const home = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/HomeView.swift');
+    const session = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Models/DiveSession.swift');
+    const store = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Storage/DiveSessionStore.swift');
+    const withoutPlannedDiveLink = session.slice(
+      session.indexOf('var withoutPlannedDiveLink: PreDivePlan'),
+      session.indexOf('private func normalizedToken'),
+    );
+
+    expect(withoutPlannedDiveLink).toContain('next.sourcePlanLocalId = nil');
+    expect(withoutPlannedDiveLink).toContain('next.title = ""');
+    expect(withoutPlannedDiveLink).toContain('next.userTags = userTags.filter { !$0.hasPrefix("plan-") }');
+    expect(home).toMatch(/plan: explicitStartPlan\(for: \.scuba\)\.withoutPlannedDiveLink,\s*recordingMode: \.demo/);
+    expect(home).toMatch(/plan: explicitStartPlan\(for: \.freedive\)\.withoutPlannedDiveLink,\s*recordingMode: \.debugTest/);
+    expect(home).toMatch(/plan: explicitStartPlan\(for: \.scuba\)\.withoutPlannedDiveLink,\s*recordingMode: \.debugTest/);
+    expect(store).toContain('if safeSession.captureMode == .real, let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {');
   });
 
   it('persists the preferred watch dive mode and starts the armed Wet Ready mode on runtime adoption', () => {
@@ -789,9 +805,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(simulated).toContain('recordingMode.prepare(plan: plan)');
     expect(simulated).toContain('digitalCrownRotation');
     expect(coordinator).toContain('private let minimumHardwareEndElapsedSeconds: TimeInterval = 180');
-    expect(coordinator).toContain('private let surfaceEndDepthMeters = 1.0');
-    expect(coordinator).toMatch(/guard case \.recording = phase,\s*recorder\.elapsedTime >= minimumHardwareEndElapsedSeconds,\s*canEndFromCurrentSurfaceState/);
-    expect(coordinator).toMatch(/case \.unknown:\s*return recorder\.currentDepth <= surfaceEndDepthMeters\s*case \.submerged:\s*return false/);
+    expect(coordinator).toMatch(/guard case \.recording = phase,\s*recorder\.elapsedTime >= minimumHardwareEndElapsedSeconds,\s*water\.latestState == \.notSubmerged/);
+    expect(coordinator).not.toContain('surfaceEndDepthMeters');
     expect(simulated).toContain('.focusable(recordingMode.controlPolicy.usesCrownDepthControl)');
     expect(recording).toMatch(/var usesCrownDepthControl: Bool \{\s*self == \.simulated/);
     expect(recording).toContain('InstrumentDepthLayout');

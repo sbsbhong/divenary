@@ -598,6 +598,121 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         })
     }
 
+    @MainActor
+    func testOnlyRealRecordingsMarkTheirPlannedDiveExecuted() throws {
+        let plannedDive = WatchPlannedDive(
+            localId: "plan-1",
+            title: "Reef",
+            siteName: nil,
+            diveMode: .scuba,
+            entryStyle: nil,
+            plannedAt: nil,
+            plannedMaxDepthMeters: 12,
+            plannedDurationMinutes: nil,
+            gasLabel: nil,
+            buddyIds: [],
+            gearIds: nil,
+            tags: [],
+            notes: nil
+        )
+        let demoStore = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: makeIsolatedRecordsStorageURL()
+        )
+        let realStore = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: makeIsolatedRecordsStorageURL()
+        )
+        demoStore.replacePlannedDives([plannedDive])
+        realStore.replacePlannedDives([plannedDive])
+
+        XCTAssertTrue(demoStore.save(Self.debugScubaRecord(captureMode: .demo, sourcePlanLocalId: "plan-1")))
+        XCTAssertTrue(realStore.save(Self.debugScubaRecord(captureMode: .real, sourcePlanLocalId: "plan-1")))
+
+        XCTAssertEqual(demoStore.plannedDives.map(\.localId), ["plan-1"])
+        XCTAssertEqual(realStore.plannedDives.map(\.localId), [])
+    }
+
+    func testDemoStartPlanDropsThePlannedDiveLink() {
+        var plan = PreDivePlan()
+        plan.sourcePlanLocalId = "plan-1"
+        plan.title = "Reef"
+        plan.userTags = ["plan-plan-1", "night"]
+        plan.siteName = "House Reef"
+
+        let demoPlan = plan.withoutPlannedDiveLink
+
+        XCTAssertNil(demoPlan.sourcePlanLocalId)
+        XCTAssertEqual(demoPlan.title, "")
+        XCTAssertEqual(demoPlan.userTags, ["night"])
+        XCTAssertEqual(demoPlan.siteName, "House Reef")
+        XCTAssertFalse(demoPlan.tags.contains { $0.hasPrefix("plan-") })
+    }
+
+    @MainActor
+    func testSaveRetriesDeletionRecoveryThatFailedAtLaunch() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let ledgerURL = try corruptDeletionLedger(besides: storageURL)
+        let store = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL
+        )
+        let record = Self.debugScubaRecord()
+
+        XCTAssertFalse(store.save(record))
+
+        try FileManager.default.removeItem(at: ledgerURL)
+        XCTAssertTrue(store.save(record))
+        XCTAssertEqual(store.sessions.map(\.id), [record.id])
+    }
+
+    @MainActor
+    func testCompanionRefreshRetriesDeletionRecoveryAndReloadsSavedSessions() async throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let record = Self.debugScubaRecord()
+        let firstLaunch = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL
+        )
+        XCTAssertTrue(firstLaunch.save(record))
+        let ledgerURL = try corruptDeletionLedger(besides: storageURL)
+        let store = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL
+        )
+        XCTAssertEqual(store.sessions.map(\.id), [])
+
+        try FileManager.default.removeItem(at: ledgerURL)
+        await store.refreshFromCompanion()
+
+        XCTAssertEqual(store.sessions.map(\.id), [record.id])
+    }
+
+    func testRecordsFromBeforeCaptureModeExistedReadAsDemo() throws {
+        let encoded = try JSONEncoder().encode(Self.debugScubaRecord())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        object.removeValue(forKey: "captureMode")
+        let decoded = try JSONDecoder().decode(
+            DiveSessionRecord.self,
+            from: JSONSerialization.data(withJSONObject: object)
+        )
+        let legacy = DiveSessionRecord(legacySession: DiveSession(
+            diveMode: .scuba,
+            syncStatus: .pending,
+            startedAt: EngineTestFixtures.date(0),
+            endedAt: EngineTestFixtures.date(60),
+            samples: [EngineTestFixtures.sample(0, depth: 0), EngineTestFixtures.sample(30, depth: 8)]
+        ))
+
+        XCTAssertEqual(decoded.captureMode, .demo)
+        XCTAssertEqual(legacy.captureMode, .demo)
+    }
+
     func testOldFreediveSessionAdaptsToOneSegment() {
         let samples = [
             EngineTestFixtures.sample(0, depth: 0),
@@ -941,6 +1056,14 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         return userDefaults
     }
 
+    private func corruptDeletionLedger(besides storageURL: URL) throws -> URL {
+        let rootURL = storageURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        let ledgerURL = rootURL.appendingPathComponent("deleted-session-ledger.json")
+        try Data("not a ledger".utf8).write(to: ledgerURL)
+        return ledgerURL
+    }
+
     private func makeIsolatedRecordsStorageURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("DivenaryWatchAppTests-\(UUID().uuidString)", isDirectory: true)
@@ -1029,7 +1152,10 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         )
     }
 
-    private static func debugScubaRecord() -> DiveSessionRecord {
+    private static func debugScubaRecord(
+        captureMode: DiveCaptureMode = .demo,
+        sourcePlanLocalId: String? = nil
+    ) -> DiveSessionRecord {
         let id = UUID(uuidString: "00000000-0000-0000-0000-000000005C0B")!
         let samples = [
             EngineTestFixtures.sample(0, depth: 0),
@@ -1039,11 +1165,11 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         return DiveSessionRecord(
             id: id,
             schemaVersion: 2,
-            captureMode: .demo,
+            captureMode: captureMode,
             diveMode: .scuba,
             siteId: nil,
             siteName: "Debug Scuba",
-            sourcePlanLocalId: nil,
+            sourcePlanLocalId: sourcePlanLocalId,
             planTitle: nil,
             buddyIds: [],
             gearIds: [],

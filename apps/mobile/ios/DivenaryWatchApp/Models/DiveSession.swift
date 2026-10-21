@@ -105,6 +105,15 @@ struct PreDivePlan: Codable, Equatable {
         return values
     }
 
+    /// Keeps the diver's settings but drops the link that would mark a planned dive executed.
+    var withoutPlannedDiveLink: PreDivePlan {
+        var next = self
+        next.sourcePlanLocalId = nil
+        next.title = ""
+        next.userTags = userTags.filter { !$0.hasPrefix("plan-") }
+        return next
+    }
+
     private func normalizedToken(from value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }

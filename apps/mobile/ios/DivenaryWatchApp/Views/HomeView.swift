@@ -7,6 +7,7 @@ struct HomeView: View {
     @ObservedObject var realCoordinator: RealDiveSessionCoordinator
     let actionButtonBridge: DiveActionButtonBridge
     let actionButtonDonor: DiveActionButtonDonating
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
     @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
@@ -60,7 +61,7 @@ struct HomeView: View {
                     NavigationLink {
                         SimulatedRecordingFlowView(
                             store: store,
-                            plan: explicitStartPlan(for: .scuba),
+                            plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                             recordingMode: .demo,
                             actionButtonBridge: actionButtonBridge,
                             actionButtonDonor: actionButtonDonor
@@ -80,7 +81,7 @@ struct HomeView: View {
                         NavigationLink {
                             SimulatedRecordingFlowView(
                                 store: store,
-                                plan: explicitStartPlan(for: .freedive),
+                                plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
                                 recordingMode: .debugTest,
                                 actionButtonBridge: actionButtonBridge,
                                 actionButtonDonor: actionButtonDonor
@@ -99,7 +100,7 @@ struct HomeView: View {
                         NavigationLink {
                             SimulatedRecordingFlowView(
                                 store: store,
-                                plan: explicitStartPlan(for: .scuba),
+                                plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                                 recordingMode: .debugTest,
                                 actionButtonBridge: actionButtonBridge,
                                 actionButtonDonor: actionButtonDonor
@@ -161,6 +162,11 @@ struct HomeView: View {
             .onChange(of: water.latestState) { _, nextState in
                 realCoordinator.receiveWaterState(nextState)
             }
+            .onChange(of: scenePhase) { _, nextPhase in
+                if nextPhase == .active {
+                    store.resumePendingDeletionsIfNeeded()
+                }
+            }
         }
     }
 
@@ -186,12 +192,7 @@ struct HomeView: View {
         if diveMode == .scuba {
             next.gasLabel = next.gasLabel.isEmpty ? "Air" : next.gasLabel
         }
-        if !preservesSelectedPlan {
-            next.sourcePlanLocalId = nil
-            next.title = ""
-            next.userTags = next.userTags.filter { !$0.hasPrefix("plan-") }
-        }
-        return next
+        return preservesSelectedPlan ? next : next.withoutPlannedDiveLink
     }
 
     private func applyPreferredDiveMode() {

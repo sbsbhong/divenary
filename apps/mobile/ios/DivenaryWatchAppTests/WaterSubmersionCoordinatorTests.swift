@@ -73,7 +73,11 @@ final class WaterSubmersionCoordinatorTests: XCTestCase {
         defer { cancellable.cancel() }
 
         let ranOffMain = await Task.detached {
-            coordinator.forwardTemperature(celsius: 18.4, maximumDepthMeters: 16)
+            coordinator.forwardTemperature(
+                celsius: 18.4,
+                at: EngineTestFixtures.date(0),
+                maximumDepthMeters: 16
+            )
             return !Thread.isMainThread
         }.value
 
@@ -147,7 +151,7 @@ final class WaterSubmersionCoordinatorTests: XCTestCase {
         var receivedSamples: [DepthSample] = []
         coordinator.onSample = { receivedSamples.append($0) }
 
-        coordinator.receiveTemperature(celsius: 18.4)
+        coordinator.receiveTemperature(celsius: 18.4, at: date(0))
         coordinator.receiveMeasurement(
             timestamp: date(4),
             depthMeters: 0.15,
@@ -157,6 +161,46 @@ final class WaterSubmersionCoordinatorTests: XCTestCase {
 
         let sample = try XCTUnwrap(receivedSamples.first)
         XCTAssertEqual(try XCTUnwrap(sample.waterTemperatureCelsius), 18.4, accuracy: 0.001)
+    }
+
+    func testTemperatureOlderThanSixtySecondsIsNotAttached() {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        var receivedSamples: [DepthSample] = []
+        coordinator.onSample = { receivedSamples.append($0) }
+
+        coordinator.receiveTemperature(celsius: 18.4, at: date(0))
+        coordinator.receiveMeasurement(timestamp: date(60), depthMeters: 3, pressureKPa: 130, depthState: .submergedShallow)
+        coordinator.receiveMeasurement(timestamp: date(61), depthMeters: 3, pressureKPa: 130, depthState: .submergedShallow)
+
+        XCTAssertEqual(receivedSamples.map(\.waterTemperatureCelsius), [18.4, nil])
+    }
+
+    func testLeavingTheWaterClearsTheTemperature() {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        var receivedSamples: [DepthSample] = []
+        coordinator.onSample = { receivedSamples.append($0) }
+
+        coordinator.receiveTemperature(celsius: 18.4, at: date(0))
+        coordinator.receiveEvent(state: .notSubmerged, at: date(1))
+        coordinator.receiveMeasurement(timestamp: date(2), depthMeters: 1, pressureKPa: 111, depthState: .submergedShallow)
+
+        XCTAssertEqual(receivedSamples.map(\.waterTemperatureCelsius), [nil])
+    }
+
+    func testStartingTheRealProviderDropsTheTemperatureFromBeforeTheSession() {
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let provider = RealDepthSensorProvider(coordinator: coordinator)
+        var receivedSamples: [DepthSample] = []
+        provider.onSample = { receivedSamples.append($0) }
+
+        coordinator.receiveTemperature(celsius: 18.4, at: date(0))
+        provider.start()
+        coordinator.receiveMeasurement(timestamp: date(1), depthMeters: 2, pressureKPa: 121, depthState: .submergedShallow)
+        coordinator.receiveTemperature(celsius: 17.9, at: date(2))
+        coordinator.receiveMeasurement(timestamp: date(3), depthMeters: 2, pressureKPa: 121, depthState: .submergedShallow)
+        provider.stop()
+
+        XCTAssertEqual(receivedSamples.map(\.waterTemperatureCelsius), [nil, 17.9])
     }
 
     func testValidMeasurementPublishesLatestDepthMeters() throws {

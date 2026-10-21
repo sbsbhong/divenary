@@ -57,7 +57,6 @@ final class TaskWetReadyExitScheduler: WetReadyExitScheduling {
 @MainActor
 protocol DiveSessionRecording: AnyObject {
     var elapsedTime: TimeInterval { get }
-    var currentDepth: Double { get }
     var hasCapturedDepthSample: Bool { get }
 
     @discardableResult
@@ -92,7 +91,6 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let actionButtonDonor: DiveActionButtonDonating
     private let wetReadyExitScheduler: WetReadyExitScheduling
     private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
-    private let surfaceEndDepthMeters = 1.0
 
     init(
         preferredMode: @escaping () -> DiveMode,
@@ -200,7 +198,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     func requestActionButtonEnd() -> Bool {
         guard case .recording = phase,
               recorder.elapsedTime >= minimumHardwareEndElapsedSeconds,
-              canEndFromCurrentSurfaceState
+              water.latestState == .notSubmerged
         else {
             return false
         }
@@ -308,17 +306,6 @@ final class RealDiveSessionCoordinator: ObservableObject {
             phase = .idle
             return true
         case .recording, .completing, .awaitingRuntimeInvalidation:
-            return false
-        }
-    }
-
-    private var canEndFromCurrentSurfaceState: Bool {
-        switch water.latestState {
-        case .notSubmerged:
-            return true
-        case .unknown:
-            return recorder.currentDepth <= surfaceEndDepthMeters
-        case .submerged:
             return false
         }
     }

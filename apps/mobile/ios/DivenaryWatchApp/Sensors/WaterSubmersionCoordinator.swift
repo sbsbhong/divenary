@@ -30,6 +30,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     }
 
     static let shared = WaterSubmersionCoordinator()
+    static let temperatureFreshnessSeconds: TimeInterval = 60
 
     var onSample: ((DepthSample) -> Void)?
     var onDepthState: ((WaterDepthState, Date) -> Void)?
@@ -44,7 +45,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     private let managerFactory: () -> CMWaterSubmersionManager?
     private var manager: CMWaterSubmersionManager?
     private var hasStartedMonitoring = false
-    private var latestTemperatureCelsius: Double?
+    private var latestTemperature: (celsius: Double, measuredAt: Date)?
 
     init(managerFactory: @escaping () -> CMWaterSubmersionManager? = {
         guard CMWaterSubmersionManager.waterSubmersionAvailable else {
@@ -166,10 +167,10 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         }
     }
 
-    nonisolated func forwardTemperature(celsius: Double, maximumDepthMeters: Double?) {
+    nonisolated func forwardTemperature(celsius: Double, at timestamp: Date, maximumDepthMeters: Double?) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            receiveTemperature(celsius: celsius)
+            receiveTemperature(celsius: celsius, at: timestamp)
             receiveMaximumDepth(maximumDepthMeters)
         }
     }
@@ -186,6 +187,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         latestState = state
         if state == .notSubmerged {
             latestDepthMeters = nil
+            latestTemperature = nil
         }
         onEvent?(state, timestamp)
     }
@@ -202,7 +204,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
             timestamp: timestamp,
             depthMeters: depthMeters,
             pressureKPa: pressureKPa,
-            temperatureCelsius: latestTemperatureCelsius,
+            temperatureCelsius: freshTemperature(at: timestamp),
             depthState: depthState
         ) else {
             if depthState == .notSubmerged || depthState == .sensorDepthError {
@@ -215,11 +217,25 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         onSample?(sample)
     }
 
-    func receiveTemperature(celsius: Double) {
+    func receiveTemperature(celsius: Double, at timestamp: Date) {
         guard celsius.isFinite else {
             return
         }
-        latestTemperatureCelsius = celsius
+        latestTemperature = (celsius, timestamp)
+    }
+
+    /// Drops a reading taken before the current session so it never labels the new dive.
+    func resetWaterTemperature() {
+        latestTemperature = nil
+    }
+
+    private func freshTemperature(at timestamp: Date) -> Double? {
+        guard let latestTemperature,
+              timestamp.timeIntervalSince(latestTemperature.measuredAt) <= Self.temperatureFreshnessSeconds
+        else {
+            return nil
+        }
+        return latestTemperature.celsius
     }
 
     func receive(error: Error) {
@@ -266,8 +282,9 @@ extension WaterSubmersionCoordinator: CMWaterSubmersionManagerDelegate {
 
     nonisolated func manager(_ manager: CMWaterSubmersionManager, didUpdate measurement: CMWaterTemperature) {
         let celsius = measurement.temperature.converted(to: .celsius).value
+        let timestamp = measurement.date
         let maximumDepthMeters = Self.maximumDepthMeters(from: manager.maximumDepth)
-        forwardTemperature(celsius: celsius, maximumDepthMeters: maximumDepthMeters)
+        forwardTemperature(celsius: celsius, at: timestamp, maximumDepthMeters: maximumDepthMeters)
     }
 
     nonisolated func manager(_ manager: CMWaterSubmersionManager, errorOccurred error: Error) {

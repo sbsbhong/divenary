@@ -16,6 +16,7 @@ final class RealDepthSensorProvider: DepthSensorProvider, DepthSensorConditionRe
     }
 
     func start() {
+        coordinator.resetWaterTemperature()
         coordinator.onSample = { [weak self] sample in
             self?.onSample?(sample)
         }

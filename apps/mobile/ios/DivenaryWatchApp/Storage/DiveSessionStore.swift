@@ -52,6 +52,7 @@ final class DiveSessionStore: ObservableObject {
         }
         self.syncTransport.onActivationCompleted = { [weak self] in
             Task { @MainActor in
+                self?.resumePendingDeletionsIfNeeded()
                 self?.retryPendingSyncs()
             }
         }
@@ -70,7 +71,7 @@ final class DiveSessionStore: ObservableObject {
 
     @discardableResult
     func save(_ session: DiveSessionRecord) -> Bool {
-        guard deletionRecoverySucceeded else {
+        guard resumePendingDeletionsIfNeeded() else {
             return false
         }
         let safeSession = session.sanitizedForPersistence()
@@ -91,7 +92,8 @@ final class DiveSessionStore: ObservableObject {
         try? profileStore.updateDisplayRecord(displayRecord)
         sessions.removeAll { $0.id == displayRecord.id }
         sessions.insert(displayRecord, at: 0)
-        if let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
+        // A demo recording never executes a real planned dive.
+        if safeSession.captureMode == .real, let sourcePlanLocalId = safeSession.resolvedSourcePlanLocalId {
             markPlanExecuted(sourcePlanLocalId)
         }
         return true
@@ -133,8 +135,29 @@ final class DiveSessionStore: ObservableObject {
     }
 
     func refreshFromCompanion() async {
+        resumePendingDeletionsIfNeeded()
         syncTransport.refreshPlannedDives()
         retryPendingSyncs()
+    }
+
+    /// Finishes deletions interrupted in an earlier run before any read or write, so a deleted
+    /// session cannot come back. A launch-time failure is retried instead of blocking every save.
+    @discardableResult
+    func resumePendingDeletionsIfNeeded() -> Bool {
+        guard !deletionRecoverySucceeded else {
+            return true
+        }
+        do {
+            try profileStore.resumePendingDeletions()
+        } catch {
+            return false
+        }
+        deletionRecoverySucceeded = true
+        // Interrupted-recording recovery waits for the next launch so it cannot touch a live recording.
+        if let entries = try? profileStore.loadEntries() {
+            sessions = entries.map(\.displayRecord)
+        }
+        return true
     }
 
     func updatePreferredDiveMode(_ nextDiveMode: DiveMode) {

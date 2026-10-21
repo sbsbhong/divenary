@@ -528,17 +528,17 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertRecording(coordinator, source: .actionButton)
     }
 
-    func testActionButtonEndAllowsLongSurfaceDepthWhenWaterStateIsUnknown() {
+    func testActionButtonEndRejectsUnknownWaterStateEvenNearTheSurface() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
-        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 600)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 600, currentDepth: 0.3)
         let water = FakeWaterStateReader(latestState: .unknown)
         let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water)
         coordinator.startFromActionButton()
 
-        XCTAssertTrue(coordinator.requestActionButtonEnd())
+        XCTAssertFalse(coordinator.requestActionButtonEnd())
 
-        XCTAssertEqual(runtime.invalidateCallCount, 1)
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
         XCTAssertEqual(recorder.stopCallCount, 0)
         assertRecording(coordinator, source: .actionButton)
     }

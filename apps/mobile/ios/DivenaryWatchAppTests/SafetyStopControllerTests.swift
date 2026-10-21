@@ -31,7 +31,7 @@ final class SafetyStopControllerTests: XCTestCase {
         var controller = SafetyStopController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(0, depth: 12))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(2, depth: 5))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 4.8))
+        hold(&controller, depth: 4.8, from: 3, through: 12)
 
         XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
     }
@@ -56,7 +56,7 @@ final class SafetyStopControllerTests: XCTestCase {
         var controller = activeController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 6.8))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(18, depth: 4.9))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(28, depth: 4.8))
+        hold(&controller, depth: 4.8, from: 19, through: 28)
 
         XCTAssertEqual(controller.record.status, .active)
         XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
@@ -64,18 +64,28 @@ final class SafetyStopControllerTests: XCTestCase {
 
     func testCountdownReachingZeroMarksCompleted() {
         var controller = activeController()
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(180, depth: 5))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(182, depth: 5))
+        hold(&controller, depth: 5, from: 3, through: 182)
 
         XCTAssertEqual(controller.record.status, .completed)
         XCTAssertTrue(controller.record.completed)
         XCTAssertEqual(controller.record.remainingSeconds, 0, accuracy: 0.01)
     }
 
-    func testSparseFinalCompletionIntervalClampsCreditedTime() {
+    func testSensorGapCreditsAtMostFiveSecondsOfStopTime() {
         var controller = activeController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(100, depth: 5))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(250, depth: 5))
+
+        XCTAssertEqual(controller.record.status, .active)
+        XCTAssertFalse(controller.record.completed)
+        XCTAssertEqual(controller.record.timeInZoneSeconds, 10, accuracy: 0.01)
+        XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
+    }
+
+    func testFinalCompletionIntervalClampsCreditedTime() {
+        var controller = activeController()
+        hold(&controller, depth: 5, from: 3, through: 181)
+        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(184, depth: 5))
 
         XCTAssertEqual(controller.record.status, .completed)
         XCTAssertEqual(controller.record.remainingSeconds, 0, accuracy: 0.01)
@@ -109,7 +119,7 @@ final class SafetyStopControllerTests: XCTestCase {
         var controller = completedController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(190, depth: 10))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(200, depth: 5))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(210, depth: 5))
+        hold(&controller, depth: 5, from: 201, through: 210)
 
         XCTAssertEqual(controller.record.status, .active)
         XCTAssertEqual(controller.record.startedAt, EngineTestFixtures.date(200))
@@ -148,7 +158,7 @@ final class SafetyStopControllerTests: XCTestCase {
         var controller = SafetyStopController()
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(0, depth: 12))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(2, depth: 2.7))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 6.3))
+        hold(&controller, depth: 6.3, from: 3, through: 12)
 
         XCTAssertEqual(controller.record.status, .active)
         XCTAssertEqual(controller.record.remainingSeconds, 170, accuracy: 0.01)
@@ -181,7 +191,7 @@ final class SafetyStopControllerTests: XCTestCase {
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(20, depth: 6.8))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(50, depth: 6.8))
         controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(55, depth: 5))
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(65, depth: 5))
+        hold(&controller, depth: 5, from: 56, through: 65)
 
         XCTAssertEqual(controller.record.status, .active)
         XCTAssertEqual(controller.record.startedAt, EngineTestFixtures.date(55))
@@ -208,13 +218,24 @@ final class SafetyStopControllerTests: XCTestCase {
 
     private func activeControllerWithTenSecondsCredited() -> SafetyStopController {
         var controller = activeController()
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(12, depth: 5))
+        hold(&controller, depth: 5, from: 3, through: 12)
         return controller
     }
 
     private func completedController() -> SafetyStopController {
         var controller = activeController()
-        controller.update(maxDepthMeters: 12, sample: EngineTestFixtures.sample(182, depth: 5))
+        hold(&controller, depth: 5, from: 3, through: 182)
         return controller
+    }
+
+    private func hold(
+        _ controller: inout SafetyStopController,
+        depth: Double,
+        from start: TimeInterval,
+        through end: TimeInterval
+    ) {
+        for sample in EngineTestFixtures.samples(from: start, through: end, depth: depth) {
+            controller.update(maxDepthMeters: 12, sample: sample)
+        }
     }
 }

@@ -362,8 +362,9 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
             return XCTFail("Expected a scuba session payload")
         }
 
-        XCTAssertEqual(session.latestAscentRateMetersPerMinute, 0, accuracy: 0.001)
-        XCTAssertEqual(session.maxAscentRateMetersPerMinute, 30, accuracy: 0.001)
+        // Stored rates match the smoothed live readout (12 m/min), not the 30 m/min sample step.
+        XCTAssertEqual(session.latestAscentRateMetersPerMinute, 12, accuracy: 0.001)
+        XCTAssertEqual(session.maxAscentRateMetersPerMinute, 12, accuracy: 0.001)
         recorder.cancelSession()
     }
 
