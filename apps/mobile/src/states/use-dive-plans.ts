@@ -64,7 +64,13 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
     }
   }, [accountData, deletePlanMutation, options.repository]);
 
+  const principalSettled = accountData?.isPrincipalSettled ?? true;
+  const plansLoaded = plansQuery.data !== undefined || initialPlans !== undefined;
+
   React.useEffect(() => {
+    if (!principalSettled || !plansLoaded) {
+      return;
+    }
     let isCurrent = true;
 
     void updatePlannedWatchDives(plans)
@@ -80,7 +86,7 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
     return () => {
       isCurrent = false;
     };
-  }, [plans]);
+  }, [plans, plansLoaded, principalSettled]);
 
   return {
     plans,

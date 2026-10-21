@@ -49,6 +49,7 @@ type WatchConnectivitySyncProviderProps = {
   subscribeToPayloads?: (handler: (payload: WatchConnectivityPayload) => void) => WatchConnectivitySubscription;
   coordinator?: WatchConnectivityImportCoordinator;
   preferencesHydrated?: boolean;
+  principalSettled?: boolean;
   onLocalWritesCommitted?: () => Promise<unknown>;
   isHistoricalWatchArtifact?: (
     identity: WatchArtifactIdentity,
@@ -172,6 +173,7 @@ export function WatchConnectivitySyncProvider(
   const subscribeToPayloads = props.subscribeToPayloads ?? subscribeToWatchConnectivityPayloads;
   const coordinator = props.coordinator ?? defaultWatchConnectivityImportCoordinator;
   const preferencesHydrated = props.preferencesHydrated ?? true;
+  const principalSettled = props.principalSettled ?? accountData?.isPrincipalSettled ?? true;
   const onLocalWritesCommitted = props.onLocalWritesCommitted
     ?? (props.repository ? undefined : accountData?.requestSync);
   const isHistoricalWatchArtifact = props.isHistoricalWatchArtifact
@@ -192,7 +194,8 @@ export function WatchConnectivitySyncProvider(
   const queryClient = useQueryClient();
 
   React.useEffect(() => {
-    if (!preferencesHydrated) {
+    // The watch keeps unacknowledged sessions, so waiting for auth only delays import.
+    if (!preferencesHydrated || !principalSettled) {
       return;
     }
     const scope = coordinator.activateScope(queryScope);
@@ -317,6 +320,7 @@ export function WatchConnectivitySyncProvider(
     planRepository,
     preparePendingPayload,
     preferencesHydrated,
+    principalSettled,
     queryClient,
     queryScope,
     repository,

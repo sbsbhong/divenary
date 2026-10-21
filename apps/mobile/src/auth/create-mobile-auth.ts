@@ -21,7 +21,10 @@ import {
   signInWithApple,
 } from './apple-native-auth';
 import {createGoogleNativeAuth} from './google-native-auth';
-import {supabaseSessionStorage} from './keychain-session-storage';
+import {
+  clearPersistedSupabaseSession,
+  supabaseSessionStorage,
+} from './keychain-session-storage';
 import {
   createMembershipCache,
   type MembershipCache,
@@ -45,6 +48,7 @@ export type MobileAuth = {
     userId: string,
   ) => GuestClaimRemoteRepository;
   developmentSignIn?: () => Promise<Session>;
+  clearPersistedSession?: () => Promise<void>;
   now: () => number;
 };
 
@@ -156,6 +160,7 @@ export function createMobileAuth(
         localDevelopmentAuthEnvironment === undefined
           ? undefined
           : () => repository.signInWithPassword(localDevelopmentAuthEnvironment),
+      clearPersistedSession: clearPersistedSupabaseSession,
       now: options.now ?? (() => Math.floor(Date.now() / 1000)),
     };
   } catch {

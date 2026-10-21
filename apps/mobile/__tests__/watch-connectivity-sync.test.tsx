@@ -490,6 +490,44 @@ describe('WatchConnectivitySyncProvider', () => {
     expect(startupOrder.slice(0, 2)).toEqual(['subscribe', 'drain']);
   });
 
+  it('waits for a settled account principal before subscribing or draining watch payloads', async () => {
+    const repository = new LocalDiveLogRepository([], { now: () => 1781355000 });
+    const queryClient = createQueryClient();
+    const coordinator = new WatchConnectivityImportCoordinator();
+    const drainPendingPayloads = jest.fn(async () => []);
+    const subscribeToPayloads = jest.fn(() => ({ remove: jest.fn() }));
+    const render = (principalSettled: boolean) => (
+      <QueryClientProvider client={queryClient}>
+        <WatchConnectivitySyncProvider
+          repository={repository}
+          coordinator={coordinator}
+          drainPendingPayloads={drainPendingPayloads}
+          acknowledgePayloads={jest.fn()}
+          subscribeToPayloads={subscribeToPayloads}
+          principalSettled={principalSettled}
+        />
+      </QueryClientProvider>
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(render(false));
+      renderers.push(renderer);
+      await flushPromises();
+    });
+
+    expect(subscribeToPayloads).not.toHaveBeenCalled();
+    expect(drainPendingPayloads).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(render(true));
+      await flushPromises();
+    });
+
+    expect(subscribeToPayloads).toHaveBeenCalledTimes(1);
+    expect(drainPendingPayloads).toHaveBeenCalled();
+  });
+
   it('yields to the runtime only between automatically imported payloads', async () => {
     const repository = new LocalDiveLogRepository([], {now: () => 1781355000});
     const queryClient = createQueryClient();

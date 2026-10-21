@@ -158,7 +158,7 @@ function createAuthFixture(options?: {
   providers?: Partial<Record<'google' | 'apple', NativeSocialSignIn>>;
   developmentSignIn?: MobileAuth['developmentSignIn'];
 }) {
-  let authListener: ((session: Session | null) => void) | undefined;
+  let authListener: Parameters<AuthRepository['subscribe']>[0] | undefined;
   const unsubscribe = jest.fn();
   const repository = {
     signInWithIdToken: jest.fn(
@@ -216,7 +216,11 @@ function createAuthFixture(options?: {
     membershipCache,
     recentProviderStore,
     unsubscribe,
-    emitAuth: (nextSession: Session | null) => authListener?.(nextSession),
+    emitAuth: (
+      nextSession: Session | null,
+      event: Parameters<Parameters<AuthRepository['subscribe']>[0]>[1] =
+        nextSession === null ? 'SIGNED_OUT' : 'TOKEN_REFRESHED',
+    ) => authListener?.(nextSession, event),
   };
 }
 
@@ -988,6 +992,69 @@ describe('AuthProvider', () => {
     deferred.resolve(evidence);
     await settle();
     expect(latestAuth.state).toEqual({status: 'guest'});
+  });
+
+  test('keeps restoring bounded offline membership when the initial session load reports no session', async () => {
+    const deferred = createDeferred<StoredSessionEvidence | undefined>();
+    const fixture = createAuthFixture({evidence, cache: cachedMembership});
+    fixture.repository.getStoredSessionEvidence.mockReturnValue(deferred.promise);
+    fixture.repository.verifyClaims.mockRejectedValue(
+      new AuthRepositoryError('network'),
+    );
+
+    await mountAuth(fixture.mobileAuth);
+    ReactTestRenderer.act(() => fixture.emitAuth(null, 'INITIAL_SESSION'));
+    expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+
+    deferred.resolve(evidence);
+    await settle();
+    expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+    expect(fixture.membershipCache.remove).not.toHaveBeenCalled();
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+  });
+
+  test('does not sign out when a refreshed session follows an initial null session', async () => {
+    const fixture = createAuthFixture({evidence, status: completeStatus});
+    await mountAuth(fixture.mobileAuth);
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+
+    ReactTestRenderer.act(() => fixture.emitAuth(null, 'INITIAL_SESSION'));
+    ReactTestRenderer.act(() => fixture.emitAuth(session, 'TOKEN_REFRESHED'));
+    await settle();
+
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+  });
+
+  test('removes the persisted session when sign-out cannot reach the server', async () => {
+    const fixture = createAuthFixture({evidence, status: completeStatus});
+    const clearPersistedSession = jest.fn(async () => undefined);
+    fixture.mobileAuth.clearPersistedSession = clearPersistedSession;
+    fixture.repository.signOut.mockRejectedValue(
+      new AuthRepositoryError('network'),
+    );
+    await mountAuth(fixture.mobileAuth);
+
+    await ReactTestRenderer.act(async () => {
+      await latestAuth.signOut();
+    });
+
+    expect(latestAuth.state).toEqual({status: 'guest'});
+    expect(clearPersistedSession).toHaveBeenCalledTimes(1);
+  });
+
+  test('keeps the persisted session cleanup to failed sign-outs only', async () => {
+    const fixture = createAuthFixture({evidence, status: completeStatus});
+    const clearPersistedSession = jest.fn(async () => undefined);
+    fixture.mobileAuth.clearPersistedSession = clearPersistedSession;
+    await mountAuth(fixture.mobileAuth);
+
+    await ReactTestRenderer.act(async () => {
+      await latestAuth.signOut();
+    });
+
+    expect(fixture.repository.signOut).toHaveBeenCalledTimes(1);
+    expect(clearPersistedSession).not.toHaveBeenCalled();
   });
 });
 

@@ -89,6 +89,8 @@ export type AccountDataContextValue = {
   planRepository: DivePlanRepository;
   isHydrated: boolean;
   isOnline: boolean;
+  /** False while Auth is still deciding between guest and account data. */
+  isPrincipalSettled?: boolean;
   outbox?: AccountOutbox;
   accountRepository?: AccountDataRepository;
   guestClaimRemoteRepository?: GuestClaimRemoteRepository;
@@ -824,6 +826,7 @@ export function AccountDataProviderCore({
     isOnline,
     notifyGuestInventoryChanged,
     queryClient,
+    watchDeletionStore,
   ]);
 
   const scheduleZeroInventoryAudit = React.useCallback(
@@ -1509,6 +1512,7 @@ export function AccountDataProviderCore({
     planRepository: published.planbook,
     isHydrated: true,
     isOnline,
+    isPrincipalSettled: isPrincipalSettledAuthState(auth.state),
     outbox: published.outbox,
     accountRepository: auth.accountDataRepository,
     guestClaimRemoteRepository: auth.guestClaimRemoteRepository,
@@ -3003,6 +3007,14 @@ function toRemoteLog(
 
 function toRemotePlan(plan: DivePlan, convertedLogId?: string): RemoteDivePlan {
   return createAccountRemotePlan(plan, convertedLogId);
+}
+
+function isPrincipalSettledAuthState(state: AuthState): boolean {
+  return (
+    state.status === 'guest' ||
+    state.status === 'authenticated' ||
+    state.status === 'authenticatedOffline'
+  );
 }
 
 function principalForAuthState(state: AuthState): DataPrincipal {
