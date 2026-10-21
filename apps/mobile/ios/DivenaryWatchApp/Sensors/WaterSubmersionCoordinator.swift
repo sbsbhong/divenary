@@ -32,6 +32,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     static let shared = WaterSubmersionCoordinator()
 
     var onSample: ((DepthSample) -> Void)?
+    var onDepthState: ((WaterDepthState, Date) -> Void)?
     var onEvent: ((WaterSubmersionState, Date) -> Void)?
     var onError: ((Error) -> Void)?
 
@@ -196,6 +197,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
         depthState: WaterDepthState
     ) {
         latestDepthState = depthState
+        onDepthState?(depthState, timestamp)
         guard let sample = Self.makeSample(
             timestamp: timestamp,
             depthMeters: depthMeters,
@@ -227,6 +229,12 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     private func receiveMaximumDepth(_ maximumDepthMeters: Double?) {
         self.maximumDepthMeters = maximumDepthMeters
     }
+
+    #if DEBUG
+    func forwardMaximumDepthForTesting(_ maximumDepthMeters: Double?) {
+        receiveMaximumDepth(maximumDepthMeters)
+    }
+    #endif
 
     private func refreshMaximumDepth(from manager: CMWaterSubmersionManager) {
         receiveMaximumDepth(Self.maximumDepthMeters(from: manager.maximumDepth))

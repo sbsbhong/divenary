@@ -298,6 +298,22 @@
         }
       }
     },
+    "At surface" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "At surface"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수면"
+          }
+        }
+      }
+    },
     "Auto launch active" : {
       "localizations" : {
         "en" : {
@@ -635,6 +651,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수심계"
+          }
+        }
+      }
+    },
+    "Depth sensor error" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth sensor error"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 센서 오류"
+          }
+        }
+      }
+    },
+    "Depth unavailable" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth unavailable"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 정보 없음"
           }
         }
       }
@@ -1813,6 +1861,22 @@
         }
       }
     },
+    "Recommended stop" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended stop"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스톱"
+          }
+        }
+      }
+    },
     "Recommended stop complete" : {
       "localizations" : {
         "en" : {
@@ -1825,6 +1889,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
+    "Recommended stop time remaining" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommended stop time remaining"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스톱 남은 시간"
           }
         }
       }
@@ -3076,6 +3156,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "시야"
+          }
+        }
+      }
+    },
+    "Waiting for depth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for depth"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 대기 중"
           }
         }
       }

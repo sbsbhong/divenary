@@ -368,12 +368,118 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
     }
 
     @MainActor
-    private func makeRecorder(sensor: ManualDepthSensorProvider) -> DiveSessionRecorder {
+    func testLiveDepthSignalWaitsForTheFirstValidSample() async {
+        let sensor = ManualDepthSensorProvider()
+        let recorder = makeRecorder(sensor: sensor)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        XCTAssertEqual(recorder.liveDepthSignal, .awaitingFirstSample)
+
+        sensor.emit(sample(at: 0, depth: 4))
+        await Task.yield()
+        XCTAssertEqual(recorder.liveDepthSignal, .live)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    func testLiveDepthSignalTurnsStaleWhenValidSamplesStop() async {
+        let sensor = ManualDepthSensorProvider()
+        let clock = TestClock(now: EngineTestFixtures.start)
+        let recorder = makeRecorder(sensor: sensor, clock: clock)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensor.emit(sample(at: 0, depth: 8))
+        await Task.yield()
+
+        clock.now = EngineTestFixtures.start.addingTimeInterval(4)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertEqual(recorder.liveDepthSignal, .live)
+
+        clock.now = EngineTestFixtures.start.addingTimeInterval(6)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertEqual(recorder.liveDepthSignal, .stale)
+
+        sensor.emit(sample(at: 6, depth: 7.8))
+        await Task.yield()
+        XCTAssertEqual(recorder.liveDepthSignal, .live)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    func testSensorErrorAndRangeConditionsOverrideTheLastDepthUntilTheSensorRecovers() async {
+        let sensor = ManualDepthSensorProvider()
+        let recorder = makeRecorder(sensor: sensor)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensor.emit(sample(at: 0, depth: 5))
+        sensor.emit(condition: .sensorError(at: EngineTestFixtures.start.addingTimeInterval(1)))
+        await Task.yield()
+        XCTAssertEqual(recorder.liveDepthSignal, .sensorError)
+
+        sensor.emit(condition: .beyondSensorRange(limitMeters: 6, at: EngineTestFixtures.start.addingTimeInterval(2)))
+        await Task.yield()
+        XCTAssertEqual(recorder.liveDepthSignal, .beyondSensorRange)
+
+        sensor.emit(condition: .normal(at: EngineTestFixtures.start.addingTimeInterval(3)))
+        sensor.emit(sample(at: 3, depth: 5.5))
+        await Task.yield()
+        XCTAssertEqual(recorder.liveDepthSignal, .live)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    func testBeyondSensorRangeMarksTheScubaRecordAndLeavesTheStopUnknown() async throws {
+        let sensor = ManualDepthSensorProvider()
+        let recorder = makeRecorder(sensor: sensor)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensor.emit(sample(at: 0, depth: 5.8))
+        sensor.emit(condition: .beyondSensorRange(limitMeters: 6, at: EngineTestFixtures.start.addingTimeInterval(1)))
+        sensor.emit(condition: .normal(at: EngineTestFixtures.start.addingTimeInterval(60)))
+        sensor.emit(sample(at: 60, depth: 4))
+        sensor.emit(sample(at: 61, depth: 3))
+        await Task.yield()
+
+        let record = try XCTUnwrap(recorder.stopSession())
+        let unsupportedDepth = try XCTUnwrap(record.unsupportedDepth)
+        XCTAssertTrue(unsupportedDepth.exceeded)
+        XCTAssertEqual(unsupportedDepth.limitMeters, 6)
+        XCTAssertEqual(unsupportedDepth.firstExceededAt, EngineTestFixtures.start.addingTimeInterval(1))
+        guard case let .scuba(session) = record.payload else {
+            return XCTFail("Expected a scuba session payload")
+        }
+        XCTAssertEqual(session.safetyStop.status, .unknown)
+        XCTAssertFalse(session.safetyStop.completed)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    func testLongSampleGapLeavesTheRecommendedStopUnknown() async throws {
+        let sensor = ManualDepthSensorProvider()
+        let recorder = makeRecorder(sensor: sensor)
+
+        recorder.startSession(plan: PreDivePlan(diveMode: .scuba))
+        sensor.emit(sample(at: 0, depth: 12))
+        sensor.emit(sample(at: 1, depth: 12))
+        sensor.emit(sample(at: 45, depth: 4))
+        await Task.yield()
+
+        let record = try XCTUnwrap(recorder.stopSession())
+        guard case let .scuba(session) = record.payload else {
+            return XCTFail("Expected a scuba session payload")
+        }
+        XCTAssertEqual(session.safetyStop.status, .unknown)
+        XCTAssertNil(record.unsupportedDepth)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    private func makeRecorder(sensor: ManualDepthSensorProvider, clock: TestClock? = nil) -> DiveSessionRecorder {
         DiveSessionRecorder(
             sensorProvider: sensor,
             captureMode: .demo,
             profileStore: StubProfileRecordingStore(),
-            now: { EngineTestFixtures.start }
+            now: { clock?.now ?? EngineTestFixtures.start }
         )
     }
 
@@ -387,8 +493,9 @@ final class DiveSessionRecorderAscentRateTests: XCTestCase {
 }
 
 @MainActor
-private final class ManualDepthSensorProvider: DepthSensorProvider {
+private final class ManualDepthSensorProvider: DepthSensorProvider, DepthSensorConditionReporting {
     var onSample: ((DepthSample) -> Void)?
+    var onCondition: ((DepthSensorCondition) -> Void)?
     private(set) var startCount = 0
     private(set) var stopCount = 0
 
@@ -402,6 +509,19 @@ private final class ManualDepthSensorProvider: DepthSensorProvider {
 
     func emit(_ sample: DepthSample) {
         onSample?(sample)
+    }
+
+    func emit(condition: DepthSensorCondition) {
+        onCondition?(condition)
+    }
+}
+
+@MainActor
+private final class TestClock {
+    var now: Date
+
+    init(now: Date) {
+        self.now = now
     }
 }
 

@@ -3,7 +3,7 @@ import SwiftUI
 struct DepthGaugeRail: View {
     static let layoutWidth: CGFloat = 72
 
-    let depthMeters: Double
+    let depthMeters: Double?
     let maxScaleMeters: Double
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
@@ -37,14 +37,16 @@ struct DepthGaugeRail: View {
                     tickMark(for: tick, height: height)
                 }
 
-                currentDepthMarker(height: height)
+                if let depthMeters {
+                    currentDepthMarker(depthMeters: depthMeters, height: height)
+                }
             }
         }
         .frame(width: Self.layoutWidth)
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Depth gauge"))
-        .accessibilityValue(Text(DiveFormatters.depth(depthMeters)))
+        .accessibilityValue(Text(depthMeters.map(DiveFormatters.depth) ?? String(localized: "Depth unavailable")))
     }
 
     private var deepBlueGradient: LinearGradient {
@@ -136,7 +138,7 @@ struct DepthGaugeRail: View {
             .position(x: railX + railWidth / 2, y: yPosition(for: depth, height: height))
     }
 
-    private func currentDepthMarker(height: CGFloat) -> some View {
+    private func currentDepthMarker(depthMeters: Double, height: CGFloat) -> some View {
         HStack(spacing: -1) {
             Image(systemName: "chevron.right")
                 .font(.system(size: 13, weight: .bold))

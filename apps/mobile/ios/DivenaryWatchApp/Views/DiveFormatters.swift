@@ -26,6 +26,12 @@ enum DiveFormatters {
         String(format: "%.1f m", meters)
     }
 
+    /// `nil` means the reading is not current, so no number is shown.
+    static func depth(_ meters: Double?) -> String {
+        guard let meters else { return "--.- m" }
+        return depth(meters)
+    }
+
     static func temperature(_ celsius: Double?) -> String {
         guard let celsius else { return "--.- °C" }
         return String(format: "%.1f °C", celsius)
@@ -33,6 +39,11 @@ enum DiveFormatters {
 
     static func ascentRate(_ metersPerMinute: Double) -> String {
         String(format: "%.1f m/min", max(0, metersPerMinute))
+    }
+
+    static func ascentRate(_ metersPerMinute: Double?) -> String {
+        guard let metersPerMinute else { return "--.- m/min" }
+        return ascentRate(metersPerMinute)
     }
 
     static func rating(_ value: Int?) -> String {
@@ -49,6 +60,8 @@ enum DiveWatchTheme {
     static let primary = Color(red: 0.161, green: 0.592, blue: 1.0)
     static let secondary = Color(red: 0.8, green: 0.8, blue: 0.8)
     static let danger = Color(red: 1.0, green: 0.42, blue: 0.38)
+    /// Supplementary tone for recommended reminders; never used for mandatory states.
+    static let caution = Color(red: 1.0, green: 0.78, blue: 0.3)
     static let text = Color.white
     static let mutedText = Color(red: 0.8, green: 0.8, blue: 0.8)
 

@@ -290,7 +290,8 @@ struct SimulatedRecordingFlowView: View {
             plan: preparedPlan,
             maximumDepthMeters: nil,
             endControl: recordingMode.endControl,
-            showsNavigationToolbar: recordingMode == .demo
+            showsNavigationToolbar: recordingMode == .demo,
+            markerTitle: recordingMode.markerTitle
         )
         .focusable(recordingMode.controlPolicy.usesCrownDepthControl)
         .focused($crownDepthControlFocused)
