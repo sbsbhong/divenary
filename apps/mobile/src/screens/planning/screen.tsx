@@ -1,6 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
+import { ListStateCard } from '../../components/ui/list-state-card';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
 import { Box } from '../../components/ui/box';
@@ -24,6 +25,7 @@ import { PlanEditor } from './plan-editor';
 type PlanningScreenProps = {
   sessions: MobileDiveSession[];
   plans?: DivePlan[];
+  loadError?: Error | null;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -306,6 +308,21 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
               </HStack>
               {props.isLoading ? (
                 <PlanningLoadingState />
+              ) : !plans.length && props.loadError ? (
+                <ListStateCard
+                  testID="planning-error-state"
+                  title={t('planning.loadFailed')}
+                  message={t('planning.loadFailedMessage')}
+                  actionLabel={t('common.retry')}
+                  onAction={() => void props.onRefresh()}
+                />
+              ) : !visiblePlans.length && plans.length ? (
+                <ListStateCard
+                  testID="planning-filter-empty-state"
+                  title={t('planning.noFilteredPlans')}
+                  actionLabel={t('planning.showAllPlans')}
+                  onAction={() => setFilter('all')}
+                />
               ) : visiblePlans.length ? (
                 <VStack space="md">
                   {visiblePlans.map(plan => (
@@ -533,13 +550,7 @@ function CompletionPrompt(props: { plan: DivePlan; onLater: () => void; onCreate
 function EmptyPlanbook(): React.JSX.Element {
   const { t } = useTranslation();
 
-  return (
-    <DiveSummaryCard>
-      <VStack testID="planning-empty-state" space="lg">
-        <DiveSummaryCard.Header title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />
-      </VStack>
-    </DiveSummaryCard>
-  );
+  return <ListStateCard testID="planning-empty-state" title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />;
 }
 
 function PlanningLoadingState(): React.JSX.Element {

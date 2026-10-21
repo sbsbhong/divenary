@@ -643,6 +643,8 @@ export default function RootNavigation(): React.JSX.Element {
                     {() => (
                       <LogbookScreen
                         entries={logbook.filteredEntries}
+                        totalEntryCount={logbook.entries.length}
+                        loadError={logbook.listError}
                         filter={logbook.filter}
                         onFilterChange={logbook.setFilter}
                         onSyncWatch={logbook.syncWatchPayloads}
@@ -665,6 +667,7 @@ export default function RootNavigation(): React.JSX.Element {
                       <PlanningScreen
                         sessions={logbook.sessions}
                         plans={planning.plans}
+                        loadError={planning.listError}
                         onRefresh={planning.refresh}
                         isLoading={planning.isLoading}
                         isRefreshing={planning.isRefreshing}
