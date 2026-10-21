@@ -21,6 +21,11 @@ import {
 import { useAppPreferences, type ThemePreference } from '../../states/app-preferences';
 import { useAuth, type AuthState } from '../../states/auth';
 import type { GuestClaimViewState } from '../../claim/guest-claim-types';
+import {
+  defaultWatchRejectedPayloadStore,
+  type RejectedWatchPayload,
+  type WatchRejectedPayloadStore,
+} from '../../storage/watch-rejected-payload-store';
 
 export type SettingsRoute = 'index' | 'theme' | 'language' | 'notifications' | 'devices';
 
@@ -56,6 +61,7 @@ type SettingsScreenProps = {
     state: GuestClaimViewState;
   };
   onOpenAccountClaim?: () => void;
+  rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
 };
 
 const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
@@ -71,6 +77,7 @@ export default function SettingsScreen({
   openNotificationSettings = Linking.openSettings,
   accountClaim,
   onOpenAccountClaim,
+  rejectedWatchPayloadStore = defaultWatchRejectedPayloadStore,
   route: controlledRoute,
 }: SettingsScreenProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -79,6 +86,8 @@ export default function SettingsScreen({
     useAppPreferences();
   const [localRoute, setLocalRoute] = React.useState<SettingsRoute>('index');
   const [linkedWatchInfo, setLinkedWatchInfo] = React.useState<LinkedWatchInfo | undefined>();
+  const [linkedWatchLookupFailed, setLinkedWatchLookupFailed] = React.useState(false);
+  const [rejectedWatchPayloads, setRejectedWatchPayloads] = React.useState<RejectedWatchPayload[]>([]);
   const [accountActionBusy, setAccountActionBusy] = React.useState(false);
   const awaitingNotificationSettings = React.useRef(false);
   const notificationToggleBusy = React.useRef(false);
@@ -144,31 +153,47 @@ export default function SettingsScreen({
     setLocalRoute('index');
   }, [onBack]);
 
+  const isMountedRef = React.useRef(true);
   React.useEffect(() => {
-    let isMounted = true;
-
-    loadLinkedWatchInfo()
-      .then(info => {
-        if (isMounted) {
-          setLinkedWatchInfo(info);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setLinkedWatchInfo({
-            nativeBridgeAvailable: false,
-            isSupported: false,
-            isPaired: false,
-            isWatchAppInstalled: false,
-            isReachable: false,
-          });
-        }
-      });
-
+    isMountedRef.current = true;
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
+  }, []);
+
+  const refreshLinkedWatchInfo = React.useCallback(async () => {
+    try {
+      const info = await loadLinkedWatchInfo();
+      if (isMountedRef.current) {
+        setLinkedWatchInfo(info);
+        setLinkedWatchLookupFailed(false);
+      }
+    } catch {
+      // A failed lookup is not the same as a missing bridge; keep it retryable.
+      if (isMountedRef.current) {
+        setLinkedWatchLookupFailed(true);
+      }
+    }
   }, [loadLinkedWatchInfo]);
+
+  React.useEffect(() => {
+    void refreshLinkedWatchInfo();
+  }, [refreshLinkedWatchInfo]);
+
+  React.useEffect(() => {
+    const loadRejectedPayloads = () => {
+      void rejectedWatchPayloadStore
+        .list()
+        .then(rejections => {
+          if (isMountedRef.current) {
+            setRejectedWatchPayloads(rejections);
+          }
+        })
+        .catch(() => undefined);
+    };
+    loadRejectedPayloads();
+    return rejectedWatchPayloadStore.subscribe(loadRejectedPayloads);
+  }, [rejectedWatchPayloadStore]);
 
   if (route === 'theme') {
     return (
@@ -220,7 +245,27 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.devices.title')} onBack={closeRoute} />
-        <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} />
+        <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} lookupFailed={linkedWatchLookupFailed} />
+        <InstrumentButton
+          testID="settings-linked-watch-refresh"
+          label={t('settings.devices.refresh')}
+          onPress={refreshLinkedWatchInfo}
+        />
+        {rejectedWatchPayloads.length > 0 ? (
+          <VStack space="sm" className="rounded-2xl bg-card px-4 py-4">
+            <Text testID="settings-rejected-watch-title" className="text-base font-semibold text-card-foreground">
+              {t('settings.devices.rejected.title', { count: rejectedWatchPayloads.length })}
+            </Text>
+            <Text testID="settings-rejected-watch-guidance" size="sm" className="leading-5 text-muted-foreground">
+              {t('settings.devices.rejected.guidance')}
+            </Text>
+            <InstrumentButton
+              testID="settings-rejected-watch-clear"
+              label={t('settings.devices.rejected.clear')}
+              onPress={() => rejectedWatchPayloadStore.clear()}
+            />
+          </VStack>
+        ) : null}
       </SettingsScaffold>
     );
   }
@@ -370,7 +415,7 @@ export default function SettingsScreen({
           testID="settings-row-devices"
           onPress={() => openRoute('devices')}
           style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
-          <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} showsDisclosure />
+          <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} lookupFailed={linkedWatchLookupFailed} showsDisclosure />
         </Pressable>
       </VStack>
     </SettingsScaffold>
@@ -582,7 +627,11 @@ function ToggleRow(props: {
   );
 }
 
-function LinkedWatchCard(props: { linkedWatchInfo?: LinkedWatchInfo; showsDisclosure?: boolean }): React.JSX.Element {
+function LinkedWatchCard(props: {
+  linkedWatchInfo?: LinkedWatchInfo;
+  lookupFailed?: boolean;
+  showsDisclosure?: boolean;
+}): React.JSX.Element {
   const { t } = useTranslation();
   const watchName = props.linkedWatchInfo?.name ?? t('settings.devices.appleWatch');
 
@@ -596,7 +645,9 @@ function LinkedWatchCard(props: { linkedWatchInfo?: LinkedWatchInfo; showsDisclo
           {watchName}
         </Text>
         <Text testID="settings-linked-watch-status" size="sm" className="leading-5 text-muted-foreground">
-          {getLinkedWatchStatusLabel(props.linkedWatchInfo, t)}
+          {props.lookupFailed
+            ? t('settings.devices.status.lookupFailed')
+            : getLinkedWatchStatusLabel(props.linkedWatchInfo, t)}
         </Text>
       </VStack>
       {props.showsDisclosure ? (
