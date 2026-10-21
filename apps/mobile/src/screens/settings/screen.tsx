@@ -528,9 +528,9 @@ function DetailHeader(props: { title: string; onBack: () => void }): React.JSX.E
         variant="ghost"
         size="icon"
         testID="settings-back"
-        accessibilityLabel={t('settings.title')}
+        accessibilityLabel={t('common.back')}
         onPress={props.onBack}
-        className="h-10 w-10 self-start rounded-full bg-primary/10"
+        className="h-11 w-11 self-start rounded-full bg-primary/10"
         style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
         <Box testID="settings-back-icon" className="items-center justify-center">
           <ButtonIcon as={ChevronLeftIcon} className="text-primary" />

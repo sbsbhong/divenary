@@ -467,7 +467,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings({ route: 'theme' });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('설정');
+    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('뒤로');
     expect(root.findByProps({ testID: 'settings-back-icon' })).toBeTruthy();
   });
 

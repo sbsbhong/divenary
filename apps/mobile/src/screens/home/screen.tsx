@@ -116,7 +116,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
           </HStack>
           <HStack space="xs" className="items-baseline">
             <Text className="text-2xl font-semibold text-foreground">{props.sessions.length}</Text>
-            <Text className="text-sm font-semibold text-muted-foreground">{t('home.logsImported')}</Text>
+            <Text className="text-sm font-semibold text-muted-foreground">{t('home.logsImported', { count: props.sessions.length })}</Text>
           </HStack>
         </VStack>
 
@@ -386,6 +386,7 @@ function HomeConditionsBand(props: {
               accessibilityState={{ busy: props.isRefreshing, disabled: props.isRefreshing }}
               variant="secondary"
               size="icon"
+              hitSlop={4}
               disabled={props.isRefreshing}
               className="rounded-full bg-muted"
               onPress={props.onRetry}>

@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import {
+  numberValidationMessages,
+  validationText,
+  type NumberValidationMessages,
+  type ValidationField,
+} from '../common/form/validation-messages';
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import type { DiveLogEntry, DiveLogFieldProvenance, DiveLogManualMeasuredValues, DivePressureValues } from '../../types/dive-log-entry';
 import type { WatchSession } from '../../types/dive-session';
@@ -29,20 +35,20 @@ export type LogEntryDirtyFields = Partial<Record<keyof LogEntryFormValues, unkno
 
 const waterConditions = ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'] as const;
 
-const requiredNumber = (messages: NumberValidationMessages, max: number) =>
+const requiredNumber = (messages: () => NumberValidationMessages, max: number) =>
   z.union([z.number(), z.undefined()]).superRefine((value, context) => {
     if (value === undefined) {
-      context.addIssue({ code: 'custom', message: messages.required });
+      context.addIssue({ code: 'custom', message: messages().required });
       return;
     }
 
-    addNumberIssues(value, context, messages, max);
+    addNumberIssues(value, context, messages(), max);
   });
 
-const optionalNumber = (messages: NumberValidationMessages, max: number) =>
+const optionalNumber = (messages: () => NumberValidationMessages, max: number) =>
   z.union([z.number(), z.undefined()]).superRefine((value, context) => {
     if (value !== undefined) {
-      addNumberIssues(value, context, messages, max);
+      addNumberIssues(value, context, messages(), max);
     }
   });
 
@@ -52,7 +58,7 @@ const optionalRating = z.union([z.number(), z.undefined()]).superRefine((value, 
   }
 
   if (!Number.isInteger(value) || value < 1 || value > 5) {
-    context.addIssue({ code: 'custom', message: '별점은 1점부터 5점까지 선택해주세요.' });
+    context.addIssue({ code: 'custom', message: validationText('ratingRange') });
   }
 });
 
@@ -66,31 +72,31 @@ const pressureSchema = z
     const unit = value.unit ?? 'bar';
     const max = unit === 'psi' ? 4500 : 300;
 
-    validatePressureValue(value.start, ['start'], context, makePressureMessages(unit, '시작 압력'), max);
-    validatePressureValue(value.end, ['end'], context, makePressureMessages(unit, '종료 압력'), max);
+    validatePressureValue(value.start, ['start'], context, makePressureMessages(unit, 'startPressure'), max);
+    validatePressureValue(value.end, ['end'], context, makePressureMessages(unit, 'endPressure'), max);
 
     if ((value.start !== undefined || value.end !== undefined) && value.unit === undefined) {
-      context.addIssue({ code: 'custom', path: ['unit'], message: '압력 단위를 선택해주세요.' });
+      context.addIssue({ code: 'custom', path: ['unit'], message: validationText('pressureUnitRequired') });
     }
   });
 
 export const logEntryFormSchema = z.object({
   startedAt: z.union([z.date(), z.undefined()]).superRefine((value, context) => {
     if (value === undefined) {
-      context.addIssue({ code: 'custom', message: '날짜와 시간을 선택해주세요.' });
+      context.addIssue({ code: 'custom', message: validationText('dateTimeRequired') });
     }
   }),
   diveMode: z.enum(['scuba', 'freedive']),
   entryStyle: z.enum(['shore', 'boat', 'pool']).optional(),
-  siteName: z.string().trim().min(1, '사이트 이름을 입력해주세요.'),
-  durationSeconds: requiredNumber(makeNumberMessages('시간', '선택'), 240 * 60),
-  maxDepthMeters: requiredNumber(makeNumberMessages('최대 수심(m)', '선택'), 60),
+  siteName: z.string().trim().min(1, { error: () => validationText('siteNameRequired') }),
+  durationSeconds: requiredNumber(() => makeNumberMessages('duration', 'select'), 240 * 60),
+  maxDepthMeters: requiredNumber(() => makeNumberMessages('maxDepth', 'select'), 60),
   gasLabel: z.literal('Air').optional(),
   gearIds: z.array(z.string()),
   waterCondition: z.enum(waterConditions).optional(),
   visibilityRating: optionalRating,
   perceivedExertion: optionalRating,
-  repetitionCount: optionalNumber(makeNumberMessages('반복 횟수', '선택'), 200),
+  repetitionCount: optionalNumber(() => makeNumberMessages('repetitionCount', 'select'), 200),
   trainingFocus: z.string().optional(),
   buddies: z.array(z.string()),
   tags: z.array(z.string()),
@@ -192,29 +198,12 @@ export function logEntryFormValuesToEntry(
   };
 }
 
-type NumberValidationMessages = {
-  required: string;
-  invalid: string;
-  min: string;
-  max: string;
-};
-
-function makeNumberMessages(label: string, requiredVerb: '입력' | '선택'): NumberValidationMessages {
-  return {
-    required: `${label}을 ${requiredVerb}해주세요.`,
-    invalid: `${label}은 숫자여야 합니다.`,
-    min: `${label}은 0 이상이어야 합니다.`,
-    max: `${label}은 {max} 이하로 ${requiredVerb}해주세요.`,
-  };
+function makeNumberMessages(field: ValidationField, requiredVerb: 'enter' | 'select'): NumberValidationMessages {
+  return numberValidationMessages(field, requiredVerb);
 }
 
-function makePressureMessages(unit: 'bar' | 'psi', label: string): NumberValidationMessages {
-  return {
-    required: `${label}을 입력해주세요.`,
-    invalid: `${label}은 숫자여야 합니다.`,
-    min: `${label}은 0 이상이어야 합니다.`,
-    max: `${label}은 {max}${unit} 이하로 입력해주세요.`,
-  };
+function makePressureMessages(unit: 'bar' | 'psi', field: ValidationField): NumberValidationMessages {
+  return numberValidationMessages(field, 'enter', unit);
 }
 
 function addNumberIssues(value: number, context: z.RefinementCtx, messages: NumberValidationMessages, max: number): void {

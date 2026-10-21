@@ -108,7 +108,7 @@ type ScreenBackButtonProps = Omit<React.ComponentProps<typeof Button>, 'children
 };
 
 const screenBackButtonStyles = tva({
-  base: 'h-10 w-10 self-start rounded-full bg-primary/10',
+  base: 'h-11 w-11 self-start rounded-full bg-primary/10',
 });
 
 export function ScreenBackButton({
@@ -170,7 +170,7 @@ type SelectorPillProps = Omit<React.ComponentProps<typeof Button>, 'children' | 
 };
 
 const selectorPillStyles = tva({
-  base: 'min-h-10 items-center justify-center rounded-full px-3 py-2',
+  base: 'min-h-11 items-center justify-center rounded-full px-3 py-2',
   variants: {
     selected: {
       true: 'bg-card',
@@ -206,6 +206,7 @@ export function SelectorPill({
     <Button
       {...pressableProps}
       variant="ghost"
+      accessibilityState={{ selected }}
       className={selectorPillStyles({ selected, class: className })}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
       <ButtonText className={selectorPillTextStyles({ selected })}>{label}</ButtonText>

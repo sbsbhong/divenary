@@ -48,7 +48,13 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
             </HStack>
             <SessionProfile samples={session?.samples ?? []} kind="depth" title={t('logbook.depthProfile')} />
             <HStack className="items-center justify-between">
-              <Text className="text-sm font-semibold text-primary">{formatRating(session?.rating, t('formatters.notRated'))}</Text>
+              <Text
+                accessibilityLabel={
+                  session?.rating ? t('form.ratingStar', { value: session.rating, total: 5 }) : t('formatters.notRated')
+                }
+                className="text-sm font-semibold text-primary">
+                {formatRating(session?.rating, t('formatters.notRated'))}
+              </Text>
               <Text className="flex-1 text-right text-xs font-semibold leading-4 text-muted-foreground">
                 {session?.tags?.join(' · ') ?? t('memory.fallbackTags')}
               </Text>

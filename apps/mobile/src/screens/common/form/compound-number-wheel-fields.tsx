@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { MultiColumnNumberWheelPicker } from '../../../components/ui/multi-column-number-wheel-picker';
 import { EditorField } from './editor-field';
 
@@ -107,6 +108,7 @@ export function normalizeDepthDraft(value: string): string {
 }
 
 export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.Element {
+  const { t } = useTranslation();
   const { minutes, seconds } = splitDurationSeconds(props.valueSeconds, props.maxSeconds);
   const maxMinutes = Math.floor(props.maxSeconds / 60);
   const maxSecondsForMinute = minutes >= maxMinutes ? props.maxSeconds % 60 : 59;
@@ -134,14 +136,14 @@ export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.El
     >
       <MultiColumnNumberWheelPicker
         columns={[
-          { id: 'minutes', value: minutes, min: 0, max: maxMinutes, step: 1, unitLabel: 'min' },
+          { id: 'minutes', value: minutes, min: 0, max: maxMinutes, step: 1, unitLabel: t('units.minutesShort') },
           {
             id: 'seconds',
             value: Math.min(seconds, maxSecondsForMinute),
             min: 0,
             max: maxSecondsForMinute,
             step: 1,
-            unitLabel: 'sec',
+            unitLabel: t('units.secondsShort'),
             padStart: 2,
           },
         ]}
@@ -159,7 +161,7 @@ export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.El
           normalize: normalizeDurationDraft,
           onCommit: commit,
           keyboardType: 'numbers-and-punctuation',
-          accessibilityLabel: 'Enter duration',
+          accessibilityLabel: t('wheelPicker.enterDuration'),
         }}
         height={props.pickerHeight}
         disabled={props.disabled}
@@ -170,6 +172,7 @@ export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.El
 }
 
 export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element {
+  const { t } = useTranslation();
   const { meters, tenths } = splitDepthMeters(props.valueMeters, props.maxMeters);
   const maxMetersInteger = Math.floor(props.maxMeters);
   const maxTenthsForMeter = meters >= maxMetersInteger ? Math.round((props.maxMeters - maxMetersInteger) * 10) : 9;
@@ -223,7 +226,7 @@ export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element 
           normalize: normalizeDepthDraft,
           onCommit: commit,
           keyboardType: 'decimal-pad',
-          accessibilityLabel: 'Enter depth',
+          accessibilityLabel: t('wheelPicker.enterDepth'),
         }}
         height={props.pickerHeight}
         disabled={props.disabled}

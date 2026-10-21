@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Keyboard,
   StyleSheet,
@@ -143,6 +144,7 @@ function NumberWheelPickerRoot({
   testID = 'number-wheel-picker',
   children,
 }: NumberWheelPickerRootProps): React.JSX.Element {
+  const { t } = useTranslation();
   const listRef = React.useRef<RNScrollView>(null);
   const inputRef = React.useRef<React.ComponentRef<typeof InputField>>(null);
   const safeStep = step > 0 ? step : 1;
@@ -343,12 +345,31 @@ function NumberWheelPickerRoot({
     ],
   );
 
+  const stepByAccessibilityAction = React.useCallback(
+    (actionName: string) => {
+      if (disabled) {
+        return;
+      }
+      const delta = actionName === 'increment' ? 1 : actionName === 'decrement' ? -1 : 0;
+      if (delta === 0) {
+        return;
+      }
+      const nextIndex = clampIndex(displayIndexRef.current + delta, options.length);
+      selectIndex(nextIndex, true);
+      listRef.current?.scrollTo({ y: nextIndex * ITEM_HEIGHT, animated: false });
+    },
+    [disabled, options.length, selectIndex],
+  );
+
   return (
     <NumberWheelPickerContext.Provider value={contextValue}>
       <Box
         testID={testID}
+        accessible
         accessibilityRole="adjustable"
-        accessibilityLabel={unitLabel ? `Number picker, ${unitLabel}` : 'Number picker'}
+        accessibilityLabel={unitLabel ? t('wheelPicker.labelWithUnit', { unit: unitLabel }) : t('wheelPicker.label')}
+        accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
+        onAccessibilityAction={event => stepByAccessibilityAction(event.nativeEvent.actionName)}
         accessibilityState={{ disabled }}
         accessibilityValue={{
           min,
@@ -457,6 +478,7 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
     actions: { changeDraft, commitDraft, openInput },
     meta: { inputRef },
   } = useNumberWheelPicker('NumberWheelPicker.CenterInputTrigger');
+  const { t } = useTranslation();
   const valueColumnStyle = unitLabel ? styles.valueColumn : styles.singleValueColumn;
   const valueColumnClassName = unitLabel ? 'items-end justify-center' : 'items-center justify-center';
   const valueTextClassName = unitLabel ? 'text-2xl font-semibold text-foreground' : 'text-center text-2xl font-semibold text-foreground';
@@ -466,7 +488,7 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
     <Pressable
       testID={`${testID}-input-trigger`}
       accessibilityRole="button"
-      accessibilityLabel="Enter number"
+      accessibilityLabel={t('wheelPicker.enterNumber')}
       disabled={disabled}
       onPress={openInput}
       style={[styles.centerInputTrigger, { top: layout.centerPadding }]}

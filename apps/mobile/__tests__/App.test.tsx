@@ -353,6 +353,9 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'nav-tab-planning' })).toBeTruthy();
     expect(root.findByProps({ testID: 'nav-tab-settings' })).toBeTruthy();
     expect(() => root.findByProps({ testID: 'nav-tab-memory' })).toThrow();
+    expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityRole).toBe('tab');
+    expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityState).toEqual({ selected: true });
+    expect(root.findByProps({ testID: 'nav-tab-logbook' }).props.accessibilityState).toEqual({ selected: false });
     expect(root.findByProps({ testID: 'home-login-action' })).toBeTruthy();
     expect(root.findAllByProps({ testID: 'language-menu-trigger' })).toHaveLength(0);
 

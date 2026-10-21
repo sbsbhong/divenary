@@ -233,14 +233,14 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
                 icon={EditIcon}
                 variant="primary"
                 onPress={openCreate}
-                className="min-h-10 px-4 py-2"
+                className="min-h-11 px-4 py-2"
               />
               <InstrumentButton
                 testID="logbook-import-action"
                 label={isSyncingWatch ? t('logbook.syncWatchLoading') : t('logbook.syncWatch')}
                 onPress={syncWatch}
                 disabled={isSyncingWatch}
-                className="min-h-10 px-4 py-2"
+                className="min-h-11 px-4 py-2"
               />
             </HStack>
           </HStack>
@@ -421,6 +421,7 @@ function SessionListItem(props: {
   return (
     <Pressable
       testID={`logbook-list-item-${siteName}`}
+      accessibilityRole="button"
       onPress={props.onPress}
       accessible={badges.length ? true : undefined}
       accessibilityLabel={badges.length ? accessibilityLabel : undefined}

@@ -169,7 +169,13 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
           <Text className="text-sm leading-5 text-muted-foreground">
             {t('logbook.observedMarineLife')}: {marineLife}
           </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
+          <Text
+            accessibilityLabel={`${t('logbook.rating')}: ${
+              props.entry.manual.rating
+                ? t('form.ratingStar', { value: props.entry.manual.rating, total: 5 })
+                : t('formatters.notRated')
+            }`}
+            className="text-sm leading-5 text-muted-foreground">
             {t('logbook.rating')}: {formatRating(props.entry.manual.rating, t('formatters.notRated'))}
           </Text>
           <ModeSpecificMetadata entry={props.entry} />
@@ -336,7 +342,11 @@ function getModeFacts(entry: DiveLogEntry, t: ReturnType<typeof useTranslation>[
       entryStyleFact,
       { id: 'gas-label', label: t('logbook.gasLabel'), value: measuredValues.gasLabel ?? t('logbook.airGas', { defaultValue: 'Air' }) },
       { id: 'gear', label: t('logbook.gear'), value: entry.manual.gearIds.length ? entry.manual.gearIds.join(', ') : undefined },
-      { id: 'water-condition', label: t('logbook.waterCondition'), value: measuredValues.waterCondition },
+      {
+        id: 'water-condition',
+        label: t('logbook.waterCondition'),
+        value: measuredValues.waterCondition ? t(`waterConditions.${measuredValues.waterCondition}`) : undefined,
+      },
       { id: 'visibility-rating', label: t('logbook.visibilityRating'), value: numberToText(measuredValues.visibilityRating) },
       { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: numberToText(measuredValues.perceivedExertion) },
       { id: 'pressure', label: t('logbook.pressure', { defaultValue: 'Pressure' }), value: formatPressure(measuredValues.pressure) },

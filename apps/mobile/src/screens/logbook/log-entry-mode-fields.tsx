@@ -190,7 +190,7 @@ function WaterConditionPicker(props: {
               key={condition}
               testID={`log-entry-editor-water-condition-${condition}`}
               className="flex-1"
-              label={condition}
+              label={t(`waterConditions.${condition}`)}
               selected={props.value === condition}
               onPress={() => props.onChange(condition)}
             />
@@ -202,7 +202,7 @@ function WaterConditionPicker(props: {
               key={condition}
               testID={`log-entry-editor-water-condition-${condition}`}
               className="flex-1"
-              label={condition}
+              label={t(`waterConditions.${condition}`)}
               selected={props.value === condition}
               onPress={() => props.onChange(condition)}
             />

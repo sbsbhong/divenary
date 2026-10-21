@@ -149,7 +149,11 @@ function ModeFacts(props: { plan: DivePlan }): React.JSX.Element {
   const facts = [
     { id: 'planned-max', label: t('planning.plannedMax', { defaultValue: 'Planned max' }), value: formatDepth(values.plannedMaxDepthMeters) },
     values.plannedDurationMinutes !== undefined
-      ? { id: 'duration', label: t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' }), value: `${values.plannedDurationMinutes} min` }
+      ? {
+          id: 'duration',
+          label: t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' }),
+          value: `${values.plannedDurationMinutes} ${t('units.minutesShort')}`,
+        }
       : undefined,
     props.plan.diveMode === 'scuba'
       ? { id: 'gas', label: t('planning.gasLabel', { defaultValue: 'Gas label' }), value: t('logbook.airGas', { defaultValue: 'Air' }) }

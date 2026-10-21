@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Keyboard,
   StyleSheet,
@@ -345,11 +346,13 @@ function MultiColumnCenterInputTrigger(props: {
   onCommit: () => void;
   testID: string;
 }): React.JSX.Element {
+  const { t } = useTranslation();
+
   return (
     <Pressable
       testID={`${props.testID}-input-trigger`}
       accessibilityRole="button"
-      accessibilityLabel={props.directInput.accessibilityLabel ?? 'Enter number'}
+      accessibilityLabel={props.directInput.accessibilityLabel ?? t('wheelPicker.enterNumber')}
       disabled={props.disabled}
       onPress={props.onOpen}
       style={[styles.centerInputTrigger, { top: props.layout.centerPadding }]}

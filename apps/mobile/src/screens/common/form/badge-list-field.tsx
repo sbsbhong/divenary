@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import { Button, ButtonIcon } from '../../../components/ui/button';
 import { HStack } from '../../../components/ui/hstack';
 import { CloseIcon } from '../../../components/ui/icon';
@@ -25,6 +26,7 @@ export type BadgeListFieldHandle = {
 
 export const BadgeListField = React.forwardRef<BadgeListFieldHandle, BadgeListFieldProps>(
 function BadgeListField(props, ref): React.JSX.Element {
+  const { t } = useTranslation();
   const [pendingValue, setPendingValue] = React.useState('');
   const pendingValueRef = React.useRef('');
 
@@ -110,7 +112,8 @@ function BadgeListField(props, ref): React.JSX.Element {
                   testID={`${props.badgeTestIDPrefix}-remove-${value}`}
                   size="icon"
                   variant="ghost"
-                  accessibilityLabel={`${value} 삭제`}
+                  accessibilityLabel={t('form.removeItem', { value })}
+                  hitSlop={14}
                   className="ml-1 min-h-4 min-w-4 p-0"
                   onPress={() => removeValue(value)}
                 >

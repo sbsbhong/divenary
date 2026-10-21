@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import '../src/i18n';
 import {
   DEFAULT_WHEEL_HEIGHT,
   ITEM_HEIGHT,

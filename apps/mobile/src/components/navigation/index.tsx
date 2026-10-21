@@ -793,13 +793,13 @@ export default function RootNavigation(): React.JSX.Element {
                     })}
                     variant="primary"
                     onPress={openImportedLogToast}
-                    className="min-h-10 flex-1 px-4 py-2"
+                    className="min-h-11 flex-1 px-4 py-2"
                   />
                   <InstrumentButton
                     testID="watch-auto-import-dismiss"
                     label={t('watchSync.dismiss', { defaultValue: 'Close' })}
                     onPress={() => setAutoImportToast(undefined)}
-                    className="min-h-10 flex-1 px-4 py-2"
+                    className="min-h-11 flex-1 px-4 py-2"
                   />
                 </HStack>
               </VStack>
@@ -866,7 +866,7 @@ function AppTabNavigator({ children, initialRouteName, onRouteReselect }: AppTab
     <NavigationContent>
       <VStack className="flex-1 bg-background">{descriptors[focusedRoute.key].render()}</VStack>
 
-      <HStack className="bg-card px-2 pt-1" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
+      <HStack accessibilityRole="tablist" className="bg-card px-2 pt-1" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
         {state.routes.map(route => {
           const selected = route.key === focusedRoute.key;
           const routeName = route.name as DiveLogbookSection;
@@ -1340,6 +1340,9 @@ function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolea
     <Pressable
       onPress={props.onPress}
       testID={`nav-tab-${props.id}`}
+      accessibilityRole="tab"
+      accessibilityLabel={props.label}
+      accessibilityState={{ selected: props.selected }}
       className={navTabStyles({ selected: props.selected })}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
       <Box className={navTabIndicatorStyles({ selected: props.selected })} />

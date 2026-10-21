@@ -292,7 +292,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
                   icon={CalendarDaysIcon}
                   variant="primary"
                   onPress={openCreate}
-                  className="min-h-10 px-4 py-2"
+                  className="min-h-11 px-4 py-2"
                 />
               </HStack>
               <HStack space="xs" className="rounded-full bg-muted p-1">
@@ -478,6 +478,7 @@ function PlanRow(props: {
   return (
     <Pressable
       testID={`planning-plan-row-${siteName}`}
+      accessibilityRole="button"
       onPress={props.onPress}
       accessible={props.showsDeviceOnlyBadge ? true : undefined}
       accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}
