@@ -82,6 +82,11 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     if (!mountedRef.current) {
       return;
     }
+    // Revalidation runs on every foreground and token refresh and usually lands on the same
+    // state. Keeping the current object then stops every consumer from redoing its bootstrap.
+    if (JSON.stringify(stateRef.current) === JSON.stringify(nextState)) {
+      return;
+    }
 
     stateRef.current = nextState;
     setState(nextState);

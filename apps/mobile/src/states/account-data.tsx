@@ -54,6 +54,7 @@ import {
 } from '../repositories/principal-repositories';
 import {
   dataStorageKeys,
+  principalForScope,
   principalScope,
   type DataPrincipal,
 } from '../storage/data-principal';
@@ -291,11 +292,13 @@ export function AccountDataProviderCore({
   const [watchDeletionStore] = React.useState<WatchLogDeletionStore>(() =>
     createWatchLogDeletionStore({storage: dependencies.metadataStorage}),
   );
+  // One principal object per data owner, so auth changes that keep the same owner (signing in
+  // and cancelling, onboarding) do not re-run the bootstrap below.
+  const desiredScope = principalScope(principalForAuthState(auth.state));
   const desiredPrincipal = React.useMemo(
-    () => principalForAuthState(auth.state),
-    [auth.state],
+    () => principalForScope(desiredScope),
+    [desiredScope],
   );
-  const desiredScope = principalScope(desiredPrincipal);
   const isOnline = auth.state.status === 'authenticated';
   const [published, setPublished] = React.useState<PublishedAccountData>();
   const [bootstrapAttempt, setBootstrapAttempt] = React.useState(0);

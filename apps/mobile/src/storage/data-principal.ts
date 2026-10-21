@@ -6,6 +6,11 @@ export function principalScope(principal: DataPrincipal): string {
   return principal.kind === 'guest' ? 'guest' : `user:${principal.userId}`;
 }
 
+/** The inverse of {@link principalScope}. */
+export function principalForScope(scope: string): DataPrincipal {
+  return scope === 'guest' ? {kind: 'guest'} : {kind: 'user', userId: scope.slice('user:'.length)};
+}
+
 export function dataStorageKeys(principal: DataPrincipal) {
   const encoded = encodeURIComponent(principalScope(principal));
 

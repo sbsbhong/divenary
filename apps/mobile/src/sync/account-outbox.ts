@@ -72,6 +72,7 @@ export class AccountOutbox {
   private readonly storageKey: string;
   private readonly now: () => number;
   private readonly jitter: () => number;
+  private validated?: {raw: string; state: AccountOutboxState};
 
   constructor(options: AccountOutboxOptions) {
     this.storage = options.storage;
@@ -81,12 +82,7 @@ export class AccountOutbox {
   }
 
   async list(userId?: string): Promise<AccountOutboxItem[]> {
-    return withStorageMutationLock(this.storageKey, async () => {
-      const state = await this.readState();
-      return state.items
-        .filter(item => userId === undefined || item.userId === userId)
-        .map(cloneItem);
-    });
+    return this.listItems(item => userId === undefined || item.userId === userId);
   }
 
   async listEntity(
@@ -94,15 +90,17 @@ export class AccountOutbox {
     entityKind: AccountOutboxItem['entityKind'],
     entityLocalId: string,
   ): Promise<AccountOutboxItem[]> {
-    return (await this.list(userId)).filter(
+    return this.listItems(
       item =>
-        item.entityKind === entityKind && item.entityLocalId === entityLocalId,
+        item.userId === userId &&
+        item.entityKind === entityKind &&
+        item.entityLocalId === entityLocalId,
     );
   }
 
   async listConflicts(userId?: string): Promise<AccountOutboxConflict[]> {
     return withStorageMutationLock(this.storageKey, async () => {
-      const state = await this.readState();
+      const state = await this.readSharedState();
       return state.conflicts
         .filter(conflict => userId === undefined || conflict.userId === userId)
         .map(cloneConflict);
@@ -327,7 +325,7 @@ export class AccountOutbox {
   ): Promise<boolean> {
     return withStorageMutationLock(this.storageKey, async () => {
       const key = this.profileSnapshotKey(userId, operationId);
-      const state = await this.readState();
+      const state = await this.readSharedState();
       if (
         state.items.some(
           item =>
@@ -341,6 +339,16 @@ export class AccountOutbox {
     });
   }
 
+  private listItems(
+    matches: (item: AccountOutboxItem) => boolean,
+  ): Promise<AccountOutboxItem[]> {
+    return withStorageMutationLock(this.storageKey, async () => {
+      const state = await this.readSharedState();
+      return state.items.filter(matches).map(cloneItem);
+    });
+  }
+
+  /** Writes only when the operation changed the state; a no-op leaves storage untouched. */
   private mutate<T>(
     operation: (state: AccountOutboxState) => Promise<T>,
     options?: AccountOutboxMutationOptions,
@@ -348,8 +356,12 @@ export class AccountOutbox {
     return withStorageMutationLock(this.storageKey, async () => {
       const previousRaw = await this.storage.getString(this.storageKey);
       const state = this.parseState(previousRaw);
+      const before = JSON.stringify(state);
       const value = await operation(state);
       options?.assertCanCommit?.();
+      if (previousRaw !== undefined && JSON.stringify(state) === before) {
+        return value;
+      }
       try {
         await this.writeState(state);
         options?.assertCanCommit?.();
@@ -361,14 +373,27 @@ export class AccountOutbox {
     });
   }
 
-  private async readState(): Promise<AccountOutboxState> {
+  /** The validated state for read-only use: callers copy what they return. */
+  private async readSharedState(): Promise<AccountOutboxState> {
     const rawValue = await this.storage.getString(this.storageKey);
-    return this.parseState(rawValue);
+    return this.validatedState(rawValue) ?? emptyState();
   }
 
+  /** A private copy of the stored state, safe to change. */
   private parseState(rawValue: string | undefined): AccountOutboxState {
+    const state = this.validatedState(rawValue);
+    return state === undefined ? emptyState() : cloneState(state);
+  }
+
+  /** Parses and validates stored text once, then reuses it until the text changes. */
+  private validatedState(
+    rawValue: string | undefined,
+  ): AccountOutboxState | undefined {
     if (rawValue === undefined) {
-      return emptyState();
+      return undefined;
+    }
+    if (this.validated?.raw === rawValue) {
+      return this.validated.state;
     }
 
     let envelope: unknown;
@@ -377,7 +402,9 @@ export class AccountOutbox {
     } catch {
       throw new Error('Malformed account outbox envelope');
     }
-    return parseOutboxEnvelope(envelope, this.storageKey);
+    const state = parseOutboxEnvelope(envelope, this.storageKey);
+    this.validated = {raw: rawValue, state};
+    return state;
   }
 
   private async restoreRawState(rawValue: string | undefined): Promise<void> {

@@ -243,8 +243,24 @@ export function parseAccountRemotePlan(value: unknown): RemoteDivePlan {
   };
 }
 
+const MAX_REMEMBERED_PAYLOAD_DIGESTS = 128;
+const payloadDigestByCanonicalText = new Map<string, string>();
+
+/**
+ * Every cloud refresh re-verifies each remote row's digest, and pure-JS SHA-256 is slow on a
+ * phone. A digest depends only on the canonical text, so it is remembered for text seen before.
+ */
 export function canonicalAccountPayloadSha256(value: unknown): string {
-  return bytesToHex(sha256(utf8ToBytes(canonicalJson(value))));
+  const text = canonicalJson(value);
+  let digest = payloadDigestByCanonicalText.get(text);
+  if (digest === undefined) {
+    digest = bytesToHex(sha256(utf8ToBytes(text)));
+    if (payloadDigestByCanonicalText.size >= MAX_REMEMBERED_PAYLOAD_DIGESTS) {
+      payloadDigestByCanonicalText.clear();
+    }
+    payloadDigestByCanonicalText.set(text, digest);
+  }
+  return digest;
 }
 
 function verifiedLogPayload(

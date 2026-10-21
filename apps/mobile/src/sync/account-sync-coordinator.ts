@@ -1134,11 +1134,11 @@ export class AccountSyncCoordinator {
         const cachedSamples = await this.profileStorage.read(storageKey);
         assertCanCommit();
         if (cachedSamples !== undefined) {
-          validateSerializedProfile(
-            JSON.stringify(cachedSamples),
-            remote,
-            localSessionId,
-          );
+          const serialized = JSON.stringify(cachedSamples);
+          if (!isVerifiedProfile(storageKey, descriptor.sha256, serialized)) {
+            validateSerializedProfile(serialized, remote, localSessionId);
+            rememberVerifiedProfile(storageKey, descriptor.sha256, serialized);
+          }
           return {local};
         }
       } catch (error) {
@@ -1811,6 +1811,37 @@ function sameJsonValue(left: unknown, right: unknown): boolean {
   return canonicalJson(left) === canonicalJson(right);
 }
 
+
+const MAX_VERIFIED_HYDRATED_PROFILES = 64;
+/**
+ * Each refresh re-checks the stored profile of every unchanged synced log, and hashing it in JS
+ * is slow on a phone. The text that last passed the digest check is kept per key, so unchanged
+ * text is accepted by comparison and only new or changed text is hashed again.
+ */
+const verifiedHydratedProfiles = new Map<
+  string,
+  {sha256: string; serialized: string}
+>();
+
+function isVerifiedProfile(
+  storageKey: string,
+  sha256Hex: string,
+  serialized: string,
+): boolean {
+  const verified = verifiedHydratedProfiles.get(storageKey);
+  return verified?.sha256 === sha256Hex && verified.serialized === serialized;
+}
+
+function rememberVerifiedProfile(
+  storageKey: string,
+  sha256Hex: string,
+  serialized: string,
+): void {
+  if (verifiedHydratedProfiles.size >= MAX_VERIFIED_HYDRATED_PROFILES) {
+    verifiedHydratedProfiles.clear();
+  }
+  verifiedHydratedProfiles.set(storageKey, {sha256: sha256Hex, serialized});
+}
 
 function getDrainState(userId: string): UserDrainState {
   const existing = drainStateByUser.get(userId);

@@ -36,6 +36,19 @@ describe('AccountOutbox', () => {
     ).resolves.toEqual([item()]);
   });
 
+  it('leaves storage untouched when a mutation changes nothing', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const setString = jest.spyOn(storage, 'setString');
+    const outbox = new AccountOutbox({storage, storageKey: 'account-outbox'});
+    await outbox.enqueue(item());
+    setString.mockClear();
+
+    await outbox.enqueue(item());
+    await outbox.complete(userId, 'missing-operation');
+
+    expect(setString).not.toHaveBeenCalled();
+  });
+
   it('removes only an unqueued operation-owned profile snapshot', async () => {
     const storage = new InMemoryKeyValueStore();
     const outbox = new AccountOutbox({storage, storageKey: 'account-outbox'});
