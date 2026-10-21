@@ -18,6 +18,13 @@ const resources = {
           keepEditing: '계속 편집',
           discard: '버리기',
         },
+        syncConflict: {
+          title: '다른 기기에서 수정된 버전이 있어요',
+          message: '남길 버전을 선택하세요. 선택하지 않은 쪽의 변경은 사라집니다.',
+          keepLocal: '이 기기 버전 유지',
+          useRemote: '다른 기기 버전 사용',
+          failed: '충돌을 해결하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
+        },
       },
       recovery: {
         loading: {
@@ -504,6 +511,13 @@ const resources = {
           message: 'Unsaved changes will be lost.',
           keepEditing: 'Keep Editing',
           discard: 'Discard',
+        },
+        syncConflict: {
+          title: 'Another device changed this',
+          message: 'Choose which version to keep. Changes in the other version will be lost.',
+          keepLocal: 'Keep This Device’s Version',
+          useRemote: 'Use Other Device’s Version',
+          failed: 'Couldn’t resolve the conflict. Check your connection and try again.',
         },
       },
       recovery: {

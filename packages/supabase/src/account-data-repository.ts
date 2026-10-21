@@ -16,8 +16,10 @@ import type {
   AccountDataPage,
   AccountDataRepository,
   AccountMutationResult,
+  RemoteDeletedRecord,
   RemoteDiveLog,
   RemoteDivePlan,
+  RemoteRecordState,
   VerifiedCurrentUser,
 } from './account-data-types.ts';
 
@@ -399,5 +401,80 @@ export function createAccountDataRepository(
     }
   }
 
-  return {listLogs, listPlans, saveLog, savePlan, deleteLog, deletePlan};
+  async function getLog(id: string): Promise<RemoteRecordState<RemoteDiveLog> | undefined> {
+    try {
+      const identifier = assertIdentifier(id, 'list');
+      const result = await client.from('dive_logs').select().eq('user_id', userId).eq('id', identifier).maybeSingle();
+      if (resultError(result)) return fail('list');
+      if (result.data === null) return undefined;
+      const row = ownedRow<DiveLogRow>(result.data, userId, 'list');
+      return {value: fromDiveLogRow(row), deleted: row.deleted_at !== null};
+    } catch (error) {
+      throw accountError(error, 'list');
+    }
+  }
+
+  async function getPlan(id: string): Promise<RemoteRecordState<RemoteDivePlan> | undefined> {
+    try {
+      const identifier = assertIdentifier(id, 'list');
+      const result = await client.from('dive_plans').select().eq('user_id', userId).eq('id', identifier).maybeSingle();
+      if (resultError(result)) return fail('list');
+      if (result.data === null) return undefined;
+      const row = ownedRow<DivePlanRow>(result.data, userId, 'list');
+      return {value: fromDivePlanRow(row), deleted: row.deleted_at !== null};
+    } catch (error) {
+      throw accountError(error, 'list');
+    }
+  }
+
+  async function listDeletedLogs(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDeletedRecord>> {
+    try {
+      const limit = pageLimit(input.limit);
+      let query = client.from('dive_logs').select().eq('user_id', userId).not('deleted_at', 'is', null);
+      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'started_at'));
+      const result = await query.order('started_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
+      if (resultError(result)) return fail('list');
+      const rawRows = ownedRows<DiveLogRow>(result.data, userId, 'list');
+      const itemRows = rawRows.slice(0, limit);
+      const items = itemRows.map(row => ({id: row.id, localId: row.local_id, revision: row.revision}));
+      const last = itemRows[itemRows.length - 1];
+      return rawRows.length > limit && last !== undefined
+        ? {items, nextCursor: {sortTime: last.started_at, id: last.id}}
+        : {items};
+    } catch (error) {
+      throw accountError(error, 'list');
+    }
+  }
+
+  async function listDeletedPlans(input: {cursor?: AccountDataCursor; limit?: number} = {}): Promise<AccountDataPage<RemoteDeletedRecord>> {
+    try {
+      const limit = pageLimit(input.limit);
+      let query = client.from('dive_plans').select().eq('user_id', userId).not('deleted_at', 'is', null);
+      if (input.cursor !== undefined) query = query.or(cursorFilter(input.cursor, 'created_at'));
+      const result = await query.order('created_at', {ascending: false}).order('id', {ascending: false}).limit(limit + 1);
+      if (resultError(result)) return fail('list');
+      const rawRows = ownedRows<DivePlanRow>(result.data, userId, 'list');
+      const itemRows = rawRows.slice(0, limit);
+      const items = itemRows.map(row => ({id: row.id, localId: row.local_id, revision: row.revision}));
+      const last = itemRows[itemRows.length - 1];
+      return rawRows.length > limit && last !== undefined
+        ? {items, nextCursor: {sortTime: last.created_at, id: last.id}}
+        : {items};
+    } catch (error) {
+      throw accountError(error, 'list');
+    }
+  }
+
+  return {
+    listLogs,
+    listPlans,
+    saveLog,
+    savePlan,
+    deleteLog,
+    deletePlan,
+    getLog,
+    getPlan,
+    listDeletedLogs,
+    listDeletedPlans,
+  };
 }

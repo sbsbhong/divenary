@@ -37,6 +37,7 @@ import { useAppPreferences } from '../../states/app-preferences';
 import {
   setAccountClaimNavigationReady,
   useAccountData,
+  useOptionalAccountData,
 } from '../../states/account-data';
 import { useAuth, type AuthState } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
@@ -943,6 +944,7 @@ function LogbookDetailRoute(
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
   const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
   const { loadWatchProfile } = props.logbook;
+  const accountData = useOptionalAccountData();
 
   React.useEffect(() => {
     let mounted = true;
@@ -975,6 +977,11 @@ function LogbookDetailRoute(
           await props.logbook.deleteEntry(localId);
           props.navigation.goBack();
         }}
+        onResolveConflict={
+          accountData?.resolveConflict
+            ? choice => accountData.resolveConflict!('log', entry.localId, choice)
+            : undefined
+        }
       />
     </RoutedScrollScreen>
   );
@@ -1061,6 +1068,7 @@ function PlanningDetailRoute(
   },
 ): React.JSX.Element {
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
+  const accountData = useOptionalAccountData();
   const hasExistingConvertedLog = Boolean(
     plan?.convertedLogLocalId && props.logbook.entries.some(entry => entry.localId === plan.convertedLogLocalId),
   );
@@ -1112,6 +1120,11 @@ function PlanningDetailRoute(
         }}
         onCreateLogFromPlan={props.onCreateLogFromPlan}
         hasExistingConvertedLog={hasExistingConvertedLog}
+        onResolveConflict={
+          accountData?.resolveConflict
+            ? choice => accountData.resolveConflict!('plan', plan.localId, choice)
+            : undefined
+        }
       />
     </RoutedScrollScreen>
   );

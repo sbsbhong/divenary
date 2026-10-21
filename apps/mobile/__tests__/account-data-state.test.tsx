@@ -2512,6 +2512,122 @@ describe('account data state', () => {
     ]);
   });
 
+  it('deletes a conflicted row against the remote revision the diver reviewed', async () => {
+    const current = {
+      ...entry,
+      remoteId: '10000000-0000-4000-8000-000000000001',
+      remoteRevision: 2,
+      ownerUserId: userId,
+      cloudSyncStatus: 'synced' as const,
+    };
+    const localLogbook = new LocalDiveLogRepository([current]);
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+      now: () => 150,
+    });
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: { kind: 'user', userId },
+        queryScope: `user:${userId}`,
+        logbook: localLogbook,
+        planbook: new LocalDivePlanRepository(),
+      },
+      outbox,
+      now: () => 100,
+    });
+    const deleteLog = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'conflict', remote: remoteLog({ revision: 4 }) })
+      .mockResolvedValueOnce({ status: 'saved', value: remoteLog({ revision: 5 }) });
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({ deleteLog }),
+      logbookRepository: localLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+    });
+    await repositories.logbook.delete(current.localId);
+    await coordinator.drain({ online: true });
+
+    await repositories.logbook.delete(current.localId);
+    await coordinator.drain({ online: true });
+
+    expect(deleteLog.mock.calls.map(call => call[1])).toEqual([2, 4]);
+    await expect(repositories.logbook.get(current.localId)).resolves.toBeUndefined();
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
+  it('re-sends a kept local log against the latest remote revision', async () => {
+    const current = {
+      ...entry,
+      remoteId: '10000000-0000-4000-8000-000000000001',
+      remoteRevision: 2,
+      ownerUserId: userId,
+      cloudSyncStatus: 'synced' as const,
+    };
+    const localLogbook = new LocalDiveLogRepository([current]);
+    const outbox = new AccountOutbox({
+      storage: new InMemoryKeyValueStore(),
+      storageKey: 'outbox',
+      now: () => 150,
+    });
+    const repositories = createAccountLocalFirstRepositories({
+      userId,
+      repositories: {
+        principal: { kind: 'user', userId },
+        queryScope: `user:${userId}`,
+        logbook: localLogbook,
+        planbook: new LocalDivePlanRepository(),
+      },
+      outbox,
+      now: () => 100,
+    });
+    const saveLog = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'conflict', remote: remoteLog({ revision: 4 }) })
+      .mockImplementationOnce(async (value: RemoteDiveLog, expectedRevision?: number) => ({
+        status: 'saved',
+        value: { ...value, revision: (expectedRevision ?? 0) + 1 },
+      }));
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox,
+      accountRepository: accountRepository({
+        saveLog,
+        getLog: jest.fn(async () => ({ value: remoteLog({ revision: 4 }), deleted: false })),
+      }),
+      logbookRepository: localLogbook,
+      planRepository: new LocalDivePlanRepository(),
+      now: () => 100,
+    });
+    await repositories.logbook.save({
+      ...current,
+      manual: { ...current.manual, notes: 'edited here' },
+    });
+    await coordinator.drain({ online: true });
+    await expect(repositories.logbook.get(current.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'conflict',
+    });
+
+    const rebased = await coordinator.prepareKeepLocalLog(current.localId);
+    const logbook = repositories.logbook as typeof repositories.logbook & {
+      reconcileSaved(value: DiveLogEntry): Promise<void>;
+    };
+    await logbook.reconcileSaved(rebased!);
+    await coordinator.drain({ online: true });
+
+    expect(saveLog.mock.calls.map(call => call[1])).toEqual([2, 4]);
+    await expect(repositories.logbook.get(current.localId)).resolves.toMatchObject({
+      cloudSyncStatus: 'synced',
+      remoteRevision: 5,
+      manual: { notes: 'edited here' },
+    });
+    await expect(outbox.listConflicts(userId)).resolves.toEqual([]);
+  });
+
   it('keeps an unsynced local-only deletion local', async () => {
     const localLogbook = new LocalDiveLogRepository([entry]);
     const outbox = new AccountOutbox({

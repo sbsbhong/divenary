@@ -6,6 +6,7 @@ import { HStack } from '../../components/ui/hstack';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { SessionProfile } from '../../components/ui/session-profile';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import type { DiveFieldSource, DiveLogEntry, DiveLogManualMeasuredValues, DiveLogWatchMeasuredValues } from '../../types/dive-log-entry';
 import type { WatchSession, WatchSessionCommon } from '../../types/dive-session';
 import {
@@ -42,6 +43,7 @@ type LogEntryDetailProps = {
   onBack?: () => void;
   onEdit?: (entry: DiveLogEntry) => void;
   onDelete?: (localId: string) => Promise<void>;
+  onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
 export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
@@ -94,6 +96,9 @@ export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
         right={headerPills}
       />
       <DiveSummaryCard.Body>
+        {props.entry.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+          <SyncConflictBanner onResolve={props.onResolveConflict} />
+        ) : null}
         <Text className="text-sm leading-5 text-muted-foreground">
           {formatDate(startedAt, locale, t('formatters.unknownDate'))}
         </Text>

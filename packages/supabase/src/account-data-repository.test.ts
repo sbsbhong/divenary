@@ -34,6 +34,10 @@ function query(response: QueryResponse, calls: unknown[]) {
       calls.push({method: 'is', column, value});
       return builder;
     },
+    not(column: string, operator: string, value: unknown) {
+      calls.push({method: 'not', column, operator, value});
+      return builder;
+    },
     or(value: string) {
       calls.push({method: 'or', value});
       return builder;
@@ -253,6 +257,53 @@ describe('AccountDataRepository', () => {
         {method: 'is', column: 'deleted_at', value: null},
       ]);
     }
+  });
+
+  test('reads one owned log together with its soft-deletion state', async () => {
+    const {client, calls} = createClient([{data: logRow({revision: 6, deleted_at: UPDATED_AT}), error: null}]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    const result = await repository.getLog?.(LOG_ID);
+
+    assert.equal(result?.deleted, true);
+    assert.equal(result?.value.id, LOG_ID);
+    assert.equal(result?.value.revision, 6);
+    assert.deepEqual(calls[0], {
+      table: 'dive_logs',
+      calls: [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'eq', column: 'id', value: LOG_ID},
+        {method: 'maybeSingle'},
+      ],
+    });
+  });
+
+  test('returns no log when the owned row does not exist', async () => {
+    const {client} = createClient([{data: null, error: null}]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    assert.equal(await repository.getLog?.(LOG_ID), undefined);
+  });
+
+  test('lists soft-deleted logs by remote and local identity', async () => {
+    const {client, calls} = createClient([{data: [logRow({revision: 7, deleted_at: UPDATED_AT})], error: null}]);
+    const repository = createAccountDataRepository(client as never, {userId: USER_ID});
+
+    const page = await repository.listDeletedLogs?.({limit: 10});
+
+    assert.deepEqual(page?.items, [{id: LOG_ID, localId: 'local-log', revision: 7}]);
+    assert.deepEqual(calls[0], {
+      table: 'dive_logs',
+      calls: [
+        {method: 'select', columns: undefined},
+        {method: 'eq', column: 'user_id', value: USER_ID},
+        {method: 'not', column: 'deleted_at', operator: 'is', value: null},
+        {method: 'order', column: 'started_at', options: {ascending: false}},
+        {method: 'order', column: 'id', options: {ascending: false}},
+        {method: 'limit', value: 11},
+      ],
+    });
   });
 
   test('uses the expected revision and soft deletion for log removal', async () => {

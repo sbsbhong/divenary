@@ -41,8 +41,10 @@ export type {
   GuestClaimBatchInput,
   GuestClaimRemoteRepository,
   GuestClaimStageInput,
+  RemoteDeletedRecord,
   RemoteDiveLog,
   RemoteDivePlan,
+  RemoteRecordState,
   VerifiedCurrentUser,
 } from './account-data-types.ts';
 export type {Database, Json} from './database.types.ts';

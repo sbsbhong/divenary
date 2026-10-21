@@ -46,6 +46,24 @@ async function flush(): Promise<void> {
   });
 }
 
+async function flushRepeatedly(): Promise<void> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    await flush();
+  }
+}
+
+async function waitFor(assertion: () => void): Promise<void> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch {
+      await flush();
+    }
+  }
+  assertion();
+}
+
 describe('planned watch dive push', () => {
   const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
   const queryClients: QueryClient[] = [];
@@ -91,18 +109,17 @@ describe('planned watch dive push', () => {
 
     const plan = { ...createBlankDivePlan({ now: 1781353000 }), status: 'planned' as const };
     resolveList([plan]);
-    await flush();
+    await waitFor(() => expect(mockUpdatePlannedWatchDives).toHaveBeenCalledWith([plan]));
 
     expect(mockUpdatePlannedWatchDives).toHaveBeenCalledTimes(1);
-    expect(mockUpdatePlannedWatchDives).toHaveBeenCalledWith([plan]);
   });
 
   test('does not send plans to the watch while the account principal is unsettled', async () => {
     mockPrincipalSettled = false;
     const { repository, resolveList } = createDeferredRepository();
     render(<Harness repository={repository} />);
-    resolveList([]);
-    await flush();
+    resolveList([{ ...createBlankDivePlan({ now: 1781353000 }), status: 'planned' as const }]);
+    await flushRepeatedly();
 
     expect(mockUpdatePlannedWatchDives).not.toHaveBeenCalled();
   });

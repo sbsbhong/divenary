@@ -83,27 +83,27 @@
 
 ### Task 5.1: Rejected payload ledger and Settings visibility
 - Files: new `src/storage/watch-rejected-payload-store.ts`, `src/states/watch-connectivity-sync.tsx`, `src/screens/settings/screen.tsx`, i18n, tests
-- [ ] Invalid payloads recorded (sessionId, reason, at; max 20; no content) before local drop.
-- [ ] Settings device screen lists count + guidance; refresh action; load failure ≠ "bridge unavailable".
+- [x] Invalid payloads recorded (sessionId, reason, at; max 20; no content) before local drop.
+- [x] Settings device screen lists count + guidance; refresh action; load failure ≠ "bridge unavailable".
 
 ### Task 5.2: Drain head-of-line
 - Files: `src/states/watch-connectivity-sync.tsx` (+ native only if unavoidable), tests
-- [ ] A batch of 8 previously-failed payloads must not stop later payloads from importing.
+- [x] A batch of 8 previously-failed payloads must not stop later payloads from importing. Solved in JS: a payload that fails import three times in a row is recorded and set aside, so the native `prefix(8)` window moves on.
 
 ## Phase 6 — Account sync
 
 ### Task 6.1: Conflict resolution
 - Files: `src/sync/account-sync-coordinator.ts`, `src/sync/account-outbox.ts`, `src/states/account-data.tsx`, `src/screens/logbook/log-entry-detail.tsx`, `src/screens/planning/plan-detail.tsx`, i18n, tests in `__tests__/account-sync-coordinator.test.ts`, `__tests__/account-data-state.test.tsx`
-- [ ] `resolveConflict(kind, localId, 'keepLocal' | 'useRemote')`; deleting a conflicted row rebases onto the remote revision.
-- [ ] Detail banner with two actions.
+- [x] `resolveConflict(kind, localId, 'keepLocal' | 'useRemote')`; deleting a conflicted row rebases onto the remote revision. An ordinary delete conflict still surfaces as a conflict instead of overwriting the other device's edit.
+- [x] Detail banner with two actions.
 
 ### Task 6.2: Remote deletion propagation
 - Files: `packages/supabase/src/account-data-repository.ts` (+ test), `src/sync/account-sync-coordinator.ts`, tests
-- [ ] Verify RLS allows owners to read soft-deleted rows; hydrate removes synced local copies without pending ops.
+- [x] Verify RLS allows owners to read soft-deleted rows; hydrate removes synced local copies without pending ops.
 
 ### Task 6.3: Remote error classification
 - Files: `packages/supabase/src/guest-claim-repository.ts`, `packages/supabase/src/account-data-repository.ts` (+ tests)
-- [ ] Use `result.status`: 0/5xx → network/transient, `PGRST303`/401 → session expired.
+- [x] Use `result.status`: 0/5xx → network/transient, `PGRST303`/401 → session expired. `account-data-repository.ts` needs no classifier: the coordinator reschedules every delivery error.
 
 ## Phase 7 — Watch accuracy
 

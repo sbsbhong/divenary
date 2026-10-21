@@ -2,6 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import { HStack } from '../../components/ui/hstack';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
@@ -19,6 +20,7 @@ type PlanDetailProps = {
   onDelete?: (localId: string) => Promise<void>;
   onCreateLogFromPlan: (plan: DivePlan) => void;
   hasExistingConvertedLog?: boolean;
+  onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
 export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
@@ -42,6 +44,9 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
         right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone="secondary" />}
       />
       <DiveSummaryCard.Body>
+        {props.plan.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+          <SyncConflictBanner onResolve={props.onResolveConflict} />
+        ) : null}
         <Text className="text-sm leading-5 text-muted-foreground">
           {formatDate(props.plan.plannedAt, locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
         </Text>
