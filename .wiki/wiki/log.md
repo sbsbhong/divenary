@@ -1164,3 +1164,18 @@
 - Clarified: 안전 규칙의 Home 3m 자동 시작 설명은 2026-09-01 Wet Ready 도입으로 대체된 내용이라 바로잡았다.
 - Pending: Watch 체크리스트 D14-D19와 claim 체크리스트의 2026-10-21 항목은 실기기·staging 증거가 필요하다.
 
+
+## [2026-10-22] ingest | 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계
+- Added: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계 raw source
+- Added: ADR: 플랫폼 중립 Watch link
+- Updated: 모바일 구조
+- Updated: 동기화 흐름 구조
+- Updated: Watch 앱 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화
+- Updated: ADR 목록
+- Updated: Knowledge Base Index
+- Recorded: 모바일 앱 코드는 `WatchLink` 인터페이스로만 watch와 통신하고 메시지 규격은 `docs/architecture/watch-link-protocol.md`에 둔다.
+- Recorded: durable JSON은 journal 없이 원자적 단일 key 쓰기와 readback을 쓰고, 이전 build의 journal은 한 번만 마무리한다. 저장 text가 같으면 검증 결과를 재사용한다.
+- Recorded: claim sidecar 내용 검증은 입력별로 재사용하고, canonical JSON 출력 bytes는 바꾸지 않는다.
+- Recorded: Watch journal은 열어 둔 채 쓰고 10 sample마다 flush하며, 실패 뒤 디스크에서 다시 읽어 잘린 줄과 중복 재시도를 처리한다.
+- Pending: claim snapshot 첫 검증 비용, preview sample 중복, Watch 저장 직전 화면 갱신, envelope의 contract schema화는 남은 일이다.

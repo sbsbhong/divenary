@@ -6,13 +6,15 @@ Sources: Guest claim semantic canonical reuse evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse.md)
 Sources: Guest claim semantic canonical reuse staging promotion evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse staging promotion evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-staging.md)
+Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
+Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
 Sources: Guest claim semantic canonical reuse physical verification evidence, 2026-07-30
 Raw: [Guest claim semantic canonical reuse physical verification evidence](../../raw/architecture/2026-07-30-guest-claim-semantic-canonical-reuse-physical-verification.md)
 Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
 Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
-Updated: 2026-10-21
+Updated: 2026-10-22
 
 ## 요약
 
@@ -58,11 +60,12 @@ Updated: 2026-10-21
 - `src/screens/memory`: 이전 memory/share preview source가 남아 있지만 현재 bottom tab route에는 연결되어 있지 않다.
 - `src/storage/`: `PersistentKeyValueStore`, AsyncStorage adapter, in-memory test store, versioned JSON store, storage key를 둔다.
 - `src/states/app-preferences.tsx`, `src/states/app-preferences-storage.ts`: 앱 표시 선호를 관리하고 `themePreference`, `language`, `watchSyncNotificationsEnabled`를 저장한다.
-- `src/states/use-dive-logbook.ts`: React Query 기반 로그북 hook, search filter, pending WatchConnectivity sync action, 기존 화면을 위한 `MobileDiveSession` 호환 view.
+- `src/states/use-dive-logbook.ts`: React Query 기반 로그북 hook, search filter, pending Watch sync action, 기존 화면을 위한 `MobileDiveSession` 호환 view.
 - `src/states/use-dive-logbook-queries.ts`: `DiveLogRepository`를 호출하는 list/detail/save/delete/watch import query와 mutation hook.
-- `src/states/watch-connectivity-sync.tsx`: iOS native WatchConnectivity payload event를 먼저 구독한 뒤 durable inbox를 drain하고, runtime validator를 통과한 payload만 로그북 repository에 import한다. 저장 성공 payload는 import 완료 acknowledge로 watch에 되돌려 보내고, 무효 payload drop은 native inbox에서만 acknowledge한다. 자동 import로 새 로그가 저장되면 root navigation에 imported entry를 알려 tappable toast를 띄우고, Settings opt-in이 켜진 background/killed 상태에서는 Notifee local notification을 요청할 수 있게 notification service callback을 호출한다.
+- `src/states/watch-sync.tsx`: `WatchLink` payload event를 먼저 구독한 뒤 durable inbox를 drain하고, runtime validator를 통과한 payload만 로그북 repository에 import한다. 저장 성공 payload는 import 완료 acknowledge로 watch에 되돌려 보내고, 무효 payload drop은 native inbox에서만 acknowledge한다. 자동 import로 새 로그가 저장되면 root navigation에 imported entry를 알려 tappable toast를 띄우고, Settings opt-in이 켜진 background/killed 상태에서는 Notifee local notification을 요청할 수 있게 notification service callback을 호출한다.
 - `src/states/use-dive-plans.ts`, `src/states/use-dive-plan-queries.ts`: React Query 기반 Planbook hook과 list/save/delete mutation. 실행하지 않은 planned 상태의 모바일 계획을 watch companion에 전달한다.
-- `src/native/watch-connectivity.ts`: React Native에서 iOS `WatchConnectivityModule` event, pending drain method, payload acknowledge method, import 완료 acknowledge method, planned dive update, linked watch status query를 typed wrapper로 다룬다.
+- `src/companion/watch-link.ts`: 앱 코드가 companion watch와 통신하는 유일한 경계인 `WatchLink` 인터페이스. pending drain, payload 준비·채택·폐기, import 완료 acknowledge, 삭제 명령과 receipt, planned dive update, linked watch 상태, payload event 구독을 정의한다. Platform module이 없으면 조용한 unavailable link를 쓴다.
+- `src/companion/native-watch-link.ts`, `src/companion/default-watch-link.ts`: native module 계약(`NativeWatchLinkModule`)을 `WatchLink`로 바꾸는 adapter와 앱 기본 link. iOS는 `WatchConnectivityModule`, Android는 같은 계약의 `WearableCompanionModule`(예정)을 찾는다. `src/companion` 밖의 코드는 platform module이나 event 이름을 참조하지 않으며 `__tests__/watch-link.test.ts`가 이를 검사한다. 메시지 규격은 `docs/architecture/watch-link-protocol.md`에 있다.
 - `ios/Divenary.xcodeproj`: iPhone app target `Divenary`과 embedded watchOS companion target `DivenaryWatchApp`를 함께 관리한다. iPhone target에는 WatchConnectivity bridge와 `CLGeocoder` 기반 `ReverseGeocoderModule`이 포함된다.
 - `ios/Divenary/ReverseGeocoderModule.swift`, `ios/Divenary/ReverseGeocoderModuleBridge.m`: iOS `CoreLocation.CLGeocoder`를 React Native promise method로 노출한다.
 - `ios/DivenaryWatchApp`: SwiftUI watchOS companion source. Watch 기록, 로컬 저장, WatchConnectivity enqueue PoC를 담당한다.
@@ -101,11 +104,13 @@ Styling rule은 현재 코드 기준으로 다음과 같다.
 
 앱 기본 Logbook/Planbook 저장소는 principal namespace에 묶인 persistent repository다. Legacy unscoped data는 durable migration lock 아래 한 번만 guest namespace로 복사·검증한 뒤 source를 제거한다. Account mutation은 local repository 저장과 durable outbox enqueue를 먼저 완료하고, coordinator가 remote revision을 확인해 재시도하거나 conflict를 보존한다. `LocalDiveLogRepository`와 `LocalDivePlanRepository`는 테스트와 집중된 동작 검증용으로 남아 있다.
 
-Account-data bootstrap은 `loading`, `ready`, `degraded`, `recoveryRequired`를 구분한다. 선택된 principal의 Logbook/Planbook은 공개 전에 검증하며, durable JSON 오류는 빈 배열로 바꾸지 않고 원본 bytes를 digest-addressed quarantine에 그대로 보존한다. Recovery journal과 quarantine은 복구 증거이지 현재 로그나 계획 inventory가 아니다. 검증 실패는 `recoveryRequired`로 전환하고 remote hydration, outbox reconciliation, claim inspection/cleanup과 저장·삭제를 시작하지 않는다. 검증된 local repositories를 먼저 publish한 뒤 자동 account hydration을 첫 상호작용 뒤 예약하고, remote row 사이에 cooperative yield를 둔다. Optional 단계 실패는 이미 공개한 로컬 데이터를 철회하지 않고 Home recovery banner에서 재시도하게 한다. 선택된 principal의 local repository 구성 자체가 실패하면 다른 principal로 fallback하지 않고 preserve-data recovery screen을 표시한다. 예상하지 못한 render error도 같은 비파괴적 recovery screen으로 전환한다.
+Account-data bootstrap은 `loading`, `ready`, `degraded`, `recoveryRequired`를 구분한다. 선택된 principal의 Logbook/Planbook은 공개 전에 검증하며, durable JSON 오류는 빈 배열로 바꾸지 않고 원본 bytes를 digest-addressed quarantine에 그대로 보존한다. 이전 build가 남긴 recovery journal과 quarantine은 복구 증거이지 현재 로그나 계획 inventory가 아니다. 검증 실패는 `recoveryRequired`로 전환하고 remote hydration, outbox reconciliation, claim inspection/cleanup과 저장·삭제를 시작하지 않는다. 검증된 local repositories를 먼저 publish한 뒤 자동 account hydration을 첫 상호작용 뒤 예약하고, remote row 사이에 cooperative yield를 둔다. Optional 단계 실패는 이미 공개한 로컬 데이터를 철회하지 않고 Home recovery banner에서 재시도하게 한다. 선택된 principal의 local repository 구성 자체가 실패하면 다른 principal로 fallback하지 않고 preserve-data recovery screen을 표시한다. 예상하지 못한 render error도 같은 비파괴적 recovery screen으로 전환한다.
+
+로컬 저장소는 같은 bytes를 다시 검증하지 않는다. `PersistentJsonStore`는 저장된 text가 바뀔 때까지 parse·검증한 값을 재사용하고, 쓰기는 key 하나를 원자적으로 바꾸는 `setString`과 readback 한 번이다. 이전 build의 pending/commit journal은 처음 읽거나 쓰기 전에 한 번만 마무리하며, commit marker 없는 pending 값은 버린다. Repository는 호출자에게 넘기는 값만 복사한다. Claim store는 sidecar마다 내용 검증 결과를 그 입력과 함께 기억해 진행 상태만 바뀐 쓰기에서는 진행 field만 검사하고, 입력이 바뀌면 다시 검증한다. Hash 입력을 만드는 `canonicalJson`은 `src/utils/canonical-json.ts` 하나이며 key 순서를 key 목록마다 한 번만 계산하고 출력 bytes는 바꾸지 않는다. Auth 재검증이 같은 상태로 끝나면 상태 객체를 유지하고, account-data는 data owner마다 principal 객체를 하나만 써서 bootstrap을 다시 실행하지 않는다. Home 날씨 요청은 JS thread 정지로 마감 timer가 먼저 실행될 수 있어 한 번 더 시도한 뒤 오류를 보인다.
 
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 
-WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. Native inbox의 file materialization, JSON encode와 UserDefaults 접근은 전용 serial queue에서 실행하고, 작은 immutable event 전달만 main queue로 넘긴다. JS provider는 event를 먼저 구독하되 자동 drain을 첫 상호작용 뒤 예약하며 payload 사이에 cooperative yield를 둔다. Native inbox와 module은 pending payload, event, acknowledge, planned dive, linked watch 상태를 관리한다. JS provider와 Logbook 수동 action은 같은 `WatchConnectivityImportCoordinator`를 사용해 concurrent import를 직렬화한다. 저장이 끝난 payload만 imported acknowledge하고 실패 payload는 재시도할 수 있게 남긴다. Foreground toast와 opt-in notification은 local 저장 결과만 뜻한다.
+WatchConnectivity 수신 PoC는 iOS native code에서 시작된다. Native inbox의 file materialization, JSON encode와 UserDefaults 접근은 전용 serial queue에서 실행하고, 작은 immutable event 전달만 main queue로 넘긴다. JS provider는 event를 먼저 구독하되 자동 drain을 첫 상호작용 뒤 예약하며 payload 사이에 cooperative yield를 둔다. Native inbox와 module은 pending payload, event, acknowledge, planned dive, linked watch 상태를 관리한다. JS provider와 Logbook 수동 action은 같은 `WatchImportCoordinator`를 사용해 concurrent import를 직렬화한다. 저장이 끝난 payload만 imported acknowledge하고 실패 payload는 재시도할 수 있게 남긴다. Foreground toast와 opt-in notification은 local 저장 결과만 뜻한다.
 
 Home 위치 조건은 app state가 `active`일 때 시작한다. Core Location code `2`인 `POSITION_UNAVAILABLE`은 최대 세 번의 bounded retry 안에서 처리하고, permission denial과 다른 오류는 즉시 기존 terminal 상태로 분류한다. 이 위치·날씨 정보는 화면 맥락일 뿐 다이빙 적합성이나 안전 신호가 아니다.
 

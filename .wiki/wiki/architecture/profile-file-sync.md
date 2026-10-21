@@ -2,7 +2,9 @@
 
 Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20; Physical device cold start and data integrity, 2026-07-26; Local log import performance and reliability evidence, 2026-07-28; Local log import review hardening evidence, 2026-07-28
 Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Physical device cold start and data integrity](../../raw/architecture/2026-07-26-physical-device-cold-start-data-integrity.md); [Local log import performance and reliability evidence](../../raw/architecture/2026-07-28-local-log-import-reliability.md); [Local log import review hardening evidence](../../raw/architecture/2026-07-28-local-log-import-review-hardening.md)
-Updated: 2026-07-28
+Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
+Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Updated: 2026-10-22
 
 ## 요약
 
@@ -32,7 +34,7 @@ DivenaryWatchApp/
     session-<contentRevision>.json
 ```
 
-활성 기록 journal은 finalized 1Hz sample을 줄 단위로 append하고 동기화한다. 완료 artifact는 contract의 한 `WatchSyncMessage` 전체를 담는다. Manifest는 bounded preview, 표시용 metadata, sync status, artifact relative path, SHA-256, byte count, sample count를 보관한다. sync status 변경은 큰 artifact를 다시 쓰지 않는다.
+활성 기록 journal은 열어 둔 채 finalized 1Hz sample을 줄 단위로 append하고 10 sample마다 storage로 flush한다. 완료 artifact는 contract의 한 `WatchSyncMessage` 전체를 담는다. Manifest는 bounded preview, 표시용 metadata, sync status, artifact relative path, SHA-256, byte count, sample count를 보관한다. sync status 변경은 큰 artifact를 다시 쓰지 않는다.
 
 ## 전송 identity와 재시도
 

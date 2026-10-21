@@ -30,12 +30,12 @@
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Google·claim 실기기, Watch 회귀, account deletion과 개인정보 최소화 device-local 진단 기반을 P0로 두고 원격 수집을 별도 2단계로 분리한다. | 2026-08-02 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
-| [모바일 구조](architecture/mobile.md) | SIGNED_OUT만 로컬 세션을 닫고 principal이 정해진 뒤 Watch import·계획 전송을 시작하며, 삭제 확인·편집 폐기 확인·거부 payload 목록·충돌 배너를 갖는다. | 2026-10-21 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 JavaScript와 같은 bytes의 prepared profile을 native file로 채택하며 derived-file 손상 시 raw artifact를 보존한다. | 2026-07-28 |
+| [모바일 구조](architecture/mobile.md) | 앱 코드는 플랫폼 중립 `WatchLink`로만 watch와 통신하고, 로컬 저장소는 같은 bytes를 다시 검증하지 않으며 claim sidecar 검증을 입력별로 재사용하고, 같은 auth 상태 재검증으로 bootstrap을 반복하지 않는다. | 2026-10-22 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 prepared profile을 native file로 채택하며, Watch 기록 journal은 열어 둔 채 1Hz 줄을 쓰고 10 sample마다 flush한다. | 2026-10-22 |
 | [Monorepo 구조](architecture/monorepo.md)                                      | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리한다. | 2026-07-20 |
 | [Supabase 구조](architecture/supabase.md)                                      | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단한다. | 2026-08-02 |
-| [동기화 흐름 구조](architecture/sync-flow.md) | 충돌 배너의 이 기기/다른 기기 버전 선택, 충돌 행 삭제의 원격 revision 기준, soft-delete 원격 행 전파, 거부·반복 실패 Watch payload 분리와 claim 오류 status 분류를 포함한다. | 2026-10-21 |
-| [Watch 앱 구조](architecture/watch-app.md) | Watch는 실시간 수심이 현재 값일 때만 숫자를 보이고, 저장 상승 속도를 smoothing estimator로 계산하며, 스탑 적립 5초 상한·수온 60초 신선도·captureMode 기본 demo·notSubmerged 전용 Action Button 종료와 Dive Plans 화면을 갖는다. | 2026-10-21 |
+| [동기화 흐름 구조](architecture/sync-flow.md) | 폰과 watch는 문자열 key·JSON 값 메시지의 `WatchLink` 규격으로 통신하고, durable JSON은 journal 없이 원자적 단일 key 쓰기를 쓰며, 충돌·삭제·거부 payload·claim 오류 규칙을 포함한다. | 2026-10-22 |
+| [Watch 앱 구조](architecture/watch-app.md) | Watch는 실시간 수심이 현재 값일 때만 숫자를 보이고, journal을 열어 둔 채 쓰며 실패 뒤 디스크에서 다시 읽어 복구하고, manifest·ledger 디코딩을 재사용하며 바뀐 값만 publish한다. | 2026-10-22 |
 
 ## domains
 
@@ -66,10 +66,11 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [ADR 목록](decisions/adr-index.md) | 이 문서는 accepted architecture decision record 목록을 관리한다. | 2026-08-02 |
+| [ADR 목록](decisions/adr-index.md) | 이 문서는 accepted architecture decision record 목록을 관리한다. | 2026-10-22 |
 | [ADR: 1Hz immutable profile과 file-only session sync](decisions/adr-one-hertz-file-sync.md) | raw live callback과 bounded profile을 분리하고 session body를 immutable file 하나로 전달한다. | 2026-07-12 |
 | [ADR: Local-first mobile logbook with future Supabase sync](decisions/adr-local-first-mobile-logbook.md) | Local-first 저장소를 유지하고, guest 로그 연결 동의 뒤 Supabase outbox를 추가한다. 현재 cloud 상태는 `notConfigured`다. | 2026-07-12 |
 | [ADR: 개인정보 최소화 device-local 진단 파이프라인](decisions/adr-privacy-minimized-diagnostics.md) | 모든 build에서 사용자 콘텐츠를 제외한 Mobile/Watch local journal과 수동 export를 먼저 구현하고, 원격 수집을 별도 동의 단계로 남긴다. | 2026-08-02 |
+| [ADR: 플랫폼 중립 Watch link](decisions/adr-platform-neutral-watch-link.md) | 모바일 앱 코드는 `WatchLink` 인터페이스로만 watch와 통신하고, iOS WatchConnectivity와 Android Wearable Data Layer adapter가 같은 native module 계약을 구현한다. | 2026-10-22 |
 
 ## questions
 

@@ -4,7 +4,9 @@ Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and i
 Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md); [Watch callback, retry, re-entry, navigation hardening](../../raw/architecture/2026-07-18-watch-callback-retry-reentry-navigation.md)
 Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02; Watch Wet Ready and automatic local save, 2026-09-01; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md); [Watch Wet Ready and automatic local save](../../raw/architecture/2026-09-01-watch-wet-ready-auto-save.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
-Updated: 2026-10-21
+Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
+Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Updated: 2026-10-22
 
 ## 요약
 
@@ -69,9 +71,11 @@ manual runtime acquisition은 명시적으로 성공 또는 실패를 반환한�
 
 ## 기록 저널 내구성과 복구
 
-pending sidecar가 생기기 전 append가 실패할 수 있으므로 recorder는 finalized 1Hz sample을 ordered `ArraySlice` queue에 보관한다. later sample과 final flush는 항상 oldest unconfirmed sample부터 재시도하고, 성공한 head는 `popFirst()`로 O(1)에 제거한다. queue 전체가 비어야 persistence error를 지우며, new start, completed reset, intentional cancellation은 queue를 함께 초기화한다.
+append가 실패할 수 있으므로 recorder는 finalized 1Hz sample을 ordered `ArraySlice` queue에 보관한다. later sample과 final flush는 항상 oldest unconfirmed sample부터 재시도하고, 성공한 head는 `popFirst()`로 O(1)에 제거한다. queue 전체가 비어야 persistence error를 지우며, new start, completed reset, intentional cancellation은 queue를 함께 초기화한다.
 
-1Hz append 전에 `recording-pending.json`에 expected journal offset과 완전한 NDJSON line을 atomic하게 기록한다. append 뒤 cleanup이 실패해도 retry는 journal suffix를 확인하고 decoded `DepthSample` value를 retry와 비교해 이미 완전히 기록된 sample을 중복하지 않는다. partial suffix가 sidecar line의 prefix와 일치하면 expected offset까지 잘라내고 line 전체를 다시 기록한 뒤 pending state를 제거한다. 해결되지 않은 pending append는 다음 sample보다 먼저 처리한다.
+NDJSON journal은 recording 동안 열어 두고 sample마다 한 줄을 쓰며, 10 sample마다 storage로 flush한다. 앱만 종료되면 쓴 bytes는 OS cache에 남으므로 잃지 않고, OS crash에서는 마지막 flush 뒤 몇 초를 잃을 수 있다. 쓰기가 실패하면 열린 journal을 닫고 다음 append가 디스크에서 다시 읽는다. 이때 decode되지 않는 마지막 줄은 잘라내고, 마지막 durable sample과 같은 재시도 sample은 다시 쓰지 않는다. 이전 build의 `recording-pending.json` sidecar는 다시 열 때 지운다.
+
+Manifest와 deleted-session ledger는 파일 수정 시각과 크기가 같으면 디코딩 결과를 재사용한다. Launch는 manifest나 session directory에 아직 남은 삭제만 다시 실행한다. Sync status 변경은 한 번에 모아 `sessions` publish 한 번과 manifest 쓰기 한 번으로 반영하고, 바뀌지 않은 status는 쓰지 않는다. Recorder와 수중 센서 coordinator는 바뀐 값만 publish하고, 앱 root와 Home은 전달만 하는 recorder와 센서 객체를 관찰하지 않는다.
 
 Recovery는 session별로 격리한다. newline으로 끝난 record는 모두 strict decode하고, newline 없는 마지막 record가 decode되지 않을 때만 앞선 durable prefix를 보존한다. decode 가능한 마지막 record에는 newline을 보완한다. metadata mismatch나 interior corruption처럼 복구할 수 없는 active state는 `Sessions/<localSessionId>/Quarantine/<UUID>/`로 active metadata, journal, pending sidecar만 옮긴다. 같은 directory의 canonical `session-<revision>.json`과 manifest identity는 유지하므로 canonical save retry와 다른 interrupted session recovery가 영향을 받지 않는다.
 
