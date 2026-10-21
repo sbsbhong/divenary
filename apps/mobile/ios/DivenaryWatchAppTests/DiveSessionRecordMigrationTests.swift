@@ -652,6 +652,24 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testRetrySyncResendsOnlyAFailedSession() throws {
+        let transport = StubWatchSyncTransport(enqueueStatuses: [.failed, .pending])
+        let store = DiveSessionStore(
+            userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: transport,
+            recordsStorageURL: makeIsolatedRecordsStorageURL()
+        )
+        let record = Self.debugScubaRecord()
+        XCTAssertTrue(store.save(record))
+        XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
+
+        store.retrySync(sessionID: record.id)
+
+        XCTAssertEqual(transport.enqueuedArtifacts.count, 2)
+        XCTAssertEqual(store.sessions.first?.syncStatus, .pending)
+    }
+
+    @MainActor
     func testSaveRetriesDeletionRecoveryThatFailedAtLaunch() throws {
         let storageURL = makeIsolatedRecordsStorageURL()
         let ledgerURL = try corruptDeletionLedger(besides: storageURL)

@@ -47,6 +47,10 @@ struct SessionSummaryContent: View {
 
                         DepthProfileSparkline(samples: session.samples, color: DiveWatchTheme.primary)
                             .frame(height: 42)
+
+                        if session.exceedsSupportedDepth {
+                            UnsupportedDepthNotice()
+                        }
                     }
                 }
 
@@ -118,6 +122,7 @@ struct SavedSessionSummaryView: View {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
                 }
+                .accessibilityLabel(Text("Back"))
             }
         }
     }

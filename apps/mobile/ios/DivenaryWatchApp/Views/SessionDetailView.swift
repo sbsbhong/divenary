@@ -1,7 +1,13 @@
 import SwiftUI
 
 struct SessionDetailView: View {
-    let session: DiveSessionRecord
+    @ObservedObject var store: DiveSessionStore
+    let savedSession: DiveSessionRecord
+
+    /// The store copy reflects sync changes, such as a resend, while this screen is open.
+    private var session: DiveSessionRecord {
+        store.sessions.first { $0.id == savedSession.id } ?? savedSession
+    }
 
     private var summary: DiveSessionSummary {
         session.summary
@@ -33,7 +39,20 @@ struct SessionDetailView: View {
 
                         DepthProfileSparkline(samples: session.samples)
                             .frame(height: 44)
+
+                        if session.exceedsSupportedDepth {
+                            UnsupportedDepthNotice()
+                        }
                     }
+                }
+
+                if session.syncStatus == .failed {
+                    Button {
+                        store.retrySync(sessionID: session.id)
+                    } label: {
+                        Label("Send Again", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(DiveActionButtonStyle(kind: .secondary))
                 }
 
                 HStack(spacing: 8) {

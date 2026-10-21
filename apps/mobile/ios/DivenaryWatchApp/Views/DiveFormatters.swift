@@ -134,6 +134,7 @@ struct MetricCard: View {
                 }
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private var metricSize: CGFloat {
@@ -168,6 +169,27 @@ struct SummaryRow: View {
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Marks a saved dive that went deeper than the app supports on Apple Watch.
+struct UnsupportedDepthNotice: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Label("Outside watch support", systemImage: "exclamationmark.triangle.fill")
+                .font(DiveWatchTheme.labelFont())
+                .foregroundStyle(DiveWatchTheme.caution)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text("Deeper than this app supports on Apple Watch. Kept for review only.")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .lineLimit(3)
+                .minimumScaleFactor(0.75)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
     }
 }
 

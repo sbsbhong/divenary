@@ -394,6 +394,22 @@
         }
       }
     },
+    "Back" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "뒤로"
+          }
+        }
+      }
+    },
     "Buddy" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -623,6 +639,22 @@
         }
       }
     },
+    "Deeper than this app supports on Apple Watch. Kept for review only." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deeper than this app supports on Apple Watch. Kept for review only."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 앱이 Apple Watch에서 지원하는 수심보다 깊습니다. 리뷰용으로만 보관합니다."
+          }
+        }
+      }
+    },
     "Demo" : {
       "localizations" : {
         "en" : {
@@ -825,6 +857,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "DIVE PLAN"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이브 계획"
+          }
+        }
+      }
+    },
+    "Dive Plans" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dive Plans"
           }
         },
         "ko" : {
@@ -1087,6 +1135,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fail"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실패"
+          }
+        }
+      }
+    },
+    "Failed" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed"
           }
         },
         "ko" : {
@@ -1534,6 +1598,22 @@
         }
       }
     },
+    "None selected" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "None selected"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "선택 안 함"
+          }
+        }
+      }
+    },
     "Not rated" : {
       "localizations" : {
         "en" : {
@@ -1546,6 +1626,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "평가 없음"
+          }
+        }
+      }
+    },
+    "Not sent to iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not sent to iPhone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone 전송 실패"
           }
         }
       }
@@ -1594,6 +1690,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "센서 허가 수심 범위 밖"
+          }
+        }
+      }
+    },
+    "Outside watch support" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Outside watch support"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지원 수심 밖"
           }
         }
       }
@@ -1677,6 +1789,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "계획 리마인더"
+          }
+        }
+      }
+    },
+    "Plans start real dives on a supported Apple Watch." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plans start real dives on a supported Apple Watch."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계획은 지원되는 Apple Watch에서 실제 다이브로 시작합니다."
           }
         }
       }
@@ -2267,6 +2395,22 @@
         }
       }
     },
+    "Saved on iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved on iPhone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone에 저장됨"
+          }
+        }
+      }
+    },
     "Saved Sessions" : {
       "localizations" : {
         "en" : {
@@ -2359,6 +2503,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "선택된 계획"
+          }
+        }
+      }
+    },
+    "Send Again" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send Again"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다시 보내기"
           }
         }
       }
@@ -2834,6 +2994,22 @@
         }
       }
     },
+    "Tap a plan to use it for the next dive. Tap it again to clear." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap a plan to use it for the next dive. Tap it again to clear."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "계획을 누르면 다음 다이브에 사용하고, 다시 누르면 선택을 해제합니다."
+          }
+        }
+      }
+    },
     "Target / zone" : {
       "localizations" : {
         "en" : {
@@ -3160,6 +3336,22 @@
         }
       }
     },
+    "Waiting" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "대기"
+          }
+        }
+      }
+    },
     "Waiting for depth" : {
       "localizations" : {
         "en" : {
@@ -3172,6 +3364,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수심 대기 중"
+          }
+        }
+      }
+    },
+    "Waiting for iPhone" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Waiting for iPhone"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iPhone 전송 대기"
           }
         }
       }

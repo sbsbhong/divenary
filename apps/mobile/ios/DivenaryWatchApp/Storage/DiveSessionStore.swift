@@ -186,6 +186,20 @@ final class DiveSessionStore: ObservableObject {
         try? profileStore.updateDisplayRecord(entry.displayRecord.withSyncStatus(effectiveStatus))
     }
 
+    /// Sends one saved session again after its transfer failed.
+    func retrySync(sessionID: UUID) {
+        guard resumePendingDeletionsIfNeeded(),
+              let entry = try? profileStore.loadEntries().first(where: { $0.id == sessionID }),
+              entry.displayRecord.syncStatus != .synced else {
+            return
+        }
+        let syncStatus = syncTransport.enqueue(
+            artifact: entry.artifact,
+            fileURL: profileStore.artifactURL(for: entry.artifact)
+        )
+        updateSyncStatus(for: entry.artifact, to: syncStatus)
+    }
+
     private func retryPendingSyncs() {
         guard deletionRecoverySucceeded,
               let entries = try? profileStore.loadEntries() else { return }

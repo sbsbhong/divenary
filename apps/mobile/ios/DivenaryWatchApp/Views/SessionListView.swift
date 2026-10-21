@@ -11,7 +11,7 @@ struct SessionListView: View {
                 } else {
                     ForEach(store.sessions) { session in
                         NavigationLink {
-                            SessionDetailView(session: session)
+                            SessionDetailView(store: store, savedSession: session)
                         } label: {
                             SessionRow(session: session)
                         }
@@ -79,12 +79,20 @@ private struct SessionRow: View {
                 .layoutPriority(1)
 
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(DiveFormatters.depth(summary.maxDepthMeters))
-                        .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
-                        .foregroundStyle(profileColor)
-                        .monospacedDigit()
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.5)
+                    HStack(spacing: 2) {
+                        if session.exceedsSupportedDepth {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 9, weight: .semibold))
+                                .foregroundStyle(DiveWatchTheme.caution)
+                                .accessibilityLabel(Text("Outside watch support"))
+                        }
+                        Text(DiveFormatters.depth(summary.maxDepthMeters))
+                            .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
+                            .foregroundStyle(profileColor)
+                            .monospacedDigit()
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.5)
+                    }
                     Text(DiveFormatters.duration(summary.durationSeconds))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(DiveWatchTheme.mutedText)
@@ -162,11 +170,11 @@ private extension DiveSyncStatus {
     var shortLabel: String {
         switch self {
         case .pending:
-            return String(localized: "Sync")
+            return String(localized: "Waiting")
         case .synced:
-            return String(localized: "Done")
+            return String(localized: "Synced")
         case .failed:
-            return String(localized: "Fail")
+            return String(localized: "Failed")
         }
     }
 

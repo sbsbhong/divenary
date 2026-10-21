@@ -60,11 +60,11 @@ enum DiveSyncStatus: String, Codable {
     var label: String {
         switch self {
         case .pending:
-            return String(localized: "Pending sync")
+            return String(localized: "Waiting for iPhone")
         case .synced:
-            return String(localized: "Synced")
+            return String(localized: "Saved on iPhone")
         case .failed:
-            return String(localized: "Sync failed")
+            return String(localized: "Not sent to iPhone")
         }
     }
 }

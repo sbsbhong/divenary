@@ -448,11 +448,15 @@ describe('WatchConnectivity native source contract', () => {
     expect(store).toContain('markPlanExecuted');
     expect(transport).toContain('didReceiveApplicationContext applicationContext');
     expect(transport).toContain('onPlannedDivesChanged');
-    expect(home).toContain('PlannedDivesSection(');
+    expect(home).toContain('DivePlansView(');
+    expect(home).toContain('title: "Dive Plans"');
     expect(home).toContain('selectedPlanLocalId: plan.sourcePlanLocalId');
     expect(home).toContain('plan = plannedDive.preDivePlan');
-    expect(home).toContain('Use Plan');
     expect(home).toContain('onSelect: apply(plannedDive:)');
+    expect(home).toContain('onClearSelection: clearPlannedDive');
+    expect(home).toContain('DiveFormatters.depth(plannedDive.plannedMaxDepthMeters)');
+    expect(home).not.toContain('plannedMaxDepthMeters ?? 0');
+    expect(home).not.toContain('PlannedDivesSection(');
     expect(home).toContain('startRealDive(mode: .freedive)');
     expect(home).toContain('startRealDive(mode: .scuba)');
     expect(home).toContain('let startPlan = explicitStartPlan(for: diveMode)');

@@ -1005,6 +1005,10 @@ private struct RecordWatchDepthSamplePayload: Encodable {
 }
 
 extension DiveSessionRecord {
+    var exceedsSupportedDepth: Bool {
+        unsupportedDepth?.exceeded == true
+    }
+
     var captureProvenanceLabel: String? {
         guard captureMode == .demo else {
             return nil
