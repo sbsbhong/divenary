@@ -240,7 +240,7 @@ function firstErrorMessage(errors: FieldErrors<PlanFormValues>, field: keyof Pla
 /** Opens 세부 정보 on load when the plan already has something inside it. */
 function hasDetailValues(values: PlanFormValues): boolean {
   return Boolean(
-    values.waterCondition !== undefined ||
+    (values.waterCondition !== undefined && values.waterCondition !== 'unknown') ||
       values.visibilityExpectation !== undefined ||
       values.perceivedDifficulty !== undefined ||
       values.buddies.length ||

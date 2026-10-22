@@ -6,7 +6,6 @@ import { Section } from '../../components/ui/grouped-list';
 import { SelectorPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
 import { Input, InputField } from '../../components/ui/input';
-import { VStack } from '../../components/ui/vstack';
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import { BadgeListInput, type BadgeListFieldHandle } from '../common/form/badge-list-field';
 import { FieldRow } from '../common/form/field-row';
@@ -14,9 +13,8 @@ import { PressureValueRows } from '../common/form/pressure-fields';
 import { StarRatingControl } from '../common/form/star-rating-field';
 import { NumberValueField } from '../common/form/value-picker-field';
 import { ValueRow } from '../common/form/value-row';
+import { WaterConditionControl } from '../common/form/water-condition-field';
 import type { LogEntryFormValues } from './log-entry-form-schema';
-
-type WaterCondition = NonNullable<LogEntryFormValues['waterCondition']>;
 
 export type LogEntryBadgeRefs = {
   buddies: React.RefObject<BadgeListFieldHandle | null>;
@@ -34,11 +32,6 @@ type LogEntryDetailFieldsProps = {
 };
 
 const entryStyles: DiveEntryStyle[] = ['shore', 'boat', 'pool'];
-// "Unknown" is what no selection already means, so it is not offered as a choice.
-const waterConditionRows: WaterCondition[][] = [
-  ['calm', 'mild', 'choppy'],
-  ['surge', 'current'],
-];
 
 /**
  * The optional fields inside the editor's collapsed "세부 정보" section: conditions, the
@@ -76,22 +69,11 @@ export function LogEntryDetailFields(props: LogEntryDetailFieldsProps): React.JS
             name="waterCondition"
             render={({ field }) => (
               <FieldRow label={t('logbook.waterCondition')} layout="stacked">
-                <VStack space="xs">
-                  {waterConditionRows.map(row => (
-                    <HStack key={row.join('-')} space="xs" className="rounded-full bg-muted p-1">
-                      {row.map(condition => (
-                        <SelectorPill
-                          key={condition}
-                          testID={`log-entry-editor-water-condition-${condition}`}
-                          className="flex-1"
-                          label={t(`waterConditions.${condition}`)}
-                          selected={field.value === condition}
-                          onPress={() => field.onChange(field.value === condition ? undefined : condition)}
-                        />
-                      ))}
-                    </HStack>
-                  ))}
-                </VStack>
+                <WaterConditionControl
+                  value={field.value}
+                  onChange={field.onChange}
+                  testIDPrefix="log-entry-editor-water-condition"
+                />
               </FieldRow>
             )}
           />

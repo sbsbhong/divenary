@@ -24,7 +24,8 @@ import { DepthValueField, DurationValueField } from '../common/form/value-picker
 import { formatLogDepth, formatLogDuration } from './log-formatters';
 import {
   entryToLogEntryFormValues,
-  logEntryFormSchema,
+  isLogEntrySiteOptional,
+  logEntryFormSchemaFor,
   logEntryFormValuesToEntry,
   type LogEntryDirtyFields,
   type LogEntryFormValues,
@@ -86,9 +87,11 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const [defaultValues] = React.useState(() => entryToLogEntryFormValues(props.entry));
+  const [isSiteOptional] = React.useState(() => isLogEntrySiteOptional(props.entry));
+  const [resolver] = React.useState(() => zodResolver(logEntryFormSchemaFor(props.entry)) as Resolver<LogEntryFormValues>);
   const form = useForm<LogEntryFormValues>({
     defaultValues,
-    resolver: zodResolver(logEntryFormSchema) as Resolver<LogEntryFormValues>,
+    resolver,
     mode: 'onSubmit',
   });
   const editorRef = React.useRef<EditorScreenHandle>(null);
@@ -286,7 +289,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
               <FieldRow
                 label={t('logbook.siteName')}
                 layout="stacked"
-                required
+                required={!isSiteOptional}
                 hasValue={field.value.trim().length > 0}
                 error={errors.siteName?.message}
                 errorTestID="log-entry-editor-site-name-error">

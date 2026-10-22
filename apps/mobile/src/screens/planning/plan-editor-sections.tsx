@@ -17,6 +17,7 @@ import { PressureValueRows } from '../common/form/pressure-fields';
 import { StarRatingControl } from '../common/form/star-rating-field';
 import { DepthValueField, NumberValueField } from '../common/form/value-picker-field';
 import { ValueRow } from '../common/form/value-row';
+import { WaterConditionControl } from '../common/form/water-condition-field';
 import type { PlanFormValues } from './plan-form-schema';
 
 type SectionProps = {
@@ -31,7 +32,6 @@ type RequiredMarkProps = {
 
 const diveModes: NonNullable<WatchSession['diveMode']>[] = ['scuba', 'freedive'];
 const entryStyles: DiveEntryStyle[] = ['shore', 'boat', 'pool'];
-const waterConditionOptions: NonNullable<WatchSession['waterCondition']>[] = ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'];
 
 // Grouped rows carry the field surface, so inputs drop the vendored border.
 const INPUT_CLASS = 'h-11 rounded-xl border-0 bg-background';
@@ -319,18 +319,7 @@ export function PlanDetailSections(
               labelTestID="planning-editor-water-condition-label"
               hasValue={field.value !== undefined}
               separated={false}>
-              <HStack space="xs" className="flex-wrap">
-                {waterConditionOptions.map(condition => (
-                  <SelectorPill
-                    key={condition}
-                    testID={`planning-editor-water-condition-${condition}`}
-                    className={field.value === condition ? 'min-w-24 flex-1 bg-primary/10' : 'min-w-24 flex-1 bg-muted'}
-                    label={t(`waterConditions.${condition}`)}
-                    selected={field.value === condition}
-                    onPress={() => field.onChange(field.value === condition ? undefined : condition)}
-                  />
-                ))}
-              </HStack>
+              <WaterConditionControl value={field.value} onChange={field.onChange} testIDPrefix="planning-editor-water-condition" />
             </FieldRow>
           )}
         />

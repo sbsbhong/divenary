@@ -32,9 +32,18 @@ describe('session profile', () => {
       .map(node => node.props.stroke as string);
 
     // VoiceOver hears the depth, not how many sensor readings were taken.
-    expect(container?.props.accessibilityLabel).toBe('수심 그래프. 최대 수심 12.40 m');
+    expect(container?.props.accessibilityLabel).toBe('수심 그래프. 최대 수심 12.4 m');
     expect(strokes.length).toBeGreaterThan(0);
     expect(strokes).not.toContain('#0ea5e9');
+  });
+
+  test('reads the water temperature range to one decimal, without a reading count', async () => {
+    const renderer = await render(<SessionProfile testID="profile" samples={samples} kind="temperature" title="수온 그래프" />);
+    const [container] = renderer.root.findAll(
+      node => node.props.testID === 'profile' && typeof node.props.accessibilityLabel === 'string',
+    );
+
+    expect(container?.props.accessibilityLabel).toBe('수온 그래프. 수온 22.0 °C–24.0 °C');
   });
 
   test('shows a localized empty state when no samples exist', async () => {

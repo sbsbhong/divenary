@@ -128,3 +128,82 @@ describe('iOS social-auth native configuration', () => {
     expect(environmentExample).not.toMatch(/SERVICE_ROLE|CLIENT_SECRET/);
   });
 });
+
+describe('iPhone permission prompt localization', () => {
+  const phoneInfoPlistCatalogSource = readOptionalRepoFile(
+    'apps/mobile/ios/Divenary/InfoPlist.xcstrings',
+  );
+  const locationPrompt =
+    'Divenary uses your location to show local weather and water temperature.';
+  const iphoneResourcesPhaseId = '13B07F8E1A680F5B00A75B9A';
+  const watchResourcesPhaseId = '528DE67ECA1B1608EA4978A8';
+  const watchInfoPlistCatalogBuildFile =
+    'C80000000000000000000002 /* InfoPlist.xcstrings in Resources */';
+  const resourcesPhase = (id: string): string => {
+    const start = project.indexOf(`\n\t\t${id} /* Resources */ = {`);
+    const end = project.indexOf('\n\t\t};', start);
+
+    return start < 0 || end < 0 ? '' : project.slice(start, end);
+  };
+
+  test('explains the location prompt in plain English and Korean', () => {
+    const catalog = JSON.parse(phoneInfoPlistCatalogSource || '{}') as {
+      sourceLanguage?: string;
+      strings?: Record<
+        string,
+        {
+          localizations?: Partial<
+            Record<'en' | 'ko', { stringUnit?: { value?: string } }>
+          >;
+        }
+      >;
+    };
+    const korean = (key: string) =>
+      catalog.strings?.[key]?.localizations?.ko?.stringUnit?.value;
+    const english = (key: string) =>
+      catalog.strings?.[key]?.localizations?.en?.stringUnit?.value;
+    const usageKeys = Array.from(
+      mobileInfoPlist.matchAll(/<key>(NS\w+UsageDescription)<\/key>/g),
+      (match) => match[1],
+    );
+
+    expect(mobileInfoPlist).toContain(`<string>${locationPrompt}</string>`);
+    expect(catalog.sourceLanguage).toBe('en');
+    expect(english('NSLocationWhenInUseUsageDescription')).toBe(locationPrompt);
+    expect(korean('NSLocationWhenInUseUsageDescription')).toBe(
+      'Divenary가 현재 지역의 날씨와 수온을 보여 주는 데 위치를 사용합니다.',
+    );
+    // Every iPhone permission prompt has a Korean version.
+    expect(usageKeys).toEqual(['NSLocationWhenInUseUsageDescription']);
+    for (const key of usageKeys) {
+      expect(korean(key)).toBeTruthy();
+    }
+  });
+
+  test('ships the iPhone prompt catalog with the iPhone target only', () => {
+    const fileReference = project.match(
+      /(\w{24}) \/\* InfoPlist\.xcstrings \*\/ = \{isa = PBXFileReference;[^\n]*path = Divenary\/InfoPlist\.xcstrings;/,
+    );
+    const fileReferenceId = fileReference?.[1] ?? 'missing-file-reference';
+    const buildFile = project.match(
+      new RegExp(
+        `(\\w{24}) /\\* InfoPlist\\.xcstrings in Resources \\*/ = \\{isa = PBXBuildFile; fileRef = ${fileReferenceId} `,
+      ),
+    );
+    const buildFileId = buildFile?.[1] ?? 'missing-build-file';
+
+    expect(fileReference).not.toBeNull();
+    expect(buildFile).not.toBeNull();
+    expect(resourcesPhase(iphoneResourcesPhaseId)).toContain(
+      `${buildFileId} /* InfoPlist.xcstrings in Resources */`,
+    );
+    expect(resourcesPhase(watchResourcesPhaseId)).not.toContain(buildFileId);
+    // The watch keeps its own catalog for the depth sensor prompt.
+    expect(resourcesPhase(watchResourcesPhaseId)).toContain(
+      watchInfoPlistCatalogBuildFile,
+    );
+    expect(resourcesPhase(iphoneResourcesPhaseId)).not.toContain(
+      watchInfoPlistCatalogBuildFile,
+    );
+  });
+});

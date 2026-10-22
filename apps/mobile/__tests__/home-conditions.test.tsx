@@ -3,6 +3,7 @@ import { AppState, RefreshControl, ScrollView } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import i18n from '../src/i18n';
 import HomeScreen from '../src/screens/home/screen';
+import { formatDateTimeParts } from '../src/screens/common/form/date-time-field';
 import { diveLogEntryToMobileSession } from '../src/states/use-dive-logbook';
 import { watchSessionToDiveLogEntry } from '../src/utils/watch-session-to-dive-log-entry';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
@@ -316,12 +317,50 @@ describe('Home conditions interface', () => {
     );
     expect(root.findAllByProps({ testID: 'home-latest-demo-badge' }).length).toBeGreaterThan(0);
     expect(root.findAllByProps({ testID: 'home-latest-unsupported-depth' }).length).toBeGreaterThan(0);
+    // The badge is hidden from VoiceOver on its own, so the card's label carries the Demo marker,
+    // in the log list row's order.
+    const card = root.findByProps({ testID: 'home-latest-log-card' });
+    const labelParts = (card.props.accessibilityLabel as string).split(', ');
+    expect(labelParts[0]).toBe('Blue Hole');
+    expect(labelParts[1]).toBe(root.findByProps({ testID: 'home-latest-date' }).props.children);
+    expect(labelParts.slice(2)).toEqual(['데모', '지원 수심 밖', '최대 수심 42.5 m', '다이빙 시간 33분']);
 
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'home-latest-log-card' }).props.onPress();
+      card.props.onPress();
     });
 
     expect(onOpenLog).toHaveBeenCalledWith(latestEntry);
+  });
+
+  it('titles a session without its entry by the logbook rule and still reads its Test marker', async () => {
+    const watchEntry = watchSessionToDiveLogEntry({
+      session: {
+        localSessionId: 'session-only-1',
+        captureMode: 'demo',
+        startedAt: 1782440000,
+        endedAt: 1782442832,
+        maxDepthMeters: 18.4,
+        tags: ['debug-test-capture'],
+        samples: [],
+      },
+      now: 1782443000,
+      localId: 'session-only-log-1',
+    });
+    const { renderer } = await renderHome(readyJejuSnapshot, {
+      sessions: [diveLogEntryToMobileSession(watchEntry)],
+    });
+    const root = renderer.root;
+    const title = root.findByProps({ testID: 'home-latest-title' }).props.children as string;
+
+    // The stored import default site stays as it is; only the shown title is localized.
+    expect(watchEntry.manual.site.name).toBe('워치 다이브');
+    expect(title.startsWith('워치 기록 · ')).toBe(true);
+    expect(root.findByProps({ testID: 'home-latest-dive-time' }).props.children).toBe('47분');
+    expect(root.findByProps({ testID: 'home-latest-max-depth' }).props.children).toBe('18.4 m');
+    const summary = root.findByProps({ testID: 'home-latest-log-summary' });
+    expect(summary.props.accessible).toBe(true);
+    expect(summary.props.accessibilityLabel).toContain(`${title}, `);
+    expect(summary.props.accessibilityLabel).toContain(', 테스트, ');
   });
 
   it('titles a watch log with the import default site like the logbook, in the current language', async () => {
@@ -401,7 +440,7 @@ describe('Home conditions interface', () => {
     expect(root.findByProps({ testID: 'home-latest-date' }).props.children).toBe(expectedDate);
   });
 
-  it('formats watch values like the log detail and reads the Test marker from the watch capture', async () => {
+  it('formats watch values like the log list row and reads the Test marker from the watch capture', async () => {
     const watchEntry = watchSessionToDiveLogEntry({
       session: {
         localSessionId: 'test-capture-1',
@@ -426,8 +465,10 @@ describe('Home conditions interface', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'home-latest-max-depth' }).props.children).toBe('18.4 m');
-    expect(root.findByProps({ testID: 'home-latest-dive-time' }).props.children).toBe('47분 12초');
+    // Whole minutes, like the log list row; the detail keeps the seconds.
+    expect(root.findByProps({ testID: 'home-latest-dive-time' }).props.children).toBe('47분');
     expect(root.findByProps({ testID: 'home-latest-demo-badge' }).props.label).toBe('테스트');
+    expect(root.findByProps({ testID: 'home-latest-log-card' }).props.accessibilityLabel).toContain(', 테스트, ');
   });
 
   it('shows a delayed latest log skeleton and no fake 0 count while logbook data is loading', async () => {
@@ -551,7 +592,9 @@ describe('Home conditions interface', () => {
     const row = renderer.root.findByProps({ testID: 'home-next-plan-row' });
 
     expect(row.findAll(node => node.props.children === 'Near Reef').length).toBeGreaterThan(0);
-    expect(row.findAll(node => typeof node.props.children === 'string' && node.props.children.endsWith(' · Seogwipo')).length).toBeGreaterThan(0);
+    // The same date line as the plan list row.
+    const parts = formatDateTimeParts(new Date(nearPlan.plannedAt! * 1000), 'ko');
+    expect(row.findAll(node => node.props.children === `${parts.date} ${parts.time} · Seogwipo`).length).toBeGreaterThan(0);
 
     await ReactTestRenderer.act(async () => {
       row.props.onPress();

@@ -120,8 +120,7 @@ const DESIGN_GUARDED_SHARED_PARTS: ReadonlyArray<readonly string[]> = [
   ['src', 'screens', 'common', 'form', 'badge-list-field.tsx'],
   ['src', 'screens', 'common', 'form', 'star-rating-field.tsx'],
   ['src', 'screens', 'common', 'form', 'compound-number-wheel-fields.tsx'],
-  ['src', 'screens', 'common', 'form', 'fixed-option-field.tsx'],
-  ['src', 'screens', 'common', 'form', 'numeric-slider-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'water-condition-field.tsx'],
   ['src', 'screens', 'account-claim', 'depth-trace-progress.tsx'],
 ];
 

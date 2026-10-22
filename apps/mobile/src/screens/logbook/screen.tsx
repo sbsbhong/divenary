@@ -28,7 +28,7 @@ import {
   formatLogDate,
   formatLogDepth,
   formatLogMinutes,
-  getLogDisplayTitle,
+  getLogListTitle,
   getLogMeasuredValue,
   getLogStartedAt,
   toTestIdValue,
@@ -103,6 +103,18 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       await onRefresh();
     } finally {
       setIsPullRefreshing(false);
+    }
+  }, [onRefresh]);
+  // The failed-load card's retry is busy from the tap until the reload settles.
+  const [isRetrying, setIsRetrying] = React.useState(false);
+  const retryLoad = React.useCallback(async () => {
+    setIsRetrying(true);
+    try {
+      await onRefresh();
+    } catch {
+      // A failed retry keeps the card; the list state says what happened.
+    } finally {
+      setIsRetrying(false);
     }
   }, [onRefresh]);
 
@@ -235,7 +247,8 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               title={t('logbook.loadFailed')}
               message={t('logbook.loadFailedMessage')}
               actionLabel={t('common.retry')}
-              onAction={() => void props.onRefresh()}
+              actionPending={isRetrying}
+              onAction={() => void retryLoad()}
             />
           ) : totalEntryCount > 0 ? (
             <ListStateCard
@@ -263,7 +276,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
 }
 
 function ListItemSeparator(): React.JSX.Element {
-  return <Box className="h-3" />;
+  return <Box className="h-2" />;
 }
 
 /** A first logbook: one short line covering both ways in, and both actions. */
@@ -301,48 +314,50 @@ function EmptyLogbook(props: { onCreate: () => void; onSyncWatch: () => void; is
 }
 
 /**
- * Row-shaped placeholders: the same container, icon circle, two text lines, right value and
- * second line as a real row. They hold their place invisibly until the shared delay has passed,
+ * Row-shaped placeholders: the same container, icon circle, title line with the depth on the right
+ * and meta line as a real row. They hold their place invisibly until the shared delay has passed,
  * and the card surface appears only with them.
  */
 function LogRowsSkeleton(props: { testID: string; count: number; visible: boolean; label: string }): React.JSX.Element {
   return (
     <VStack
       testID={props.testID}
-      space="md"
+      space="sm"
       accessible={props.visible}
       accessibilityLabel={props.visible ? props.label : undefined}
       accessibilityState={{ busy: true }}>
       {Array.from({ length: props.count }, (_, index) => (
-        <VStack key={index} space="sm" className={props.visible ? 'rounded-2xl bg-card px-4 py-4' : 'rounded-2xl px-4 py-4'}>
-          <HStack className="items-center justify-between">
-            <HStack space="md" className="flex-1 items-center pr-2.5">
-              <Box className="h-9 w-9">
-                <SkeletonBlock visible={props.visible} className="h-9 rounded-full" />
-              </Box>
-              <VStack space="xs" className="flex-1">
-                <Box className="h-7 w-3/5 justify-center">
+        <HStack key={index} space="md" className={props.visible ? 'items-center rounded-2xl bg-card px-4 py-3' : 'items-center rounded-2xl px-4 py-3'}>
+          <Box className="h-9 w-9">
+            <SkeletonBlock visible={props.visible} className="h-9 rounded-full" />
+          </Box>
+          <VStack space="xs" className="flex-1">
+            <HStack space="sm" className="h-6 items-center">
+              <Box className="flex-1">
+                <Box className="w-3/5">
                   <SkeletonBlock visible={props.visible} className="h-5" />
                 </Box>
-                <Box className="h-5 w-2/5 justify-center">
-                  <SkeletonBlock visible={props.visible} />
-                </Box>
-              </VStack>
+              </Box>
+              <Box className="w-12">
+                <SkeletonBlock visible={props.visible} className="h-5" />
+              </Box>
             </HStack>
-            <Box className="h-7 w-14 justify-center">
-              <SkeletonBlock visible={props.visible} className="h-5" />
+            <Box className="h-5 w-2/3 justify-center">
+              <SkeletonBlock visible={props.visible} />
             </Box>
-          </HStack>
-          <Box className="h-5 w-1/2 justify-center pl-14">
-            <SkeletonBlock visible={props.visible} />
-          </Box>
-        </VStack>
+          </VStack>
+        </HStack>
       ))}
     </VStack>
   );
 }
 
-// Memoized so a refetch only re-renders rows whose entry object changed.
+/**
+ * One compact row: title with the max depth on the right, then `date time · dive type · duration`
+ * under it, both starting at the same edge. The diver's own tags and any status markers get a line
+ * only when there are some. VoiceOver reads the whole row as one label. Memoized so a refetch only
+ * re-renders rows whose entry object changed.
+ */
 const SessionListItem = React.memo(function SessionListItem(props: {
   entry: DiveLogEntry;
   showsDeviceOnlyBadge: boolean;
@@ -357,16 +372,27 @@ const SessionListItem = React.memo(function SessionListItem(props: {
   const tags = visibleTags.length ? visibleTags.join(', ') : undefined;
   // The test ID keeps the stored site name; the visible title may be a localized fallback.
   const siteName = session.siteName ?? t('logbook.untitledDive');
-  const title = getLogDisplayTitle(entry, t, locale);
+  const title = getLogListTitle(entry, t);
   const maxDepthLabel = formatLogDepth(getLogMeasuredValue(entry, 'maxDepthMeters').value);
   const durationLabel = formatLogMinutes(getLogMeasuredValue(entry, 'durationSeconds').value, t);
   const unsupportedDepth = getUnsupportedDepthForLogEntry(entry);
   const dateLabel = formatLogDate(getLogStartedAt(entry), locale, t('formatters.unknownDate'));
   const diveModeLabel = session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet');
   const unsupportedDepthLabel = unsupportedDepth ? t('logbook.unsupportedDepthMarker') : undefined;
+  const isDemoCapture = entry.watchCapture?.session.captureMode === 'demo';
+  // A test dive from the watch's developer controls says 테스트, as the detail and Home do.
+  const isTestCapture = isDemoCapture && (entry.watchCapture?.session.tags?.includes('debug-test-capture') ?? false);
   const badges = [
-    ...(entry.watchCapture?.session.captureMode === 'demo' ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }] : []),
-    ...(props.showsDeviceOnlyBadge ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }] : []),
+    ...(isDemoCapture
+      ? [
+          isTestCapture
+            ? { kind: 'demo' as const, label: t('logbook.testCapture'), testID: `logbook-test-badge-${siteName}` }
+            : { kind: 'demo' as const, label: t('logbook.demoCapture'), testID: `logbook-demo-badge-${siteName}` },
+        ]
+      : []),
+    ...(props.showsDeviceOnlyBadge
+      ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge'), testID: `logbook-device-badge-${siteName}` }]
+      : []),
   ];
   const accessibilityLabel = [
     title,
@@ -386,53 +412,53 @@ const SessionListItem = React.memo(function SessionListItem(props: {
       testID={`logbook-list-item-${siteName}`}
       accessibilityRole="button"
       onPress={openEntry}
-      accessible={badges.length ? true : undefined}
-      accessibilityLabel={badges.length ? accessibilityLabel : undefined}
-      className="rounded-2xl bg-card px-4 py-4"
+      accessible
+      accessibilityLabel={accessibilityLabel}
+      className="rounded-2xl bg-card px-4 py-3"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-      <VStack space="sm">
-        <HStack className="items-center justify-between">
-          <HStack space="md" className="flex-1 items-center pr-2.5">
-            <Box
-              testID={`logbook-list-source-icon-${siteName}`}
-              className="h-9 w-9 items-center justify-center rounded-full bg-muted">
-              <Icon as={entry.source === 'watch' ? WatchIcon : EditIcon} size="md" className="text-muted-foreground" />
-            </Box>
-            <VStack space="xs" className="flex-1">
-              <Text className="text-lg font-semibold text-card-foreground" numberOfLines={2}>
-                {title}
-              </Text>
-              <Text className="text-sm leading-5 text-muted-foreground">{dateLabel}</Text>
+      <HStack space="md" className="items-center">
+        <Box
+          testID={`logbook-list-source-icon-${siteName}`}
+          className="h-9 w-9 items-center justify-center rounded-full bg-muted">
+          <Icon as={entry.source === 'watch' ? WatchIcon : EditIcon} size="md" className="text-muted-foreground" />
+        </Box>
+        <VStack space="xs" className="flex-1">
+          <HStack space="sm" className="items-baseline">
+            <Text className="flex-1 text-base font-semibold text-card-foreground" numberOfLines={1}>
+              {title}
+            </Text>
+            <Text
+              testID={`logbook-list-max-depth-${siteName}-${toTestIdValue(maxDepthLabel)}`}
+              className="text-base font-semibold text-card-foreground">
+              {maxDepthLabel}
+            </Text>
+          </HStack>
+          {/* Two lines at most, so an older date with its year never cuts off the dive time. */}
+          <Text testID={`logbook-list-meta-${siteName}`} className="text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+            {dateLabel} · {diveModeLabel} ·{' '}
+            <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text>
+          </Text>
+          {tags ? (
+            <Text testID={`logbook-list-tags-${siteName}`} className="text-sm leading-5 text-muted-foreground" numberOfLines={1}>
+              {tags}
+            </Text>
+          ) : null}
+          {unsupportedDepth || badges.length ? (
+            <HStack space="xs" className="flex-wrap items-center">
+              {unsupportedDepth ? (
+                <StatusPill testID={`logbook-list-unsupported-depth-${siteName}`} label={t('logbook.unsupportedDepthMarker')} tone="muted" />
+              ) : null}
               {badges.length ? (
                 <HStack testID={`logbook-list-badges-${siteName}`} space="xs" className="flex-wrap items-center">
                   {badges.map(badge => (
-                    <ListStatusBadge
-                      key={badge.kind}
-                      kind={badge.kind}
-                      label={badge.label}
-                      testID={badge.kind === 'demo' ? `logbook-demo-badge-${siteName}` : `logbook-device-badge-${siteName}`}
-                    />
+                    <ListStatusBadge key={badge.testID} kind={badge.kind} label={badge.label} testID={badge.testID} />
                   ))}
                 </HStack>
               ) : null}
-            </VStack>
-          </HStack>
-          <VStack space="xs" className="items-end">
-            {unsupportedDepth ? (
-              <StatusPill testID={`logbook-list-unsupported-depth-${siteName}`} label={t('logbook.unsupportedDepthMarker')} tone="muted" />
-            ) : null}
-            <Text
-              testID={`logbook-list-max-depth-${siteName}-${toTestIdValue(maxDepthLabel)}`}
-              className="text-lg font-semibold text-card-foreground">
-              {maxDepthLabel}
-            </Text>
-          </VStack>
-        </HStack>
-        <Text className="pl-14 text-sm leading-5 text-muted-foreground" numberOfLines={2}>
-          {diveModeLabel} · <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text>
-          {tags ? ` · ${tags}` : null}
-        </Text>
-      </VStack>
+            </HStack>
+          ) : null}
+        </VStack>
+      </HStack>
     </Pressable>
   );
 });

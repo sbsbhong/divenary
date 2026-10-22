@@ -14,7 +14,7 @@
 - 안전 문구는 review/reminder/non-certified 범위다. 권장 스탑은 amber caution이고 빨강·필수·required가 아니다. 모르는 값은 0이 아니라 `--`다.
 - 워치는 black canvas, compact tile, 녹화 중 큰 metric 하나, 왼쪽 depth gauge + 오른쪽 live value다. 크라운 press는 watchOS Water Lock 동작이며 앱 입력이 아니다.
 - 모든 문구는 ko/en 둘 다 둔다. 한국어는 `합니다/세요` 체를 쓰고 `해 주세요`처럼 띄어 쓴다. 권장 스탑 용어는 `권장 스탑`이다.
-- 화면 문구는 개발자가 아니라 다이버가 바로 이해하는 말로 쓴다. 동기화 대상, outbox, claim, principal, import, provider, sample, runtime 같은 내부 용어를 화면에 그대로 내보내지 않고, 다이버가 실제로 쓰는 말로 바꾼다. 개념 하나에는 용어 하나만 쓴다. 기준은 `~/Projects/naver-ad-bidder` 위키의 문구 규칙이며, 모바일·워치 전체 문구 감사 결과(용어집과 문구별 수정안)를 적용한다.
+- 화면 문구는 개발자가 아니라 다이버가 바로 이해하는 말로 쓴다. 동기화 대상, outbox, claim, principal, import, provider, sample, runtime 같은 내부 용어를 화면에 그대로 내보내지 않고, 다이버가 실제로 쓰는 말로 바꾼다. 개념 하나에는 용어 하나만 쓴다. 기준은 `~/Projects/naver-ad-bidder` 위키의 문구 규칙이며, 모바일·워치 전체 문구 감사 결과(용어집과 문구별 수정안)를 적용한다. 아래 각 절에 따옴표로 적은 화면 문구(`계획으로 정하기`, `기기 데이터 가져오기` 등)는 설계 당시의 초안이다. 실제 문구는 감사 뒤 바뀌었고, 기준은 모바일 `apps/mobile/src/i18n/resources.ts`와 워치 `Localizable.xcstrings`다. 이 문서는 동작과 구조의 기준으로 읽는다.
 
 ## 1. 로딩·스켈레톤 전략 (naver-ad-bidder 이식)
 

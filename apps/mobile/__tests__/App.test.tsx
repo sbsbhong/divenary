@@ -1050,8 +1050,11 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
     // VoiceOver reaches both buttons instead of one merged element, and hears the toast once.
     expect(root.findByProps({ testID: 'watch-auto-import-toast' }).props.accessible).toBe(false);
-    expect(announceForAccessibility).toHaveBeenCalledWith('워치 기록 저장됨');
+    expect(announceForAccessibility.mock.calls.filter(([message]) => message === '워치 기록 저장됨')).toHaveLength(1);
     expect(root.findByProps({ testID: 'watch-auto-import-message' }).props.children).toBe('워치 기록 저장됨');
+    // The inverted app-feedback surface, so the toast never blends into the white list rows below.
+    expect(root.findByProps({ testID: 'watch-auto-import-toast' }).props.className).toContain('bg-foreground');
+    expect(root.findByProps({ testID: 'watch-auto-import-message' }).props.className).toContain('text-background');
     expect(root.findAll(node => node.props.children === '워치 다이브 기록이 이 기기에 저장되었습니다.')).toHaveLength(0);
     // The button opens the saved log's detail, so it says so.
     expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('기록 보기');

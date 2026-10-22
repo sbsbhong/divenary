@@ -51,7 +51,10 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
     orderedProviders.length > 0 || auth.isDevelopmentSignInAvailable;
   const developmentFeedback = useLoadingFeedback(busyProvider === 'development');
   // The sheet stays locked while Auth exchanges the token, so a slow exchange gets a short line.
-  const exchangeFeedback = useLoadingFeedback(auth.state.status === 'authenticating');
+  // Time on the provider's own screen does not count: the lines start once it hands back.
+  const exchangeFeedback = useLoadingFeedback(
+    auth.state.status === 'authenticating' && auth.state.phase === 'exchanging',
+  );
   const progressMessage = exchangeFeedback.isLongRunning
     ? t('auth.login.longRunning')
     : exchangeFeedback.showExtendedFeedback
@@ -101,29 +104,28 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
 
   return (
     <SafeAreaView testID="auth-login-safe-area" edges={['bottom']} className="flex-1 bg-background">
-      <VStack testID="auth-login-screen" space="md" className="px-5 pb-2 pt-3">
-        <Box className="relative min-h-11 justify-center">
-          <BrandLogo
-            testID="auth-login-brand-mark"
-            className="mx-auto h-11 w-11 rounded-xl"
-          />
+      <VStack testID="auth-login-screen" className="px-6 pb-4 pt-6">
+        <Box className="relative items-center">
+          <BrandLogo testID="auth-login-brand-mark" className="h-14 w-14 rounded-2xl" />
           {onClose ? (
+            // A small iOS-style close mark; hitSlop keeps the 44 pt touch target.
             <Button
               testID="auth-login-close"
               accessibilityLabel={t('auth.login.close')}
               accessibilityRole="button"
               accessibilityState={{ disabled: isBusy }}
-              className="absolute right-0 h-11 w-11 rounded-full bg-muted"
+              className="absolute right-0 top-0 h-8 w-8 rounded-full bg-muted"
               disabled={isBusy}
+              hitSlop={6}
               onPress={onClose}
               size="icon"
               variant="ghost">
-              <ButtonIcon as={CloseIcon} className="text-foreground" />
+              <ButtonIcon as={CloseIcon} size="sm" className="text-muted-foreground" />
             </Button>
           ) : null}
         </Box>
 
-        <VStack space="xs">
+        <VStack space="xs" className="mt-4">
           <Text
             accessibilityRole="header"
             adjustsFontSizeToFit
@@ -136,27 +138,14 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           <Text
             testID="auth-login-benefit"
             maxFontSizeMultiplier={1.5}
-            className="text-center text-sm leading-5 text-muted-foreground">
+            className="text-center text-base leading-6 text-muted-foreground">
             {t('auth.login.benefit')}
-          </Text>
-          <Text
-            testID="auth-login-device-records"
-            maxFontSizeMultiplier={1.5}
-            className="text-center text-sm leading-5 text-muted-foreground">
-            {t('auth.login.deviceRecordsKept')}
           </Text>
         </VStack>
 
         {hasLoginActions ? (
-          <VStack space="sm">
-            {auth.recentProvider && orderedProviders.includes(auth.recentProvider) ? (
-              <Text
-                testID="auth-login-recent-provider"
-                maxFontSizeMultiplier={1.5}
-                className="text-xs font-semibold text-muted-foreground">
-                {t('auth.login.recent')}
-              </Text>
-            ) : null}
+          // The provider used last comes first and carries a small tag on its corner.
+          <VStack space="md" className="mt-8">
             {orderedProviders.map(provider => {
               const isRecent = auth.recentProvider === provider;
 
@@ -177,6 +166,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                   busy={busyProvider === provider}
                   disabled={isBusy}
                   onPress={() => signIn(provider)}
+                  recentLabel={isRecent ? t('auth.login.recent') : undefined}
                 />
               );
             })}
@@ -189,7 +179,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                   busy: busyProvider === 'development',
                   disabled: isBusy,
                 }}
-                className="h-11 w-full"
+                className="h-[50px] min-h-12 w-full rounded-full"
                 disabled={isBusy}
                 onPress={() => signIn('development')}
                 variant="outline">
@@ -204,7 +194,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
             ) : null}
           </VStack>
         ) : (
-          <VStack testID="auth-login-unavailable" space="xs" className="rounded-2xl bg-card px-4 py-4">
+          <VStack testID="auth-login-unavailable" space="xs" className="mt-8 rounded-2xl bg-card px-4 py-4">
             <Text className="text-center text-base font-semibold text-card-foreground">{t('auth.login.unavailableTitle')}</Text>
             <Text className="text-center text-sm leading-5 text-muted-foreground">
               {t('auth.login.unavailableDescription')}
@@ -216,13 +206,13 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           <Text
             testID="auth-login-progress"
             maxFontSizeMultiplier={1.5}
-            className="text-center text-sm leading-5 text-muted-foreground">
+            className="mt-4 text-center text-sm leading-5 text-muted-foreground">
             {progressMessage}
           </Text>
         ) : null}
 
         {errorMessage ? (
-          <Box testID="auth-login-status-row" className="justify-center py-1">
+          <Box testID="auth-login-status-row" className="mt-4 justify-center">
             <Text
               testID="auth-login-error"
               accessibilityRole="alert"
@@ -231,6 +221,15 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
               {errorMessage}
             </Text>
           </Box>
+        ) : null}
+
+        {hasLoginActions ? (
+          <Text
+            testID="auth-login-device-records"
+            maxFontSizeMultiplier={1.5}
+            className="mt-6 text-center text-xs leading-4 text-muted-foreground">
+            {t('auth.login.deviceRecordsKept')}
+          </Text>
         ) : null}
       </VStack>
     </SafeAreaView>

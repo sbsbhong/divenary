@@ -17,6 +17,7 @@ import {
   NumberValueField,
 } from '../src/screens/common/form/value-picker-field';
 import { ValueRow } from '../src/screens/common/form/value-row';
+import { WaterConditionControl, type WaterCondition } from '../src/screens/common/form/water-condition-field';
 import type { DivePressureValues } from '../src/types/dive-log-entry';
 
 type Renderer = ReactTestRenderer.ReactTestRenderer;
@@ -672,5 +673,41 @@ describe('PressureValueRows', () => {
     await press(renderer, 'pressure-unit-psi');
     expect(onChange).toHaveBeenLastCalledWith({ unit: 'psi', start: 200, end: 200 });
     expect(textOf(renderer, 'pressure-start-row-value')).toBe('200 psi');
+  });
+});
+
+describe('WaterConditionControl', () => {
+  test('offers five conditions in two segmented rows, never unknown, and a second tap clears', async () => {
+    const onChange = jest.fn();
+    const renderer = await render(
+      <Controlled<WaterCondition> onChange={onChange}>
+        {(value, change) => <WaterConditionControl value={value} onChange={change} testIDPrefix="water" />}
+      </Controlled>,
+    );
+    const selected = (condition: WaterCondition) =>
+      renderer.root.findAll(node => node.props.testID === `water-${condition}` && node.props.accessibilityState !== undefined)[0].props
+        .accessibilityState.selected;
+
+    for (const condition of ['calm', 'mild', 'choppy', 'surge', 'current'] as const) {
+      expect(exists(renderer, `water-${condition}`)).toBe(true);
+    }
+    expect(renderer.root.findAll(node => node.props.testID === 'water-unknown')).toHaveLength(0);
+
+    await press(renderer, 'water-mild');
+    expect(onChange).toHaveBeenLastCalledWith('mild');
+    expect(selected('mild')).toBe(true);
+
+    await press(renderer, 'water-mild');
+    expect(onChange).toHaveBeenLastCalledWith(undefined);
+    expect(selected('mild')).toBe(false);
+  });
+
+  test('reads a stored unknown as no selection', async () => {
+    const renderer = await render(<WaterConditionControl value="unknown" onChange={jest.fn()} testIDPrefix="water" />);
+    const selectedChoices = renderer.root.findAll(
+      node => typeof node.props.testID === 'string' && node.props.testID.startsWith('water-') && node.props.accessibilityState?.selected === true,
+    );
+
+    expect(selectedChoices).toHaveLength(0);
   });
 });

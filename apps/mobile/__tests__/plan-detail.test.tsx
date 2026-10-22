@@ -2,6 +2,7 @@ import React from 'react';
 import { AccessibilityInfo, Alert, type AlertButton } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { PlannedWatchDivesUpdateStatus } from '../src/companion/watch-link';
+import { InstrumentButton } from '../src/components/ui/instrument';
 import i18n from '../src/i18n';
 import { PlanDetail } from '../src/screens/planning/plan-detail';
 import type { DivePlan, DivePlanChecklistItem } from '../src/types/dive-plan';
@@ -116,6 +117,7 @@ describe('Plan detail', () => {
       }
     });
     jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
   afterAll(async () => {
@@ -241,6 +243,7 @@ describe('Plan detail', () => {
   });
 
   test('puts the stored checklist back with a note when the save fails', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
     const onSaveChecklist = jest.fn().mockRejectedValue(new Error('disk full'));
     const renderer = await render({ plan: plan({ title: 'Fails', checklistItems: createDefaultPlanChecklist() }), onSaveChecklist });
 
@@ -248,19 +251,34 @@ describe('Plan detail', () => {
 
     expect(textOf(renderer, 'planning-detail-checklist-progress')).toBe('0/3');
     expect(textOf(renderer, 'planning-detail-checklist-error')).toBe('Could not save the checklist. Try again.');
+    // The note shows under the list without moving focus, so VoiceOver hears it.
+    expect(announce).toHaveBeenCalledWith('Could not save the checklist. Try again.');
+
+    // A second failure is spoken again.
+    await press(renderer, 'planning-detail-checklist-site');
+    expect(announce.mock.calls.filter(([message]) => message === 'Could not save the checklist. Try again.')).toHaveLength(2);
   });
 
   test('says where a plan stands with the watch from what the phone knows', async () => {
     const planned = plan({ status: 'planned', title: 'Watch plan' });
+    const sentVersions = new Map([[planned.localId, planned.updatedAt]]);
 
-    const sent = await render({ plan: planned, watchSyncStatus: linkedWatch });
+    const sent = await render({ plan: planned, watchSyncStatus: linkedWatch, watchSentPlanVersions: sentVersions });
     // A request without a receipt: the copy never says the watch has the plan.
     expect(textOf(sent, 'planning-detail-watch-status-value')).toBe('Watch transfer requested');
 
-    const unpaired = await render({ plan: planned, watchSyncStatus: { ...linkedWatch, isPaired: false } });
+    const unpaired = await render({
+      plan: planned,
+      watchSyncStatus: { ...linkedWatch, isPaired: false },
+      watchSentPlanVersions: sentVersions,
+    });
     expect(textOf(unpaired, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
 
-    const contextError = await render({ plan: planned, watchSyncStatus: { ...linkedWatch, lastContextErrorCode: 7001 } });
+    const contextError = await render({
+      plan: planned,
+      watchSyncStatus: { ...linkedWatch, lastContextErrorCode: 7001 },
+      watchSentPlanVersions: sentVersions,
+    });
     expect(textOf(contextError, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
 
     const draft = await render({ plan: plan({ status: 'draft', title: 'Draft' }), watchSyncStatus: linkedWatch });
@@ -272,6 +290,44 @@ describe('Plan detail', () => {
     // Before the first handoff the phone does not know yet, so the row stays away.
     const unknown = await render({ plan: planned });
     expect(exists(unknown, 'planning-detail-watch-status')).toBe(false);
+  });
+
+  test('says requested only while the last watch update carried this version of the plan', async () => {
+    const planned = plan({ status: 'planned', title: 'Watch plan', updatedAt: 200 });
+
+    // An edit saved after the last update has not gone out yet.
+    const edited = await render({
+      plan: planned,
+      watchSyncStatus: linkedWatch,
+      watchSentPlanVersions: new Map([[planned.localId, 150]]),
+    });
+    expect(textOf(edited, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
+
+    // A plan the last update did not carry at all, or a status without any carried versions.
+    const missing = await render({
+      plan: planned,
+      watchSyncStatus: linkedWatch,
+      watchSentPlanVersions: new Map([['another-plan', 200]]),
+    });
+    expect(textOf(missing, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
+    const noVersions = await render({ plan: planned, watchSyncStatus: linkedWatch });
+    expect(textOf(noVersions, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
+
+    // Once an update carries the current version, the request is shown again.
+    await ReactTestRenderer.act(async () => {
+      edited.update(
+        <PlanDetail
+          plan={planned}
+          onBack={jest.fn()}
+          onEdit={jest.fn()}
+          onComplete={jest.fn()}
+          onCreateLogFromPlan={jest.fn()}
+          watchSyncStatus={linkedWatch}
+          watchSentPlanVersions={new Map([[planned.localId, 200]])}
+        />,
+      );
+    });
+    expect(textOf(edited, 'planning-detail-watch-status-value')).toBe('Watch transfer requested');
   });
 
   test('lists and announces the missing fields instead of promoting an incomplete draft', async () => {
@@ -414,6 +470,11 @@ describe('Plan detail', () => {
     const renderer = await render({ plan: readyDraft, onEdit, onBack });
 
     expect(exists(renderer, 'planning-detail-back-icon')).toBe(true);
+    // The same secondary pill the log detail uses, not blue text.
+    const edit = renderer.root.find(node => node.props.testID === 'planning-detail-edit' && node.type === InstrumentButton);
+    expect(edit.props.label).toBe('Edit plan');
+    expect(edit.props.variant).toBeUndefined();
+    expect(edit.props.className).toBe('min-h-11 px-4 py-2');
     await press(renderer, 'planning-detail-edit');
     await press(renderer, 'planning-detail-back');
 
@@ -421,7 +482,8 @@ describe('Plan detail', () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  test('shows a short error when deleting fails', async () => {
+  test('shows and announces a short error when deleting fails', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
     const alerts = captureAlerts();
     const onDelete = jest.fn().mockRejectedValue(new Error('offline'));
     const renderer = await render({ plan: readyDraft, onDelete });
@@ -434,5 +496,44 @@ describe('Plan detail', () => {
 
     expect(onDelete).toHaveBeenCalledWith(readyDraft.localId);
     expect(textOf(renderer, 'planning-detail-delete-error')).toBe('Could not delete this plan. Try again.');
+    expect(announce).toHaveBeenCalledWith('Could not delete this plan. Try again.');
+  });
+
+  test('keeps the delete row busy while deleting, with a spinner only after the delay', async () => {
+    jest.useFakeTimers();
+    const alerts = captureAlerts();
+    let finishDelete: () => void = () => undefined;
+    const onDelete = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          finishDelete = resolve;
+        }),
+    );
+    const renderer = await render({ plan: readyDraft, onDelete });
+    const deleteRow = () => host(renderer, 'planning-detail-delete')!;
+    const deletePressable = renderer.root.findAll(
+      node => node.props.testID === 'planning-detail-delete' && typeof node.props.onPress === 'function',
+    )[0];
+
+    await ReactTestRenderer.act(async () => {
+      deletePressable.props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      alerts[0].buttons.find(button => button.style === 'destructive')?.onPress?.();
+    });
+
+    // Busy and disabled from the confirm itself, so a second tap cannot delete twice.
+    expect(deleteRow().props.accessibilityState).toEqual(expect.objectContaining({ busy: true, disabled: true }));
+    expect(exists(renderer, 'planning-detail-delete-spinner')).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(exists(renderer, 'planning-detail-delete-spinner')).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      finishDelete();
+    });
+    expect(deleteRow().props.accessibilityState).toEqual(expect.objectContaining({ busy: false, disabled: false }));
   });
 });

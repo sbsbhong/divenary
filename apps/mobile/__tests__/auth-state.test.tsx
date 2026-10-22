@@ -21,6 +21,7 @@ import {
 } from '../src/auth/membership-cache';
 import type {NativeSocialSignIn} from '../src/auth/native-social-auth';
 import type {RecentSocialProviderStore} from '../src/auth/recent-social-provider';
+import {ASYNC_FEEDBACK_TIMING} from '../src/constants/async-feedback';
 import type {PersistentKeyValueStore} from '../src/storage/persistent-key-value-store';
 import {
   AuthProvider,
@@ -127,6 +128,7 @@ afterEach(async () => {
     }
   });
   appStateSpy.mockRestore();
+  jest.useRealTimers();
 });
 
 async function settle() {
@@ -616,16 +618,19 @@ describe('AuthProvider', () => {
     expect(fixture.membershipCache.remove).toHaveBeenCalledTimes(1);
   });
 
-  test.each(['claims', 'server'] as const)(
+  test.each([
+    ['claims', 'verifyClaims'],
+    ['server', 'verifySessionWithServer'],
+  ] as const)(
     'uses exact bounded offline membership on a %s transport failure',
-    async stage => {
+    async (_stage, step) => {
       const fixture = createAuthFixture({
         evidence,
         cache: cachedMembership,
       });
-      fixture.repository[
-        stage === 'claims' ? 'verifyClaims' : 'verifySessionWithServer'
-      ].mockRejectedValue(new AuthRepositoryError('network'));
+      fixture.repository[step].mockRejectedValue(
+        new AuthRepositoryError('network'),
+      );
 
       const auth = await mountAuth(fixture.mobileAuth);
       expect(auth.state).toEqual({status: 'authenticatedOffline', userId});
@@ -807,9 +812,11 @@ describe('AuthProvider', () => {
 
     expect(first).toBe(second);
     expect(developmentSignIn).toHaveBeenCalledTimes(1);
+    // No provider screen in local development: the wait is the server from the start.
     expect(latestAuth.state).toEqual({
       status: 'authenticating',
       provider: 'development',
+      phase: 'exchanging',
     });
 
     exchange.reject(new AuthRepositoryError('server'));
@@ -1055,6 +1062,252 @@ describe('AuthProvider', () => {
 
     expect(fixture.repository.signOut).toHaveBeenCalledTimes(1);
     expect(clearPersistedSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthProvider on a weak signal', () => {
+  const longRunning = ASYNC_FEEDBACK_TIMING.longRunning;
+
+  async function advance(milliseconds: number) {
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(milliseconds);
+    });
+    await settle();
+  }
+
+  function never<T>(): Promise<T> {
+    return new Promise<T>(() => undefined);
+  }
+
+  function after<T>(milliseconds: number, value: T): Promise<T> {
+    return new Promise<T>(resolve => {
+      setTimeout(() => resolve(value), milliseconds);
+    });
+  }
+
+  test.each([
+    ['claims', 'verifyClaims'],
+    ['server', 'verifySessionWithServer'],
+  ] as const)(
+    'opens the cached account offline at 10 s when the %s check hangs, without signing out',
+    async (_stage, step) => {
+      jest.useFakeTimers();
+      const hanging = createDeferred<never>();
+      const fixture = createAuthFixture({evidence, cache: cachedMembership});
+      const clearPersistedSession = jest.fn(async () => undefined);
+      fixture.mobileAuth.clearPersistedSession = clearPersistedSession;
+      fixture.repository[step].mockReturnValue(hanging.promise);
+
+      await mountAuth(fixture.mobileAuth);
+      await advance(longRunning - 1);
+      expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+
+      await advance(1);
+      expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+
+      // A late answer from the abandoned check changes nothing, not even a rejected session.
+      hanging.reject(new AuthRepositoryError('invalid-session'));
+      await settle();
+      expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+      expect(fixture.repository.signOut).not.toHaveBeenCalled();
+      expect(fixture.membershipCache.remove).not.toHaveBeenCalled();
+      expect(clearPersistedSession).not.toHaveBeenCalled();
+    },
+  );
+
+  // A failed consent check is not grounds for the offline account (supabase.md), so it opens as
+  // guest. It still never signs the diver out, and a hang still ends the start-shell wait at 10 s.
+  test('opens as guest without signing out when the consent check fails on the network', async () => {
+    const fixture = createAuthFixture({evidence, cache: cachedMembership});
+    fixture.repository.getOnboardingStatus.mockRejectedValue(new AuthRepositoryError('network'));
+
+    const auth = await mountAuth(fixture.mobileAuth);
+    expect(auth.state).toEqual({status: 'guest'});
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+    expect(fixture.membershipCache.remove).not.toHaveBeenCalled();
+  });
+
+  test('opens as guest at 10 s when the consent check hangs, without signing out', async () => {
+    jest.useFakeTimers();
+    const hanging = createDeferred<never>();
+    const fixture = createAuthFixture({evidence, cache: cachedMembership});
+    const clearPersistedSession = jest.fn(async () => undefined);
+    fixture.mobileAuth.clearPersistedSession = clearPersistedSession;
+    fixture.repository.getOnboardingStatus.mockReturnValue(hanging.promise);
+
+    await mountAuth(fixture.mobileAuth);
+    await advance(longRunning - 1);
+    expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+
+    await advance(1);
+    expect(latestAuth.state).toEqual({status: 'guest'});
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+    expect(fixture.membershipCache.remove).not.toHaveBeenCalled();
+    expect(clearPersistedSession).not.toHaveBeenCalled();
+  });
+
+  test('stays on the start budget across steps instead of giving each step its own 10 s', async () => {
+    jest.useFakeTimers();
+    const fixture = createAuthFixture({evidence, cache: cachedMembership});
+    fixture.repository.verifyClaims.mockImplementation(() =>
+      after(6_000, {userId, expiresAt: evidence.expiresAt}),
+    );
+    fixture.repository.verifySessionWithServer.mockReturnValue(never());
+
+    await mountAuth(fixture.mobileAuth);
+    await advance(6_000);
+    expect(fixture.repository.verifySessionWithServer).toHaveBeenCalledTimes(1);
+
+    await advance(longRunning - 6_000 - 1);
+    expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+    await advance(1);
+    expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+  });
+
+  test('reads the stored session in full for a check that starts late in the start budget, then opens offline', async () => {
+    jest.useFakeTimers();
+    const fixture = createAuthFixture({evidence, cache: cachedMembership});
+    fixture.repository.getStoredSessionEvidence
+      .mockReturnValueOnce(never())
+      .mockImplementation(() => after(3_000, evidence));
+    fixture.repository.verifyClaims.mockReturnValue(never());
+
+    await mountAuth(fixture.mobileAuth);
+    await advance(9_000);
+    // A token refresh lands late and starts a new check, which replaces the first one.
+    ReactTestRenderer.act(() => fixture.emitAuth(session, 'TOKEN_REFRESHED'));
+    await settle();
+
+    await advance(1_000);
+    expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+
+    // The stored session arrives after the start budget; the next step has none left.
+    await advance(2_000);
+    await advance(0);
+    expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+  });
+
+  test('lands on guest without signing out when the stored session cannot refresh in time, then reopens the account', async () => {
+    jest.useFakeTimers();
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      cache: cachedMembership,
+    });
+    fixture.repository.getStoredSessionEvidence.mockReturnValueOnce(never());
+
+    await mountAuth(fixture.mobileAuth);
+    await advance(longRunning - 1);
+    expect(latestAuth.state).toEqual({status: 'bootstrapping'});
+    await advance(1);
+
+    expect(latestAuth.state).toEqual({status: 'guest'});
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+    expect(fixture.membershipCache.remove).not.toHaveBeenCalled();
+
+    // The refresh that was still running lands, and the account opens.
+    ReactTestRenderer.act(() => fixture.emitAuth(session, 'TOKEN_REFRESHED'));
+    await settle();
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+  });
+
+  test('leaves a fast check unchanged', async () => {
+    jest.useFakeTimers();
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      cache: cachedMembership,
+    });
+
+    await mountAuth(fixture.mobileAuth);
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+
+    await advance(longRunning * 2);
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+    expect(fixture.membershipCache.load).not.toHaveBeenCalled();
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+    expect(fixture.repository.getStoredSessionEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  test('gives each later foreground step a full 10 s before going offline', async () => {
+    jest.useFakeTimers();
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      cache: cachedMembership,
+    });
+    await mountAuth(fixture.mobileAuth);
+    await advance(longRunning * 2);
+
+    fixture.repository.verifySessionWithServer.mockReturnValue(never());
+    ReactTestRenderer.act(() => appStateListener?.('background'));
+    ReactTestRenderer.act(() => appStateListener?.('active'));
+    await settle();
+
+    await advance(longRunning - 1);
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
+    await advance(1);
+    expect(latestAuth.state).toEqual({status: 'authenticatedOffline', userId});
+    expect(fixture.repository.signOut).not.toHaveBeenCalled();
+  });
+
+  test('marks the exchange once the provider hands back and lets a slow sign-in check finish', async () => {
+    jest.useFakeTimers();
+    const nativeResult = createDeferred<
+      Awaited<ReturnType<NativeSocialSignIn>>
+    >();
+    const exchange = createDeferred<Session>();
+    const google = jest.fn(() => nativeResult.promise);
+    const fixture = createAuthFixture({
+      evidence,
+      status: completeStatus,
+      providers: {google},
+    });
+    fixture.repository.getStoredSessionEvidence
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValue(evidence);
+    fixture.repository.signInWithIdToken.mockReturnValue(exchange.promise);
+    fixture.repository.verifyClaims.mockImplementation(() =>
+      after(longRunning + 5_000, {userId, expiresAt: evidence.expiresAt}),
+    );
+    await mountAuth(fixture.mobileAuth);
+    expect(latestAuth.state).toEqual({status: 'guest'});
+
+    let signInPromise!: Promise<void>;
+    ReactTestRenderer.act(() => {
+      signInPromise = latestAuth.signIn('google');
+    });
+    await advance(15_000);
+    // Still on Google's own screen: no exchange yet.
+    expect(latestAuth.state).toEqual({status: 'authenticating', provider: 'google'});
+
+    nativeResult.resolve({
+      type: 'credential',
+      credential: {provider: 'google', idToken: 'google-id-token'},
+    });
+    await settle();
+    expect(latestAuth.state).toEqual({
+      status: 'authenticating',
+      provider: 'google',
+      phase: 'exchanging',
+    });
+
+    exchange.resolve(session);
+    await settle();
+    await advance(longRunning);
+    // The login sheet reports the slow check itself; it is not cut short to guest.
+    expect(latestAuth.state).toEqual({
+      status: 'authenticating',
+      provider: 'google',
+      phase: 'exchanging',
+    });
+
+    await advance(5_000);
+    await ReactTestRenderer.act(async () => {
+      await signInPromise;
+    });
+    expect(latestAuth.state).toEqual({status: 'authenticated', userId});
   });
 });
 

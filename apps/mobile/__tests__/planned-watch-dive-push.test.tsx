@@ -1,11 +1,14 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import type { PlannedWatchDivesUpdateStatus } from '../src/companion/watch-link';
 import type { DivePlanRepository } from '../src/repositories/dive-plan-repository';
+import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
+import { getPlanWatchState } from '../src/screens/planning/plan-status';
 import type { DivePlan } from '../src/types/dive-plan';
 import { createBlankDivePlan } from '../src/utils/create-dive-plan';
 
-const mockUpdatePlannedWatchDives = jest.fn(async (_plans: DivePlan[]) => 'sent' as const);
+const mockUpdatePlannedWatchDives = jest.fn(async (_plans: DivePlan[]): Promise<unknown> => 'sent');
 let mockPrincipalSettled = true;
 
 jest.mock('../src/companion/default-watch-link', () => ({
@@ -43,6 +46,24 @@ function Harness(props: { repository: DivePlanRepository }): null {
   return null;
 }
 
+type DivePlansState = ReturnType<typeof useDivePlans>;
+
+function StateHarness(props: { repository: DivePlanRepository; onState: (state: DivePlansState) => void }): null {
+  props.onState(useDivePlans({ repository: props.repository, queryScope: 'planned-watch-dive-versions-test' }));
+  return null;
+}
+
+const linkedWatch: PlannedWatchDivesUpdateStatus = {
+  nativeBridgeAvailable: true,
+  isSupported: true,
+  isPaired: true,
+  isWatchAppInstalled: true,
+  isReachable: false,
+  activationState: 'activated',
+  payloadCount: 1,
+  queuedCount: 0,
+};
+
 async function flush(): Promise<void> {
   await ReactTestRenderer.act(async () => {
     await new Promise<void>(resolve => setTimeout(resolve, 0));
@@ -72,7 +93,8 @@ describe('planned watch dive push', () => {
   const queryClients: QueryClient[] = [];
 
   beforeEach(() => {
-    mockUpdatePlannedWatchDives.mockClear();
+    mockUpdatePlannedWatchDives.mockReset();
+    mockUpdatePlannedWatchDives.mockImplementation(async () => 'sent');
     mockPrincipalSettled = true;
   });
 
@@ -85,6 +107,7 @@ describe('planned watch dive push', () => {
     for (const queryClient of queryClients.splice(0)) {
       queryClient.clear();
     }
+    jest.restoreAllMocks();
   });
 
   function render(element: React.JSX.Element): ReactTestRenderer.ReactTestRenderer {
@@ -125,5 +148,70 @@ describe('planned watch dive push', () => {
     await flushRepeatedly();
 
     expect(mockUpdatePlannedWatchDives).not.toHaveBeenCalled();
+  });
+
+  test('counts a plan as sent only for the version the last successful update carried', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const updates: Array<{ resolve: (status: PlannedWatchDivesUpdateStatus) => void; reject: (error: Error) => void }> = [];
+    mockUpdatePlannedWatchDives.mockImplementation(
+      () =>
+        new Promise((resolve, reject) => {
+          updates.push({ resolve, reject });
+        }),
+    );
+    const planned: DivePlan = { ...createBlankDivePlan({ now: 1781353000 }), localId: 'plan-planned', status: 'planned' };
+    const draft: DivePlan = { ...createBlankDivePlan({ now: 1781353000 }), localId: 'plan-draft', title: 'Draft' };
+    let state: DivePlansState | undefined;
+    render(
+      <StateHarness
+        repository={new LocalDivePlanRepository([planned, draft])}
+        onState={next => {
+          state = next;
+        }}
+      />,
+    );
+    const lastUpdate = () => updates[updates.length - 1];
+    const currentPlanned = () => state!.plans.find(plan => plan.localId === 'plan-planned')!;
+    const watchState = () => getPlanWatchState(currentPlanned(), state!.plannedWatchSyncStatus, state!.plannedWatchSentVersions);
+
+    await waitFor(() => expect(updates).toHaveLength(1));
+    // Nothing counts as sent before an update finishes.
+    expect(state!.plannedWatchSyncStatus).toBeUndefined();
+    expect(state!.plannedWatchSentVersions).toBeUndefined();
+
+    await ReactTestRenderer.act(async () => {
+      lastUpdate().resolve(linkedWatch);
+    });
+    expect(state!.plannedWatchSyncStatus).toEqual(linkedWatch);
+    // Only the plan the watch can see, by the version stored on this phone.
+    expect(state!.plannedWatchSentVersions).toEqual(new Map([['plan-planned', 1781353000]]));
+    expect(watchState()).toBe('sent');
+
+    // An edit saved after that update is unconfirmed until an update carries it.
+    const updatesBeforeEdit = updates.length;
+    await ReactTestRenderer.act(async () => {
+      await state!.savePlan({ ...planned, title: 'Edited', updatedAt: 1781353100 });
+    });
+    await waitFor(() => expect(updates.length).toBeGreaterThan(updatesBeforeEdit));
+    expect(currentPlanned().updatedAt).toBe(1781353100);
+    expect(watchState()).toBe('needsConnection');
+
+    // A failed update does not count as sent either.
+    await ReactTestRenderer.act(async () => {
+      lastUpdate().reject(new Error('bridge unavailable'));
+    });
+    expect(state!.plannedWatchSentVersions).toEqual(new Map([['plan-planned', 1781353000]]));
+    expect(watchState()).toBe('needsConnection');
+
+    const updatesBeforeSecondEdit = updates.length;
+    await ReactTestRenderer.act(async () => {
+      await state!.savePlan({ ...planned, title: 'Edited again', updatedAt: 1781353200 });
+    });
+    await waitFor(() => expect(updates.length).toBeGreaterThan(updatesBeforeSecondEdit));
+    await ReactTestRenderer.act(async () => {
+      lastUpdate().resolve(linkedWatch);
+    });
+    expect(state!.plannedWatchSentVersions).toEqual(new Map([['plan-planned', 1781353200]]));
+    expect(watchState()).toBe('sent');
   });
 });

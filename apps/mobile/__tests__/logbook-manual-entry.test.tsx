@@ -433,6 +433,10 @@ const hostText = (root: ReactTestRenderer.ReactTestInstance, testID: string): st
 
 const exists = (root: ReactTestRenderer.ReactTestInstance, testID: string): boolean => root.findAllByProps({ testID }).length > 0;
 
+/** The busy/disabled state VoiceOver reads on the detail's delete row. */
+const deleteRowState = (root: ReactTestRenderer.ReactTestInstance): unknown =>
+  root.findAll(node => node.props.testID === 'log-entry-detail-delete' && node.props.accessibilityState !== undefined)[0]?.props.accessibilityState;
+
 const renderLogbook = async (
   repository: LocalDiveLogRepository,
   options: {
@@ -736,6 +740,36 @@ describe('Logbook list, editor and detail', () => {
       expect(failedRefresh.root.findAllByProps({ testID: 'logbook-error-state' })).toHaveLength(0);
     });
 
+    test('keeps the failed-load retry busy until the reload settles', async () => {
+      let finishRefresh: (() => void) | undefined;
+      const onRefresh = jest.fn(
+        () =>
+          new Promise<void>(resolve => {
+            finishRefresh = resolve;
+          }),
+      );
+      const renderer = await renderElement(
+        <LogbookScreen {...listScreenProps({ loadError: new Error('storage unavailable'), totalEntryCount: 0, onRefresh })} />,
+      );
+      const retry = () => renderer.root.findByProps({ testID: 'logbook-error-state-action' });
+
+      expect(retry().props.pending).toBeFalsy();
+
+      await ReactTestRenderer.act(async () => {
+        retry().props.onPress();
+      });
+
+      expect(onRefresh).toHaveBeenCalledTimes(1);
+      expect(retry().props.pending).toBe(true);
+
+      await ReactTestRenderer.act(async () => {
+        finishRefresh?.();
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      });
+
+      expect(retry().props.pending).toBe(false);
+    });
+
     test('names the search field for VoiceOver', async () => {
       const renderer = await renderElement(<LogbookScreen {...listScreenProps()} />);
 
@@ -750,7 +784,7 @@ describe('Logbook list, editor and detail', () => {
         expect(renderedSource(renderer)).not.toMatch(/watch-capture|plan-6f1c2b9a|planned-18m/);
       };
 
-      expect(renderedSource(renderer)).toContain(' · reef');
+      expect(hostText(root, 'logbook-list-tags-Planned Reef')).toBe('reef');
       expectNoWatchTags();
 
       await press(root, 'logbook-list-item-Planned Reef');
@@ -857,6 +891,37 @@ describe('Logbook list, editor and detail', () => {
       expect(root.findByProps({ testID: 'logbook-list-duration-No Metrics Reef---min' })).toBeTruthy();
     });
 
+    test('lays a row out as title and depth, then date, dive type and time, with tags only when there are some', async () => {
+      const renderer = await renderLogbook(new LocalDiveLogRepository([manualEntry, watchEntry]));
+      const root = renderer.root;
+      const metaText = (siteName: string) => {
+        const [meta] = root.findAll(node => node.props.testID === `logbook-list-meta-${siteName}` && typeof node.type === 'string');
+        return React.Children.toArray(meta.props.children)
+          .map(child => (typeof child === 'string' ? child : React.Children.toArray((child as React.ReactElement<{ children: React.ReactNode }>).props.children).join('')))
+          .join('');
+      };
+      const manualDate = formatLogDate(1781350200, 'en', 'Unknown date');
+      const watchDate = formatLogDate(1781352000, 'en', 'Unknown date');
+
+      expect(metaText('Manual Reef')).toBe(`${manualDate} · Freedive · 40 min`);
+      expect(metaText('Watch Reef')).toBe(`${watchDate} · Scuba · 10 min`);
+      expect(hostText(root, 'logbook-list-tags-Manual Reef')).toBe('shore');
+      expect(exists(root, 'logbook-list-tags-Watch Reef')).toBe(false);
+      // Compact rows: one line each for the title and the meta, with the same card padding as plan rows.
+      const row = root.findAll(node => node.props.testID === 'logbook-list-item-Watch Reef' && typeof node.props.className === 'string')[0];
+      expect(row.props.className).toContain('py-3');
+      expect(row.props.accessibilityLabel).toBe(`Watch Reef, ${watchDate}, 12.0 m, Scuba, 10 min`);
+    });
+
+    test('labels a test dive from the watch as Test in the list, as the detail does', async () => {
+      const renderer = await renderLogbook(new LocalDiveLogRepository([debugTestWatchEntry]));
+      const root = renderer.root;
+
+      expect(root.findByProps({ testID: 'logbook-test-badge-Test Reef' }).props.label).toBe('Test');
+      expect(root.findAllByProps({ testID: 'logbook-demo-badge-Test Reef' })).toHaveLength(0);
+      expect(renderedSource(renderer)).not.toMatch(/debug-test-capture|watch-capture/);
+    });
+
     test('shows dive time in minutes, depth to one decimal, and no filler for missing tags', async () => {
       const renderer = await renderLogbook(new LocalDiveLogRepository([manualEntry, watchEntry]));
       const root = renderer.root;
@@ -876,11 +941,14 @@ describe('Logbook list, editor and detail', () => {
       const repository = new LocalDiveLogRepository([unnamedWatchEntry]);
       const renderer = await renderLogbook(repository);
       const root = renderer.root;
-      const expectedTitle = `Watch log · ${formatLogDay(unnamedWatchEntry.watchCapture!.measuredValues.startedAt, 'en')}`;
+      const day = formatLogDay(unnamedWatchEntry.watchCapture!.measuredValues.startedAt, 'en');
+      const expectedTitle = `Watch log · ${day}`;
 
-      // The stored site keeps the import default; only the visible title changes.
+      // The stored site keeps the import default; only the visible title changes. The row's second
+      // line carries the date, so the row title does not repeat it.
       expect((await repository.list())[0].manual.site.name).toBe('워치 다이브');
-      expect(root.findAll(node => node.props.children === expectedTitle).length).toBeGreaterThan(0);
+      expect(root.findAll(node => node.props.children === 'Watch log').length).toBeGreaterThan(0);
+      expect(root.findAll(node => node.props.children === expectedTitle)).toHaveLength(0);
 
       await press(root, 'logbook-list-item-워치 다이브');
 
@@ -1777,6 +1845,51 @@ describe('Logbook list, editor and detail', () => {
       expect(entries[0].provenance.maxDepthMeters).toBe('watch');
     });
 
+    test('shows the import default site as an empty field and keeps it stored when left empty', async () => {
+      const unnamedWatchEntry = watchSessionToDiveLogEntry({
+        now: 1781353000,
+        session: { ...(watchEntry.watchCapture!.session as WatchSession), localSessionId: 'unnamed-site-entry', siteName: undefined } as WatchSession,
+      });
+      const repository = new LocalDiveLogRepository([unnamedWatchEntry]);
+      const renderer = await renderLogbook(repository);
+      const root = renderer.root;
+      const siteField = () => root.findAll(node => node.props.testID === 'log-entry-editor-site-name' && typeof node.props.onChangeText === 'function')[0];
+
+      await press(root, 'logbook-list-item-워치 다이브');
+      await press(root, 'log-entry-detail-edit');
+
+      expect(siteField().props.value).toBe('');
+      expect(siteField().props.placeholder).toBeTruthy();
+      expect(renderedSource(renderer)).not.toContain('워치 다이브');
+
+      await changeText(root, 'log-entry-editor-notes', 'Drift along the wall.');
+      await press(root, 'log-entry-editor-save');
+
+      expect(exists(root, 'log-entry-editor-site-name-error')).toBe(false);
+      const [savedEntry] = await repository.list();
+      expect(savedEntry.manual.notes).toBe('Drift along the wall.');
+      // Guest claim reuse compares site_name exactly, so the stored default stays as imported.
+      expect(savedEntry.manual.site.name).toBe('워치 다이브');
+    });
+
+    test('saves a site typed over the import default', async () => {
+      const unnamedWatchEntry = watchSessionToDiveLogEntry({
+        now: 1781353000,
+        session: { ...(watchEntry.watchCapture!.session as WatchSession), localSessionId: 'renamed-site-entry', siteName: undefined } as WatchSession,
+      });
+      const repository = new LocalDiveLogRepository([unnamedWatchEntry]);
+      const renderer = await renderLogbook(repository);
+      const root = renderer.root;
+
+      await press(root, 'logbook-list-item-워치 다이브');
+      await press(root, 'log-entry-detail-edit');
+      await changeText(root, 'log-entry-editor-site-name', 'House Reef');
+      await press(root, 'log-entry-editor-save');
+
+      const [savedEntry] = await repository.list();
+      expect(savedEntry.manual.site.name).toBe('House Reef');
+    });
+
     test('renders watch duration seconds and depth tenths without dirtying untouched watch metrics', async () => {
       const repository = new LocalDiveLogRepository([secondPreciseWatchEntry]);
       const renderer = await renderLogbook(repository);
@@ -2182,14 +2295,16 @@ describe('Logbook list, editor and detail', () => {
 
       expect(alert).toHaveBeenCalledTimes(1);
       expect(onDelete).toHaveBeenCalledWith('manual-entry-1');
-      expect(root.findByProps({ testID: 'log-entry-detail-delete' }).props.accessibilityState).toEqual({ busy: true, disabled: true });
+      expect(deleteRowState(root)).toEqual({ busy: true, disabled: true });
+      // Busy at once; the spinner waits for the shared delay.
+      expect(root.findAllByProps({ testID: 'log-entry-detail-delete-spinner' })).toHaveLength(0);
 
       await ReactTestRenderer.act(async () => {
         rejectDelete?.(new Error('storage'));
         await new Promise<void>(resolve => setTimeout(resolve, 0));
       });
 
-      expect(root.findByProps({ testID: 'log-entry-detail-delete' }).props.accessibilityState).toEqual({ busy: false, disabled: false });
+      expect(deleteRowState(root)).toEqual({ busy: false, disabled: false });
       expect(hostText(root, 'log-entry-detail-delete-error')).toBe('Couldn’t delete this log. Try again.');
     });
   });

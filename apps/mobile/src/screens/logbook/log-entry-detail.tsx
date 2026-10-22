@@ -4,13 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { Section, Row } from '../../components/ui/grouped-list';
 import { HStack } from '../../components/ui/hstack';
 import { InstrumentButton, SafetyText, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
-import { Pressable } from '../../components/ui/pressable';
 import { ScreenHeader } from '../../components/ui/screen-header';
-import { Spinner } from '../../components/ui/spinner';
 import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
-import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import type { DiveFieldSource, DiveLogEntry } from '../../types/dive-log-entry';
 import type { WatchSession, WatchSessionCommon } from '../../types/dive-session';
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
@@ -428,7 +425,6 @@ function DeleteGroup(props: { entry: DiveLogEntry; onDelete: (localId: string) =
   const { t } = useTranslation();
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [deleteFailed, setDeleteFailed] = React.useState(false);
-  const { showIndicator } = useLoadingFeedback(isDeleting);
   const { entry, onDelete } = props;
 
   const runDelete = React.useCallback(async () => {
@@ -456,24 +452,25 @@ function DeleteGroup(props: { entry: DiveLogEntry; onDelete: (localId: string) =
     });
   }, [entry, runDelete, t]);
 
+  // Busy and disabled from the tap; the row's spinner appears only after the shared 1 s delay.
   return (
     <VStack space="sm">
-      <VStack className="overflow-hidden rounded-2xl bg-card">
-        <Pressable
+      <Section>
+        <Row
           testID="log-entry-detail-delete"
-          accessibilityRole="button"
-          accessibilityState={{ busy: isDeleting, disabled: isDeleting }}
-          disabled={isDeleting}
+          label={t('logbook.deleteLog')}
+          destructive
+          accessory={{ kind: 'none' }}
+          pending={isDeleting}
           onPress={confirmDelete}
-          className="active:bg-muted">
-          <HStack space="md" className="min-h-12 items-center px-4 py-3">
-            <Text className="flex-1 text-base text-destructive">{t('logbook.deleteLog')}</Text>
-            {showIndicator ? <Spinner testID="log-entry-detail-delete-spinner" className="text-destructive" /> : null}
-          </HStack>
-        </Pressable>
-      </VStack>
+          separated={false}
+        />
+      </Section>
       {deleteFailed ? (
-        <Text testID="log-entry-detail-delete-error" className="px-1 text-sm leading-5 text-destructive">
+        <Text
+          testID="log-entry-detail-delete-error"
+          accessibilityLiveRegion="polite"
+          className="px-1 text-sm leading-5 text-destructive">
           {t('logbook.deleteError')}
         </Text>
       ) : null}

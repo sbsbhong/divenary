@@ -77,11 +77,14 @@ export type PlanWatchState = 'sent' | 'needsConnection' | 'phoneOnly';
 /**
  * What the phone actually knows about a plan on the watch. The planned dive context is a
  * latest-value handoff without a receipt, so "sent" never claims the watch can already pick it.
+ * "sent" also needs this plan's current version in the last successful update (`sentVersions`,
+ * localId → `updatedAt`, matched exactly); an edit that has not gone out yet reads as unconfirmed.
  * Undefined while a sendable plan has no link status yet.
  */
 export function getPlanWatchState(
   plan: DivePlan,
   status: PlannedWatchDivesUpdateStatus | undefined,
+  sentVersions: ReadonlyMap<string, number> | undefined,
 ): PlanWatchState | undefined {
   if (!isWatchVisiblePlan(plan)) {
     return 'phoneOnly';
@@ -98,8 +101,9 @@ export function getPlanWatchState(
     status.isWatchAppInstalled &&
     status.activationState === 'activated';
   const hasContextError = status.lastContextErrorCode !== undefined || Boolean(status.lastContextErrorDescription);
+  const currentVersionSent = sentVersions?.get(plan.localId) === plan.updatedAt;
 
-  return linked && !hasContextError ? 'sent' : 'needsConnection';
+  return linked && !hasContextError && currentVersionSent ? 'sent' : 'needsConnection';
 }
 
 /** Planned depth to one decimal, like the log screens. */

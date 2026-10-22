@@ -274,6 +274,65 @@ describe('Planning list', () => {
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
+  test('spins the pull indicator only for the pull gesture, not for a reselect or retry refresh', async () => {
+    let finishPull: () => void = () => undefined;
+    const onRefresh = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          finishPull = resolve;
+        }),
+    );
+    const plans = [plan({ localId: 'kept', title: 'Kept plan' })];
+    const renderer = await render({ plans, onRefresh, reselectToken: 0 });
+    const refreshControl = () => renderer.root.findByType(ScrollView).props.refreshControl;
+
+    // A tab reselect refreshes while the hook reports it, but the content stays without a spinner.
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<PlanningScreen {...screenProps({ plans, onRefresh, reselectToken: 1, isRefreshing: true })} />);
+    });
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(refreshControl().props.refreshing).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      finishPull();
+      renderer.update(<PlanningScreen {...screenProps({ plans, onRefresh, reselectToken: 1 })} />);
+    });
+
+    await ReactTestRenderer.act(async () => {
+      refreshControl().props.onRefresh();
+    });
+    expect(onRefresh).toHaveBeenCalledTimes(2);
+    expect(refreshControl().props.refreshing).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      finishPull();
+    });
+    expect(refreshControl().props.refreshing).toBe(false);
+  });
+
+  test('keeps the retry button busy while the retry runs after a first-load failure', async () => {
+    jest.useFakeTimers();
+    const onRefresh = jest.fn();
+    const renderer = await render({ loadError: new Error('offline'), onRefresh });
+
+    await press(renderer, 'planning-error-state-action');
+    expect(onRefresh).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(<PlanningScreen {...screenProps({ loadError: new Error('offline'), onRefresh, isRefreshing: true })} />);
+    });
+    const retry = () => host(renderer, 'planning-error-state-action')!;
+    // Busy and disabled from the start; the spinner waits for the shared delay.
+    expect(retry().props.accessibilityState).toEqual(expect.objectContaining({ busy: true, disabled: true }));
+    expect(renderer.root.findByType(ScrollView).props.refreshControl.props.refreshing).toBe(false);
+    expect(renderer.root.findAllByProps({ testID: 'planning-error-state-action-spinner' })).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(renderer.root.findAllByProps({ testID: 'planning-error-state-action-spinner' }).length).toBeGreaterThan(0);
+  });
+
   test('opens the logbook from the quiet link at the bottom', async () => {
     const onOpenLogbook = jest.fn();
     const renderer = await render({ onOpenLogbook });

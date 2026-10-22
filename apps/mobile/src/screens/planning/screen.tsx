@@ -25,6 +25,7 @@ type PlanningScreenProps = {
   loadError?: Error | null;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
+  /** A requested refresh is running. The retry button shows it; the pull spinner follows the gesture only. */
   isRefreshing?: boolean;
   reselectToken?: number;
   onCreatePlan: () => void;
@@ -59,6 +60,17 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
   const isFirstLoad = Boolean(props.isLoading) && !hasPlans;
   const hasFirstLoadError = !isFirstLoad && !hasPlans && Boolean(props.loadError);
   const showSkeleton = useContentLoading(isFirstLoad);
+  // The pull spinner belongs to the pull gesture. A tab reselect or a retry refreshes with the
+  // content kept on screen and no second spinner.
+  const [isPullRefreshing, setIsPullRefreshing] = React.useState(false);
+  const pullToRefresh = React.useCallback(async () => {
+    setIsPullRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [onRefresh]);
 
   React.useEffect(() => {
     const token = reselectToken ?? 0;
@@ -77,7 +89,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={onRefresh} tintColor={palette.primary} />}
+      refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={pullToRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
         <VStack className="pt-2">
@@ -137,6 +149,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
               title={t('planning.loadFailed')}
               message={t('planning.loadFailedMessage')}
               actionLabel={t('common.retry')}
+              actionPending={Boolean(props.isRefreshing)}
               onAction={() => {
                 onRefresh();
               }}

@@ -117,10 +117,22 @@ export function getLogStartedAt(entry: DiveLogEntry): number {
 }
 
 /**
- * The title a row or detail shows. A watch log that still has the import default site gets a
- * localized `워치 다이브 · <day>` title; the stored site name is not changed.
+ * The title the detail and Home show. A watch log that still has the import default site gets a
+ * localized `워치 기록 · <day>` title; the stored site name is not changed.
  */
 export function getLogDisplayTitle(entry: DiveLogEntry, t: TFunction, locale: string): string {
+  if (!entry.manual.title?.trim() && hasDefaultWatchSiteName(entry)) {
+    return t('logbook.watchDiveTitle', { date: formatLogDay(getLogStartedAt(entry), locale) });
+  }
+
+  return getLogListTitle(entry, t);
+}
+
+/**
+ * The title a list row shows. The row's second line already carries the date, so a watch log with
+ * the import default site reads plain `워치 기록` here, without the day.
+ */
+export function getLogListTitle(entry: DiveLogEntry, t: TFunction): string {
   const title = entry.manual.title?.trim();
 
   if (title) {
@@ -128,7 +140,7 @@ export function getLogDisplayTitle(entry: DiveLogEntry, t: TFunction, locale: st
   }
 
   if (hasDefaultWatchSiteName(entry)) {
-    return t('logbook.watchDiveTitle', { date: formatLogDay(getLogStartedAt(entry), locale) });
+    return t('logbook.watchLogTitle');
   }
 
   return (entry.manual.site.name ?? entry.watchCapture?.session.siteName)?.trim() || t('logbook.untitledDive');

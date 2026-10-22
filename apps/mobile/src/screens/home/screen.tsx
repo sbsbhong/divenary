@@ -20,7 +20,7 @@ import { useHomeConditions } from '../../conditions/use-home-conditions';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DivePlan } from '../../types/dive-plan';
 import type { MobileDiveSession } from '../../types/dive-session';
-import { formatLogDate } from '../logbook/log-formatters';
+import { formatDateTimeParts } from '../common/form/date-time-field';
 import { planTitle, selectNextPlan } from '../planning/plan-status';
 import { HomeConditionsCard } from './conditions-card';
 import { LatestLogCard, LatestLogEmptyCard, LatestLogErrorCard, LatestLogLoadingCard } from './latest-log-card';
@@ -179,7 +179,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
               separated={false}
               icon={CalendarDaysIcon}
               label={planTitle(nextPlan, t)}
-              detail={describeNextPlan(nextPlan, locale, t('formatters.unknownDate'))}
+              detail={describeNextPlan(nextPlan, locale)}
               onPress={onOpenPlan ? () => onOpenPlan(nextPlan) : undefined}
             />
           </Section>
@@ -273,8 +273,10 @@ function HomeRecoveryCard(
   );
 }
 
-function describeNextPlan(plan: DivePlan, locale: string, unknownDateLabel: string): string {
-  const date = formatLogDate(plan.plannedAt, locale, unknownDateLabel);
+/** The same date line as the plan list row, so one plan reads the same on both screens. */
+function describeNextPlan(plan: DivePlan, locale: string): string {
+  const parts = plan.plannedAt === undefined ? undefined : formatDateTimeParts(new Date(plan.plannedAt * 1000), locale);
+  const date = parts ? `${parts.date} ${parts.time}` : '--';
   const siteName = plan.site.name?.trim();
 
   // The site is the row label when the plan has no title, so it is not repeated here.

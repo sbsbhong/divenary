@@ -856,6 +856,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(depthOrTime).toContain('value: DiveFormatters.duration(time)');
     expect(formatters).toContain('guard let meters else { return "--.-" }');
     expect(formatters).toContain('.system(size: size, weight: weight, design: .rounded).monospacedDigit()');
+    // The old blue stop ring is gone; the recommended stop is drawn by SafetyStopInstrument only.
+    expect(formatters).not.toContain('SafetyStopRing');
     expect(bigMetric).toContain('foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)');
     expect(bigMetric).toContain('Text(unit)');
     // Always-On hides secondary values except depth and time; status chips and markers stay.
@@ -914,10 +916,22 @@ describe('WatchConnectivity native source contract', () => {
     expect(guide).toContain('If you assigned Divenary to the Action Button');
     expect(korean('Recommended stop')).toBe('권장 스탑');
     expect(korean('Recommended stop time remaining')).toBe('권장 스탑 남은 시간');
-    // Diver terms: 동작 버튼 / Action Button, 수중 잠금 / Water Lock, Digital Crown.
+    // The recommended stop never reads as a mandatory "safety stop", even in an unused catalog entry.
+    expect(korean('Safety stop planning reminder')).toBe('권장 스탑 계획 리마인더');
+    expect(english('Safety stop planning reminder')).toBe('Recommended stop planning reminder');
+    // Diver terms: 동작 버튼 / Action Button, 수중 잠금 / Water Lock, 디지털 크라운 / Digital Crown
+    // (크라운 ▸ in the short page chips).
     expect(korean('Action ▸ Details %lld/%lld')).toBe('동작 버튼 ▸ 상세 %1$lld/%2$lld');
     expect(english('Action ▸ Details %lld/%lld')).toBe('Action Button ▸ Details %1$lld/%2$lld');
-    expect(korean('Crown ▸ Details %lld/%lld')).toBe('Digital Crown ▸ 상세 %1$lld/%2$lld');
+    expect(korean('Crown ▸ Details %lld/%lld')).toBe('크라운 ▸ 상세 %1$lld/%2$lld');
+    expect(korean('Crown ▸ Live %lld/%lld')).toBe('크라운 ▸ 실시간 %1$lld/%2$lld');
+    expect(korean('Digital Crown')).toBe('디지털 크라운');
+    expect(korean('Rotate the Digital Crown to choose a mode.')).toBe('디지털 크라운을 돌려 다이빙 종류를 선택하세요.');
+    // Same words as the phone: 평점 and 다시 시도.
+    expect(korean('Rating')).toBe('평점');
+    expect(korean('Not rated')).toBe('평점 없음');
+    expect(korean('Retry')).toBe('다시 시도');
+    expect(english('Retry')).toBe('Try again');
     // The countdown is until ending becomes possible, not until the recording ends.
     expect(korean('End available in %@')).toBe('기록 종료 가능까지 %@');
     expect(english('End available in %@')).toBe('Can end recording in %@');

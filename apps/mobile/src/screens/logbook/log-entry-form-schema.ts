@@ -8,7 +8,11 @@ import {
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import type { DiveLogEntry, DiveLogFieldProvenance, DiveLogManualMeasuredValues, DivePressureValues } from '../../types/dive-log-entry';
 import type { WatchSession } from '../../types/dive-session';
-import { getVisibleLogTags, isUntouchedWatchPressureDefault } from '../../utils/watch-session-to-dive-log-entry';
+import {
+  getVisibleLogTags,
+  hasDefaultWatchSiteName,
+  isUntouchedWatchPressureDefault,
+} from '../../utils/watch-session-to-dive-log-entry';
 
 export type LogEntryFormValues = {
   startedAt: Date | undefined;
@@ -107,6 +111,20 @@ export const logEntryFormSchema = z.object({
   pressure: pressureSchema,
 });
 
+/**
+ * True while a watch log still carries the import default site (`워치 다이브`). The editor shows the
+ * site empty and does not require it; leaving it empty saves the stored default unchanged, because
+ * guest claim reuse compares `site_name` exactly.
+ */
+export function isLogEntrySiteOptional(entry: DiveLogEntry): boolean {
+  return hasDefaultWatchSiteName(entry);
+}
+
+/** The schema for one entry's editor: the site is optional only where `isLogEntrySiteOptional` says so. */
+export function logEntryFormSchemaFor(entry: DiveLogEntry) {
+  return isLogEntrySiteOptional(entry) ? logEntryFormSchema.extend({ siteName: z.string() }) : logEntryFormSchema;
+}
+
 export function entryToLogEntryFormValues(entry: DiveLogEntry): LogEntryFormValues {
   const measuredValues = entry.manual.measuredValues;
   const diveMode = measuredValues.diveMode ?? 'scuba';
@@ -115,7 +133,8 @@ export function entryToLogEntryFormValues(entry: DiveLogEntry): LogEntryFormValu
     startedAt: new Date(getEditorStartedAt(entry) * 1000),
     diveMode,
     entryStyle: entry.manual.entryStyle,
-    siteName: entry.manual.site.name ?? '',
+    // The import default site shows as an empty field with its placeholder, not as text to delete.
+    siteName: isLogEntrySiteOptional(entry) ? '' : (entry.manual.site.name ?? ''),
     durationSeconds: getEditorNumber(entry, 'durationSeconds'),
     maxDepthMeters: getEditorNumber(entry, 'maxDepthMeters'),
     gasLabel: diveMode === 'scuba' ? 'Air' : undefined,
@@ -185,7 +204,8 @@ export function logEntryFormValuesToEntry(
       ...entry.manual,
       site: {
         ...entry.manual.site,
-        name: emptyToUndefined(values.siteName),
+        // An empty site on a watch log that still has the import default keeps that default stored.
+        name: emptyToUndefined(values.siteName) ?? (isLogEntrySiteOptional(entry) ? entry.manual.site.name : undefined),
       },
       entryStyle: values.entryStyle,
       buddyIds: [...values.buddies],

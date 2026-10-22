@@ -18,11 +18,20 @@ import {
   type NativeSocialCredential,
   type SocialProvider,
 } from '../auth/native-social-auth';
+import {ASYNC_FEEDBACK_TIMING} from '../constants/async-feedback';
 
 export type AuthState =
   | {status: 'bootstrapping'}
   | {status: 'guest'}
-  | {status: 'authenticating'; provider: SocialProvider | 'development'}
+  | {
+      status: 'authenticating';
+      provider: SocialProvider | 'development';
+      /**
+       * 'exchanging' once the provider has handed back a credential and the server is checking it.
+       * Absent while the provider's own sign-in screen is still open.
+       */
+      phase?: 'exchanging';
+    }
   | {
       status: 'pendingOnboarding';
       userId: string;
@@ -77,6 +86,12 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
   const revalidationSuppressedRef = React.useRef(false);
   const mountedRef = React.useRef(true);
   const signInPromiseRef = React.useRef<Promise<void> | undefined>(undefined);
+  // The start shell offers an action at the long-running mark. Until the first check settles, its
+  // network steps share that budget, so on a weak signal the diver reaches the records on this
+  // phone by then instead of waiting on one slow step after another.
+  const [bootstrapDeadline] = React.useState(
+    () => Date.now() + ASYNC_FEEDBACK_TIMING.longRunning,
+  );
 
   const updateState = React.useCallback((nextState: AuthState) => {
     if (!mountedRef.current) {
@@ -263,16 +278,53 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
 
     const operationId = operationIdRef.current + 1;
     operationIdRef.current = operationId;
+    // Every network step ends by the long-running mark at the latest. Running out counts as a
+    // network failure, so it takes the same path as one and never signs the diver out. With
+    // budget 'start', a step at launch also ends when the start shell's budget runs out.
+    const withinStepLimit = <T,>(
+      step: Promise<T>,
+      operation: CheckOperation,
+      budget: 'step' | 'start',
+    ): Promise<T> => {
+      const status = stateRef.current.status;
+
+      if (status === 'authenticating') {
+        // The locked login sheet tells the diver about a slow check itself. Ending the check here
+        // would drop someone who just signed in back to guest without a word.
+        return step;
+      }
+
+      return settleWithin(
+        step,
+        budget === 'start' && status === 'bootstrapping'
+          ? Math.min(
+              ASYNC_FEEDBACK_TIMING.longRunning,
+              Math.max(0, bootstrapDeadline - Date.now()),
+            )
+          : ASYNC_FEEDBACK_TIMING.longRunning,
+        operation,
+      );
+    };
     let stored: Awaited<
       ReturnType<MobileAuth['repository']['getStoredSessionEvidence']>
     >;
 
     try {
-      stored = await mobileAuth.repository.getStoredSessionEvidence();
+      // Reading the stored session refreshes an expired one over the network first. It keeps its
+      // own full limit even at launch: without the stored session there is nothing to open
+      // offline, so cutting it short would leave a signed-in diver on guest.
+      stored = await withinStepLimit(
+        mobileAuth.repository.getStoredSessionEvidence(),
+        'session',
+        'step',
+      );
     } catch (error) {
       if (isInvalidSessionError(error)) {
         await clearInvalidSession(operationId);
       } else if (isCurrentOperation(operationId)) {
+        // Without the stored session there is nothing to restore offline. The session and the
+        // membership cache stay, so a later token refresh or foreground check brings the account
+        // back.
         updateState({status: 'guest'});
       }
       return;
@@ -306,8 +358,10 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     let claims: {userId: string; expiresAt: number};
 
     try {
-      claims = await mobileAuth.repository.verifyClaims(
-        stored.session.access_token,
+      claims = await withinStepLimit(
+        mobileAuth.repository.verifyClaims(stored.session.access_token),
+        'session',
+        'start',
       );
     } catch (error) {
       if (isNetworkError(error)) {
@@ -335,8 +389,12 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     let verifiedUser: {userId: string};
 
     try {
-      verifiedUser = await mobileAuth.repository.verifySessionWithServer(
-        stored.session.access_token,
+      verifiedUser = await withinStepLimit(
+        mobileAuth.repository.verifySessionWithServer(
+          stored.session.access_token,
+        ),
+        'session',
+        'start',
       );
     } catch (error) {
       if (isNetworkError(error)) {
@@ -358,8 +416,26 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       return;
     }
 
+    let status: OnboardingStatus;
+
     try {
-      const status = await mobileAuth.repository.getOnboardingStatus();
+      status = await withinStepLimit(
+        mobileAuth.repository.getOnboardingStatus(),
+        'rpc',
+        'start',
+      );
+    } catch (error) {
+      // A consent check that fails or times out is not grounds for the offline account
+      // (supabase.md): the diver opens as guest, which still ends the start-shell wait.
+      if (isInvalidSessionError(error)) {
+        await clearInvalidSession(operationId);
+      } else if (isCurrentOperation(operationId)) {
+        updateState({status: 'guest'});
+      }
+      return;
+    }
+
+    try {
       await applyOnboardingStatus(operationId, stored.userId, status);
     } catch (error) {
       if (isInvalidSessionError(error)) {
@@ -370,6 +446,7 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
     }
   }, [
     applyOnboardingStatus,
+    bootstrapDeadline,
     clearInvalidSession,
     isCurrentIntent,
     isCurrentOperation,
@@ -467,7 +544,12 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
       operationIdRef.current += 1;
       acceptsAuthenticatedSessionRef.current = true;
       revalidationSuppressedRef.current = true;
-      updateState({status: 'authenticating', provider});
+      // Local development sign-in has no provider screen; it goes straight to the server.
+      updateState(
+        provider === 'development'
+          ? {status: 'authenticating', provider, phase: 'exchanging'}
+          : {status: 'authenticating', provider},
+      );
 
       try {
         if (provider === 'development') {
@@ -498,6 +580,8 @@ export function AuthProvider(props: AuthProviderProps): React.JSX.Element {
             return;
           }
 
+          // The provider screen is closed; from here the wait is the server checking the credential.
+          updateState({status: 'authenticating', provider, phase: 'exchanging'});
           await mobileAuth.repository.signInWithIdToken(
             toSocialIdTokenInput(result.credential),
           );
@@ -680,6 +764,36 @@ export function useAuth(): AuthContextValue {
   }
 
   return value;
+}
+
+type CheckOperation = NonNullable<AuthRepositoryError['operation']>;
+
+/**
+ * Settles with the step, or with a network failure once `limitMs` passes. The step keeps running
+ * and its late result is ignored.
+ */
+function settleWithin<T>(
+  step: Promise<T>,
+  limitMs: number,
+  operation: CheckOperation,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(new AuthRepositoryError('network', {operation, code: 'timeout'})),
+      limitMs,
+    );
+    step.then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
 
 function isNetworkError(error: unknown): boolean {

@@ -307,7 +307,7 @@ describe('LoginScreen', () => {
     expect(developmentButton().props.disabled).toBe(false);
   });
 
-  test('orders the recent provider first and keeps its visible label outside the branded button', async () => {
+  test('orders the recent provider first and tags that button on its corner', async () => {
     createAuthFixture({ recentProvider: 'apple' });
     const renderer = await render(<LoginScreen />);
 
@@ -315,9 +315,14 @@ describe('LoginScreen', () => {
     const appleButton = findProviderButton(renderer.root, 'apple');
 
     expect(providerRows.map(node => node.props.provider)).toEqual(['apple', 'google']);
-    expect(renderer.root.findByProps({ testID: 'auth-login-recent-provider' }).props.children).toBe('최근 사용');
+    // The owner asked for the mark on the button itself (2026-10-22); it supersedes the 2026-07-17
+    // label above the list. The tag sits on the corner, outside the brand button's own content.
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-provider' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-apple' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-google' })).toHaveLength(0);
+    expect(providerRows[0]!.props.recentLabel).toBe('최근 사용');
+    expect(providerRows[1]!.props.recentLabel).toBeUndefined();
     expect(appleButton.props.accessibilityLabel).toBe('Apple로 계속하기, 최근 사용');
-    expect(renderer.root.findAllByProps({ testID: 'auth-login-recent-apple' })).toHaveLength(0);
   });
 
   test('applies only the bottom safe area inside the navigation form sheet', async () => {
@@ -338,10 +343,9 @@ describe('LoginScreen', () => {
     const heading = renderer.root.findByProps({ accessibilityRole: 'header' });
     expect(brandMark?.props.accessibilityElementsHidden).toBe(true);
     expect(brandMark?.props.importantForAccessibility).toBe('no-hide-descendants');
-    expect(brandMark?.props.className).toContain('h-11');
-    expect(brandMark?.props.className).toContain('w-11');
+    expect(brandMark?.props.className).toContain('h-14');
+    expect(brandMark?.props.className).toContain('w-14');
     expect(heading.props.maxFontSizeMultiplier).toBe(1.5);
-    expect(renderer.root.findByProps({ testID: 'auth-login-screen' }).props).toMatchObject({ space: 'md' });
     expect(renderer.root.findAllByProps({ testID: 'auth-login-status-row' })).toHaveLength(0);
     expect(renderer.root.findAllByProps({ testID: 'auth-login-progress' })).toHaveLength(0);
     expect(JSON.stringify(renderer.toJSON())).not.toContain('"children":["D"]');
@@ -398,6 +402,14 @@ describe('LoginScreen', () => {
     const renderer = await render(<LoginScreen />);
     const progress = () => renderer.root.findAllByProps({ testID: 'auth-login-progress' });
 
+    // The diver is still on Apple's own sign-in screen, however long that takes.
+    await advance(15000);
+    expect(progress()).toHaveLength(0);
+    expect(announce).not.toHaveBeenCalled();
+
+    // The lines count from when Apple hands back the credential.
+    createAuthFixture({ state: { status: 'authenticating', provider: 'apple', phase: 'exchanging' } });
+    await rerender(renderer, <LoginScreen />);
     await advance(3999);
     expect(progress()).toHaveLength(0);
     expect(announce).not.toHaveBeenCalled();

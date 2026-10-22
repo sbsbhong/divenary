@@ -76,8 +76,9 @@ export const formatPressure = (pressure?: DivePressureValues) => {
   return `${formatPressureNumber(pressure.end!)} ${unit}`;
 };
 
+/** One decimal, the precision the log list, detail and editor use. */
 function formatDecimal(value: number): string {
-  return (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
+  return (Math.round((value + Number.EPSILON) * 10) / 10).toFixed(1);
 }
 
 function formatPressureNumber(value: number): string {

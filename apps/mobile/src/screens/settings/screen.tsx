@@ -2,18 +2,15 @@ import React from 'react';
 import { Alert, AppState, Linking } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import packageJson from '../../../package.json';
-import { HStack } from '../../components/ui/hstack';
 import { Section, Row } from '../../components/ui/grouped-list';
 import { InstrumentButton, ScreenBackButton } from '../../components/ui/instrument';
 import { BellIcon, GlobeIcon, SunIcon, WatchIcon } from '../../components/ui/icon';
 import { Pressable } from '../../components/ui/pressable';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
-import { Spinner } from '../../components/ui/spinner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { useContentLoading } from '../../components/ui/skeleton-block';
-import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import type { SupportedLanguage } from '../../i18n';
 import type { SocialProvider } from '../../auth/native-social-auth';
 import { defaultWatchLink } from '../../companion/default-watch-link';
@@ -247,6 +244,8 @@ export default function SettingsScreen({
 
   const watchStatusLoading = linkedWatchInfo === undefined && !linkedWatchLookupFailed;
   const showWatchStatusLoading = useContentLoading(watchStatusLoading, 'linked-watch');
+  // A quick download keeps the last backup status; "loading" appears only after the shared delay.
+  const showCloudRefreshing = useContentLoading(isCloudRefreshing, 'account-sync');
   const watchName = linkedWatchInfo?.name ?? t('settings.devices.appleWatch');
   // Nothing is shown for a fast lookup; "checking" appears only after the shared delay.
   const watchStatus = linkedWatchLookupFailed
@@ -447,7 +446,7 @@ export default function SettingsScreen({
               <Row
                 testID="settings-row-sync"
                 label={t('settings.account.sync')}
-                value={getSyncValue({ isOffline, isCloudRefreshing, pendingChangeCount }, t)}
+                value={getSyncValue({ isOffline, isCloudRefreshing: showCloudRefreshing, pendingChangeCount }, t)}
                 valueTestID="settings-account-sync-status"
                 detail={isOffline ? t('settings.account.offlineDescription') : undefined}
               />
@@ -461,9 +460,18 @@ export default function SettingsScreen({
                 />
               ) : null}
             </Section>
-            <VStack className="overflow-hidden rounded-2xl bg-card">
-              <SignOutRow label={t('settings.account.signOut')} pending={isSigningOut} onPress={confirmSignOut} />
-            </VStack>
+            <Section>
+              {/* Busy and disabled at once while signing out; the spinner shows only after the shared delay. */}
+              <Row
+                testID="settings-account-sign-out"
+                label={t('settings.account.signOut')}
+                destructive
+                pending={isSigningOut}
+                accessory={{ kind: 'none' }}
+                onPress={confirmSignOut}
+                separated={false}
+              />
+            </Section>
           </>
         ) : (
           <Section>
@@ -640,27 +648,6 @@ function getSyncValue(
   return status.pendingChangeCount > 0
     ? t('settings.account.syncPending', { count: status.pendingChangeCount })
     : t('settings.account.syncNothingPending');
-}
-
-/** The destructive sign-out row: busy at once, spinner only after the shared delay. */
-function SignOutRow(props: { label: string; pending: boolean; onPress: () => void }): React.JSX.Element {
-  const { showIndicator } = useLoadingFeedback(props.pending);
-
-  return (
-    <Pressable
-      testID="settings-account-sign-out"
-      accessibilityRole="button"
-      accessibilityLabel={props.label}
-      accessibilityState={{ busy: props.pending, disabled: props.pending }}
-      disabled={props.pending}
-      onPress={props.onPress}
-      className="active:bg-muted">
-      <HStack space="md" className="min-h-12 items-center px-4 py-3">
-        <Text className="flex-1 text-base text-destructive">{props.label}</Text>
-        {showIndicator ? <Spinner testID="settings-account-sign-out-spinner" aria-label={props.label} size="small" /> : null}
-      </HStack>
-    </Pressable>
-  );
 }
 
 function SettingsScaffold(props: { children: React.ReactNode }): React.JSX.Element {

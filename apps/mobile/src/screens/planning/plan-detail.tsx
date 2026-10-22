@@ -43,6 +43,8 @@ type PlanDetailProps = {
   onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>;
   /** The last planned-dive handoff to the watch, if one has run. */
   watchSyncStatus?: PlannedWatchDivesUpdateStatus;
+  /** Plan localId → `updatedAt` of the versions that handoff carried. */
+  watchSentPlanVersions?: ReadonlyMap<string, number>;
   onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
@@ -69,7 +71,10 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
   const [missingFields, setMissingFields] = React.useState<PlanRequiredField[]>([]);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [deleteFailed, setDeleteFailed] = React.useState(false);
-  const checklist = useChecklistSaves(plan.checklistItems, props.onSaveChecklist);
+  // Error notes appear below their control without moving focus, so each failure is also spoken.
+  const checklist = useChecklistSaves(plan.checklistItems, props.onSaveChecklist, () =>
+    AccessibilityInfo.announceForAccessibility(t('planning.checklistError')),
+  );
   const datePassed = isPlanDatePassed(plan);
   const describeMissing = (fields: PlanRequiredField[]) =>
     t('planning.promoteMissing', { fields: fields.map(field => t(REQUIRED_FIELD_LABEL_KEYS[field])).join(', ') });
@@ -143,7 +148,10 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
         setIsDeleting(true);
         setDeleteFailed(false);
         deletePlan(plan.localId)
-          .catch(() => setDeleteFailed(true))
+          .catch(() => {
+            setDeleteFailed(true);
+            AccessibilityInfo.announceForAccessibility(t('planning.deleteError'));
+          })
           .finally(() => setIsDeleting(false));
       },
     });
@@ -152,14 +160,12 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
     <VStack space="lg">
       <HStack className="items-center justify-between">
         <ScreenBackButton testID="planning-detail-back" accessibilityLabel={t('common.back')} onPress={props.onBack} />
-        <Pressable
+        <InstrumentButton
           testID="planning-detail-edit"
-          accessibilityRole="button"
+          label={t('planning.editPlan')}
           onPress={() => props.onEdit(plan)}
-          className="min-h-11 min-w-11 items-center justify-center px-2"
-          style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-          <Text className="text-base font-semibold text-primary">{t('planning.editPlan')}</Text>
-        </Pressable>
+          className="min-h-11 px-4 py-2"
+        />
       </HStack>
 
       <VStack space="sm">
@@ -174,7 +180,12 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
         <SyncConflictBanner onResolve={props.onResolveConflict} />
       ) : null}
 
-      <WhenWhereSection plan={plan} locale={locale} watchSyncStatus={props.watchSyncStatus} />
+      <WhenWhereSection
+        plan={plan}
+        locale={locale}
+        watchSyncStatus={props.watchSyncStatus}
+        watchSentPlanVersions={props.watchSentPlanVersions}
+      />
       <DiveSection plan={plan} />
       <PressureMemoSection plan={plan} />
       <ExpectedConditionsSection plan={plan} />
@@ -242,7 +253,7 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
               label={t('planning.deletePlan')}
               destructive
               accessory={{ kind: 'none' }}
-              disabled={isDeleting}
+              pending={isDeleting}
               separated={false}
               onPress={confirmDelete}
             />
@@ -262,11 +273,12 @@ function WhenWhereSection(props: {
   plan: DivePlan;
   locale: string;
   watchSyncStatus?: PlannedWatchDivesUpdateStatus;
+  watchSentPlanVersions?: ReadonlyMap<string, number>;
 }): React.JSX.Element {
   const { t } = useTranslation();
   const parts =
     props.plan.plannedAt === undefined ? undefined : formatDateTimeParts(new Date(props.plan.plannedAt * 1000), props.locale);
-  const watchState = getPlanWatchState(props.plan, props.watchSyncStatus);
+  const watchState = getPlanWatchState(props.plan, props.watchSyncStatus, props.watchSentPlanVersions);
 
   return (
     <Section title={t('planning.sections.whenWhere')}>
@@ -397,7 +409,7 @@ function ExpectedConditionsSection(props: { plan: DivePlan }): React.JSX.Element
   const { t } = useTranslation();
   const values = props.plan.plannedValues;
   const rows = [
-    values.waterCondition
+    values.waterCondition && values.waterCondition !== 'unknown'
       ? { id: 'water-condition', label: t('planning.expectedWaterCondition'), value: t(`waterConditions.${values.waterCondition}`) }
       : undefined,
     values.visibilityExpectation !== undefined
@@ -494,11 +506,12 @@ function NotesSection(props: { plan: DivePlan }): React.JSX.Element | null {
 
 /**
  * A checklist tap saves at once. While saves are in flight `items` holds the latest taps, and a
- * failed save puts the stored state back with a short note.
+ * failed save puts the stored state back with a short note (`onSaveFailed` runs once per failure).
  */
 function useChecklistSaves(
   storedItems: DivePlanChecklistItem[],
-  onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>,
+  onSaveChecklist: ((items: DivePlanChecklistItem[]) => Promise<unknown>) | undefined,
+  onSaveFailed: () => void,
 ): { items: DivePlanChecklistItem[]; saveFailed: boolean; toggle: (id: string) => void } {
   const [pendingItems, setPendingItems] = React.useState<DivePlanChecklistItem[]>();
   const [saveFailed, setSaveFailed] = React.useState(false);
@@ -515,7 +528,10 @@ function useChecklistSaves(
     setSaveFailed(false);
     inFlightRef.current += 1;
     onSaveChecklist(nextItems)
-      .catch(() => setSaveFailed(true))
+      .catch(() => {
+        setSaveFailed(true);
+        onSaveFailed();
+      })
       .finally(() => {
         inFlightRef.current -= 1;
         if (inFlightRef.current === 0) {

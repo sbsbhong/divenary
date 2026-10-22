@@ -40,7 +40,7 @@ describe('SocialLoginButton', () => {
     }
   });
 
-  test.each(['google', 'apple'] as const)('renders a unified 44-point %s row', async provider => {
+  test.each(['google', 'apple'] as const)('renders a matched 50-point pill for %s', async provider => {
     const renderer = await render(
       <SocialLoginButton
         provider={provider}
@@ -55,7 +55,7 @@ describe('SocialLoginButton', () => {
     const button = renderer.root.findByProps({ testID: `auth-login-${provider}` });
     const style = StyleSheet.flatten(button.props.style);
 
-    expect(style).toMatchObject({ height: 44, borderRadius: 8 });
+    expect(style).toMatchObject({ height: 50, borderRadius: 25 });
     expect(button.props.accessibilityRole).toBe('button');
     expect(button.props.accessibilityState).toEqual({ busy: false, disabled: false });
   });
@@ -107,10 +107,11 @@ describe('SocialLoginButton', () => {
     });
     expect(StyleSheet.flatten(googleLabel.props.style)).toMatchObject({
       fontFamily: 'GoogleSans-Medium',
-      fontSize: 14,
-      lineHeight: 20,
+      fontSize: 17,
+      lineHeight: 22,
     });
-    expect(StyleSheet.flatten(appleLabel.props.style)).toMatchObject({ fontSize: 19 });
+    // Both labels share one size so the pair reads as one set.
+    expect(StyleSheet.flatten(appleLabel.props.style)).toMatchObject({ fontSize: 17, lineHeight: 22 });
     expect(googleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
     expect(appleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
   });
@@ -192,8 +193,9 @@ describe('SocialLoginButton', () => {
   test.each([
     ['apple', 'light', { backgroundColor: '#000000', borderWidth: 0 }, '#FFFFFF'],
     ['apple', 'dark', { backgroundColor: '#FFFFFF', borderWidth: 0 }, '#000000'],
-    ['google', 'light', { backgroundColor: '#FFFFFF', borderColor: '#747775', borderWidth: 1 }, '#1F1F1F'],
-    ['google', 'dark', { backgroundColor: '#131314', borderColor: '#8E918F', borderWidth: 1 }, '#E3E3E3'],
+    // Same polarity as Apple: Google's dark theme on the light sheet, its light theme on the dark one.
+    ['google', 'light', { backgroundColor: '#131314', borderColor: '#8E918F', borderWidth: 1 }, '#E3E3E3'],
+    ['google', 'dark', { backgroundColor: '#FFFFFF', borderColor: '#747775', borderWidth: 1 }, '#1F1F1F'],
   ] as const)('follows the %s brand colours in the %s theme', async (provider, theme, buttonStyle, labelColor) => {
     const renderer = await render(
       <SocialLoginButton
@@ -267,5 +269,44 @@ describe('SocialLoginButton', () => {
         width: expectedSlotWidth,
       });
     }
+  });
+
+  test('tags the provider used last on its corner without changing the button itself', async () => {
+    const renderer = await render(
+      <SocialLoginButton
+        provider="google"
+        label="Continue with Google"
+        accessibilityLabel="Continue with Google, Last used"
+        busyLabel="Signing in"
+        busy={false}
+        disabled={false}
+        onPress={jest.fn()}
+        recentLabel="Last used"
+      />,
+    );
+
+    const tag = renderer.root.findByProps({ testID: 'auth-login-recent-google' });
+    expect(tag.props.accessibilityElementsHidden).toBe(true);
+    expect(tag.props.pointerEvents).toBe('none');
+    expect(renderer.root.findAll(node => node.props.children === 'Last used').length).toBeGreaterThan(0);
+    // The tag sits outside the button, so the button's own content stays the brand's.
+    const button = renderer.root.findByProps({ testID: 'auth-login-google' });
+    expect(button.findAll(node => node.props.testID === 'auth-login-recent-google')).toHaveLength(0);
+  });
+
+  test('has no tag when the provider was not used last', async () => {
+    const renderer = await render(
+      <SocialLoginButton
+        provider="apple"
+        label="Continue with Apple"
+        accessibilityLabel="Continue with Apple"
+        busyLabel="Signing in"
+        busy={false}
+        disabled={false}
+        onPress={jest.fn()}
+      />,
+    );
+
+    expect(renderer.root.findAll(node => node.props.testID === 'auth-login-recent-apple')).toHaveLength(0);
   });
 });

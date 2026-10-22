@@ -10,7 +10,6 @@ import {
 } from '../src/components/ui/number-wheel-picker';
 import { MultiColumnNumberWheelPicker } from '../src/components/ui/multi-column-number-wheel-picker';
 import { DepthWheelField, DurationWheelField } from '../src/screens/common/form/compound-number-wheel-fields';
-import { NumericSliderField } from '../src/screens/common/form/numeric-slider-field';
 
 const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
 
@@ -734,23 +733,13 @@ describe('NumberWheelPicker', () => {
     expect(root.findByProps({ testID: 'depth-picker-value' }).props.children).toBe('10');
   });
 
-  it('passes pickerHeight from NumericSliderField to NumberWheelPicker height', async () => {
+  it('sizes the wheel and its padding from a custom height', async () => {
     const onChange = jest.fn();
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
       renderer = ReactTestRenderer.create(
-        <NumericSliderField
-          label="Maximum depth"
-          value={10}
-          min={0}
-          max={20}
-          step={5}
-          unitLabel="m"
-          pickerHeight={132}
-          onChange={onChange}
-          testID="depth-picker"
-        />,
+        <NumberWheelPicker value={10} min={0} max={20} step={5} unitLabel="m" height={132} onChange={onChange} testID="depth-picker" />,
       );
     });
     renderers.push(renderer!);

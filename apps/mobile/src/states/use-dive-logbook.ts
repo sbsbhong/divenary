@@ -12,6 +12,7 @@ import type { DiveLogEntry } from '../types/dive-log-entry';
 import type { DiveSessionFilter, MobileDiveSession } from '../types/dive-session';
 import { importPendingWatchPayloads, type WatchImportSummary } from './watch-sync';
 import { firstNonBlankText } from '../utils/notes';
+import { getVisibleLogTags } from '../utils/watch-session-to-dive-log-entry';
 import { useOptionalAccountData } from './account-data';
 
 type UseDiveLogbookOptions = {
@@ -61,12 +62,14 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
 
     return entries.filter(entry => {
       const session = diveLogEntryToMobileSession(entry);
+      // Search the tags the diver sees, not the watch's internal ones (watch-capture, plan-…).
+      const visibleTags = getVisibleLogTags(entry);
       const searchable = [
         session.siteName,
         session.notes,
         session.gasLabel,
         session.diveMode,
-        ...(session.tags ?? []),
+        ...visibleTags,
         ...(session.buddyIds ?? []),
         ...(session.gearIds ?? []),
       ]
@@ -75,7 +78,7 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
         .toLowerCase();
 
       const matchesQuery = query.length === 0 || searchable.includes(query);
-      const matchesTag = !filter.tag || session.tags?.includes(filter.tag);
+      const matchesTag = !filter.tag || visibleTags.includes(filter.tag);
       return matchesQuery && matchesTag;
     });
   }, [entries, filter]);

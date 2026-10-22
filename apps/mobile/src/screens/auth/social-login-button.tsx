@@ -21,6 +21,8 @@ export type SocialLoginButtonProps = {
   onPress: () => void;
   /** The resolved app theme; the provider buttons follow Apple and Google brand rules for it. */
   theme?: SocialLoginButtonTheme;
+  /** Set on the provider used for the last sign-in: shown as a small tag on the button's corner. */
+  recentLabel?: string;
 };
 
 type ButtonColors = {
@@ -30,18 +32,23 @@ type ButtonColors = {
   spinner: string;
 };
 
-// Apple: a black button on light backgrounds and a white one on dark backgrounds.
-// Google: the light theme on light backgrounds and the #131314 dark theme on dark ones.
+// The two buttons are drawn as one matched pair: the same pill, height, label size and logo slot,
+// and the same polarity from each brand's own palette — dark buttons on the light sheet (Apple
+// black, Google's #131314 dark theme) and light buttons on the dark sheet (Apple white, Google's
+// light theme).
 const buttonColors: Record<SocialProvider, Record<SocialLoginButtonTheme, ButtonColors>> = {
   apple: {
     light: { background: '#000000', label: '#FFFFFF', spinner: '#FFFFFF' },
     dark: { background: '#FFFFFF', label: '#000000', spinner: '#000000' },
   },
   google: {
-    light: { background: '#FFFFFF', border: '#747775', label: '#1F1F1F', spinner: '#5F6368' },
-    dark: { background: '#131314', border: '#8E918F', label: '#E3E3E3', spinner: '#E3E3E3' },
+    light: { background: '#131314', border: '#8E918F', label: '#E3E3E3', spinner: '#E3E3E3' },
+    dark: { background: '#FFFFFF', border: '#747775', label: '#1F1F1F', spinner: '#5F6368' },
   },
 };
+
+const BUTTON_HEIGHT = 50;
+const LABEL_STYLE = { fontSize: 17, lineHeight: 22 } as const;
 
 // The official Apple artwork has an opaque square behind the logo, so each button colour gets
 // the matching artwork: a black logo on white, and the same logo inverted for the black button.
@@ -77,6 +84,7 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
   );
 
   return (
+    <Box className="w-full">
     <Pressable
       testID={`auth-login-${props.provider}`}
       accessibilityLabel={props.accessibilityLabel}
@@ -88,9 +96,9 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
       style={{
         backgroundColor: colors.background,
         borderColor: colors.border,
-        borderRadius: 8,
+        borderRadius: BUTTON_HEIGHT / 2,
         borderWidth: colors.border ? 1 : 0,
-        height: 44,
+        height: BUTTON_HEIGHT,
         // Only the provider the user did not pick dims; the picked one stays solid.
         opacity: props.disabled && !props.busy ? 0.5 : 1,
       }}>
@@ -115,8 +123,8 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
         className="flex-1 text-center"
         style={
           isGoogle
-            ? { color: colors.label, fontFamily: 'GoogleSans-Medium', fontSize: 14, lineHeight: 20 }
-            : { color: colors.label, fontSize: 19, fontWeight: '600', lineHeight: 23 }
+            ? { ...LABEL_STYLE, color: colors.label, fontFamily: 'GoogleSans-Medium' }
+            : { ...LABEL_STYLE, color: colors.label, fontWeight: '600' }
         }>
         {props.label}
       </Text>
@@ -134,5 +142,20 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
         ) : null}
       </Box>
     </Pressable>
+      {props.recentLabel ? (
+        // Outside the button so the brand artwork and label stay as the brands draw them; the
+        // button's accessibility label already says it was used last.
+        <Box
+          testID={`auth-login-recent-${props.provider}`}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+          className="absolute -top-2.5 right-6 rounded-full bg-card px-2.5 py-0.5">
+          <Text maxFontSizeMultiplier={1.3} className="text-xs font-semibold text-card-foreground">
+            {props.recentLabel}
+          </Text>
+        </Box>
+      ) : null}
+    </Box>
   );
 }

@@ -1037,29 +1037,12 @@ function RoutedLogEditor(props: {
   afterSave?: (entry: DiveLogEntry) => Promise<void>;
   onSaved: (entry: DiveLogEntry) => void;
 }): React.JSX.Element {
-  const { t } = useTranslation();
   const { navigation } = props;
-  const leavingAfterSaveRef = React.useRef(false);
-  const [isDirty, setIsDirty] = React.useState(false);
+  const discardGuard = useDiscardChangesGuard(navigation);
   const suggestions = React.useMemo(
     () => getLogEntrySuggestions(props.logbook.entries, props.entry.localId),
     [props.entry.localId, props.logbook.entries],
   );
-
-  usePreventRemove(isDirty, ({ data }) => {
-    if (leavingAfterSaveRef.current) {
-      navigation.dispatch(data.action);
-      return;
-    }
-
-    confirmDestructiveAction({
-      title: t('common.discardChanges.title'),
-      message: t('common.discardChanges.message'),
-      cancelLabel: t('common.discardChanges.keepEditing'),
-      confirmLabel: t('common.discardChanges.discard'),
-      onConfirm: () => navigation.dispatch(data.action),
-    });
-  });
 
   return (
     <LogEntryEditor
@@ -1067,11 +1050,11 @@ function RoutedLogEditor(props: {
       mode={props.mode}
       suggestions={suggestions}
       onCancel={() => navigation.goBack()}
-      onDirtyChange={setIsDirty}
+      onDirtyChange={discardGuard.setDirty}
       onSave={async nextEntry => {
         const savedEntry = await props.logbook.saveEntry(nextEntry);
         await props.afterSave?.(savedEntry);
-        leavingAfterSaveRef.current = true;
+        discardGuard.markLeavingAfterSave();
         props.onSaved(savedEntry);
         return savedEntry;
       }}
@@ -1137,6 +1120,7 @@ function PlanningDetailRoute(
         onOpenConvertedLog={localId => props.navigation.navigate('logbookDetail', { localId })}
         onSaveChecklist={checklistItems => props.planning.savePlan(withDivePlanChecklist(plan, checklistItems))}
         watchSyncStatus={props.planning.plannedWatchSyncStatus}
+        watchSentPlanVersions={props.planning.plannedWatchSentVersions}
         onResolveConflict={
           accountData?.resolveConflict
             ? choice => accountData.resolveConflict!('plan', plan.localId, choice)

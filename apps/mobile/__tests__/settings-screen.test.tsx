@@ -368,7 +368,8 @@ describe('SettingsScreen', () => {
     });
     mockUseAuth.mockReturnValue(signedIn({ signOut }));
     const renderer = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
-    const signOutRow = () => renderer.root.findByProps({ testID: 'settings-account-sign-out' });
+    // The grouped row's own pressable, which carries the busy and disabled state.
+    const signOutRow = () => findControl(renderer.root, 'settings-account-sign-out');
 
     await ReactTestRenderer.act(async () => {
       await signOutRow().props.onPress();
@@ -540,12 +541,48 @@ describe('SettingsScreen', () => {
     expect(detail.root.findByProps({ testID: 'settings-account-sign-out' })).toBeTruthy();
   });
 
-  test('shows cloud downloading in the sync row', async () => {
+  test('keeps the last backup status while account records download and says so only after 1 s', async () => {
+    jest.useFakeTimers();
     mockUseAuth.mockReturnValue(signedIn());
-    const renderer = await renderSettings({ route: 'account', isCloudRefreshing: true, loadPendingChangeCount: async () => 0 });
+    const rejectedWatchPayloadStore = createWatchRejectedPayloadStore({ storage: new InMemoryKeyValueStore() });
+    const loadPendingChangeCount = async () => 0;
+    const element = (isCloudRefreshing: boolean) => (
+      <AppPreferencesProvider>
+        <SettingsScreen
+          route="account"
+          rejectedWatchPayloadStore={rejectedWatchPayloadStore}
+          loadLinkedWatchInfo={() => Promise.resolve(linkedWatchInfo)}
+          loadPendingChangeCount={loadPendingChangeCount}
+          isCloudRefreshing={isCloudRefreshing}
+        />
+      </AppPreferencesProvider>
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(element(false));
+    });
     await flush();
+    const status = () => renderer!.root.findByProps({ testID: 'settings-account-sync-status' }).props.children;
 
-    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('계정의 기록을 불러오는 중');
+    expect(status()).toBe('백업 대기 없음');
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(element(true));
+    });
+    await flush();
+    // A quick download never flashes the loading line.
+    expect(status()).toBe('백업 대기 없음');
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(status()).toBe('계정의 기록을 불러오는 중');
+
+    await ReactTestRenderer.act(async () => {
+      renderer!.update(element(false));
+    });
+    await flush();
+    expect(status()).toBe('백업 대기 없음');
   });
 
   test('shows an unknown pending count as -- instead of zero', async () => {

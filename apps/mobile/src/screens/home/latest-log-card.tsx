@@ -16,10 +16,12 @@ import type { MobileDiveSession } from '../../types/dive-session';
 import { buildProfileRenderModel } from '../../utils/session-profile-chart';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
 import { getUnsupportedDepthForLogEntry, getUnsupportedDepthForWatchSession } from '../../utils/unsupported-depth';
+import { DEFAULT_WATCH_LOG_SITE_NAME } from '../../utils/watch-session-to-dive-log-entry';
 import {
   formatLogDate,
+  formatLogDay,
   formatLogDepth,
-  formatLogDuration,
+  formatLogMinutes,
   getLogDisplayTitle,
   getLogMeasuredValue,
   getLogStartedAt,
@@ -48,18 +50,34 @@ export function LatestLogCard(props: {
 }): React.JSX.Element {
   const { t } = useTranslation();
   const summary = getLatestLogSummary(props.session, props.entry, t, props.locale);
+  const dateLabel = formatLogDate(summary.startedAt, props.locale, t('formatters.unknownDate'));
+  const maxDepthLabel = formatLogDepth(summary.maxDepthMeters);
+  // Whole minutes, like the log list row.
+  const diveTimeLabel = formatLogMinutes(summary.durationSeconds, t);
+  const captureLabel = summary.isDemoCapture
+    ? summary.isTestCapture
+      ? t('logbook.testCapture')
+      : t('logbook.demoCapture')
+    : undefined;
+  const unsupportedDepthLabel = summary.hasUnsupportedDepth ? t('logbook.unsupportedDepthMarker') : undefined;
+  // The Demo/Test badge is hidden from VoiceOver on its own, so the card says it in one label,
+  // in the same order as the log list row.
+  const accessibilityLabel = [
+    summary.title,
+    dateLabel,
+    captureLabel,
+    unsupportedDepthLabel,
+    `${t('home.maxDepth')} ${maxDepthLabel}`,
+    `${t('home.diveTime')} ${diveTimeLabel}`,
+  ]
+    .filter((label): label is string => label !== undefined)
+    .join(', ');
   const markers =
-    summary.isDemoCapture || summary.hasUnsupportedDepth ? (
+    captureLabel || unsupportedDepthLabel ? (
       <HStack space="xs" className="flex-wrap items-center justify-end">
-        {summary.isDemoCapture ? (
-          <ListStatusBadge
-            testID="home-latest-demo-badge"
-            kind="demo"
-            label={summary.isTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
-          />
-        ) : null}
-        {summary.hasUnsupportedDepth ? (
-          <StatusPill testID="home-latest-unsupported-depth" label={t('logbook.unsupportedDepthMarker')} tone="muted" />
+        {captureLabel ? <ListStatusBadge testID="home-latest-demo-badge" kind="demo" label={captureLabel} /> : null}
+        {unsupportedDepthLabel ? (
+          <StatusPill testID="home-latest-unsupported-depth" label={unsupportedDepthLabel} tone="muted" />
         ) : null}
       </HStack>
     ) : undefined;
@@ -74,33 +92,30 @@ export function LatestLogCard(props: {
           right={markers}
         />
         <Text testID="home-latest-date" size="sm" className="text-muted-foreground">
-          {formatLogDate(summary.startedAt, props.locale, t('formatters.unknownDate'))}
+          {dateLabel}
         </Text>
       </VStack>
       <DepthSparkline session={props.session} />
       <HStack space="md">
-        <LatestLogFact
-          label={t('home.maxDepth')}
-          value={formatLogDepth(summary.maxDepthMeters)}
-          valueTestID="home-latest-max-depth"
-        />
-        <LatestLogFact
-          label={t('home.diveTime')}
-          value={formatLogDuration(summary.durationSeconds, t)}
-          valueTestID="home-latest-dive-time"
-        />
+        <LatestLogFact label={t('home.maxDepth')} value={maxDepthLabel} valueTestID="home-latest-max-depth" />
+        <LatestLogFact label={t('home.diveTime')} value={diveTimeLabel} valueTestID="home-latest-dive-time" />
       </HStack>
     </DiveSummaryCard>
   );
 
   if (!props.onOpen) {
-    return card;
+    return (
+      <VStack testID="home-latest-log-summary" accessible accessibilityLabel={accessibilityLabel}>
+        {card}
+      </VStack>
+    );
   }
 
   return (
     <Pressable
       testID="home-latest-log-card"
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       accessibilityHint={t('home.openLatestLogHint')}
       className="rounded-2xl"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}
@@ -214,7 +229,7 @@ function getLatestLogSummary(
   const isDemoCapture = session.captureMode === 'demo';
 
   return {
-    title: session.siteName ?? t('logbook.untitledDive'),
+    title: getSessionDisplayTitle(session, t, locale),
     startedAt: session.startedAt,
     maxDepthMeters: getSessionMaxDepthMeters(session),
     durationSeconds: getSessionDurationSeconds(session),
@@ -222,6 +237,27 @@ function getLatestLogSummary(
     isTestCapture: isDemoCapture && (session.tags?.includes('debug-test-capture') ?? false),
     hasUnsupportedDepth: getUnsupportedDepthForWatchSession(session) !== undefined,
   };
+}
+
+/**
+ * The logbook title rule (`getLogDisplayTitle`) for a session without its entry: the diver's title,
+ * then a localized `워치 기록 · <day>` instead of the stored import default site, then the site, then
+ * `제목 없는 기록`. Display only; the stored site name is not changed.
+ */
+function getSessionDisplayTitle(session: MobileDiveSession, t: TranslateFn, locale: string): string {
+  const title = session.planTitle?.trim();
+
+  if (title) {
+    return title;
+  }
+
+  const siteName = session.siteName?.trim();
+
+  if (siteName === DEFAULT_WATCH_LOG_SITE_NAME && session.startedAt) {
+    return t('logbook.watchDiveTitle', { date: formatLogDay(session.startedAt, locale) });
+  }
+
+  return siteName || t('logbook.untitledDive');
 }
 
 function LatestLogFact(props: { label: string; value: string; valueTestID?: string }): React.JSX.Element {
