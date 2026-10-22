@@ -35,7 +35,7 @@
 | [Monorepo 구조](architecture/monorepo.md) | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리하고, contracts에 session과 폰-워치 제어 메시지 schema를 둔다. | 2026-10-22 |
 | [Supabase 구조](architecture/supabase.md) | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단하고, mobile Auth 단계의 10초 시간 초과는 로그아웃 없이 transport failure로 다루되 onboarding 실패는 guest로 연다. | 2026-10-22 |
 | [동기화 흐름 구조](architecture/sync-flow.md) | 폰-워치 메시지는 `packages/contracts` schema가 기준이고, account hydrate는 원격 행을 최신순 페이지마다 바로 로컬에 적용하며, durable JSON은 원자적 단일 key 쓰기를 쓴다. | 2026-10-22 |
-| [Watch 앱 구조](architecture/watch-app.md) | 워치 기록·복구 구조, 계획값과 선택 수명, 저장 실패 후 홈 복귀·재시도, 중복 종료 방지, Always-On 화면 이동 제한과 번호 있는 재전송 피드백을 정리한다. | 2026-10-22 |
+| [Watch 앱 구조](architecture/watch-app.md) | 워치 기록·복구 구조, 계획값과 선택 수명, 저장 실패 후 홈 복귀·재시도, 중복 종료 방지, Always-On 화면 이동 제한, 첫 하강 전 종류 바꾸기와 번호 있는 재전송 피드백을 정리한다. | 2026-10-22 |
 
 ## domains
 
@@ -58,7 +58,7 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략(1초·4초·10초, 정적 스켈레톤, 최소 표시 시간 없음), 편집기·상세·목록 패턴, 결과 배너, 로그인 버튼 쌍, 워치 11pt 하한·비인증 표식·허용 수심 게이지·종료 안내·Dynamic Type·VoiceOver와 Always-On 규칙을 둔다. | 2026-10-22 |
+| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략(1초·4초·10초, 정적 스켈레톤, 최소 표시 시간 없음), 편집기·상세·목록 패턴, 결과 배너, 로그인 버튼 쌍, 워치 11pt 하한·비인증 표식·다이빙을 따라가는 게이지 범위·종류 바꾸기와 종료 안내·Dynamic Type·VoiceOver와 Always-On 규칙을 둔다. | 2026-10-22 |
 
 ## decisions
 

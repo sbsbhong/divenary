@@ -20,7 +20,7 @@ Updated: 2026-10-22
 
 `apps/mobile/ios/DivenaryWatchApp`는 `apps/mobile/ios/Divenary.xcodeproj`의 `DivenaryWatchApp` target이 소유하는 SwiftUI watchOS companion이다. real recording은 watchOS underwater extended runtime lifecycle을 따르고, demo/debug recording은 별도의 view-scoped simulation 흐름을 유지한다. 이 앱은 다이빙 기록과 사후 리뷰 companion이며 인증된 다이브 컴퓨터나 안전 판단 시스템이 아니다.
 
-2026-10-22부터 Action Button은 단계를 아는 intent 하나로 처리한다. 대기·Wet Ready·요약에서는 시작하고, 실제 기록 중에는 Live ↔ 세부 화면을 넘기며, 물 밖에서 180초가 지나면 순환 끝에 종료 화면이 생기고 그 화면에서 누를 때만 기존 종료 경로를 탄다. 크라운 회전도 화면을 넘긴다. 자동 화면 전환은 햅틱을 울리지 않는다.
+2026-10-22부터 Action Button은 단계를 아는 intent 하나로 처리한다. 대기·Wet Ready·요약에서는 시작하고, 실제 기록 중에는 Live ↔ 세부 화면을 넘기며, 물 밖에서 180초가 지나면 순환 끝에 종료 화면이 생기고 그 화면에서 누를 때만 기존 종료 경로를 탄다. 첫 하강(1 m) 전에는 순환 끝에 종류 바꾸기 화면이 생기고 그 화면에서 누르면 다른 다이빙 종류로 새로 기록한다. 크라운 회전은 Live와 세부 화면만 넘긴다. 자동 화면 전환은 햅틱을 울리지 않는다.
 
 ## 모바일 삭제 명령 처리
 
@@ -105,20 +105,33 @@ Action Button의 모든 누르기는 단계를 아는 intent 하나로 처리한
 
 - 대기, Wet Ready, 저장 요약, no-sample, 시작·저장 실패 화면: 기존 Action Button start를 실행한다(`.started` 또는 `.rejected(.startFailed)`).
 - 저장 중(`completing`)과 runtime 전환 대기(`awaitingRuntimeInvalidation`): `.rejected(.busy)`.
-- 실제 기록 중: 다음 화면으로 넘긴다. 종료 화면에서 누를 때만 아래 종료 규칙의 `requestActionButtonEnd()`를 호출하고, guard가 거부하면 Live로 돌아가며 `.rejected(.endUnavailable)`이다.
+- 실제 기록 중: 다음 화면으로 넘긴다. 종료 화면에서 누를 때만 아래 종료 규칙의 `requestActionButtonEnd()`를 호출하고, guard가 거부하면 Live로 돌아가며 `.rejected(.endUnavailable)`이다. 종류 바꾸기 화면에서 누르면 아래 "첫 하강 전 종류 바꾸기"를 실행한다(`.modeSwitched(DiveMode)` 또는 `.rejected(.modeSwitchFailed)`).
 - demo/debug 기록은 bridge에 자체 종료 override를 설치해 누르기를 그쪽으로 보내고 화면을 넘기지 않는다. 저장 실패 화면에서는 같은 기록의 저장을 재시도하며, 이 화면이 다시 나타나도 연결을 복원한다. 홈 화면 복귀는 보류 기록을 앱 범위에 넘기고 journal을 유지한다.
 
-`RecordingPageModel`(`coordinator.recordingPages`)은 실제 기록의 화면 `live`, `details`, `end`를 관리한다. `end`는 water state가 `notSubmerged`이고 기록이 `minimumHardwareEndElapsedSeconds`(180초) 이상일 때만 Action Button 순환에 들어간다. 물 밖이지만 180초 전이면 남은 시간을 센다. 크라운 회전은 `live`와 `details` 사이만 움직이고 종료 화면을 고르거나 종료하지 않는다. 다음 경우에는 다이버의 조작 없이 Live로 돌아간다: 10초 동안 누르지 않음, 프리다이빙 단계 변화(하강·수면), 권장 스탑이 `active`가 됨, 실시간 수심 신호가 `live`에서 벗어남, Always-On 진입, 종료 화면에 있는 동안 종료 조건이 사라짐. 크라운 화면 넘김은 실제 기록에만 연결하며 demo/debug는 크라운으로 수심을 흉내 낸다.
+`RecordingPageModel`(`coordinator.recordingPages`)은 실제 기록의 화면 `live`, `details`, `switchMode`, `end`를 관리한다. `end`는 water state가 `notSubmerged`이고 기록이 `minimumHardwareEndElapsedSeconds`(180초) 이상일 때만 Action Button 순환에 들어간다. 물 밖이지만 180초 전이면 남은 시간을 센다. `switchMode`는 최대 수심이 `modeSwitchDepthLimitMeters`(1 m)보다 얕고 `end`가 순환에 없을 때만 들어간다. 두 화면은 누르면 화면을 넘기지 않고 동작하므로 한 순환에 함께 두지 않는다. 크라운 회전은 `live`와 `details` 사이만 움직이고 바꾸기·종료 화면을 고르거나 종료하지 않으며, 그 화면에서는 뒤로만 나간다. 다음 경우에는 다이버의 조작 없이 Live로 돌아간다: 10초 동안 누르지 않음, 프리다이빙 단계 변화(하강·수면), 권장 스탑이 `active`가 됨, 실시간 수심 신호가 `live`에서 벗어남, Always-On 진입, 종료 화면에 있는 동안 종료 조건이 사라짐, 바꾸기 화면에 있는 동안 1 m 아래로 내려가거나 종료가 가능해짐(`modeSwitchClosed`). 크라운 화면 넘김은 실제 기록에만 연결하며 demo/debug는 크라운으로 수심을 흉내 낸다.
 
 햅틱은 `WatchDiveHaptics`(`Runtime/DiveHaptics.swift`) 하나만 울리며 이벤트는 `start`(수동·Action Button 시작), `pageChange`(동작 버튼·크라운으로 화면을 넘김), `rejected`(거부된 누르기), `endRequested`(종료 요청), `saved`(실제 기록 저장 성공) 다섯 가지다. 자동 Live 복귀와 system auto-launch 시작은 햅틱이 없고, 센서 오류·권장 스탑·상승에 연결된 햅틱은 없다. view는 `WKInterfaceDevice.play`나 `sensoryFeedback`을 쓰지 않으며 실제 기록 화면(`RealRecordingPager`)의 크라운 detent 햅틱도 끈다. demo의 크라운 수심 조절과 Wet Ready의 크라운 모드 선택은 시스템 detent 햅틱을 그대로 쓴다. jest source pin과 XCTest가 이 경계와 권장 스탑 진입 시 햅틱 없음을 검사한다.
 
 기록 화면(`RealRecordingPager`)은 다음을 따른다.
 
 - 모든 화면은 depth gauge, 수심 상태 chip과 Demo/Test 표식, 지원 수심 밖 경고를 유지한다. 화면마다 큰 숫자는 하나다. 스쿠버 Live·세부 화면과 프리다이빙 하강 중 화면(`DepthOrTimeMetric`)에서는 `liveDepthSignal == .live`일 때만 수심이고 그 밖에는 경과 시간이다. 권장 스탑 화면은 남은 스탑 시간, 프리다이빙 수면 대기는 기록 시간, 수면 휴식·요약은 수면 휴식 시간, 프리다이빙 세부 화면은 다이빙 횟수, 종료 화면은 경과 시간을 큰 숫자로 쓴다.
-- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 수중 잠금 안내는 `notSubmerged`일 때만 보인다. chip과 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
+- 프리다이빙 단계(`수면 대기`, `다이빙 중`, `요약`)는 별도 줄이 아니라 게이지 위 상태 chip 줄의 첫 chip이다. `다이빙 중`만 primary 색이고, 수면 휴식은 큰 값의 caption이 말하므로 chip이 없다. 종료 화면과 스쿠버에는 단계 chip이 없다.
+- 기록 화면은 시스템 하단 안전 영역까지 쓰고 하단 8pt 여백만 둔다. 보조 값은 한 줄에 하나씩 쌓고, 이름과 값이 한 줄에 안 들어갈 때만 이름 아래에 값을 둔다.
+- 게이지 범위는 다이빙을 따라간다. Live·세부·프리다이빙·종료 화면은 30 m에서 시작해 최대 수심이 넘을 때 10 m씩 넓어지고 다이빙 중에는 줄지 않는다. 권장 스탑 화면은 스탑 구간이 크게 보이도록 보통 0–10 m다. 센서 허용 최대 수심은 상한이라 그 너머를 그리지 않는다(`RecordingGaugeScale`).
+- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 수중 잠금 안내는 `notSubmerged`일 때만 보인다. chip, 바꾸기 화면, 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
 - Always-On(`isLuminanceReduced`)이면 `RecordingPageModel` 자체를 Live로 돌리고 그 상태를 유지하며, 동작 버튼·크라운의 화면 이동 요청을 무시한다. 화면은 항상 `pages.page`를 그리므로 보이는 화면과 입력 대상이 일치한다. `setAlwaysOn(false)` 뒤에 화면 이동을 다시 허용한다. 권장 스탑 라벨과 일시정지 문구, 상태 chip, Demo/Test 표식은 남긴다.
 - `ActionButtonHint`는 모델 식별자(`hw.machine`, 시뮬레이터는 `SIMULATOR_MODEL_IDENTIFIER`)가 `Watch6,18`, `Watch7,5`, `Watch7,12` 중 하나면 Ultra 계열로 본다. 이 판단은 힌트일 뿐이다. Divenary가 Action Button에 지정됐는지는 알 수 없으므로 문구는 조건형이고, Ultra 힌트가 없으면 안내 chip은 회전 방향까지 명시한 크라운 안내를 쓴다(`크라운 앞으로 ▸ 상세`, `크라운 뒤로 ▸ 실시간`). 식별자 목록은 실기기 확인 대상이다.
 - `DepthAutoLaunchAuthorization`은 `WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus` 결과를 `DepthAutoLaunchStatus`(`active`, `inactive`, `unknown`)로 읽고 오류는 `unknown`으로 둔다. Wet Ready 시작 안내는 이 상태와 Ultra 힌트로 고르며, `unknown`이거나 `inactive`인데 Ultra 힌트가 없으면 입수 전에 직접 시작하라는 안내를 쓴다.
+
+## 첫 하강 전 종류 바꾸기
+
+2026-10-22부터 실제 기록은 첫 하강 전이면 다른 다이빙 종류로 다시 시작할 수 있다. 스쿠버를 하려다 프리다이빙으로 시작된 경우 물 밖으로 나와 다시 시작하지 않아도 된다.
+
+- 바꾸기 화면에서 Action Button을 누르면 `switchDiveModeBeforeFirstDescent()`가 현재 기록을 `cancelSession()`으로 지우고 다른 종류로 `startSession`을 다시 부른다. runtime session은 유지하고, 선택 계획은 한 종류에 속하므로 `withoutPlannedDiveLink`로 연결을 끊고, 선호 종류를 바꾼 종류로 저장한다. 새 기록은 Live에서 시작하고(`restartRecording()`) 시작 햅틱을 울린다.
+- 지우는 부분은 1 m보다 얕은 구간뿐이라 다이빙이 사라지지 않는다. 판정은 recorder가 publish하는 최대 수심이다.
+- 취소는 저널 정리에 실패해도 센서 수집을 먼저 멈춘다. 그래서 취소나 재시작이 실패하면 실패 안내를 남기고 `awaitingRuntimeInvalidation`으로 runtime을 끝내며, 시작 오류 화면이 정리를 다시 시도한다. 아무것도 기록하지 않는 기록 화면을 남기지 않는다.
+- 터치 경로는 없다. Action Button이 없을 것 같은 기기에서는 바꾸기를 할 수 없으므로 기존처럼 기록을 끝내고 다시 시작한다.
+- 근거: [2026-10-22 종류 바꾸기·게이지 raw](../../raw/architecture/2026-10-22-watch-type-switch-and-gauge.md).
 
 ## 종료와 결과 규칙
 
