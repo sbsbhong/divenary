@@ -1,22 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "%@ (%lld)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$lld)"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%1$@ (%2$lld)"
-          }
-        }
-      }
-    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -29,6 +13,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%1$@ · %2$@"
+          }
+        }
+      }
+    },
+    "%@ (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$lld)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$lld)"
           }
         }
       }
@@ -67,6 +67,7 @@
       }
     },
     "%lld" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -129,38 +130,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld/5"
-          }
-        }
-      }
-    },
-    "Action Button" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Action Button"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동작 버튼"
-          }
-        }
-      }
-    },
-    "Action Button: retry save, then start a new dive." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Action Button: retry save, then start a new dive."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동작 버튼은 저장을 재시도한 뒤 새 기록을 시작합니다."
           }
         }
       }
@@ -229,6 +198,38 @@
         }
       }
     },
+    "Action ▸ Switch to freediving" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ Switch to freediving"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼 ▸ 프리다이빙으로 바꾸기"
+          }
+        }
+      }
+    },
+    "Action ▸ Switch to scuba" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ Switch to scuba"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼 ▸ 스쿠버로 바꾸기"
+          }
+        }
+      }
+    },
     "Action ▸ Switch type %lld/%lld" : {
       "localizations" : {
         "en" : {
@@ -241,6 +242,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "동작 버튼 ▸ 종류 바꾸기 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Action Button" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼"
+          }
+        }
+      }
+    },
+    "Action Button: retry save, then start a new dive." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button: retry save, then start a new dive."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼은 저장을 재시도한 뒤 새 기록을 시작합니다."
           }
         }
       }
@@ -588,18 +621,18 @@
         }
       }
     },
-    "Before you dive, a press on the Switch type page changes between scuba and freediving." : {
+    "Before you dive, press the Action Button on the Switch type page to change between scuba and freediving." : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Before you dive, a press on the Switch type page changes between scuba and freediving."
+            "value" : "Before you dive, press the Action Button on the Switch type page to change between scuba and freediving."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "잠수하기 전에는 종류 바꾸기 화면에서 눌러 스쿠버와 프리다이빙을 바꿀 수 있습니다."
+            "value" : "잠수하기 전에는 종류 바꾸기 화면에서 동작 버튼을 눌러 스쿠버와 프리다이빙을 바꿀 수 있습니다."
           }
         }
       }
@@ -782,6 +815,40 @@
         }
       }
     },
+    "Crown ▸ Details %lld/%lld" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digital Crown ▸ Details %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 ▸ 상세 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Crown ▸ Live %lld/%lld" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digital Crown ▸ Live %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 ▸ 실시간 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
     "Crown back ▸ Live" : {
       "localizations" : {
         "en" : {
@@ -810,38 +877,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "크라운 앞으로 ▸ 상세"
-          }
-        }
-      }
-    },
-    "Crown ▸ Details %lld/%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Digital Crown ▸ Details %1$lld/%2$lld"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "크라운 ▸ 상세 %1$lld/%2$lld"
-          }
-        }
-      }
-    },
-    "Crown ▸ Live %lld/%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Digital Crown ▸ Live %1$lld/%2$lld"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "크라운 ▸ 실시간 %1$lld/%2$lld"
           }
         }
       }
@@ -931,6 +966,7 @@
       }
     },
     "Debug depth control" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1010,22 +1046,6 @@
         }
       }
     },
-    "Depth chart: %@ to %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Depth chart: %1$@ to %2$@"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "수심 그래프: %1$@~%2$@"
-          }
-        }
-      }
-    },
     "Depth chart: --" : {
       "localizations" : {
         "en" : {
@@ -1038,6 +1058,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수심 그래프: --"
+          }
+        }
+      }
+    },
+    "Depth chart: %@ to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth chart: %1$@ to %2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 그래프: %1$@~%2$@"
           }
         }
       }
@@ -1453,6 +1489,7 @@
       }
     },
     "End & save" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1909,22 +1946,6 @@
         }
       }
     },
-    "LAST DIVE" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Latest log"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "최근 기록"
-          }
-        }
-      }
-    },
     "Last dive" : {
       "localizations" : {
         "en" : {
@@ -1937,6 +1958,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "직전 다이빙"
+          }
+        }
+      }
+    },
+    "LAST DIVE" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Latest log"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최근 기록"
           }
         }
       }
@@ -1958,6 +1995,7 @@
       }
     },
     "Last observed dive time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2018,294 +2056,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "기록 시간: %@"
-          }
-        }
-      }
-    },
-    "Maximum depth: %@" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Maximum depth: %@"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "최대 수심: %@"
-          }
-        }
-      }
-    },
-    "No dive yet, so recording starts over." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No dive yet, so recording starts over."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "아직 잠수 전이라 새로 기록합니다."
-          }
-        }
-      }
-    },
-    "Not recording yet" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Not recording yet"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "아직 기록을 시작하지 않았습니다."
-          }
-        }
-      }
-    },
-    "Observed time" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Observed time"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "확인된 시간"
-          }
-        }
-      }
-    },
-    "Press Action Button\nEnd & save" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Press Action Button\nEnd & save"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동작 버튼을 누르면\n기록 종료·저장"
-          }
-        }
-      }
-    },
-    "Press the Action Button to end and save the log." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Press the Action Button to end and save the log."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "동작 버튼을 눌러 기록을 끝내고 저장하세요."
-          }
-        }
-      }
-    },
-    "Press to switch to freediving" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Press to switch to freediving"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "눌러서 프리다이빙으로 바꾸기"
-          }
-        }
-      }
-    },
-    "Press to switch to scuba" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Press to switch to scuba"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "눌러서 스쿠버로 바꾸기"
-          }
-        }
-      }
-    },
-    "Recovered after interruption" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Recovered after interruption"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "중단 후 복구됨"
-          }
-        }
-      }
-    },
-    "Save failed. Your log is kept." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save failed. Your log is kept."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "저장하지 못했습니다. 기록은 보관하고 있습니다."
-          }
-        }
-      }
-    },
-    "Save retry pending" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Save retry pending"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "저장 재시도 대기"
-          }
-        }
-      }
-    },
-    "Select a plan for starts from Home. Tap again to clear." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Select a plan for starts from Home. Tap again to clear."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "홈 화면에서 시작할 때 사용할 계획을 선택하세요. 다시 누르면 선택을 해제합니다."
-          }
-        }
-      }
-    },
-    "Start recording from Home." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start recording from Home."
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "홈 화면에서 기록을 시작하세요."
-          }
-        }
-      }
-    },
-    "Stop complete" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Stop complete"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "권장 스탑 완료"
-          }
-        }
-      }
-    },
-    "Switch to freediving" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch to freediving"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "프리다이빙으로 바꾸기"
-          }
-        }
-      }
-    },
-    "Switch to scuba" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch to scuba"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "스쿠버로 바꾸기"
-          }
-        }
-      }
-    },
-    "Water Lock off\nEnd & save" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Water Lock off\nEnd & save"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "수중 잠금 해제 시\n기록 종료·저장"
-          }
-        }
-      }
-    },
-    "Water Lock off ends log" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Water Lock off ends log"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "수중 잠금 해제 시 기록 종료"
           }
         }
       }
@@ -2375,6 +2125,22 @@
         }
       }
     },
+    "Maximum depth: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum depth: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최대 수심: %@"
+          }
+        }
+      }
+    },
     "Mild" : {
       "localizations" : {
         "en" : {
@@ -2435,6 +2201,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수심이 기록되지 않았습니다"
+          }
+        }
+      }
+    },
+    "No dive yet, so recording starts over." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No dive yet, so recording starts over."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 잠수 전이라 새로 기록합니다."
           }
         }
       }
@@ -2551,6 +2333,22 @@
         }
       }
     },
+    "Not recording yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not recording yet"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 기록을 시작하지 않았습니다."
+          }
+        }
+      }
+    },
     "Not sent to iPhone" : {
       "localizations" : {
         "en" : {
@@ -2595,6 +2393,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "메모"
+          }
+        }
+      }
+    },
+    "Observed time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Observed time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인된 시간"
           }
         }
       }
@@ -2794,6 +2608,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "다이브 전 계획"
+          }
+        }
+      }
+    },
+    "Press Action Button\nEnd & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press Action Button\nEnd & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼을 누르면\n기록 종료·저장"
+          }
+        }
+      }
+    },
+    "Press the Action Button to end and save the log." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press the Action Button to end and save the log."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼을 눌러 기록을 끝내고 저장하세요."
           }
         }
       }
@@ -3052,6 +2898,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "기록을 시작할 수 없음"
+          }
+        }
+      }
+    },
+    "Recovered after interruption" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovered after interruption"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "중단 후 복구됨"
           }
         }
       }
@@ -3353,6 +3215,38 @@
         }
       }
     },
+    "Save failed. Your log is kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save failed. Your log is kept."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장하지 못했습니다. 기록은 보관하고 있습니다."
+          }
+        }
+      }
+    },
+    "Save retry pending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save retry pending"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장 재시도 대기"
+          }
+        }
+      }
+    },
     "Saved" : {
       "localizations" : {
         "en" : {
@@ -3477,6 +3371,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "스쿠버 다이빙"
+          }
+        }
+      }
+    },
+    "Select a plan for starts from Home. Tap again to clear." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a plan for starts from Home. Tap again to clear."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면에서 시작할 때 사용할 계획을 선택하세요. 다시 누르면 선택을 해제합니다."
           }
         }
       }
@@ -3694,6 +3604,7 @@
       }
     },
     "Start from Home before entering the water." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3722,6 +3633,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "계획 다이브 시작"
+          }
+        }
+      }
+    },
+    "Start recording from Home." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start recording from Home."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면에서 기록을 시작하세요."
           }
         }
       }
@@ -3792,6 +3719,22 @@
         }
       }
     },
+    "Stop complete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop complete"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
     "Stop incomplete" : {
       "localizations" : {
         "en" : {
@@ -3858,6 +3801,7 @@
       }
     },
     "Stop zone" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3874,6 +3818,7 @@
       }
     },
     "Storage retry pending" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3986,6 +3931,38 @@
         }
       }
     },
+    "Switch to freediving" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to freediving"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙으로 바꾸기"
+          }
+        }
+      }
+    },
+    "Switch to scuba" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to scuba"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스쿠버로 바꾸기"
+          }
+        }
+      }
+    },
     "Sync" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -4037,6 +4014,7 @@
       }
     },
     "Tap a plan to use it for the next dive. Tap it again to clear." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4101,6 +4079,7 @@
       }
     },
     "Test Freedive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4117,6 +4096,7 @@
       }
     },
     "Test Large Sync" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4133,6 +4113,7 @@
       }
     },
     "Test Scuba" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4554,6 +4535,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "수중 상태"
+          }
+        }
+      }
+    },
+    "Water Lock off\nEnd & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Lock off\nEnd & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 잠금 해제 시\n기록 종료·저장"
+          }
+        }
+      }
+    },
+    "Water Lock off ends log" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Lock off ends log"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 잠금 해제 시 기록 종료"
           }
         }
       }

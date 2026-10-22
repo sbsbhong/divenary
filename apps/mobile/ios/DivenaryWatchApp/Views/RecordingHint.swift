@@ -120,8 +120,8 @@ struct RecordingHint: Equatable {
             return String(localized: "End not available")
         case let .pressToSwitch(mode):
             return mode == .scuba
-                ? String(localized: "Press to switch to scuba")
-                : String(localized: "Press to switch to freediving")
+                ? String(localized: "Action ▸ Switch to scuba")
+                : String(localized: "Action ▸ Switch to freediving")
         case .switchRejected:
             return String(localized: "Already dived · no switch")
         }

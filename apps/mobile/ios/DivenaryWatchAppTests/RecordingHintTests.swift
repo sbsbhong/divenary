@@ -136,8 +136,8 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(details.text, String(localized: "Action ▸ Switch type \(2)/\(3)"))
         XCTAssertEqual(toScuba.kind, .pressToSwitch(.scuba))
         XCTAssertEqual(toScuba.pageIndex, 2)
-        XCTAssertEqual(toScuba.text, String(localized: "Press to switch to scuba"))
-        XCTAssertEqual(toFreedive.text, String(localized: "Press to switch to freediving"))
+        XCTAssertEqual(toScuba.text, String(localized: "Action ▸ Switch to scuba"))
+        XCTAssertEqual(toFreedive.text, String(localized: "Action ▸ Switch to freediving"))
     }
 
     func testCrownHintNeverOffersTheSwitchPage() {
