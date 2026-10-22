@@ -135,10 +135,10 @@ describe('native splash screen', () => {
     const generator = readMobileFile('scripts/generate-brand-assets.swift');
 
     expect(readGitBlobId('src/assets/brand/app-logo-light.png')).toBe(
-      '5a5eb21bcb739897e84158244407a5988d95d201',
+      'daa00dd4bed3e04d186da7f4ff66ed13dcbf60f5',
     );
     expect(readGitBlobId('src/assets/brand/app-logo-dark.png')).toBe(
-      'c4a76b743a18eb835706aa83c4ec8b8505aecb95',
+      '5f385a6e2b7df70979c0ff7ded84f9ca9814e7bb',
     );
     expect(generator).not.toContain('foregroundScale');
     expect(generator).toContain('static let splashCornerRadiusRatio = 0.22');
