@@ -58,6 +58,7 @@ export function PlanBasicsSection(props: SectionProps & RequiredMarkProps): Reac
             <Input className={INPUT_CLASS}>
               <InputField
                 testID="planning-editor-plan-title"
+                accessibilityLabel={t('planning.planTitle')}
                 value={field.value ?? ''}
                 onChangeText={field.onChange}
                 placeholder={t('planning.planTitlePlaceholder')}
@@ -139,6 +140,7 @@ export function PlanBasicsSection(props: SectionProps & RequiredMarkProps): Reac
               <InputField
                 ref={siteInputRef}
                 testID="planning-editor-site-name"
+                accessibilityLabel={t('planning.siteName')}
                 value={field.value}
                 onChangeText={field.onChange}
                 placeholder={t('planning.siteNamePlaceholder')}
@@ -246,6 +248,7 @@ export function PlanNotesSection(props: SectionProps): React.JSX.Element {
             <Input className={INPUT_CLASS}>
               <InputField
                 testID="planning-editor-objective"
+                accessibilityLabel={t('planning.objective')}
                 value={field.value ?? ''}
                 onChangeText={field.onChange}
                 placeholder={t('planning.objectivePlaceholder')}
@@ -263,6 +266,7 @@ export function PlanNotesSection(props: SectionProps): React.JSX.Element {
             <Input className={INPUT_CLASS}>
               <InputField
                 testID="planning-editor-training-focus"
+                accessibilityLabel={t('planning.trainingFocus')}
                 value={field.value ?? ''}
                 onChangeText={field.onChange}
                 placeholder={t('planning.trainingFocusPlaceholder')}
