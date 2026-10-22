@@ -285,6 +285,76 @@ final class RecordingPageModelTests: XCTestCase {
         XCTAssertEqual(model.lastActionFeedback, DiveActionFeedback(id: 2, outcome: .rejected(.busy)))
     }
 
+    func testSwitchPageFollowsDetailsUntilTheFirstDescent() {
+        let model = makeRecordingModel(signals: underwater(maxDepth: 0.4))
+
+        XCTAssertTrue(model.modeSwitchAvailable)
+        XCTAssertEqual(model.pages, [.live, .details, .switchMode])
+        XCTAssertEqual(model.advanceFromActionButton(), .details)
+        XCTAssertEqual(model.nextActionButtonPage, .switchMode)
+
+        model.receive(underwater(maxDepth: 1))
+
+        XCTAssertFalse(model.modeSwitchAvailable)
+        XCTAssertEqual(model.pages, [.live, .details])
+        XCTAssertEqual(model.page, .details)
+    }
+
+    func testDescendingOnTheSwitchPageReturnsToLiveWithoutAHaptic() {
+        let haptics = RecordedDiveHaptics()
+        let scheduler = ManualPageReturnScheduler()
+        let model = makeRecordingModel(haptics: haptics, scheduler: scheduler, signals: underwater(maxDepth: 0))
+        model.stepFromCrown(by: 2)
+        XCTAssertEqual(model.page, .switchMode)
+
+        model.receive(underwater(maxDepth: 1.2))
+
+        XCTAssertEqual(model.page, .live)
+        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .live, reason: .modeSwitchClosed))
+        XCTAssertFalse(model.lastChange?.userInitiated ?? true)
+        XCTAssertFalse(scheduler.hasPendingAction)
+        XCTAssertEqual(haptics.events, [.pageChange])
+    }
+
+    func testCrownReachesTheSwitchPageAndTurnsBackFromIt() {
+        let model = makeRecordingModel(signals: underwater(maxDepth: 0))
+
+        model.stepFromCrown(by: 5)
+        XCTAssertEqual(model.page, .switchMode)
+        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .switchMode, reason: .crown))
+        model.stepFromCrown(by: -1)
+        XCTAssertEqual(model.page, .details)
+    }
+
+    func testEligibleSurfaceOffersTheEndPageInsteadOfTheSwitchPage() {
+        let model = makeRecordingModel(signals: atSurface(elapsed: 120, maxDepth: 0))
+        XCTAssertEqual(model.pages, [.live, .details, .switchMode])
+        model.stepFromCrown(by: 2)
+
+        model.receive(atSurface(elapsed: 180, maxDepth: 0))
+
+        XCTAssertEqual(model.pages, [.live, .details, .end])
+        XCTAssertFalse(model.modeSwitchAvailable)
+        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .live, reason: .modeSwitchClosed))
+
+        model.receive(underwater(maxDepth: 0))
+
+        XCTAssertEqual(model.pages, [.live, .details, .switchMode])
+    }
+
+    func testRestartedRecordingStartsOnLiveWithTheSwitchOpen() {
+        let scheduler = ManualPageReturnScheduler()
+        let model = makeRecordingModel(scheduler: scheduler, signals: underwater(maxDepth: 0.5))
+        model.stepFromCrown(by: 2)
+
+        model.restartRecording()
+
+        XCTAssertEqual(model.page, .live)
+        XCTAssertNil(model.lastChange)
+        XCTAssertTrue(model.modeSwitchAvailable)
+        XCTAssertFalse(scheduler.hasPendingAction)
+    }
+
     private func makeRecordingModel(
         haptics: RecordedDiveHaptics? = nil,
         scheduler: ManualPageReturnScheduler? = nil,
@@ -300,23 +370,26 @@ final class RecordingPageModelTests: XCTestCase {
         return model
     }
 
-    private func underwater() -> RecordingPageSignals {
+    /// By default the diver has already been below the switch limit, so the switch page is closed.
+    private func underwater(maxDepth: Double = 5) -> RecordingPageSignals {
         RecordingPageSignals(
             waterState: .submerged,
             elapsedTime: 240,
             liveDepthSignal: .live,
             freediveState: nil,
-            safetyStopStatus: .notRequired
+            safetyStopStatus: .notRequired,
+            maxDepthMeters: maxDepth
         )
     }
 
-    private func atSurface(elapsed: TimeInterval) -> RecordingPageSignals {
+    private func atSurface(elapsed: TimeInterval, maxDepth: Double = 5) -> RecordingPageSignals {
         RecordingPageSignals(
             waterState: .notSubmerged,
             elapsedTime: elapsed,
             liveDepthSignal: .stale,
             freediveState: nil,
-            safetyStopStatus: .notRequired
+            safetyStopStatus: .notRequired,
+            maxDepthMeters: maxDepth
         )
     }
 }

@@ -2,10 +2,15 @@ import Combine
 import Foundation
 
 /// A readout page during a real recording. The Action Button cycles through `pages`; crown rotation
-/// moves between `live` and `details` only. `end` is in the cycle only while ending is allowed.
+/// moves between `live`, `details` and `switchMode`, never to `end`. `end` is in the cycle only while
+/// ending is allowed, and `switchMode` only before the first descent and while `end` is not offered:
+/// a press on either page acts instead of turning the page, so both in one cycle would hide one.
 enum RecordingPage: Equatable, Sendable {
     case live
     case details
+    /// Restart the recording as the other dive type. Offered until the diver first goes below
+    /// `RecordingPageModel.modeSwitchDepthLimitMeters`, so no dive is lost.
+    case switchMode
     case end
 }
 
@@ -26,6 +31,9 @@ enum RecordingPageChangeReason: Equatable {
     case alwaysOn
     /// Ending stopped being allowed while the End page was shown.
     case endUnavailable
+    /// The switch page closed while shown: the diver went below the switch limit, or ending became
+    /// available at the surface.
+    case modeSwitchClosed
 
     var isUserInitiated: Bool {
         self == .actionButton || self == .crown
@@ -59,6 +67,7 @@ struct RecordingPageSignals: Equatable {
     var liveDepthSignal: LiveDepthSignal = .awaitingFirstSample
     var freediveState: FreeDiveSessionState?
     var safetyStopStatus: SafetyStopStatus = .unknown
+    var maxDepthMeters: Double = 0
 }
 
 @MainActor
@@ -92,11 +101,16 @@ final class TaskRecordingPageReturnScheduler: RecordingPageReturnScheduling {
 @MainActor
 final class RecordingPageModel: ObservableObject {
     static let idleReturnSeconds: TimeInterval = 10
+    /// Below this the recording already holds a dive, so the dive type can no longer be switched.
+    static let modeSwitchDepthLimitMeters: Double = 1
 
     @Published private(set) var page: RecordingPage = .live
     /// The latest page change. `nil` at the start of each recording.
     @Published private(set) var lastChange: RecordingPageChange?
     @Published private(set) var endAvailability: RecordingEndAvailability = .notAtSurface
+    /// True until the first descent below `modeSwitchDepthLimitMeters`, except while the End page is
+    /// offered. The switch page is in the cycle then.
+    @Published private(set) var modeSwitchAvailable = false
     /// The latest Action Button press in any phase, for a short hint after a rejected press.
     @Published private(set) var lastActionFeedback: DiveActionFeedback?
 
@@ -121,7 +135,19 @@ final class RecordingPageModel: ObservableObject {
 
     /// The Action Button cycle, in order.
     var pages: [RecordingPage] {
-        endAvailability == .available ? [.live, .details, .end] : [.live, .details]
+        var cycle: [RecordingPage] = [.live, .details]
+        if modeSwitchAvailable {
+            cycle.append(.switchMode)
+        }
+        if endAvailability == .available {
+            cycle.append(.end)
+        }
+        return cycle
+    }
+
+    /// The pages crown rotation moves through, in order. It never selects the End page.
+    private var crownPages: [RecordingPage] {
+        modeSwitchAvailable ? [.live, .details, .switchMode] : [.live, .details]
     }
 
     var pageIndex: Int {
@@ -137,9 +163,10 @@ final class RecordingPageModel: ObservableObject {
     /// Feeds the real recorder and water state into the model for the life of the app.
     func observe(recorder: DiveSessionRecorder, waterState: AnyPublisher<WaterSubmersionState, Never>) {
         let depth = Publishers.CombineLatest3(recorder.$elapsedTime, recorder.$liveDepthSignal, waterState)
-        let phase = Publishers.CombineLatest(
+        let phase = Publishers.CombineLatest3(
             recorder.$freeSnapshot.map { $0?.state },
-            recorder.$scubaSafetyStop.map(\.status)
+            recorder.$scubaSafetyStop.map(\.status),
+            recorder.$maxDepth
         )
         signalSubscription = Publishers.CombineLatest(depth, phase)
             .map { depth, phase in
@@ -148,7 +175,8 @@ final class RecordingPageModel: ObservableObject {
                     elapsedTime: depth.0,
                     liveDepthSignal: depth.1,
                     freediveState: phase.0,
-                    safetyStopStatus: phase.1
+                    safetyStopStatus: phase.1,
+                    maxDepthMeters: phase.2
                 )
             }
             .removeDuplicates()
@@ -166,10 +194,13 @@ final class RecordingPageModel: ObservableObject {
         guard isRecording else { return }
 
         refreshEndAvailability()
+        refreshModeSwitchAvailability()
         if let reason = Self.automaticReturnReason(from: previousSignals, to: nextSignals) {
             returnToLive(reason)
         } else if page == .end, endAvailability != .available {
             returnToLive(.endUnavailable)
+        } else if page == .switchMode, !modeSwitchAvailable {
+            returnToLive(.modeSwitchClosed)
         }
     }
 
@@ -181,6 +212,18 @@ final class RecordingPageModel: ObservableObject {
         page = .live
         lastChange = nil
         refreshEndAvailability()
+        refreshModeSwitchAvailability()
+    }
+
+    /// The coordinator restarted the recording as the other dive type. The new recording starts on
+    /// Live with no depth yet, so the switch stays available until its first descent.
+    func restartRecording() {
+        returnScheduler.cancel()
+        signals.maxDepthMeters = 0
+        page = .live
+        lastChange = nil
+        refreshEndAvailability()
+        refreshModeSwitchAvailability()
     }
 
     /// An Action Button press that is not on the End page. Returns the page now shown.
@@ -191,17 +234,17 @@ final class RecordingPageModel: ObservableObject {
         return page
     }
 
-    /// Crown rotation by whole detents: positive moves toward Details, negative toward Live.
-    /// It stops at Details and never selects the End page; turning back from the End page leaves it.
+    /// Crown rotation by whole detents: positive moves toward Details (and the switch page before the
+    /// first descent), negative toward Live. It never selects the End page; turning back leaves it.
     func stepFromCrown(by detents: Int) {
         guard isRecording, !isAlwaysOn, detents != 0 else { return }
-        let crownPages: [RecordingPage] = [.live, .details]
+        let crownPages = crownPages
         let target: RecordingPage
         switch page {
         case .end:
             guard detents < 0 else { return }
             target = crownPages[max(crownPages.count + detents, 0)]
-        case .live, .details:
+        case .live, .details, .switchMode:
             let index = crownPages.firstIndex(of: page) ?? 0
             target = crownPages[min(max(index + detents, 0), crownPages.count - 1)]
         }
@@ -258,6 +301,15 @@ final class RecordingPageModel: ObservableObject {
         }
         if endAvailability != nextAvailability {
             endAvailability = nextAvailability
+        }
+    }
+
+    private func refreshModeSwitchAvailability() {
+        let available = isRecording
+            && signals.maxDepthMeters < Self.modeSwitchDepthLimitMeters
+            && endAvailability != .available
+        if modeSwitchAvailable != available {
+            modeSwitchAvailable = available
         }
     }
 

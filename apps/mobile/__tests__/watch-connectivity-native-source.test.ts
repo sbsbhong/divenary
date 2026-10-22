@@ -832,7 +832,7 @@ describe('WatchConnectivity native source contract', () => {
     const pageModel = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/RecordingPageModel.swift');
     expect(pageModel).toContain('guard isRecording, !isAlwaysOn else { return page }');
     expect(pageModel).toContain('guard isRecording, !isAlwaysOn, detents != 0 else { return }');
-    expect(pager).toMatch(/case \.rejected = feedback\.outcome/);
+    expect(pager).toMatch(/case let \.rejected\(reason\) = feedback\.outcome/);
     expect(realFlow).toContain('pages: coordinator.recordingPages');
     // Demo and debug keep crown depth and their own end path; only real recording pages.
     expect(simulated).not.toContain('recordingPages');
@@ -841,7 +841,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(depthLayout).toContain('DepthGaugeRail(');
     expect(recording.slice(recording.indexOf('private func instrumentStack'), recording.indexOf('private var recordingErrorFooter'))).toContain('LiveReadoutStatusRow()');
     expect(recording.slice(recording.indexOf('private func instrumentStack'), recording.indexOf('private var recordingErrorFooter'))).toContain('UnsupportedDepthWarning(');
-    expect(recording).toMatch(/case \.live:\s*liveInstrument\s*case \.details:\s*detailsInstrument\s*case \.end:\s*EndPageInstrument\(/);
+    expect(recording).toMatch(/case \.live:\s*liveInstrument\s*case \.details:\s*detailsInstrument\s*case \.switchMode:\s*SwitchModePageInstrument\([\s\S]*?case \.end:\s*EndPageInstrument\(/);
     expect(endPage).toContain('InstrumentDepthLayout(');
     expect(endPage).not.toContain('Button(');
     expect(endPage).not.toContain('onTapGesture');
@@ -995,7 +995,13 @@ describe('WatchConnectivity native source contract', () => {
     expect(recordingPress).toMatch(/guard recordingPages\.page == \.end else \{\s*return \.pageChanged\(recordingPages\.advanceFromActionButton\(\)\)/);
     expect(recordingPress).toContain('guard requestActionButtonEnd() else');
     expect(pages).toContain('static let idleReturnSeconds: TimeInterval = 10');
-    expect(pages).toContain('let crownPages: [RecordingPage] = [.live, .details]');
+    // The crown may reach the switch page before the first descent, but never the End page.
+    expect(pages).toContain('modeSwitchAvailable ? [.live, .details, .switchMode] : [.live, .details]');
+    expect(pages).toContain('static let modeSwitchDepthLimitMeters: Double = 1');
+    expect(pages).toMatch(
+      /let available = isRecording\s+&& signals\.maxDepthMeters < Self\.modeSwitchDepthLimitMeters\s+&& endAvailability != \.available/,
+    );
+    expect(coordinator).toContain('guard case let .recording(source, plan) = phase, recordingPages.modeSwitchAvailable else {');
     expect(hapticEventCases).toEqual(['start', 'pageChange', 'rejected', 'endRequested', 'saved']);
   });
 

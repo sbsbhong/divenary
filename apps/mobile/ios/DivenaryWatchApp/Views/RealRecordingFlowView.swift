@@ -29,7 +29,8 @@ struct RealRecordingFlowView: View {
                     maximumDepthMeters: water.maximumDepthMeters,
                     endControl: WatchRecordingMode.real.endControl,
                     waterState: water.latestState,
-                    pages: coordinator.recordingPages
+                    pages: coordinator.recordingPages,
+                    onSwitchMode: { coordinator.switchDiveModeFromTouch() }
                 )
                 .overlay {
                     if coordinator.isEnding {

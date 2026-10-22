@@ -125,6 +125,41 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(hint.kind, .endRejected)
     }
 
+    func testSwitchPageNamesTheTypeTheNextPressSwitchesTo() {
+        let pages: [RecordingPage] = [.live, .details, .switchMode]
+        let details = hint(page: .details, pages: pages, availability: .notAtSurface, water: .submerged)
+        let toScuba = hint(page: .switchMode, pages: pages, availability: .notAtSurface, water: .submerged,
+                           currentMode: .freedive)
+        let toFreedive = hint(page: .switchMode, pages: pages, availability: .notAtSurface, water: .submerged)
+
+        XCTAssertEqual(details.kind, .nextPage(.switchMode, input: .actionButton))
+        XCTAssertEqual(details.text, String(localized: "Action ▸ Switch type \(2)/\(3)"))
+        XCTAssertEqual(toScuba.kind, .pressToSwitch(.scuba))
+        XCTAssertEqual(toScuba.pageIndex, 2)
+        XCTAssertEqual(toScuba.text, String(localized: "Press to switch to scuba"))
+        XCTAssertEqual(toFreedive.text, String(localized: "Press to switch to freediving"))
+    }
+
+    func testCrownHintReachesTheSwitchPageAndTurnsBack() {
+        let pages: [RecordingPage] = [.live, .details, .switchMode]
+        let details = hint(page: .details, pages: pages, availability: .notAtSurface, water: .submerged,
+                           hasActionButton: false)
+        let onSwitch = hint(page: .switchMode, pages: pages, availability: .notAtSurface, water: .submerged,
+                            hasActionButton: false)
+
+        XCTAssertEqual(details.text, String(localized: "Crown forward ▸ Switch type"))
+        XCTAssertEqual(onSwitch.kind, .nextPage(.live, input: .crown))
+        XCTAssertEqual(onSwitch.text, String(localized: "Crown back ▸ Live"))
+    }
+
+    func testRejectedSwitchSaysTheDiveHasAlreadyStarted() {
+        let hint = hint(page: .live, availability: .notAtSurface, water: .submerged, showsRejection: true,
+                        rejection: .modeSwitchUnavailable)
+
+        XCTAssertEqual(hint.kind, .switchRejected)
+        XCTAssertEqual(hint.text, String(localized: "Already dived · no switch"))
+    }
+
     func testAuthorizedGaugeUsesSixMeterRangeAndCleanSparseTicks() {
         let scale = RecordingGaugeScale(maximumDepthMeters: 6, fallbackMeters: 30)
         XCTAssertEqual(scale.upperBound, 6)
@@ -175,7 +210,9 @@ final class RecordingHintTests: XCTestCase {
         availability: RecordingEndAvailability,
         water: WaterSubmersionState,
         hasActionButton: Bool = true,
-        showsRejection: Bool = false
+        showsRejection: Bool = false,
+        rejection: DiveActionRejection? = nil,
+        currentMode: DiveMode = .scuba
     ) -> RecordingHint {
         RecordingHint.make(
             page: page,
@@ -183,7 +220,9 @@ final class RecordingHintTests: XCTestCase {
             endAvailability: availability,
             waterState: water,
             hasActionButton: hasActionButton,
-            showsRejection: showsRejection
+            showsRejection: showsRejection,
+            rejection: rejection,
+            currentMode: currentMode
         )
     }
 }

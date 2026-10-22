@@ -191,7 +191,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
 
         switch outcome {
-        case .started:
+        case .started, .modeSwitched:
             haptics.play(.start)
         case .endRequested:
             haptics.play(.endRequested)
@@ -389,6 +389,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
     }
 
     private func handleRecordingActionButtonPress() -> DiveActionOutcome {
+        if recordingPages.page == .switchMode {
+            return switchDiveModeBeforeFirstDescent()
+        }
         guard recordingPages.page == .end else {
             return .pageChanged(recordingPages.advanceFromActionButton())
         }
@@ -397,6 +400,51 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return .rejected(.endUnavailable)
         }
         return .endRequested
+    }
+
+    /// A tap on the switch page's button while touch still works (out of the water, Water Lock off).
+    /// It plays the same haptic and leaves the same feedback as an Action Button press there.
+    @discardableResult
+    func switchDiveModeFromTouch() -> DiveActionOutcome {
+        let outcome = isEnding ? DiveActionOutcome.rejected(.busy) : switchDiveModeBeforeFirstDescent()
+        switch outcome {
+        case .modeSwitched:
+            haptics.play(.start)
+        case .rejected:
+            haptics.play(.rejected)
+        case .started, .pageChanged, .endRequested:
+            break
+        }
+        recordingPages.recordActionFeedback(outcome)
+        return outcome
+    }
+
+    /// Restarts the recording as the other dive type, keeping the runtime session. Allowed only before
+    /// the first descent below the switch limit, so the discarded part holds no dive.
+    private func switchDiveModeBeforeFirstDescent() -> DiveActionOutcome {
+        // The page model tracks the recorder's maximum depth and closes the switch at the limit.
+        guard case let .recording(source, plan) = phase, recordingPages.modeSwitchAvailable else {
+            return .rejected(.modeSwitchUnavailable)
+        }
+
+        let nextMode: DiveMode = plan.diveMode == .freedive ? .scuba : .freedive
+        // A selected plan belongs to one dive type, so switching drops its link.
+        var nextPlan = plan.sourcePlanLocalId == nil ? plan : plan.withoutPlannedDiveLink
+        nextPlan.diveMode = nextMode
+
+        // Cancelling stops capture even when it cannot clear the empty recording, so either failure
+        // leaves nothing recording. Same recovery as a failed adopted start: end the runtime, and the
+        // start error screen retries the cleanup.
+        guard recorder.cancelSession(), recorder.startSession(plan: nextPlan) else {
+            reportFailure(String(localized: "Could not switch the dive type."))
+            phase = .awaitingRuntimeInvalidation(source: source)
+            runtime.invalidate()
+            return .rejected(.modeSwitchFailed)
+        }
+        updatePreferredMode(nextMode)
+        phase = .recording(source: source, plan: nextPlan)
+        recordingPages.restartRecording()
+        return .modeSwitched(nextMode)
     }
 
     private func preferredPlan() -> PreDivePlan {

@@ -39,6 +39,10 @@ struct RecordingHint: Equatable {
         case waterLockToEnd
         /// A press on the End page that could not end the recording. Shown briefly.
         case endRejected
+        /// The switch page: the next press restarts the recording as `DiveMode`.
+        case pressToSwitch(DiveMode)
+        /// A switch press after the first descent. Shown briefly.
+        case switchRejected
     }
 
     let kind: Kind
@@ -53,17 +57,21 @@ struct RecordingHint: Equatable {
         endAvailability: RecordingEndAvailability,
         waterState: WaterSubmersionState,
         hasActionButton: Bool,
-        showsRejection: Bool = false
+        showsRejection: Bool = false,
+        rejection: DiveActionRejection? = nil,
+        currentMode: DiveMode = .scuba
     ) -> RecordingHint {
         // Only the Action Button reaches the End page, so a watch that got there has the button.
         let input: Input = hasActionButton || page == .end ? .actionButton : .crown
-        // The crown moves between Live and Details only.
-        let cycle = input == .actionButton ? pages : [.live, .details]
+        // The crown never selects the End page.
+        let cycle = input == .actionButton ? pages : pages.filter { $0 != .end }
         let index = cycle.firstIndex(of: page) ?? 0
 
         let kind: Kind
         if showsRejection {
-            kind = .endRejected
+            kind = rejection == .modeSwitchUnavailable ? .switchRejected : .endRejected
+        } else if page == .switchMode, input == .actionButton {
+            kind = .pressToSwitch(currentMode == .freedive ? .scuba : .freedive)
         } else if page == .end {
             kind = hasActionButton ? .pressToEnd : .waterLockToEnd
         } else if input == .crown {
@@ -94,6 +102,10 @@ struct RecordingHint: Equatable {
             return String(localized: "Action ▸ Details \(position)/\(pageCount)")
         case .nextPage(.end, _):
             return String(localized: "Action ▸ End page")
+        case .nextPage(.switchMode, .actionButton):
+            return String(localized: "Action ▸ Switch type \(position)/\(pageCount)")
+        case .nextPage(.switchMode, .crown):
+            return String(localized: "Crown forward ▸ Switch type")
         case .nextPage(_, .actionButton):
             return String(localized: "Action ▸ Live \(position)/\(pageCount)")
         case .nextPage(.details, .crown):
@@ -108,6 +120,12 @@ struct RecordingHint: Equatable {
             return String(localized: "Water Lock off ends log")
         case .endRejected:
             return String(localized: "End not available")
+        case let .pressToSwitch(mode):
+            return mode == .scuba
+                ? String(localized: "Press to switch to scuba")
+                : String(localized: "Press to switch to freediving")
+        case .switchRejected:
+            return String(localized: "Already dived · no switch")
         }
     }
 }
@@ -120,11 +138,14 @@ struct RealRecordingPager<Content: View>: View {
 
     @ObservedObject var pages: RecordingPageModel
     let waterState: WaterSubmersionState
+    /// The recording's dive type, for the switch page's "switch to …" wording.
+    var currentMode: DiveMode = .scuba
     @ViewBuilder let content: (RecordingPage, RecordingHint) -> Content
 
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var crownTicks: Double = 0
     @State private var flashedRejectionID: Int?
+    @State private var flashedRejection: DiveActionRejection?
     @FocusState private var crownFocused: Bool
 
     var body: some View {
@@ -153,10 +174,11 @@ struct RealRecordingPager<Content: View>: View {
             }
             .onChange(of: pages.lastActionFeedback?.id) { _, _ in
                 guard let feedback = pages.lastActionFeedback,
-                      case .rejected = feedback.outcome
+                      case let .rejected(reason) = feedback.outcome
                 else {
                     return
                 }
+                flashedRejection = reason
                 flashedRejectionID = feedback.id
             }
             .task(id: flashedRejectionID) {
@@ -179,7 +201,9 @@ struct RealRecordingPager<Content: View>: View {
             endAvailability: pages.endAvailability,
             waterState: waterState,
             hasActionButton: ActionButtonHint.current.isLikelyUltra,
-            showsRejection: flashedRejectionID != nil
+            showsRejection: flashedRejectionID != nil,
+            rejection: flashedRejection,
+            currentMode: currentMode
         )
     }
 }

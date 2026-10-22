@@ -90,10 +90,14 @@ enum RecordingDepthPolicy {
     }
 }
 
-/// Status shown above live values when the depth number is not current, plus the demo/test marker.
+/// The one status line above the gauge: the freedive phase, the demo/test marker, and the depth
+/// status when the depth number is not current. Always-On never hides it.
 struct LiveReadoutStatus: Equatable {
     var depthStatusText: String?
     var markerTitle: String?
+    var phaseTitle: String?
+    /// The phase chip uses the primary colour only while a dive is under way.
+    var phaseIsActive = false
 }
 
 private struct LiveReadoutStatusKey: EnvironmentKey {
@@ -142,10 +146,12 @@ struct RecordingInstrumentView: View {
     /// Real recording only: the readout pages the Action Button and crown move. Demo and debug
     /// recordings pass `nil`, stay on Live and keep the crown for simulated depth.
     var pages: RecordingPageModel?
+    /// Real recording only: the switch page's button, for when touch still works (Water Lock off).
+    var onSwitchMode: (() -> Void)?
 
     var body: some View {
         if let pages {
-            RealRecordingPager(pages: pages, waterState: waterState) { page, hint in
+            RealRecordingPager(pages: pages, waterState: waterState, currentMode: plan.diveMode) { page, hint in
                 instrumentStack(page: page, hint: hint)
             }
         } else {
@@ -163,8 +169,8 @@ struct RecordingInstrumentView: View {
                     sensorDisplayLimitMeters: sensorDisplayLimitMeters
                 )
                 pageInstrument(page)
-                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .layoutPriority(1)
 
                 recordingErrorFooter
                     .fixedSize(horizontal: false, vertical: true)
@@ -183,16 +189,38 @@ struct RecordingInstrumentView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .environment(\.liveReadoutStatus,
-                LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle))
+            .environment(\.liveReadoutStatus, readoutStatus(for: page))
             .environment(\.recordingAuthorizedMaximum, maximumDepthMeters)
-            .environment(\.compactRecordingReadout, proxy.size.height < 220 || recorder.recordingPersistenceError != nil)
+            .environment(\.compactRecordingReadout, proxy.size.height < Self.compactReadoutHeight || recorder.recordingPersistenceError != nil)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .padding(.horizontal, 4)
         .padding(.bottom, 3)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(showsNavigationToolbar ? .visible : .hidden, for: .navigationBar)
+    }
+
+    /// Below this the secondary values stack inline; 41/42 mm recording viewports fall under it.
+    static let compactReadoutHeight: CGFloat = 190
+
+    private func readoutStatus(for page: RecordingPage) -> LiveReadoutStatus {
+        var status = LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle)
+        // The End page states its own purpose in large type; scuba shows the recommended-stop label
+        // inside the stop readout. Freedive names its phase here so it is never stacked separately.
+        guard page != .end, plan.diveMode == .freedive else { return status }
+        switch currentFreeSnapshot.state {
+        case .surfaceReady:
+            status.phaseTitle = String(localized: "Surface ready")
+        case .diveActive:
+            status.phaseTitle = String(localized: "Dive active")
+            status.phaseIsActive = true
+        case .surfaceInterval:
+            // The big rest-time value is already captioned "Surface interval".
+            break
+        case .summary:
+            status.phaseTitle = String(localized: "Summary")
+        }
+        return status
     }
 
     @ViewBuilder
@@ -251,6 +279,13 @@ struct RecordingInstrumentView: View {
             liveInstrument
         case .details:
             detailsInstrument
+        case .switchMode:
+            SwitchModePageInstrument(
+                currentMode: plan.diveMode,
+                currentDepthMeters: displayedDepthMeters,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters,
+                onSwitch: onSwitchMode
+            )
         case .end:
             EndPageInstrument(
                 currentDepthMeters: displayedDepthMeters,
@@ -558,7 +593,7 @@ private struct LiveReadoutStatusRow: View {
     @Environment(\.liveReadoutStatus) private var status
 
     var body: some View {
-        if status.markerTitle != nil || status.depthStatusText != nil {
+        if status.phaseTitle != nil || status.markerTitle != nil || status.depthStatusText != nil {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 4) { chips }
                 VStack(alignment: .leading, spacing: 2) { chips }
@@ -570,6 +605,9 @@ private struct LiveReadoutStatusRow: View {
 
     @ViewBuilder
     private var chips: some View {
+        if let phaseTitle = status.phaseTitle {
+            chip(phaseTitle, color: status.phaseIsActive ? DiveWatchTheme.primary : DiveWatchTheme.secondary)
+        }
         if let markerTitle = status.markerTitle {
             chip(markerTitle, color: DiveWatchTheme.secondary)
         }
@@ -1020,6 +1058,55 @@ private struct FreeSessionDetailsInstrument: View {
     private var lastDiveText: String {
         let lastSegment = snapshot.segments.last
         return "\(DiveFormatters.duration(lastSegment?.durationSeconds)) · \(DiveFormatters.depth(lastSegment?.maxDepthMeters))"
+    }
+}
+
+/// Switch page, before the first descent: restart the recording as the other dive type. The Action
+/// Button does it underwater; the button below only works while touch does (Water Lock off).
+private struct SwitchModePageInstrument: View {
+    let currentMode: DiveMode
+    let currentDepthMeters: Double?
+    let sensorDisplayLimitMeters: Double
+    let onSwitch: (() -> Void)?
+
+    @Environment(\.compactRecordingReadout) private var compact
+
+    var body: some View {
+        InstrumentDepthLayout(
+            currentDepthMeters: currentDepthMeters,
+            maxScaleMeters: 30,
+            stopZone: nil,
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
+        ) {
+            if !compact {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .accessibilityHidden(true)
+            }
+            Text(switchTitle)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(String(localized: "No dive yet, so recording starts over."))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .fixedSize(horizontal: false, vertical: true)
+            if let onSwitch {
+                Button(String(localized: "Switch"), action: onSwitch)
+                    .font(.system(size: 13, weight: .semibold))
+                    .buttonStyle(.bordered)
+                    .accessibilityLabel(switchTitle)
+            }
+        }
+    }
+
+    private var switchTitle: String {
+        currentMode == .freedive
+            ? String(localized: "Switch to scuba")
+            : String(localized: "Switch to freediving")
     }
 }
 

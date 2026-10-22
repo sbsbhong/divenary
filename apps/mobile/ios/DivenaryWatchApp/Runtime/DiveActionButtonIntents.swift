@@ -10,6 +10,10 @@ enum DiveActionRejection: Equatable, Sendable {
     case startFailed
     /// The End page was shown, but ending is no longer allowed (back in the water, for example).
     case endUnavailable
+    /// The switch page was shown, but the diver has already gone below the switch limit.
+    case modeSwitchUnavailable
+    /// The recording could not restart as the other dive type. The recording flow shows the error.
+    case modeSwitchFailed
 }
 
 /// What one Action Button press did.
@@ -17,6 +21,8 @@ enum DiveActionOutcome: Equatable, Sendable {
     case started
     case pageChanged(RecordingPage)
     case endRequested
+    /// The recording restarted as this dive type before the first descent.
+    case modeSwitched(DiveMode)
     case rejected(DiveActionRejection)
 
     /// The dive action intent stays on the button until a press ends the dive. After that the

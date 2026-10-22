@@ -229,6 +229,22 @@
         }
       }
     },
+    "Action ▸ Switch type %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button ▸ Switch type %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼 ▸ 종류 바꾸기 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
     "Active dive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -308,6 +324,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "공기 스쿠버 리마인더이며, 다이브 컴퓨터가 아닙니다."
+          }
+        }
+      }
+    },
+    "Already dived · no switch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Already dived · no switch"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠수 기록이 있어 바꿀 수 없음"
           }
         }
       }
@@ -701,6 +733,22 @@
         }
       }
     },
+    "Could not switch the dive type." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not switch the dive type."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "다이빙 종류를 바꾸지 못했습니다."
+          }
+        }
+      }
+    },
     "Count" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -746,6 +794,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "크라운 앞으로 ▸ 상세"
+          }
+        }
+      }
+    },
+    "Crown forward ▸ Switch type" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown forward ▸ Switch type"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 앞으로 ▸ 종류 바꾸기"
           }
         }
       }
@@ -1990,6 +2054,22 @@
         }
       }
     },
+    "No dive yet, so recording starts over." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No dive yet, so recording starts over."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 잠수 전이라 새로 기록합니다."
+          }
+        }
+      }
+    },
     "Not recording yet" : {
       "localizations" : {
         "en" : {
@@ -2050,6 +2130,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "동작 버튼을 눌러 기록을 끝내고 저장하세요."
+          }
+        }
+      }
+    },
+    "Press to switch to freediving" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press to switch to freediving"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "눌러서 프리다이빙으로 바꾸기"
+          }
+        }
+      }
+    },
+    "Press to switch to scuba" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press to switch to scuba"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "눌러서 스쿠버로 바꾸기"
           }
         }
       }
@@ -2146,6 +2258,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
+    "Switch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "바꾸기"
+          }
+        }
+      }
+    },
+    "Switch to freediving" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to freediving"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "프리다이빙으로 바꾸기"
+          }
+        }
+      }
+    },
+    "Switch to scuba" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch to scuba"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "스쿠버로 바꾸기"
           }
         }
       }
