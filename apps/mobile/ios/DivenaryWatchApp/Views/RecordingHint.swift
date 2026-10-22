@@ -144,12 +144,10 @@ struct RealRecordingPager<Content: View>: View {
     @State private var crownTicks: Double = 0
     @State private var flashedRejectionID: Int?
     @State private var flashedRejection: DiveActionRejection?
-    @FocusState private var crownFocused: Bool
 
     var body: some View {
         content(displayedPage, hint)
-            .focusable(true)
-            .focused($crownFocused)
+            .modifier(CrownFocusKeeper())
             // The page model plays one haptic per real page change, so the crown detents stay silent.
             .digitalCrownRotation(
                 $crownTicks,
@@ -164,7 +162,6 @@ struct RealRecordingPager<Content: View>: View {
                 pages.stepFromCrown(by: Int((newTicks - oldTicks).rounded()))
             }
             .onAppear {
-                crownFocused = true
                 pages.setAlwaysOn(isLuminanceReduced)
             }
             .onChange(of: isLuminanceReduced) { _, isReduced in
@@ -203,6 +200,37 @@ struct RealRecordingPager<Content: View>: View {
             rejection: flashedRejection,
             currentMode: currentMode
         )
+    }
+}
+
+/// Keeps the Digital Crown on a view that has no scroll view of its own. A focus request made only in
+/// `onAppear` can be lost while the navigation push or the system's Water Lock overlay is still on
+/// screen, so the request repeats shortly after appearing, on return to the active scene and
+/// whenever focus drops.
+struct CrownFocusKeeper: ViewModifier {
+    static var retryDelay: Duration { .milliseconds(300) }
+
+    @Environment(\.scenePhase) private var scenePhase
+    @FocusState private var focused: Bool
+    @State private var requestCount = 0
+
+    func body(content: Content) -> some View {
+        content
+            .focusable(true)
+            .focused($focused)
+            .onAppear { focused = true }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { requestCount += 1 }
+            }
+            .onChange(of: focused) { _, isFocused in
+                if !isFocused { requestCount += 1 }
+            }
+            // Runs on appear and after each request; a delayed retry cannot spin if focus is refused.
+            .task(id: requestCount) {
+                try? await Task.sleep(for: Self.retryDelay)
+                guard !Task.isCancelled else { return }
+                focused = true
+            }
     }
 }
 

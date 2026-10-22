@@ -31,7 +31,6 @@ struct WetReadyView: View {
     let onHome: () -> Void
 
     @State private var crownValue: Double
-    @FocusState private var crownFocused: Bool
 
     init(
         mode: DiveMode,
@@ -114,8 +113,7 @@ struct WetReadyView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
-        .focusable(true)
-        .focused($crownFocused)
+        .modifier(CrownFocusKeeper())
         .digitalCrownRotation(
             $crownValue,
             from: 0,
@@ -125,9 +123,6 @@ struct WetReadyView: View {
             isContinuous: false,
             isHapticFeedbackEnabled: true
         )
-        .onAppear {
-            crownFocused = true
-        }
         .onChange(of: crownValue) { _, nextValue in
             let nextMode: DiveMode = nextValue < 0.5 ? .freedive : .scuba
             guard nextMode != mode else { return }
@@ -135,7 +130,6 @@ struct WetReadyView: View {
         }
         .onChange(of: mode) { _, nextMode in
             crownValue = nextMode.crownValue
-            crownFocused = true
         }
         .toolbar(.hidden, for: .navigationBar)
     }

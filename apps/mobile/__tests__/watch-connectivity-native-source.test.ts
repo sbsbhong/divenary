@@ -819,6 +819,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('String(localized: "Crown forward ▸ Details")');
     expect(hint).toContain('String(localized: "Crown back ▸ Live")');
     expect(hint).toContain('let input: Input = hasActionButton || page == .end || page == .switchMode ? .actionButton : .crown');
+    // A one-off onAppear focus request can be lost during the push or the Water Lock overlay.
+    expect(hint).toMatch(/struct CrownFocusKeeper: ViewModifier[\s\S]*?\.onChange\(of: focused\)[\s\S]*?\.task\(id: requestCount\)/);
+    expect(hint).toMatch(/content\(displayedPage, hint\)\s*\.modifier\(CrownFocusKeeper\(\)\)/);
+    expect(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift')).toMatch(/\.modifier\(CrownFocusKeeper\(\)\)\s*\.digitalCrownRotation\(/);
     // The chip names what the next press shows: Live goes to Details first, Details to the End page.
     expect(hint).toMatch(/case \.nextPage\(\.end, _\):\s*return String\(localized: "Action ▸ End page"\)/);
     expect(hint).toMatch(/case \.notAtSurface, \.available:\s*(\/\/.*\s*)*kind = \.nextPage\(cycle\[\(index \+ 1\) % cycle\.count\], input: \.actionButton\)/);
