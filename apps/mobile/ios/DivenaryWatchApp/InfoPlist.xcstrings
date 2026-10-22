@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSMotionUsageDescription" : {
+      "comment" : "Permission prompt for the depth sensor (Core Motion).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary uses this to record your depth during dives on Apple Watch."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary가 Apple Watch에서 다이빙 중 수심을 기록하는 데 사용합니다."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

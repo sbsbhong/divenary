@@ -28,10 +28,22 @@ final class RecordingHintTests: XCTestCase {
         let details = hint(page: .details, pages: cycle, availability: .available, water: .notSubmerged)
         let end = hint(page: .end, pages: cycle, availability: .available, water: .notSubmerged)
 
-        XCTAssertEqual(details.kind, .endPageInCycle)
+        XCTAssertEqual(details.kind, .nextPage(.end, input: .actionButton))
         XCTAssertEqual(details.pageCount, 3)
+        XCTAssertEqual(details.text, String(localized: "Action ▸ End page"))
         XCTAssertEqual(end.kind, .pressToEnd)
         XCTAssertEqual(end.pageIndex, 2)
+    }
+
+    /// The hint names what the next press does: from Live that is Details, even once ending is
+    /// allowed, so the chip never promises the End page one press too early.
+    func testEligibleSurfaceOnLiveNamesDetailsAsTheNextPress() {
+        let live = hint(page: .live, pages: [.live, .details, .end], availability: .available, water: .notSubmerged)
+
+        XCTAssertEqual(live.kind, .nextPage(.details, input: .actionButton))
+        XCTAssertEqual(live.pageIndex, 0)
+        XCTAssertEqual(live.pageCount, 3)
+        XCTAssertTrue(live.showsWaterLockNote)
     }
 
     func testUnknownWaterStateHidesTheWaterLockNote() {

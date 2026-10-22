@@ -716,14 +716,11 @@ private struct SafetyStopInstrument: View {
         safetyStop.status == .pausedTooDeep || safetyStop.status == .pausedTooShallow
     }
 
-    /// A recommended stop uses the supplementary caution tone when paused, never the danger tone
-    /// reserved for future mandatory states.
+    /// A recommended stop is the supplementary caution amber while it counts and while it pauses:
+    /// never the action blue, and never the danger tone reserved for future mandatory states. The
+    /// paused band tells a paused timer apart in words, and a finished stop turns quiet grey.
     private var statusColor: Color {
-        if isTimerPaused {
-            return DiveWatchTheme.caution
-        }
-
-        return safetyStop.status == .completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
+        safetyStop.status == .completed ? DiveWatchTheme.secondary : DiveWatchTheme.caution
     }
 
     /// A paused timer is told apart by words as well as amber, so it still reads in Always-On.

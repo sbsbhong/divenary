@@ -11,11 +11,10 @@ struct RecordingHint: Equatable {
 
     enum Kind: Equatable {
         /// "Action ▸ Details 1/2" or "Crown ▸ Details 1/2": the page the next press or turn shows.
+        /// Once ending is allowed, the press after Details shows the End page ("Action ▸ End page").
         case nextPage(RecordingPage, input: Input)
         /// At the surface, but the recording is shorter than the minimum for an Action Button end.
         case endAvailableIn(seconds: Int)
-        /// At the surface and long enough: the End page is in the Action Button cycle.
-        case endPageInCycle
         /// The End page: the next press ends and saves.
         case pressToEnd
         /// A press on the End page that could not end the recording. Shown briefly.
@@ -51,12 +50,12 @@ struct RecordingHint: Equatable {
             kind = .nextPage(cycle[(index + 1) % cycle.count], input: .crown)
         } else {
             switch endAvailability {
-            case .notAtSurface:
-                kind = .nextPage(cycle[(index + 1) % cycle.count], input: .actionButton)
             case let .availableIn(seconds):
                 kind = .endAvailableIn(seconds: seconds)
-            case .available:
-                kind = .endPageInCycle
+            case .notAtSurface, .available:
+                // Live always goes to Details first; from Details the cycle reaches the End page
+                // once ending is allowed.
+                kind = .nextPage(cycle[(index + 1) % cycle.count], input: .actionButton)
             }
         }
 
@@ -73,6 +72,8 @@ struct RecordingHint: Equatable {
         switch kind {
         case .nextPage(.details, .actionButton):
             return String(localized: "Action ▸ Details \(position)/\(pageCount)")
+        case .nextPage(.end, _):
+            return String(localized: "Action ▸ End page")
         case .nextPage(_, .actionButton):
             return String(localized: "Action ▸ Live \(position)/\(pageCount)")
         case .nextPage(.details, .crown):
@@ -81,8 +82,6 @@ struct RecordingHint: Equatable {
             return String(localized: "Crown ▸ Live \(position)/\(pageCount)")
         case let .endAvailableIn(seconds):
             return String(localized: "End available in \(DiveFormatters.countdown(seconds: seconds))")
-        case .endPageInCycle:
-            return String(localized: "Action ▸ End page")
         case .pressToEnd:
             return String(localized: "Press to end & save")
         case .endRejected:

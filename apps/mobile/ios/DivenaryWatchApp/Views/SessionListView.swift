@@ -165,7 +165,9 @@ private extension DiveMode {
     }
 }
 
-private extension DiveSyncStatus {
+/// Short sync badges for narrow rows: the saved list and the latest log card on Home. VoiceOver
+/// reads the full `label`.
+extension DiveSyncStatus {
     var shortLabel: String {
         switch self {
         case .pending:

@@ -90,6 +90,17 @@ const realRecordingPagerBlock = blockOf(recordingHintSource, 'struct RealRecordi
 const koreanCatalogValues = stringCatalogEntries
   .map(entry => entry.localizations?.ko?.stringUnit?.value ?? '')
   .join('\n');
+// Shown copy only: stale entries are no longer in the source and never reach the screen.
+const activeCatalogEntries = stringCatalogEntries.filter(entry => entry.extractionState !== 'stale');
+const activeCatalogValues = language =>
+  activeCatalogEntries.map(entry => entry.localizations?.[language]?.stringUnit?.value ?? '');
+// One diver term per concept (동작 버튼, 수중 잠금, Digital Crown, 기록), and no internal words.
+const koreanGlossaryLeaks = ['Action', '방수 잠금', '디지털 크라운', '세션', '샘플', '캡처', 'Home'].filter(term =>
+  activeCatalogValues('ko').some(value => value.includes(term)),
+);
+const englishInternalWordLeaks = ['session', 'sample', 'capture'].filter(term =>
+  activeCatalogValues('en').some(value => value.toLowerCase().includes(term)),
+);
 
 const checks = [
   {
@@ -214,6 +225,14 @@ const checks = [
   {
     name: 'Korean recommended stop copy uses 권장 스탑',
     failed: koreanCatalogValues.includes('스톱') || !koreanCatalogValues.includes('권장 스탑'),
+  },
+  {
+    name: `Korean watch copy keeps the diver glossary${koreanGlossaryLeaks.length > 0 ? `: ${koreanGlossaryLeaks.join(', ')}` : ''}`,
+    failed: koreanGlossaryLeaks.length > 0,
+  },
+  {
+    name: `English watch copy avoids internal words${englishInternalWordLeaks.length > 0 ? `: ${englishInternalWordLeaks.join(', ')}` : ''}`,
+    failed: englishInternalWordLeaks.length > 0,
   },
   {
     name: 'saved real summary uses toolbar back navigation and a scroll footer',

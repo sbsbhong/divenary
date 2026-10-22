@@ -57,6 +57,7 @@
 		C70000000000000000000004 /* UnderwaterControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000003 /* UnderwaterControlsView.swift */; };
 		C70000000000000000000006 /* RecordingHintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000005 /* RecordingHintTests.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
+		C80000000000000000000002 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000001 /* InfoPlist.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
 		D60000000000000000000001 /* DiveAppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002 /* DiveAppServices.swift */; };
 		D60000000000000000000003 /* DivenaryWatchApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */; };
@@ -131,6 +132,7 @@
 		4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SessionDetailView.swift; sourceTree = "<group>"; };
 		50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorProvider.swift; sourceTree = "<group>"; };
 		541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		C80000000000000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-Divenary.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Divenary.release.xcconfig"; path = "Target Support Files/Pods-Divenary/Pods-Divenary.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Divenary.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6359F0F795514043D38F67FB /* DivenaryWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivenaryWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -257,6 +259,7 @@
 				C92F451D86433739DA2613A0 /* Sync */,
 				C2D0DFFB26398A6FE9F151FC /* Views */,
 				B20000000000000000000004 /* Info.plist */,
+				C80000000000000000000001 /* InfoPlist.xcstrings */,
 				541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */,
 			);
 			path = DivenaryWatchApp;
@@ -550,6 +553,7 @@
 			files = (
 				A90000000000000000000001 /* Assets.xcassets in Resources */,
 				C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */,
+				C80000000000000000000002 /* InfoPlist.xcstrings in Resources */,
 				72F99C297E562922D87444A0 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

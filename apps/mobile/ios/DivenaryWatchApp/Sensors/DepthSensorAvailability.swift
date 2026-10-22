@@ -39,15 +39,6 @@ struct DepthSensorAvailability {
         )
     }
 
-    static var launchPlaceholder: DepthSensorAvailability {
-        DepthSensorAvailability(
-            isWaterSubmersionAvailable: false,
-            authorizationStatusDescription: "notLoaded",
-            waterResistanceDescription: "notLoaded",
-            isRunningInSimulator: Self.isRunningInSimulator
-        )
-    }
-
     private static var isRunningInSimulator: Bool {
         #if targetEnvironment(simulator)
         return true

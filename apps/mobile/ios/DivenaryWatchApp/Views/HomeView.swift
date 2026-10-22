@@ -536,9 +536,17 @@ private struct LatestSessionCard: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("LAST DIVE")
-                            .font(DiveWatchTheme.labelFont())
-                            .foregroundStyle(DiveWatchTheme.mutedText)
+                        HStack(spacing: 4) {
+                            Text("LAST DIVE")
+                                .font(DiveWatchTheme.labelFont())
+                                .foregroundStyle(DiveWatchTheme.mutedText)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                            // A demo or test log never reads as a real dive on Home.
+                            if let captureProvenanceLabel = session.captureProvenanceLabel {
+                                StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
+                            }
+                        }
                         Text(DiveFormatters.sessionDate.string(from: session.startedAt))
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.text)
@@ -548,7 +556,9 @@ private struct LatestSessionCard: View {
 
                     Spacer(minLength: 6)
 
-                    StatusPill(title: session.syncStatus.label, color: DiveWatchTheme.secondary)
+                    // The short badge leaves room for the date and the Demo/Test marker.
+                    StatusPill(title: session.syncStatus.shortLabel, color: DiveWatchTheme.secondary)
+                        .accessibilityLabel(session.syncStatus.label)
                 }
 
                 HStack(spacing: 8) {

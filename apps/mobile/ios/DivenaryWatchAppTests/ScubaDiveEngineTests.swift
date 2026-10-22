@@ -240,8 +240,9 @@ final class WatchRecordingModeTests: XCTestCase {
         XCTAssertTrue(RealDivePhase.savePersistenceError(record: DiveSessionRecord.largeDebugFixture(sampleCount: 1)).presentsRecordingFlow)
     }
 
-    func testDepthGaugeRailUsesReadableSessionLayoutWidth() {
-        XCTAssertEqual(DepthGaugeRail.layoutWidth, 72)
+    /// Spec §7 narrows the gauge so the one large live value keeps its size on 41 mm watches.
+    func testDepthGaugeRailStaysNarrowSoTheLiveValueStaysLarge() {
+        XCTAssertEqual(DepthGaugeRail.layoutWidth, 46)
     }
 
     func testSensorDisplayLimitUsesSignedMaximumWithoutExceedingProductBoundary() {

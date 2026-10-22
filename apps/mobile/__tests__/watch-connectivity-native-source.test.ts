@@ -570,6 +570,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).toContain('.frame(minHeight: Self.minimumHeight)');
     expect(home).toContain('HomeSafetyFooter()');
     expect(home).toContain('Recreational capture and review. Not a certified dive computer.');
+    // The latest log card on Home keeps the Demo/Test marker, so a demo never reads as a real dive.
+    expect(home.slice(home.indexOf('private struct LatestSessionCard'), home.indexOf('private struct LatestMetric'))).toMatch(
+      /Text\("LAST DIVE"\)[\s\S]*if let captureProvenanceLabel = session\.captureProvenanceLabel \{\s*StatusPill\(title: captureProvenanceLabel/,
+    );
     // While the sensor check runs the real start cards are disabled, with no placeholder or error card.
     expect(home).toContain('if let sensorAvailability, sensorAvailability.readiness != .ready');
     expect(home.match(/\.disabled\(!canStartRealDive\)/g)).toHaveLength(2);
@@ -669,6 +673,7 @@ describe('WatchConnectivity native source contract', () => {
     const home = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/HomeView.swift');
     const services = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/DiveAppServices.swift');
     const water = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sensors/WaterSubmersionCoordinator.swift');
+    const availability = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Sensors/DepthSensorAvailability.swift');
     const homeHeader = home.slice(home.indexOf('struct HomeView: View'), home.indexOf('var body: some View'));
 
     expect(homeHeader).not.toContain('RealDepthSensorProvider()');
@@ -677,6 +682,7 @@ describe('WatchConnectivity native source contract', () => {
     // `nil` means the check is still running; a placeholder reading as "unsupported" flashed an error card.
     expect(homeHeader).toContain('@State private var sensorAvailability: DepthSensorAvailability?');
     expect(home).not.toContain('DepthSensorAvailability.launchPlaceholder');
+    expect(availability).not.toContain('launchPlaceholder');
     expect(home).toMatch(/\.onAppear \{\s*applyPreferredDiveMode\(\)\s*loadInitialSensorAvailability\(\)/);
     expect(home).toMatch(/await Task\.yield\(\)\s*sensorAvailability = DepthSensorAvailability\.current/);
     expect(services).toContain('let water = WaterSubmersionCoordinator.shared');
@@ -804,6 +810,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('String(localized: "Press to end & save")');
     expect(hint).toContain('String(localized: "Crown ▸ Details \\(position)/\\(pageCount)")');
     expect(hint).toContain('let input: Input = hasActionButton || page == .end ? .actionButton : .crown');
+    // The chip names what the next press shows: Live goes to Details first, Details to the End page.
+    expect(hint).toMatch(/case \.nextPage\(\.end, _\):\s*return String\(localized: "Action ▸ End page"\)/);
+    expect(hint).toMatch(/case \.notAtSurface, \.available:\s*(\/\/.*\s*)*kind = \.nextPage\(cycle\[\(index \+ 1\) % cycle\.count\], input: \.actionButton\)/);
+    expect(hint).not.toContain('endPageInCycle');
     // Turning off Water Lock ends the recording, so that note shows at the surface only.
     expect(hint).toContain('showsWaterLockNote: waterState == .notSubmerged');
     expect(hint).toContain('hasActionButton: ActionButtonHint.current.isLikelyUltra');
@@ -877,9 +887,14 @@ describe('WatchConnectivity native source contract', () => {
     const summary = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SummaryView.swift');
     const guide = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/UnderwaterControlsView.swift');
     const catalog = JSON.parse(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Localizable.xcstrings')) as {
-      strings: Record<string, { localizations?: { ko?: { stringUnit?: { value?: string } } } }>;
+      strings: Record<
+        string,
+        { localizations?: Record<'en' | 'ko', { stringUnit?: { value?: string } } | undefined> }
+      >;
     };
     const korean = (key: string) => catalog.strings[key]?.localizations?.ko?.stringUnit?.value;
+    // Watch keys are the English source text; the shown English comes from the catalog's en value.
+    const english = (key: string) => catalog.strings[key]?.localizations?.en?.stringUnit?.value;
     const startCopy = wetReady.slice(wetReady.indexOf('private var startCopy'), wetReady.indexOf('private var accent'));
     const summaryHeader = summary.slice(summary.indexOf('struct SessionSummaryContent'), summary.indexOf('private var commonMetricsSection'));
 
@@ -899,13 +914,30 @@ describe('WatchConnectivity native source contract', () => {
     expect(guide).toContain('If you assigned Divenary to the Action Button');
     expect(korean('Recommended stop')).toBe('권장 스탑');
     expect(korean('Recommended stop time remaining')).toBe('권장 스탑 남은 시간');
-    expect(korean('Action ▸ Details %lld/%lld')).toBe('Action ▸ 세부 %1$lld/%2$lld');
-    expect(korean('End available in %@')).toBe('종료 가능까지 %@');
-    expect(korean('Action ▸ End page')).toBe('Action ▸ 종료 화면');
-    expect(korean('Press to end & save')).toBe('눌러서 종료하고 저장');
+    // Diver terms: 동작 버튼 / Action Button, 수중 잠금 / Water Lock, Digital Crown.
+    expect(korean('Action ▸ Details %lld/%lld')).toBe('동작 버튼 ▸ 상세 %1$lld/%2$lld');
+    expect(english('Action ▸ Details %lld/%lld')).toBe('Action Button ▸ Details %1$lld/%2$lld');
+    expect(korean('Crown ▸ Details %lld/%lld')).toBe('Digital Crown ▸ 상세 %1$lld/%2$lld');
+    // The countdown is until ending becomes possible, not until the recording ends.
+    expect(korean('End available in %@')).toBe('기록 종료 가능까지 %@');
+    expect(english('End available in %@')).toBe('Can end recording in %@');
+    expect(korean('Action ▸ End page')).toBe('동작 버튼 ▸ 종료 화면');
+    expect(korean('Press to end & save')).toBe('동작 버튼 ▸ 기록 종료·저장');
+    expect(korean('Turning off Water Lock ends recording.')).toBe('수중 잠금을 해제하면 기록이 끝납니다.');
+    // Wet Ready names a screen the watch has (the Dive screen), never "Home" or a dive session.
+    expect(korean('Dive')).toBe('다이빙');
+    expect(korean('Recording starts when watchOS starts the dive session.')).toBe('자동 실행이 켜져 있어 기록이 자동으로 시작됩니다.');
     expect(korean('If you assigned Divenary to the Action Button, press it to start recording.')).toBe(
-      'Action Button에 Divenary를 지정했다면 눌러서 기록을 시작합니다.',
+      '동작 버튼에 Divenary를 지정했다면 눌러서 기록을 시작하세요.',
     );
+    expect(korean('Start from Home before entering the water.')).toBe('입수 전에 다이빙 화면에서 기록을 시작하세요.');
+    expect(english('Start from Home before entering the water.')).toBe('Start recording on the Dive screen before you get in.');
+    // The guide states the real end guard: 3 minutes of recording and the watch out of the water.
+    expect(
+      english(
+        'If you assigned Divenary to the Action Button, the first press starts a dive and later presses switch pages. At the surface after 3 minutes, a press on the last page ends and saves.',
+      ),
+    ).toContain('Once recording has run for 3 minutes and the watch is out of the water');
   });
 
   it('routes every watch Action Button press through one phase-aware dive action intent', () => {
@@ -1028,6 +1060,11 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopInstrument).toContain('StatusPill(title: String(localized: "Recommended stop"), color: statusColor)');
     expect(safetyStopInstrument).toContain('DiveWatchTheme.caution');
     expect(safetyStopInstrument).not.toContain('DiveWatchTheme.danger');
+    // Blue is for actions and selection: a counting recommended stop is amber, a finished one grey.
+    expect(safetyStopInstrument).not.toContain('DiveWatchTheme.primary');
+    expect(safetyStopInstrument).toMatch(
+      /safetyStop\.status == \.completed \? DiveWatchTheme\.secondary : DiveWatchTheme\.caution/,
+    );
     expect(safetyStopInstrument).toContain('value: DiveFormatters.depth(currentDepthMeters)');
     expect(safetyStopInstrument).not.toContain('Within stop zone');
     expect(safetyStopInstrument).not.toContain('Deeper than stop zone');

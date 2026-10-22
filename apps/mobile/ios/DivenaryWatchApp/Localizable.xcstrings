@@ -128,7 +128,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action Button"
+            "value" : "동작 버튼"
           }
         }
       }
@@ -138,13 +138,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ Details %1$lld/%2$lld"
+            "value" : "Action Button ▸ Details %1$lld/%2$lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ 세부 %1$lld/%2$lld"
+            "value" : "동작 버튼 ▸ 상세 %1$lld/%2$lld"
           }
         }
       }
@@ -154,13 +154,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ End page"
+            "value" : "Action Button ▸ End page"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ 종료 화면"
+            "value" : "동작 버튼 ▸ 종료 화면"
           }
         }
       }
@@ -170,13 +170,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ Live %1$lld/%2$lld"
+            "value" : "Action Button ▸ Live %1$lld/%2$lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ 실시간 %1$lld/%2$lld"
+            "value" : "동작 버튼 ▸ 실시간 %1$lld/%2$lld"
           }
         }
       }
@@ -186,13 +186,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ Start next dive"
+            "value" : "Action Button ▸ Start next dive"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action ▸ 다음 다이브 시작"
+            "value" : "동작 버튼 ▸ 다음 다이빙 시작"
           }
         }
       }
@@ -318,13 +318,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ascent reminder max"
+            "value" : "Max ascent rate"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "상승 리마인더 최대값"
+            "value" : "최대 상승 속도"
           }
         }
       }
@@ -400,13 +400,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auto launch active"
+            "value" : "Auto-Launch on"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "자동 실행 활성"
+            "value" : "자동 실행 켜짐"
           }
         }
       }
@@ -416,13 +416,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auto launch inactive"
+            "value" : "Auto-Launch off"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "자동 실행 비활성"
+            "value" : "자동 실행 꺼짐"
           }
         }
       }
@@ -432,7 +432,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Auto launch status unavailable"
+            "value" : "Auto-Launch status unknown"
           }
         },
         "ko" : {
@@ -551,7 +551,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "물결 있음"
+            "value" : "거친 물결"
           }
         }
       }
@@ -561,13 +561,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Cleanup required"
+            "value" : "Couldn’t cancel recording"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "정리 필요"
+            "value" : "기록을 취소하지 못함"
           }
         }
       }
@@ -626,13 +626,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Crown ▸ Details %1$lld/%2$lld"
+            "value" : "Digital Crown ▸ Details %1$lld/%2$lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "크라운 ▸ 세부 %1$lld/%2$lld"
+            "value" : "Digital Crown ▸ 상세 %1$lld/%2$lld"
           }
         }
       }
@@ -642,13 +642,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Crown ▸ Live %1$lld/%2$lld"
+            "value" : "Digital Crown ▸ Live %1$lld/%2$lld"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "크라운 ▸ 실시간 %1$lld/%2$lld"
+            "value" : "Digital Crown ▸ 실시간 %1$lld/%2$lld"
           }
         }
       }
@@ -758,13 +758,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deeper than stop zone"
+            "value" : "Below stop zone"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "정지 구간보다 깊음"
+            "value" : "스탑 구간보다 깊음"
           }
         }
       }
@@ -780,7 +780,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 앱이 Apple Watch에서 지원하는 수심보다 깊습니다. 리뷰용으로만 보관합니다."
+            "value" : "이 앱이 Apple Watch에서 지원하는 수심보다 깊습니다. 복기용으로만 보관합니다."
           }
         }
       }
@@ -838,13 +838,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Depth sensor error"
+            "value" : "Couldn’t read depth"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수심 센서 오류"
+            "value" : "수심을 읽지 못함"
           }
         }
       }
@@ -941,7 +941,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이브"
+            "value" : "다이빙"
           }
         }
       }
@@ -957,7 +957,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이브 #%@"
+            "value" : "다이빙 #%@"
           }
         }
       }
@@ -967,13 +967,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dive active"
+            "value" : "Diving"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이브 중"
+            "value" : "다이빙 중"
           }
         }
       }
@@ -1006,7 +1006,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이브 수"
+            "value" : "다이빙 횟수"
           }
         }
       }
@@ -1050,13 +1050,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dive Plans"
+            "value" : "Dive plans"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이브 계획"
+            "value" : "다이빙 계획"
           }
         }
       }
@@ -1117,7 +1117,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Divenary Dive Action"
+            "value" : "Divenary dive action"
           }
         },
         "ko" : {
@@ -1182,13 +1182,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Duration"
+            "value" : "Total time"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "시간"
+            "value" : "총 기록 시간"
           }
         }
       }
@@ -1237,7 +1237,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "종료하고 저장"
+            "value" : "기록 종료·저장"
           }
         }
       }
@@ -1247,13 +1247,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "End available in %@"
+            "value" : "Can end recording in %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "종료 가능까지 %@"
+            "value" : "기록 종료 가능까지 %@"
           }
         }
       }
@@ -1313,13 +1313,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "End not available"
+            "value" : "Can’t end recording now"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "지금은 종료할 수 없습니다"
+            "value" : "지금은 기록을 끝낼 수 없음"
           }
         }
       }
@@ -1397,13 +1397,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Failed"
+            "value" : "Not sent"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "실패"
+            "value" : "전송 실패"
           }
         }
       }
@@ -1429,13 +1429,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Free Segment List"
+            "value" : "Dives"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프리다이빙 구간 목록"
+            "value" : "다이빙 목록"
           }
         }
       }
@@ -1445,13 +1445,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Free Session Summary"
+            "value" : "Freediving summary"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프리 세션 요약"
+            "value" : "프리다이빙 요약"
           }
         }
       }
@@ -1517,7 +1517,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "프리 다이빙"
+            "value" : "프리다이빙"
           }
         }
       }
@@ -1527,13 +1527,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gas"
+            "value" : "Breathing gas"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "가스"
+            "value" : "호흡 기체"
           }
         }
       }
@@ -1560,13 +1560,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you assigned Divenary to the Action Button, press it to start recording."
+            "value" : "If Divenary is assigned to the Action Button, press it to start recording."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action Button에 Divenary를 지정했다면 눌러서 기록을 시작합니다."
+            "value" : "동작 버튼에 Divenary를 지정했다면 눌러서 기록을 시작하세요."
           }
         }
       }
@@ -1576,13 +1576,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "If you assigned Divenary to the Action Button, the first press starts a dive and later presses switch pages. At the surface after 3 minutes, a press on the last page ends and saves."
+            "value" : "If Divenary is assigned to the Action Button, the first press starts recording and later presses switch pages. Once recording has run for 3 minutes and the watch is out of the water, a press on the last page ends and saves."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Action Button에 Divenary를 지정했다면 처음 누르면 다이브를 시작하고, 그다음부터는 누를 때마다 화면을 넘깁니다. 3분이 지나 수면에 있으면 마지막 화면에서 눌러 종료하고 저장합니다."
+            "value" : "동작 버튼에 Divenary를 지정했다면 처음 누를 때 기록을 시작하고, 그다음부터는 누를 때마다 화면을 넘깁니다. 기록 시작 후 3분이 지났고 워치가 물 밖에 있으면 마지막 화면에서 눌러 종료하고 저장합니다."
           }
         }
       }
@@ -1598,7 +1598,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "설정 > Action Button에서 다이빙을 고른 뒤 Divenary를 선택하세요."
+            "value" : "설정 앱의 동작 버튼 항목에서 다이빙을 고른 뒤 Divenary를 선택하세요."
           }
         }
       }
@@ -1608,13 +1608,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In Settings > General > Auto-Launch, choose Divenary for When Submerged. Recording then starts when watchOS starts the dive session."
+            "value" : "In Settings > General > Auto-Launch, choose Divenary for When Submerged. Divenary then opens and starts recording when you get in the water."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "설정 > 일반 > 자동 실행에서 물에 잠겼을 때 실행할 앱으로 Divenary를 고르세요. 그러면 watchOS가 다이브 세션을 시작할 때 기록을 시작합니다."
+            "value" : "설정 앱의 자동 실행 항목에서 물에 잠겼을 때 실행할 앱으로 Divenary를 선택하세요. 그러면 물에 들어갈 때 Divenary가 열리고 기록을 시작합니다."
           }
         }
       }
@@ -1624,13 +1624,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Keeping your captured log."
+            "value" : "Your log isn’t saved yet. Try saving again."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "캡처한 로그를 보존하고 있습니다."
+            "value" : "기록을 아직 저장하지 못했습니다. 다시 저장해 주세요."
           }
         }
       }
@@ -1656,13 +1656,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "LAST DIVE"
+            "value" : "Latest log"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "지난 다이브"
+            "value" : "최근 기록"
           }
         }
       }
@@ -1678,7 +1678,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "마지막 다이브"
+            "value" : "직전 다이빙"
           }
         }
       }
@@ -1688,13 +1688,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Last duration"
+            "value" : "Last dive time"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "직전 시간"
+            "value" : "직전 다이빙 시간"
           }
         }
       }
@@ -1744,7 +1744,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "최장 다이브"
+            "value" : "최장 다이빙"
           }
         }
       }
@@ -1770,7 +1770,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Max Depth"
+            "value" : "Max depth"
           }
         },
         "ko" : {
@@ -1792,7 +1792,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "약함"
+            "value" : "약한 물결"
           }
         }
       }
@@ -1802,13 +1802,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mode"
+            "value" : "Dive type"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "모드"
+            "value" : "다이빙 종류"
           }
         }
       }
@@ -1834,13 +1834,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No depth samples captured"
+            "value" : "No depth recorded"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수심 샘플이 기록되지 않았습니다"
+            "value" : "수심이 기록되지 않았습니다"
           }
         }
       }
@@ -1856,7 +1856,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "로그 없음"
+            "value" : "기록 없음"
           }
         }
       }
@@ -1882,13 +1882,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No reminder recorded"
+            "value" : "No recommended stop"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록된 리마인더 없음"
+            "value" : "권장 스탑 해당 없음"
           }
         }
       }
@@ -1898,13 +1898,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No saved sessions"
+            "value" : "No saved logs yet"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장된 세션 없음"
+            "value" : "아직 저장한 기록이 없습니다"
           }
         }
       }
@@ -1914,13 +1914,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No segments"
+            "value" : "No dives recorded"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "구간 없음"
+            "value" : "기록된 다이빙 없음"
           }
         }
       }
@@ -1978,13 +1978,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Not set"
+            "value" : "--"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "설정 안 됨"
+            "value" : "--"
           }
         }
       }
@@ -2010,13 +2010,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Outside sensor-authorized depth"
+            "value" : "Outside depth range"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "센서 허가 수심 범위 밖"
+            "value" : "수심 측정 범위 밖"
           }
         }
       }
@@ -2082,7 +2082,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "계획 다이브"
+            "value" : "계획된 다이빙"
           }
         }
       }
@@ -2126,13 +2126,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Plans start real dives on a supported Apple Watch."
+            "value" : "Start recording from a plan on an Apple Watch that measures depth."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "계획은 지원되는 Apple Watch에서 실제 다이브로 시작합니다."
+            "value" : "수심을 측정하는 Apple Watch에서 계획을 골라 기록을 시작할 수 있습니다."
           }
         }
       }
@@ -2209,13 +2209,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Press to end & save"
+            "value" : "Action Button ▸ End & save"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "눌러서 종료하고 저장"
+            "value" : "동작 버튼 ▸ 기록 종료·저장"
           }
         }
       }
@@ -2258,13 +2258,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ready"
+            "value" : "Ready to record"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "준비됨"
+            "value" : "기록 대기"
           }
         }
       }
@@ -2274,13 +2274,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Real dives need a depth sensor. The demo still works."
+            "value" : "Dive recording needs a depth sensor. You can still try the demo."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "실제 다이브 기록에는 수심 센서가 필요합니다. 데모는 계속 쓸 수 있습니다."
+            "value" : "다이빙 기록에는 수심 측정 기능이 필요합니다. 데모는 사용할 수 있습니다."
           }
         }
       }
@@ -2290,13 +2290,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Real Watch required"
+            "value" : "Use on Apple Watch"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "실기기 필요"
+            "value" : "Apple Watch에서 사용"
           }
         }
       }
@@ -2322,13 +2322,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recommended reminder"
+            "value" : "Recommended stop"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 리마인더"
+            "value" : "권장 스탑"
           }
         }
       }
@@ -2338,13 +2338,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recommended safety stop reminder · no safety calculation"
+            "value" : "Recommended stop record for review. Do not use for safety decisions."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 세이프티 스탑 리마인더 · 안전계산 없음"
+            "value" : "권장 스탑 참고 기록입니다. 안전 판단에 사용하지 마세요."
           }
         }
       }
@@ -2419,13 +2419,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recording setup could not be completed."
+            "value" : "Couldn’t get ready to record."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록 설정을 완료하지 못했습니다."
+            "value" : "기록을 준비하지 못했습니다."
           }
         }
       }
@@ -2435,13 +2435,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recording starts when watchOS starts the dive session."
+            "value" : "Auto-Launch is on, so recording starts on its own."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "watchOS가 다이브 세션을 시작하면 기록됩니다."
+            "value" : "자동 실행이 켜져 있어 기록이 자동으로 시작됩니다."
           }
         }
       }
@@ -2451,7 +2451,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recording unavailable"
+            "value" : "Can’t start recording"
           }
         },
         "ko" : {
@@ -2467,13 +2467,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recreational capture and review. Not a certified dive computer."
+            "value" : "For dive logging and review. Not a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "레크리에이션 캡처와 리뷰용입니다. 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -2483,13 +2483,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "RECREATIONAL USE ONLY. NON-CERTIFIED ASSISTANT."
+            "value" : "For dive logging. Not a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "레크리에이션 기록 전용. 인증된 장비가 아닌 보조 도구."
+            "value" : "다이빙 기록용입니다. 인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -2582,13 +2582,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Retry Save"
+            "value" : "Save again"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장 재시도"
+            "value" : "다시 저장"
           }
         }
       }
@@ -2632,13 +2632,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rotate the Digital Crown to choose a mode."
+            "value" : "Turn the Digital Crown to choose a dive type."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "디지털 크라운을 돌려 모드를 선택하세요."
+            "value" : "Digital Crown을 돌려 다이빙 종류를 선택하세요."
           }
         }
       }
@@ -2681,13 +2681,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safety Stop Result"
+            "value" : "Recommended stop record"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스탑 결과"
+            "value" : "권장 스탑 기록"
           }
         }
       }
@@ -2697,13 +2697,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Safety Stop Summary"
+            "value" : "Recommended stop summary"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스탑 요약"
+            "value" : "권장 스탑 요약"
           }
         }
       }
@@ -2730,13 +2730,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Samples"
+            "value" : "Depth readings"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "샘플"
+            "value" : "수심 측정 횟수"
           }
         }
       }
@@ -2779,13 +2779,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "SAVED LOG ONLY. NON-CERTIFIED ASSISTANT."
+            "value" : "For reviewing saved logs. Not a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장된 로그 전용. 인증된 장비가 아닌 보조 도구."
+            "value" : "저장한 기록의 복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -2811,13 +2811,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saved Sessions"
+            "value" : "Saved logs"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장된 세션"
+            "value" : "저장한 기록"
           }
         }
       }
@@ -2833,7 +2833,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "로그 저장 중"
+            "value" : "기록 저장 중"
           }
         }
       }
@@ -2875,7 +2875,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scuba Diving"
+            "value" : "Scuba diving"
           }
         },
         "ko" : {
@@ -2908,7 +2908,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send Again"
+            "value" : "Send again"
           }
         },
         "ko" : {
@@ -2941,13 +2941,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Session time"
+            "value" : "Total time"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세션 시간"
+            "value" : "총 기록 시간"
           }
         }
       }
@@ -2957,13 +2957,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sessions"
+            "value" : "Logs"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세션"
+            "value" : "기록"
           }
         }
       }
@@ -2990,13 +2990,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shallower than stop zone"
+            "value" : "Above stop zone"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "정지 구간보다 얕음"
+            "value" : "스탑 구간보다 얕음"
           }
         }
       }
@@ -3022,13 +3022,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Site"
+            "value" : "Dive site"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "사이트"
+            "value" : "다이빙 포인트"
           }
         }
       }
@@ -3055,13 +3055,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start a recreational capture to create a watch log."
+            "value" : "Start recording on the Dive screen."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "레크리에이션 캡처를 시작해 워치 로그를 만드세요."
+            "value" : "다이빙 화면에서 기록을 시작하세요."
           }
         }
       }
@@ -3071,7 +3071,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start Divenary Dive"
+            "value" : "Start Divenary dive"
           }
         },
         "ko" : {
@@ -3087,13 +3087,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Start from Home before entering the water."
+            "value" : "Start recording on the Dive screen before you get in."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "물에 들어가기 전에 Home에서 시작하세요."
+            "value" : "입수 전에 다이빙 화면에서 기록을 시작하세요."
           }
         }
       }
@@ -3185,13 +3185,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop incomplete"
+            "value" : "Recommended stop incomplete"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스탑 미완료"
+            "value" : "권장 스탑 미완료"
           }
         }
       }
@@ -3218,13 +3218,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop reminder armed"
+            "value" : "Recommended stop pending"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스탑 리마인더 준비"
+            "value" : "권장 스탑 대기"
           }
         }
       }
@@ -3234,13 +3234,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stop status unavailable"
+            "value" : "--"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스탑 상태 없음"
+            "value" : "--"
           }
         }
       }
@@ -3256,7 +3256,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "정지 구간"
+            "value" : "스탑 구간"
           }
         }
       }
@@ -3266,13 +3266,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Storage retry pending"
+            "value" : "Waiting to retry saving"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장 재시도 대기 중"
+            "value" : "기록 저장 재시도 대기"
           }
         }
       }
@@ -3298,13 +3298,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Supplemental log · no safety calculation"
+            "value" : "For log review. Not a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "보조 로그 · 안전계산 없음"
+            "value" : "기록 복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -3413,13 +3413,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Synced"
+            "value" : "On iPhone"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "동기화됨"
+            "value" : "iPhone 저장"
           }
         }
       }
@@ -3429,13 +3429,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap a plan to use it for the next dive. Tap it again to clear."
+            "value" : "Tap a plan to use it for the next dive. Tap it again to deselect it."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "계획을 누르면 다음 다이브에 사용하고, 다시 누르면 선택을 해제합니다."
+            "value" : "계획을 누르면 다음 다이빙에 사용하고, 다시 누르면 선택을 해제합니다."
           }
         }
       }
@@ -3541,13 +3541,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This app is a log review aid, not certified dive equipment."
+            "value" : "For dive logging and review. Not a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 앱은 로그 리뷰를 위한 보조 도구이며, 인증된 다이빙 장비가 아닙니다."
+            "value" : "이 앱은 다이빙 기록·복기용이며, 인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -3557,13 +3557,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This watch may not have an Action Button. Start from Home before entering the water."
+            "value" : "This watch may not have an Action Button. Start recording on the Dive screen before you get in."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 Watch에는 Action Button이 없을 수 있습니다. 물에 들어가기 전에 Home에서 시작하세요."
+            "value" : "이 워치에는 동작 버튼이 없을 수 있습니다. 입수 전에 다이빙 화면에서 기록을 시작하세요."
           }
         }
       }
@@ -3678,7 +3678,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수면에서 방수 잠금을 끄면 기록이 끝납니다."
+            "value" : "수면에서 수중 잠금을 해제하면 기록이 끝납니다."
           }
         }
       }
@@ -3694,7 +3694,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "방수 잠금을 끄면 기록이 끝납니다."
+            "value" : "수중 잠금을 해제하면 기록이 끝납니다."
           }
         }
       }
@@ -3771,13 +3771,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Unknown"
+            "value" : "--"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "알 수 없음"
+            "value" : "--"
           }
         }
       }
@@ -3860,7 +3860,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "대기"
+            "value" : "전송 대기"
           }
         }
       }
@@ -3919,13 +3919,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Water"
+            "value" : "Water conditions"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "물 상태"
+            "value" : "수중 상태"
           }
         }
       }
@@ -3941,7 +3941,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록 중에는 Digital Crown을 돌려 실시간 화면과 세부 화면을 오갈 수 있습니다."
+            "value" : "기록 중에는 Digital Crown을 돌려 실시간 화면과 상세 화면을 오갈 수 있습니다."
           }
         }
       }
@@ -3957,7 +3957,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "정지 구간 내"
+            "value" : "스탑 구간 안"
           }
         }
       }
