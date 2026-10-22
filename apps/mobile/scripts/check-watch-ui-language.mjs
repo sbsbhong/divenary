@@ -145,7 +145,9 @@ const checks = [
       !recordingHintSource.includes('String(localized: "Action ▸ End page")') ||
       !recordingHintSource.includes('String(localized: "Press to end & save")') ||
       !recordingHintSource.includes('showsWaterLockNote: waterState == .notSubmerged') ||
-      !recordingHintSource.includes('let input: Input = hasActionButton || page == .end ? .actionButton : .crown'),
+      !recordingHintSource.includes(
+        'let input: Input = hasActionButton || page == .end || page == .switchMode ? .actionButton : .crown',
+      ),
   },
   {
     name: 'recording hint and paging have no tap target and the crown never ends a dive',

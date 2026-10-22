@@ -304,8 +304,8 @@ final class RecordingPageModelTests: XCTestCase {
         let haptics = RecordedDiveHaptics()
         let scheduler = ManualPageReturnScheduler()
         let model = makeRecordingModel(haptics: haptics, scheduler: scheduler, signals: underwater(maxDepth: 0))
-        model.stepFromCrown(by: 2)
-        XCTAssertEqual(model.page, .switchMode)
+        model.advanceFromActionButton()
+        XCTAssertEqual(model.advanceFromActionButton(), .switchMode)
 
         model.receive(underwater(maxDepth: 1.2))
 
@@ -313,23 +313,27 @@ final class RecordingPageModelTests: XCTestCase {
         XCTAssertEqual(model.lastChange, RecordingPageChange(page: .live, reason: .modeSwitchClosed))
         XCTAssertFalse(model.lastChange?.userInitiated ?? true)
         XCTAssertFalse(scheduler.hasPendingAction)
-        XCTAssertEqual(haptics.events, [.pageChange])
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange])
     }
 
-    func testCrownReachesTheSwitchPageAndTurnsBackFromIt() {
+    func testCrownNeverSelectsTheSwitchPageButTurnsBackFromIt() {
         let model = makeRecordingModel(signals: underwater(maxDepth: 0))
 
         model.stepFromCrown(by: 5)
+        XCTAssertEqual(model.page, .details)
+        XCTAssertEqual(model.advanceFromActionButton(), .switchMode)
+        model.stepFromCrown(by: 1)
         XCTAssertEqual(model.page, .switchMode)
-        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .switchMode, reason: .crown))
         model.stepFromCrown(by: -1)
         XCTAssertEqual(model.page, .details)
+        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .details, reason: .crown))
     }
 
     func testEligibleSurfaceOffersTheEndPageInsteadOfTheSwitchPage() {
         let model = makeRecordingModel(signals: atSurface(elapsed: 120, maxDepth: 0))
         XCTAssertEqual(model.pages, [.live, .details, .switchMode])
-        model.stepFromCrown(by: 2)
+        model.advanceFromActionButton()
+        model.advanceFromActionButton()
 
         model.receive(atSurface(elapsed: 180, maxDepth: 0))
 
@@ -345,7 +349,8 @@ final class RecordingPageModelTests: XCTestCase {
     func testRestartedRecordingStartsOnLiveWithTheSwitchOpen() {
         let scheduler = ManualPageReturnScheduler()
         let model = makeRecordingModel(scheduler: scheduler, signals: underwater(maxDepth: 0.5))
-        model.stepFromCrown(by: 2)
+        model.advanceFromActionButton()
+        model.advanceFromActionButton()
 
         model.restartRecording()
 

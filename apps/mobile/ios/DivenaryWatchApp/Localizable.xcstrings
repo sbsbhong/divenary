@@ -798,22 +798,6 @@
         }
       }
     },
-    "Crown forward ▸ Switch type" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Crown forward ▸ Switch type"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "크라운 앞으로 ▸ 종류 바꾸기"
-          }
-        }
-      }
-    },
     "Crown ▸ Details %lld/%lld" : {
       "localizations" : {
         "en" : {
@@ -2258,22 +2242,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "권장 스탑 완료"
-          }
-        }
-      }
-    },
-    "Switch" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Switch"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "바꾸기"
           }
         }
       }

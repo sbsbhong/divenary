@@ -2,9 +2,9 @@ import Combine
 import Foundation
 
 /// A readout page during a real recording. The Action Button cycles through `pages`; crown rotation
-/// moves between `live`, `details` and `switchMode`, never to `end`. `end` is in the cycle only while
-/// ending is allowed, and `switchMode` only before the first descent and while `end` is not offered:
-/// a press on either page acts instead of turning the page, so both in one cycle would hide one.
+/// moves between `live` and `details` only. `end` is in the cycle only while ending is allowed, and
+/// `switchMode` only before the first descent and while `end` is not offered: a press on either page
+/// acts instead of turning the page, so both in one cycle would hide one.
 enum RecordingPage: Equatable, Sendable {
     case live
     case details
@@ -145,10 +145,9 @@ final class RecordingPageModel: ObservableObject {
         return cycle
     }
 
-    /// The pages crown rotation moves through, in order. It never selects the End page.
-    private var crownPages: [RecordingPage] {
-        modeSwitchAvailable ? [.live, .details, .switchMode] : [.live, .details]
-    }
+    /// The pages crown rotation moves through, in order. Only a press acts on the switch and End
+    /// pages, so the crown never selects them.
+    private static let crownPages: [RecordingPage] = [.live, .details]
 
     var pageIndex: Int {
         pages.firstIndex(of: page) ?? 0
@@ -234,17 +233,17 @@ final class RecordingPageModel: ObservableObject {
         return page
     }
 
-    /// Crown rotation by whole detents: positive moves toward Details (and the switch page before the
-    /// first descent), negative toward Live. It never selects the End page; turning back leaves it.
+    /// Crown rotation by whole detents: positive moves toward Details, negative toward Live. It never
+    /// selects the switch or End page; turning back leaves them.
     func stepFromCrown(by detents: Int) {
         guard isRecording, !isAlwaysOn, detents != 0 else { return }
-        let crownPages = crownPages
+        let crownPages = Self.crownPages
         let target: RecordingPage
         switch page {
-        case .end:
+        case .switchMode, .end:
             guard detents < 0 else { return }
             target = crownPages[max(crownPages.count + detents, 0)]
-        case .live, .details, .switchMode:
+        case .live, .details:
             let index = crownPages.firstIndex(of: page) ?? 0
             target = crownPages[min(max(index + detents, 0), crownPages.count - 1)]
         }

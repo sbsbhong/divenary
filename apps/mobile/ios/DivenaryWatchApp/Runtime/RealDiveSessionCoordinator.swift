@@ -402,25 +402,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
         return .endRequested
     }
 
-    /// A tap on the switch page's button while touch still works (out of the water, Water Lock off).
-    /// It plays the same haptic and leaves the same feedback as an Action Button press there.
-    @discardableResult
-    func switchDiveModeFromTouch() -> DiveActionOutcome {
-        let outcome = isEnding ? DiveActionOutcome.rejected(.busy) : switchDiveModeBeforeFirstDescent()
-        switch outcome {
-        case .modeSwitched:
-            haptics.play(.start)
-        case .rejected:
-            haptics.play(.rejected)
-        case .started, .pageChanged, .endRequested:
-            break
-        }
-        recordingPages.recordActionFeedback(outcome)
-        return outcome
-    }
-
-    /// Restarts the recording as the other dive type, keeping the runtime session. Allowed only before
-    /// the first descent below the switch limit, so the discarded part holds no dive.
+    /// An Action Button press on the switch page. Restarts the recording as the other dive type, keeping
+    /// the runtime session. Allowed only before the first descent below the switch limit, so the
+    /// discarded part holds no dive. There is no touch path: the touchscreen is locked while recording.
     private func switchDiveModeBeforeFirstDescent() -> DiveActionOutcome {
         // The page model tracks the recorder's maximum depth and closes the switch at the limit.
         guard case let .recording(source, plan) = phase, recordingPages.modeSwitchAvailable else {

@@ -1033,51 +1033,52 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertRecording(coordinator, source: .manual, plan: expected)
     }
 
-    func testTouchSwitchConfirmsWithAStartHapticAndCanSwitchBack() {
-        let calls = LifecycleCallLog()
-        let recorder = FakeDiveRecorder(calls: calls)
-        let haptics = RecordedDiveHaptics()
-        let coordinator = makeCoordinator(runtime: FakeDiveRuntime(calls: calls), recorder: recorder, haptics: haptics)
-        coordinator.startFromActionButton()
-        coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 5, maxDepth: 0))
-
-        XCTAssertEqual(coordinator.switchDiveModeFromTouch(), .modeSwitched(.freedive))
-        XCTAssertEqual(coordinator.switchDiveModeFromTouch(), .modeSwitched(.scuba))
-
-        XCTAssertEqual(recorder.startedPlans.map(\.diveMode), [.scuba, .freedive, .scuba])
-        XCTAssertEqual(recorder.cancelCallCount, 2)
-        XCTAssertEqual(haptics.events, [.start, .start])
-        XCTAssertEqual(
-            coordinator.recordingPages.lastActionFeedback,
-            DiveActionFeedback(id: 2, outcome: .modeSwitched(.scuba))
-        )
-        assertRecording(coordinator, source: .actionButton, plan: PreDivePlan(diveMode: .scuba))
-    }
-
-    func testSwitchIsRejectedAfterTheFirstDescentAndLeavesTheRecordingAlone() {
+    func testSwitchingTwiceReturnsToTheFirstTypeOnTheSameRuntime() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
         let recorder = FakeDiveRecorder(calls: calls)
         let haptics = RecordedDiveHaptics()
         let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, haptics: haptics)
+        coordinator.startFromActionButton()
+        coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 5, maxDepth: 0))
+
+        let outcomes = (0..<6).map { _ in coordinator.handleActionButtonPress() }
+
+        XCTAssertEqual(outcomes, [
+            .pageChanged(.details), .pageChanged(.switchMode), .modeSwitched(.freedive),
+            .pageChanged(.details), .pageChanged(.switchMode), .modeSwitched(.scuba),
+        ])
+        XCTAssertEqual(recorder.startedPlans.map(\.diveMode), [.scuba, .freedive, .scuba])
+        XCTAssertEqual(recorder.cancelCallCount, 2)
+        XCTAssertEqual(runtime.startManualCallCount, 1)
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange, .start, .pageChange, .pageChange, .start])
+        XCTAssertEqual(
+            coordinator.recordingPages.lastActionFeedback,
+            DiveActionFeedback(id: 6, outcome: .modeSwitched(.scuba))
+        )
+        assertRecording(coordinator, source: .actionButton, plan: PreDivePlan(diveMode: .scuba))
+    }
+
+    func testFirstDescentClosesTheSwitchPageAndLeavesTheRecordingAlone() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
         let plan = PreDivePlan(diveMode: .freedive)
         coordinator.startManual(plan: plan)
         coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 30, maxDepth: 0))
-        coordinator.recordingPages.stepFromCrown(by: 2)
-        XCTAssertEqual(coordinator.recordingPages.page, .switchMode)
+        _ = coordinator.handleActionButtonPress()
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.switchMode))
 
         coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 31, maxDepth: 1.5))
 
         XCTAssertEqual(coordinator.recordingPages.page, .live)
-        XCTAssertEqual(coordinator.switchDiveModeFromTouch(), .rejected(.modeSwitchUnavailable))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.details))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.live))
         XCTAssertEqual(recorder.cancelCallCount, 0)
         XCTAssertEqual(recorder.startedPlans, [plan])
         XCTAssertEqual(runtime.invalidateCallCount, 0)
-        XCTAssertEqual(haptics.events, [.start, .pageChange, .rejected])
-        XCTAssertEqual(
-            coordinator.recordingPages.lastActionFeedback,
-            DiveActionFeedback(id: 1, outcome: .rejected(.modeSwitchUnavailable))
-        )
         assertRecording(coordinator, source: .manual, plan: plan)
     }
 
@@ -1090,7 +1091,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, preference: preference, haptics: haptics)
         coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
         coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 10, maxDepth: 0))
-        coordinator.recordingPages.stepFromCrown(by: 2)
+        coordinator.recordingPages.advanceFromActionButton()
+        coordinator.recordingPages.advanceFromActionButton()
 
         XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.modeSwitchFailed))
 
@@ -1116,8 +1118,10 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, preference: preference)
         coordinator.startFromActionButton()
         coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 10, maxDepth: 0))
+        coordinator.recordingPages.advanceFromActionButton()
+        coordinator.recordingPages.advanceFromActionButton()
 
-        XCTAssertEqual(coordinator.switchDiveModeFromTouch(), .rejected(.modeSwitchFailed))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.modeSwitchFailed))
 
         XCTAssertEqual(recorder.startedPlans.map(\.diveMode), [.scuba, .freedive])
         XCTAssertEqual(runtime.invalidateCallCount, 1)

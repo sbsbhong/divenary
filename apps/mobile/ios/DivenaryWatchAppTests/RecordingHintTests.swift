@@ -140,16 +140,14 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(toFreedive.text, String(localized: "Press to switch to freediving"))
     }
 
-    func testCrownHintReachesTheSwitchPageAndTurnsBack() {
+    func testCrownHintNeverOffersTheSwitchPage() {
         let pages: [RecordingPage] = [.live, .details, .switchMode]
         let details = hint(page: .details, pages: pages, availability: .notAtSurface, water: .submerged,
                            hasActionButton: false)
-        let onSwitch = hint(page: .switchMode, pages: pages, availability: .notAtSurface, water: .submerged,
-                            hasActionButton: false)
 
-        XCTAssertEqual(details.text, String(localized: "Crown forward ▸ Switch type"))
-        XCTAssertEqual(onSwitch.kind, .nextPage(.live, input: .crown))
-        XCTAssertEqual(onSwitch.text, String(localized: "Crown back ▸ Live"))
+        XCTAssertEqual(details.kind, .nextPage(.live, input: .crown))
+        XCTAssertEqual(details.pageCount, 2)
+        XCTAssertEqual(details.text, String(localized: "Crown back ▸ Live"))
     }
 
     func testRejectedSwitchSaysTheDiveHasAlreadyStarted() {

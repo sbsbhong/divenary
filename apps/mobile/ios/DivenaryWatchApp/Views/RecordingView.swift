@@ -122,16 +122,14 @@ private extension EnvironmentValues {
     }
 }
 
-/// Stacked, inline secondary values use less height when errors reduce the recording viewport.
+/// Secondary values stack one per row, so a value such as "2.1 m/min" never splits across lines in a
+/// narrow column. Compact readouts only tighten the spacing and type.
 private struct RecordingSecondaryMetrics<Content: View>: View {
     @Environment(\.compactRecordingReadout) private var compact
     @ViewBuilder let content: Content
 
     var body: some View {
-        let layout = compact
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 1))
-            : AnyLayout(HStackLayout(alignment: .top, spacing: 7))
-        layout { content }
+        VStack(alignment: .leading, spacing: compact ? 1 : 3) { content }
     }
 }
 
@@ -146,8 +144,6 @@ struct RecordingInstrumentView: View {
     /// Real recording only: the readout pages the Action Button and crown move. Demo and debug
     /// recordings pass `nil`, stay on Live and keep the crown for simulated depth.
     var pages: RecordingPageModel?
-    /// Real recording only: the switch page's button, for when touch still works (Water Lock off).
-    var onSwitchMode: (() -> Void)?
 
     var body: some View {
         if let pages {
@@ -195,7 +191,10 @@ struct RecordingInstrumentView: View {
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .padding(.horizontal, 4)
-        .padding(.bottom, 3)
+        // The system bottom inset left a blank band on every watch size. The readout and gauge take
+        // that height; this margin keeps the centred hint chip clear of the rounded corners.
+        .padding(.bottom, 8)
+        .ignoresSafeArea(.container, edges: .bottom)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(showsNavigationToolbar ? .visible : .hidden, for: .navigationBar)
     }
@@ -283,8 +282,7 @@ struct RecordingInstrumentView: View {
             SwitchModePageInstrument(
                 currentMode: plan.diveMode,
                 currentDepthMeters: displayedDepthMeters,
-                sensorDisplayLimitMeters: sensorDisplayLimitMeters,
-                onSwitch: onSwitchMode
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         case .end:
             EndPageInstrument(
@@ -846,12 +844,11 @@ private struct LiveInstrumentMetric: View {
 
     var body: some View {
         if keepsInAlwaysOn || !isLuminanceReduced {
+            // Label and value on one row when both fit at full size; otherwise the label goes above.
             ViewThatFits(in: .horizontal) {
-                if compact {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        metricLabel.fixedSize()
-                        metricValue.fixedSize()
-                    }
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    metricLabel.fixedSize()
+                    metricValue.fixedSize()
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     metricLabel
@@ -1061,13 +1058,12 @@ private struct FreeSessionDetailsInstrument: View {
     }
 }
 
-/// Switch page, before the first descent: restart the recording as the other dive type. The Action
-/// Button does it underwater; the button below only works while touch does (Water Lock off).
+/// Switch page, before the first descent: the next Action Button press restarts the recording as the
+/// other dive type. Like the End page it has no tap target.
 private struct SwitchModePageInstrument: View {
     let currentMode: DiveMode
     let currentDepthMeters: Double?
     let sensorDisplayLimitMeters: Double
-    let onSwitch: (() -> Void)?
 
     @Environment(\.compactRecordingReadout) private var compact
 
@@ -1094,12 +1090,6 @@ private struct SwitchModePageInstrument: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .fixedSize(horizontal: false, vertical: true)
-            if let onSwitch {
-                Button(String(localized: "Switch"), action: onSwitch)
-                    .font(.system(size: 13, weight: .semibold))
-                    .buttonStyle(.bordered)
-                    .accessibilityLabel(switchTitle)
-            }
         }
     }
 

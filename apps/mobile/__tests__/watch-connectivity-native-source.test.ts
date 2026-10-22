@@ -745,7 +745,8 @@ describe('WatchConnectivity native source contract', () => {
     // The fixed two-line end footer became a one-line phase hint chip (see the hint test below).
     expect(recording).toMatch(/if endControl == \.crownHint, let hint \{\s*RecordingHintBar\(hint: hint\)/);
     expect(recording).not.toContain('RecordingEndControlFooter');
-    expect(recording).toContain('.padding(.bottom, 3)');
+    // The stack takes the system bottom inset; the margin keeps the hint chip off the rounded corners.
+    expect(recording).toMatch(/\.padding\(\.bottom, 8\)\s*\.ignoresSafeArea\(\.container, edges: \.bottom\)/);
     expect(recording).not.toContain('End with the configured Action Button or by turning off Water Lock.');
     expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)');
     expect(recording).not.toContain('ZStack(alignment: .topLeading)');
@@ -814,7 +815,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('String(localized: "Press to end & save")');
     expect(hint).toContain('String(localized: "Crown forward ▸ Details")');
     expect(hint).toContain('String(localized: "Crown back ▸ Live")');
-    expect(hint).toContain('let input: Input = hasActionButton || page == .end ? .actionButton : .crown');
+    expect(hint).toContain('let input: Input = hasActionButton || page == .end || page == .switchMode ? .actionButton : .crown');
     // The chip names what the next press shows: Live goes to Details first, Details to the End page.
     expect(hint).toMatch(/case \.nextPage\(\.end, _\):\s*return String\(localized: "Action ▸ End page"\)/);
     expect(hint).toMatch(/case \.notAtSurface, \.available:\s*(\/\/.*\s*)*kind = \.nextPage\(cycle\[\(index \+ 1\) % cycle\.count\], input: \.actionButton\)/);
@@ -845,6 +846,11 @@ describe('WatchConnectivity native source contract', () => {
     expect(endPage).toContain('InstrumentDepthLayout(');
     expect(endPage).not.toContain('Button(');
     expect(endPage).not.toContain('onTapGesture');
+    // The switch page acts only on an Action Button press, like the End page.
+    const switchPage = recording.slice(recording.indexOf('private struct SwitchModePageInstrument'), recording.indexOf('private struct EndPageInstrument'));
+    expect(switchPage).toContain('InstrumentDepthLayout(');
+    expect(switchPage).not.toContain('Button(');
+    expect(switchPage).not.toContain('onTapGesture');
   });
 
   it('keeps one large live value, two details at most and an honest Always-On readout', () => {
@@ -995,8 +1001,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(recordingPress).toMatch(/guard recordingPages\.page == \.end else \{\s*return \.pageChanged\(recordingPages\.advanceFromActionButton\(\)\)/);
     expect(recordingPress).toContain('guard requestActionButtonEnd() else');
     expect(pages).toContain('static let idleReturnSeconds: TimeInterval = 10');
-    // The crown may reach the switch page before the first descent, but never the End page.
-    expect(pages).toContain('modeSwitchAvailable ? [.live, .details, .switchMode] : [.live, .details]');
+    // Only a press acts on the switch and End pages, so the crown never selects them.
+    expect(pages).toContain('private static let crownPages: [RecordingPage] = [.live, .details]');
     expect(pages).toContain('static let modeSwitchDepthLimitMeters: Double = 1');
     expect(pages).toMatch(
       /let available = isRecording\s+&& signals\.maxDepthMeters < Self\.modeSwitchDepthLimitMeters\s+&& endAvailability != \.available/,

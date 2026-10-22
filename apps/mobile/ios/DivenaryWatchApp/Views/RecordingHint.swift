@@ -61,10 +61,10 @@ struct RecordingHint: Equatable {
         rejection: DiveActionRejection? = nil,
         currentMode: DiveMode = .scuba
     ) -> RecordingHint {
-        // Only the Action Button reaches the End page, so a watch that got there has the button.
-        let input: Input = hasActionButton || page == .end ? .actionButton : .crown
-        // The crown never selects the End page.
-        let cycle = input == .actionButton ? pages : pages.filter { $0 != .end }
+        // Only the Action Button reaches the switch and End pages, so a watch that got there has it.
+        let input: Input = hasActionButton || page == .end || page == .switchMode ? .actionButton : .crown
+        // The crown never selects the switch or End page.
+        let cycle = input == .actionButton ? pages : pages.filter { $0 == .live || $0 == .details }
         let index = cycle.firstIndex(of: page) ?? 0
 
         let kind: Kind
@@ -104,8 +104,6 @@ struct RecordingHint: Equatable {
             return String(localized: "Action ▸ End page")
         case .nextPage(.switchMode, .actionButton):
             return String(localized: "Action ▸ Switch type \(position)/\(pageCount)")
-        case .nextPage(.switchMode, .crown):
-            return String(localized: "Crown forward ▸ Switch type")
         case .nextPage(_, .actionButton):
             return String(localized: "Action ▸ Live \(position)/\(pageCount)")
         case .nextPage(.details, .crown):
