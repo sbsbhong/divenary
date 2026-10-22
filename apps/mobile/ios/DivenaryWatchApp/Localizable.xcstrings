@@ -588,6 +588,22 @@
         }
       }
     },
+    "Before you dive, a press on the Switch type page changes between scuba and freediving." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Before you dive, a press on the Switch type page changes between scuba and freediving."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠수하기 전에는 종류 바꾸기 화면에서 눌러 스쿠버와 프리다이빙을 바꿀 수 있습니다."
+          }
+        }
+      }
+    },
     "Buddy" : {
       "extractionState" : "stale",
       "localizations" : {

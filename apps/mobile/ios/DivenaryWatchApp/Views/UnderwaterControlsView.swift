@@ -18,6 +18,7 @@ struct UnderwaterControlsView: View {
                     if hasActionButton {
                         GuideText(String(localized: "In Settings > Action Button, choose Dive, then Divenary."))
                         GuideText(String(localized: "If you assigned Divenary to the Action Button, the first press starts a dive and later presses switch pages. At the surface after 3 minutes, a press on the last page ends and saves."))
+                        GuideText(String(localized: "Before you dive, a press on the Switch type page changes between scuba and freediving."))
                     } else {
                         GuideText(String(localized: "This watch may not have an Action Button. Start from Home before entering the water."))
                     }

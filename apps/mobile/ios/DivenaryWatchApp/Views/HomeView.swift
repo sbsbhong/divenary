@@ -561,31 +561,23 @@ private struct LatestSessionCard: View {
     var body: some View {
         InstrumentCard {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack(spacing: 4) {
-                            Text("LAST DIVE")
-                                .font(DiveWatchTheme.labelFont())
-                                .foregroundStyle(DiveWatchTheme.mutedText)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .minimumScaleFactor(1)
-                            // A demo or test log never reads as a real dive on Home.
-                            if let captureProvenanceLabel = session.captureProvenanceLabel {
-                                StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
-                            }
-                        }
-                        Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                            .font(.system(.caption2, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .minimumScaleFactor(1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("LAST DIVE")
+                        .font(DiveWatchTheme.labelFont())
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(1)
+                    // The badges get their own row: squeezed beside the title, "Test" split across
+                    // two lines on a 49 mm watch.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 4) { badges(keepsOneLine: true) }
+                        VStack(alignment: .leading, spacing: 4) { badges(keepsOneLine: false) }
                     }
-
-                    Spacer(minLength: 6)
-
-                    // The short badge leaves room for the date and the Demo/Test marker.
-                    StatusPill(title: session.syncStatus.shortLabel, color: DiveWatchTheme.secondary)
-                        .accessibilityLabel(session.syncStatus.label)
+                    Text(DiveFormatters.sessionDate.string(from: session.startedAt))
+                        .font(.system(.caption2, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(1)
                 }
 
                 HStack(spacing: 8) {
@@ -596,6 +588,18 @@ private struct LatestSessionCard: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(DiveFormatters.sessionAccessibilitySummary(session, summary: summary))
+    }
+
+    @ViewBuilder
+    private func badges(keepsOneLine: Bool) -> some View {
+        // A demo or test log never reads as a real dive on Home.
+        if let captureProvenanceLabel = session.captureProvenanceLabel {
+            StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
+                .fixedSize(horizontal: keepsOneLine, vertical: true)
+        }
+        StatusPill(title: session.syncStatus.shortLabel, color: DiveWatchTheme.secondary)
+            .fixedSize(horizontal: keepsOneLine, vertical: true)
+            .accessibilityLabel(session.syncStatus.label)
     }
 }
 
