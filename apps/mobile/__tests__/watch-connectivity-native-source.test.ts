@@ -1011,8 +1011,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(recordingPress).toMatch(/guard recordingPages\.page == \.end else \{\s*return \.pageChanged\(recordingPages\.advanceFromActionButton\(\)\)/);
     expect(recordingPress).toContain('guard requestActionButtonEnd() else');
     expect(pages).toContain('static let idleReturnSeconds: TimeInterval = 10');
-    // Only a press acts on the switch and End pages, so the crown never selects them.
-    expect(pages).toContain('private static let crownPages: [RecordingPage] = [.live, .details]');
+    // With the Action Button the crown shows every page; only a press acts on the switch and End pages.
+    expect(pages).toContain('private static let basicCrownPages: [RecordingPage] = [.live, .details]');
+    expect(pages).toContain('crownReachesActionPages ? pages : Self.basicCrownPages');
     expect(pages).toContain('static let modeSwitchDepthLimitMeters: Double = 1');
     expect(pages).toMatch(
       /let available = isRecording\s+&& signals\.maxDepthMeters < Self\.modeSwitchDepthLimitMeters\s+&& endAvailability != \.available/,

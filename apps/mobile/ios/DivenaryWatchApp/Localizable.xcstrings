@@ -2060,6 +2060,22 @@
         }
       }
     },
+    "While recording, turn the Digital Crown to move between pages. Switching type and ending still take an Action Button press." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While recording, turn the Digital Crown to move between pages. Switching type and ending still take an Action Button press."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 중에는 디지털 크라운을 돌려 화면을 오갈 수 있습니다. 종류 바꾸기와 기록 종료는 그 화면에서 동작 버튼을 눌러야 합니다."
+          }
+        }
+      }
+    },
     "logs" : {
       "extractionState" : "stale",
       "localizations" : {

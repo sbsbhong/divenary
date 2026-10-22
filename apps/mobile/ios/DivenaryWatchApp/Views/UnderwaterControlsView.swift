@@ -25,7 +25,11 @@ struct UnderwaterControlsView: View {
                 }
 
                 GuideSection(title: String(localized: "Digital Crown")) {
-                    GuideText(String(localized: "While recording, turn the Digital Crown to switch between Live and Details."))
+                    if hasActionButton {
+                        GuideText(String(localized: "While recording, turn the Digital Crown to move between pages. Switching type and ending still take an Action Button press."))
+                    } else {
+                        GuideText(String(localized: "While recording, turn the Digital Crown to switch between Live and Details."))
+                    }
                     GuideText(String(localized: "Turning off Water Lock at the surface ends recording."))
                 }
 

@@ -1,8 +1,10 @@
 import Combine
 import Foundation
 
-/// A readout page during a real recording. The Action Button cycles through `pages`; crown rotation
-/// moves between `live` and `details` only. `end` is in the cycle only while ending is allowed, and
+/// A readout page during a real recording. The Action Button cycles through `pages`. On a watch with
+/// the Action Button the crown moves through the same pages; elsewhere it stays on `live` and
+/// `details`, because nothing could act on the others. Only an Action Button press acts on `switchMode`
+/// or `end`; the crown only shows them. `end` is in the cycle only while ending is allowed, and
 /// `switchMode` only before the first descent and while `end` is not offered: a press on either page
 /// acts instead of turning the page, so both in one cycle would hide one.
 enum RecordingPage: Equatable, Sendable {
@@ -115,6 +117,8 @@ final class RecordingPageModel: ObservableObject {
     @Published private(set) var lastActionFeedback: DiveActionFeedback?
 
     private(set) var isRecording = false
+    /// True on a watch that probably has the Action Button: the crown then reaches every page in `pages`.
+    let crownReachesActionPages: Bool
     private var isAlwaysOn = false
     private var signals = RecordingPageSignals()
     private var actionFeedbackCount = 0
@@ -126,9 +130,11 @@ final class RecordingPageModel: ObservableObject {
     init(
         minimumEndElapsedSeconds: TimeInterval,
         haptics: DiveHapticPlaying,
-        returnScheduler: RecordingPageReturnScheduling
+        returnScheduler: RecordingPageReturnScheduling,
+        crownReachesActionPages: Bool = false
     ) {
         self.minimumEndElapsedSeconds = minimumEndElapsedSeconds
+        self.crownReachesActionPages = crownReachesActionPages
         self.haptics = haptics
         self.returnScheduler = returnScheduler
     }
@@ -145,9 +151,14 @@ final class RecordingPageModel: ObservableObject {
         return cycle
     }
 
-    /// The pages crown rotation moves through, in order. Only a press acts on the switch and End
-    /// pages, so the crown never selects them.
-    private static let crownPages: [RecordingPage] = [.live, .details]
+    /// The pages crown rotation moves through without the Action Button, which alone acts on the
+    /// switch and End pages.
+    private static let basicCrownPages: [RecordingPage] = [.live, .details]
+
+    /// The pages crown rotation moves through, in order. The crown only shows a page; it never acts.
+    private var crownPages: [RecordingPage] {
+        crownReachesActionPages ? pages : Self.basicCrownPages
+    }
 
     var pageIndex: Int {
         pages.firstIndex(of: page) ?? 0
@@ -233,19 +244,18 @@ final class RecordingPageModel: ObservableObject {
         return page
     }
 
-    /// Crown rotation by whole detents: positive moves toward Details, negative toward Live. It never
-    /// selects the switch or End page; turning back leaves them.
+    /// Crown rotation by whole detents: positive moves toward the last page, negative toward Live,
+    /// without wrapping. It shows pages only; ending and switching still need an Action Button press.
     func stepFromCrown(by detents: Int) {
         guard isRecording, !isAlwaysOn, detents != 0 else { return }
-        let crownPages = Self.crownPages
+        let crownPages = crownPages
         let target: RecordingPage
-        switch page {
-        case .switchMode, .end:
+        if let index = crownPages.firstIndex(of: page) {
+            target = crownPages[min(max(index + detents, 0), crownPages.count - 1)]
+        } else {
+            // A page the Action Button reached on a watch whose crown stays on Live and Details.
             guard detents < 0 else { return }
             target = crownPages[max(crownPages.count + detents, 0)]
-        case .live, .details:
-            let index = crownPages.firstIndex(of: page) ?? 0
-            target = crownPages[min(max(index + detents, 0), crownPages.count - 1)]
         }
         showPage(target, reason: .crown)
     }

@@ -126,7 +126,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
         sessionStore: DiveSessionPersisting,
         schedulePersistence: ((@escaping @MainActor () -> Void) -> Void)? = nil,
         haptics: DiveHapticPlaying? = nil,
-        pageReturnScheduler: RecordingPageReturnScheduling? = nil
+        pageReturnScheduler: RecordingPageReturnScheduling? = nil,
+        crownReachesActionPages: Bool = false
     ) {
         self.preferredMode = preferredMode
         self.updatePreferredMode = updatePreferredMode
@@ -149,7 +150,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
         recordingPages = RecordingPageModel(
             minimumEndElapsedSeconds: minimumHardwareEndElapsedSeconds,
             haptics: haptics,
-            returnScheduler: pageReturnScheduler ?? TaskRecordingPageReturnScheduler()
+            returnScheduler: pageReturnScheduler ?? TaskRecordingPageReturnScheduler(),
+            crownReachesActionPages: crownReachesActionPages
         )
         runtime.onEvent = { [weak self] event in
             self?.handleRuntimeEvent(event)

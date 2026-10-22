@@ -360,15 +360,43 @@ final class RecordingPageModelTests: XCTestCase {
         XCTAssertFalse(scheduler.hasPendingAction)
     }
 
+    func testWithTheActionButtonTheCrownReachesTheSwitchPageAndBack() {
+        let haptics = RecordedDiveHaptics()
+        let model = makeRecordingModel(haptics: haptics, signals: underwater(maxDepth: 0), crownReachesActionPages: true)
+
+        model.stepFromCrown(by: 1)
+        model.stepFromCrown(by: 1)
+        XCTAssertEqual(model.page, .switchMode)
+        XCTAssertEqual(model.lastChange, RecordingPageChange(page: .switchMode, reason: .crown))
+        model.stepFromCrown(by: 1)
+        XCTAssertEqual(model.page, .switchMode)
+        model.stepFromCrown(by: -2)
+        XCTAssertEqual(model.page, .live)
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange, .pageChange])
+    }
+
+    func testWithTheActionButtonTheCrownShowsTheEndPageButNeverPastIt() {
+        let model = makeRecordingModel(signals: atSurface(elapsed: 300), crownReachesActionPages: true)
+
+        model.stepFromCrown(by: 5)
+
+        XCTAssertEqual(model.page, .end)
+        XCTAssertNil(model.nextActionButtonPage)
+        model.stepFromCrown(by: -1)
+        XCTAssertEqual(model.page, .details)
+    }
+
     private func makeRecordingModel(
         haptics: RecordedDiveHaptics? = nil,
         scheduler: ManualPageReturnScheduler? = nil,
-        signals: RecordingPageSignals
+        signals: RecordingPageSignals,
+        crownReachesActionPages: Bool = false
     ) -> RecordingPageModel {
         let model = RecordingPageModel(
             minimumEndElapsedSeconds: 180,
             haptics: haptics ?? RecordedDiveHaptics(),
-            returnScheduler: scheduler ?? ManualPageReturnScheduler()
+            returnScheduler: scheduler ?? ManualPageReturnScheduler(),
+            crownReachesActionPages: crownReachesActionPages
         )
         model.receive(signals)
         model.setRecording(true)

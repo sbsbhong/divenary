@@ -60,7 +60,10 @@ final class DiveAppServices {
             water: water,
             actionButtonDonor: actionButtonDonor,
             sessionStore: completionStore,
-            haptics: haptics
+            haptics: haptics,
+            // The same hint picks the Action Button wording; without the button the crown keeps to
+            // Live and Details.
+            crownReachesActionPages: ActionButtonHint.current.isLikelyUltra
         )
         realCoordinator.recordingPages.observe(
             recorder: realRecorder,
