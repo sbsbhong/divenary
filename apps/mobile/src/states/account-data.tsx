@@ -59,6 +59,7 @@ import {
   type DataPrincipal,
 } from '../storage/data-principal';
 import { migrateLegacyGuestData } from '../storage/migrate-legacy-guest-data';
+import { removeObsoleteStorageKeys } from '../storage/storage-keys';
 import { createAsyncStorageKeyValueStore } from '../storage/persistent-key-value-store';
 import { createWatchProfileStorage } from '../storage/watch-profile-storage';
 import { AccountOutbox, type AccountOutboxItem } from '../sync/account-outbox';
@@ -360,6 +361,9 @@ export function AccountDataProviderCore({
     let localPublished = false;
     const publish = async () => {
       let migrationDegraded = false;
+      if (migrationPromiseRef.current === undefined) {
+        void removeObsoleteStorageKeys(dependencies.metadataStorage);
+      }
       migrationPromiseRef.current ??= dependencies.migrateLegacyData({
         metadataStorage: dependencies.metadataStorage,
         profileStorage: dependencies.profileStorage,
