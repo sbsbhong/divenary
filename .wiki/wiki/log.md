@@ -1193,3 +1193,25 @@
 - Recorded: 로그북 schema 4는 같은 미리보기를 한 번만 저장하고, claim은 무관한 삭제 세션에 전체 읽기를 건너뛰며 첫 검증 중 JS thread를 양보한다.
 - Recorded: Watch는 다이빙 종료 시 저장 중 화면을 먼저 그린 뒤 저장한다.
 - Recorded: 폰-워치 제어 메시지와 계획 다이브는 `packages/contracts` schema가 기준이고 contract test가 보내는 쪽 key 철자를 검사한다.
+
+## [2026-10-22] ingest | 2026-10-22 모바일·워치 UI/UX 개편
+- Added: 2026-10-22 모바일·워치 UI/UX 개편 raw source
+- Updated: Mobile/Watch UI 언어
+- Updated: Watch 앱 구조
+- Updated: 모바일 구조
+- Updated: 안전 규칙
+- Updated: 다이브 계획 도메인
+- Updated: 다이브 로그 도메인
+- Updated: Supabase 구조
+- Updated: 열린 질문
+- Updated: Knowledge Base Index
+- Recorded: 화면 문구는 다이버가 자연스럽게 읽는 말로 쓰고 개발자·시스템 용어를 내보내지 않으며 개념 하나에 용어 하나만 쓴다. 압력은 시작 압력·종료 압력·탱크 압력, 워치 조작부는 동작 버튼·수중 잠금이다.
+- Recorded: 로딩은 naver-ad-bidder 전략(1초 전 표시 없음, 1초 스켈레톤·spinner, 4초 문구, 10초 재시도, 실제 모양의 정적 스켈레톤, 최소 표시 시간 없음, 재조회는 내용 유지, 버튼·행은 0ms busy와 1초 뒤 spinner)을 따른다.
+- Recorded: 결과 배너는 account-data gate 위에 두고 4초 뒤 닫히며 action 없는 결과에만 쓴다. 워치 자동 가져오기 토스트는 다이버가 닫을 때까지 남는다.
+- Recorded: 시작 shell은 Auth 확인 동안 guest를 열지 않고, Auth network 단계는 10초로 제한하되 로그아웃하지 않는다. claims·server 시간 초과는 기존 offline 조건(만료 전 저장 세션과 같은 사용자의 membership cache)을 따르고, 동의 확인 실패·시간 초과는 guest로 연다.
+- Recorded: 워치 가져오기의 기본 사이트·150 bar·내부 태그는 claim 재사용과 계획 연결 때문에 저장값을 두고 화면과 검색에서만 숨긴다.
+- Recorded: `planned` 계획만 워치로 보내고, 상세 워치 행은 그 계획의 현재 버전이 마지막 성공 전송에 있을 때만 전송 요청됨이다.
+- Recorded: Apple·Google 로그인 버튼은 같은 50pt pill 한 쌍이고 최근 provider를 먼저 두며 모서리 표시를 단다(2026-07-17 라벨 결정 대체).
+- Recorded: Action Button은 단계를 아는 intent 하나로 시작·화면 넘김·물 밖 180초 뒤 종료 화면 종료를 처리한다. 크라운은 실제 기록에서 화면만 넘기고, 자동 전환에는 햅틱이 없으며, 실제 기록은 터치로 끝나지 않는다.
+- Clarified: watch-app.md의 `SurfaceEndDiveGate` 설명은 2026-07-27 커밋 `748c515`에서 이미 지워진 코드라 바로잡았고, dive-log.md의 "import는 압력을 만들지 않는다"는 2026-07-05부터 150 bar 기본값을 넣은 코드와 달라 바로잡았다.
+- Pending: Ultra Action Button 동작, 수중 잠금 중 크라운, 웻슈트 너머 햅틱, Always-On 갱신, 41/46/49mm 배치, Ultra 모델 식별자, 한국어 watchOS 메뉴 이름, auto-launch 상태 값은 하드웨어 검증이 필요하다. Open-Meteo 이용 조건은 공개 배포 전에 결정해야 한다.

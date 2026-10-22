@@ -12,8 +12,10 @@ Sources: 사용자 승인 진단 설계, 2026-08-02
 Raw: [개인정보 최소화 모바일·Watch 진단 결정](../../raw/decisions/2026-08-02-privacy-minimized-diagnostics.md)
 Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
-Updated: 2026-10-21
-Last reviewed: 2026-10-21
+Sources: 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22
+Raw: [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md)
+Updated: 2026-10-22
+Last reviewed: 2026-10-22
 
 ## 요약
 
@@ -51,6 +53,10 @@ Last reviewed: 2026-10-21
 - 오프라인 membership은 저장 세션의 `expires_at`이 남아 있을 때만 허용하는 bounded local trust이고, 일반 서버 오류(5xx 포함)는 오프라인 인증으로 쓰지 않는다. 장기 오프라인(여행 중 다이빙 등)에서 계정 데이터 접근을 어디까지 허용할지는 보안 결정이라 2026-10-21 리뷰에서 바꾸지 않았다.
 - Watch 저장 세션의 동기화 표시는 `pending`, `synced`, `failed`만 구분한다. 전송 완료 뒤 iPhone 수신 확인을 기다리는 상태를 따로 보일지, 보인다면 sync 계약 밖 transport 상태로 둘지는 paired hardware 검증과 함께 결정해야 한다.
 - 2026-10-21 리뷰의 실기기 항목(stale/오류 수심 표시, 연속 다이브 시작, 5초 스탑 적립, 수온 신선도, Send Again, Dive Plans 선택)은 [실기기 검증 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md) D14-D19로 남아 있다.
+- 2026-10-22 워치 수중 입력 모델은 simulator, XCTest, build로만 확인했고 다음은 지원 hardware에서만 확인할 수 있다: 실제 Ultra에서 `DivenaryStartDiveIntent` → `DivenaryDiveActionIntent` chain, 수중 잠금 중 물속 화면 넘김, 물 밖 180초 뒤 종료 화면에서의 종료·저장과 거부 안내; 수중 잠금 중 크라운 회전이 앱에 오는지; 수중 extended runtime 중 햅틱 전달과 웻슈트 너머 체감; Always-On 진입 시 Live 복귀와 갱신 주기, 손목을 내린 상태의 10초 복귀 시점; 41/46/49mm에서 안내 chip·수중 잠금 안내·큰 숫자·세부 화면·권장 스탑 화면 배치; Ultra 모델 식별자(`Watch6,18`, `Watch7,5`, `Watch7,12`); 한국어 watchOS 메뉴 이름(동작 버튼, 자동 실행, 물에 잠겼을 때, 수중 잠금); `requestAutoLaunchAuthorizationStatus`의 실제 값. 체크리스트 D7은 화면 순환, 종료 화면에서만 종료, 크라운 회전, 자동 전환 무햅틱을 확인하도록 고쳤다. 나머지 항목(Always-On, 크기별 배치, 모델 식별자, 메뉴 이름, auto-launch 값)은 아직 체크리스트 행이 없다.
+- planned dive context에는 워치 수신 확인이 없어 계획 상세는 `워치 전송 요청됨`까지만 보인다. 워치에서 계획을 고를 수 있음을 보이려면 contract 변경이 필요하다.
+- 2026-10-22에 iPhone target에 `InfoPlist.xcstrings`(위치 권한 문구 en/ko)를 더해 앱 bundle에 en/ko `.lproj`가 생겼다. 한국어 기기에서 앱 언어와 앱 안 시스템 UI가 한국어로 바뀔 수 있는데, 전체 iPhone build와 실기기에서 확인하지 않았다.
+- Home 날씨는 build에 Open-Meteo API key(`__OPEN_METEO_API_KEY__`)가 없으면 무료 endpoint(`api.open-meteo.com`, `marine-api.open-meteo.com`)를, 있으면 customer endpoint를 쓴다. 무료 endpoint는 비상업 조건이다. 출처는 링크 없는 작은 글자(`Open-Meteo 데이터`)로만 적는다. 공개 배포 전에 무료와 유료(customer) API 중 무엇을 쓸지, CC BY 4.0 표기에 링크가 필요한지 결정해야 한다.
 - Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, depth sensor sampling/background 검증, 수심 필터, CNS table, Bühlmann coefficient source, mandatory deco 처리, tank transmitter, export format은 별도 제품 질문으로 남아 있다.
 
 ## 상세

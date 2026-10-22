@@ -16,6 +16,8 @@ Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
 Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
 Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
+Sources: 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22
+Raw: [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -33,6 +35,22 @@ Updated: 2026-10-22
 - 충돌 행은 상세 화면 `SyncConflictBanner`에서 해결하고, 원격 삭제 전파와 삭제 충돌 규칙은 [동기화 흐름 구조](sync-flow.md)를 따른다.
 - Home, 상태 색, 목록 상태, 접근성, 폼 검증 번역 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)에 정리했다.
 
+## 2026-10-22 UI/UX 개편 경계
+
+화면 모양, 문구, 로딩 표시 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)에 두고, 여기에는 구조와 동작 경계만 적는다.
+
+- 로딩 피드백의 공유 코드는 `src/constants/async-feedback.ts`(`ASYNC_FEEDBACK_TIMING` 1초/4초/10초, `CONTENT_LOADING_FEEDBACK`), `src/hooks/use-loading-feedback.ts`(`useLoadingFeedback`), `src/components/ui/skeleton-block.tsx`(`SkeletonBlock`, `useContentLoading`), `src/components/ui/detail-skeleton.tsx`다. 버튼·행·목록 오류 카드의 진행 상태는 `InstrumentButton` `pending`, grouped-list `Row` `pending`, `ListStateCard` `actionPending`으로 표시한다. React Query 기본값은 `retry: 1`이라 두 번째 실패에서 오류와 다시 시도를 보인다.
+- 결과 배너 host `AppFeedbackProvider`는 `AuthProvider` 안, `AccountDataProvider` 위에 둔다. 로그인·로그아웃으로 데이터 소유자가 바뀌면 `AccountDataProvider`가 navigation 전체를 시작 shell로 바꾸므로, 그 아래 두면 배너가 함께 사라진다. 배너는 `APP_FEEDBACK_DISMISS_MS`(4초) 뒤 닫히고 action이 없는 결과에만 쓴다. 같은 위치의 `SignInFeedback`이 Auth 상태가 로그인 진행 상태에서 `authenticated`로 바뀔 때 로그인 배너를 한 번 띄우며, `bootstrapping`에서 온 세션 복원은 알리지 않는다. 로그북의 워치 기록 가져오기 결과도 이 배너다. 워치 자동 가져오기 토스트는 `기록 보기` action이 있어 다이버가 닫을 때까지 남고, navigation이 토스트 높이를 재서 배너를 그 위에 둔다.
+- 시작 shell: Auth가 `bootstrapping`인 동안 account-data는 principal을 공개하지 않고 `RecoveryScreen kind="loading"`을 유지한다. 로그인된 사용자가 앱을 열 때 guest 기록이 잠깐 보이지 않게 하기 위해서다. shell은 기다리기 시작한 시각(`waitStartedAt`)부터 1초 indicator, 4초 문구, 10초 오래 걸린다는 문구를 보이고, Auth 확인이 끝난 뒤에는 10초에 `retryBootstrap`에 연결된 다시 시도 하나를 보인다. Auth 확인 중에는 다시 시작할 시도가 없어 문구만 보이며, 아래 Auth 시간 제한 때문에 Auth는 약 10초 안에 `bootstrapping`을 벗어난다. 최소 표시 시간은 없다.
+- Auth 재검증 시간 제한: `src/states/auth.tsx`의 network 단계는 `settleWithin`으로 `ASYNC_FEEDBACK_TIMING.longRunning`(10초) 안에 끝나지 않으면 network 실패로 취급한다. 시간 초과는 `clearInvalidSession`이나 로그아웃을 부르지 않고, 버려진 단계의 늦은 응답은 무시한다. 앱 시작 때 claims, server user, 동의 확인 단계는 mount 뒤 10초에 끝나는 예산 하나를 나눠 쓰고, 저장 세션 읽기(만료 세션의 network 갱신 포함)는 따로 10초를 받는다. claims·server user의 network 실패나 시간 초과는 `restoreOfflineMembership`(만료 전 저장 세션과 같은 사용자의 membership cache가 있으면 `authenticatedOffline`, 아니면 guest)으로 간다. 동의 확인(`getOnboardingStatus`)의 실패나 시간 초과는 offline 계정이 아니라 guest로 연다([Supabase 구조](supabase.md)의 규칙 유지). 저장 세션 읽기 시간 초과도 guest로 열되 세션과 cache는 남겨 이후 `TOKEN_REFRESHED`나 foreground 확인이 계정을 되살린다. 대화형 로그인 직후(`authenticating`)의 확인은 제한하지 않는다. 잠긴 로그인 sheet가 토큰 교환 단계(`phase: 'exchanging'`)에서 4초·10초 문구를 직접 보이기 때문이다.
+- 편집기 route: 로그 작성·수정과 계획 작성·수정은 `logbookCreate`, `logbookEdit`, `planningCreate`, `planningEdit` root route의 전체 화면 편집기(`RoutedLogEditor`, `RoutedPlanEditor`)이고, 저장하지 않은 변경 폐기 확인은 `useDiscardChangesGuard` 하나를 함께 쓴다. 편집기는 화면 전체의 root라 고정 저장 바가 목록 scroll 안에 들어가지 않는다. 새 항목 저장은 편집기를 상세로 바꾸고, 수정 저장은 아래의 상세로 돌아간다. 계획에서 기록 작성은 `StackActions.replace('logbookCreate', …)`로 계획 상세 자리에 편집기를 둔다. `LogbookScreen`과 `PlanningScreen` 안의 화면 내 작성·상세·수정 route는 지웠다.
+- 상세·편집 route fallback(`MissingRouteScreen`): 목록 조회가 실패하면 해당 목록의 불러오기 실패 문구, pending이 되는 다시 시도, 목록으로 돌아가기를 보인다. 목록이 아직 처음 불러오는 중이면 `DetailSkeleton`(1초 뒤 보임)을 보인다. 삭제됐거나 없는 항목이라는 안내는 목록이 성공적으로 불러졌는데 항목이 없을 때만 보인다.
+- 워치 가져오기 표시 전용 규칙: 가져오기가 저장하는 기본 사이트 `워치 다이브`(`DEFAULT_WATCH_LOG_SITE_NAME`), 스쿠버 기본 시작 압력 150 bar(`DEFAULT_WATCH_SCUBA_START_PRESSURE_BAR`), 워치 내부 태그(`watch-capture`, `debug-test-capture`, `planned-<n>m`, `plan-<id>`)는 저장값을 바꾸지 않는다. guest claim 재사용이 `site_name`과 `manual_data`를 정확히 비교하고, `plan-<id>`가 기록과 계획을 잇기 때문이다. 화면에서는 `hasDefaultWatchSiteName`이면 `워치 기록 · 날짜`(목록은 `워치 기록`) 대체 제목을 쓰고 편집기 사이트 칸을 비워 필수 표시 없이 연다. 사이트를 비운 채 저장하면 저장된 이름을 그대로 둔다. `isUntouchedWatchPressureDefault`(출처가 워치, 압력 provenance 없음, bar 단위 시작 150, 종료 없음)이면 상세에서 압력 행을 숨기고 편집기는 `-- bar`로 연다. `getVisibleLogTags`는 워치가 보낸 내부 태그만 목록·상세·편집기·검색에서 빼고, 편집기는 저장할 때 숨긴 태그를 다시 붙인다. 다이버가 직접 입력한 태그는 같은 모양이어도 보인다.
+- 계획의 워치 행: `isWatchVisiblePlan`(`planned`이고 연결된 기록이 없음)인 계획만 워치로 보내며 초안은 보내지 않는다. `useDivePlans`는 마지막으로 성공한 `updatePlannedDives`가 실어 보낸 계획별 `updatedAt`을 `plannedWatchSentVersions`로 기록하고, 실패한 호출은 이전 기록을 남긴다. `getPlanWatchState`는 bridge 사용 가능·지원·paired·워치 앱 설치·`activated`이고 context 오류가 없으며 그 계획의 현재 `updatedAt`이 정확히 그 기록에 있을 때만 `sent`(워치 전송 요청됨)다. 보낼 계획인데 그렇지 않으면 `needsConnection`(워치 전송 미확인), 보내지 않는 계획은 `phoneOnly`(iPhone에서만), 상태가 아직 없으면 행을 숨긴다. planned dive context는 수신 확인이 없는 최신값 전달이라 "요청됨"까지만 말한다. 체크리스트를 바꾸면 `updatedAt`이 바뀌어 다음 전송까지 잠깐 미확인으로 보인다.
+- 로그북 목록 행은 보더 없는 카드 하나에 제목·최대 수심, `날짜 시간 · 다이빙 종류 · 다이빙 시간`, 다이버 태그, 표식을 줄마다 두고 접근성 라벨 하나를 갖는다. 처음 불러오기에는 1초 뒤 행 모양 스켈레톤 3개, 클라우드 페이지가 실제로 오는 동안에만 목록 끝 2행 스켈레톤을 보이고, 메모리에서 20개씩 자르는 페이지에는 표시하지 않는다. 처음 불러오기 실패 때는 개수 줄을 비우고, 기록이 있는 상태의 새로고침 실패는 목록을 유지한 채 안내를 붙인다.
+- Settings는 계정 행을 첫 group에 두고 로그인 상태에서 `account` 상세 route(로그인 방법, 기록 백업 대기 수, 로그인 전 기록 옮기기, 로그아웃)로 들어간다. 로그인 방법은 이 기기의 `recentProvider` 힌트로만 보이며 없으면 `로그인됨`이다. 기록 백업 대기 수는 outbox 항목과 충돌 항목을 함께 세고, 계정 기록을 내려받는 중이라는 문구는 1초 뒤에 보인다. 로그아웃 확인 Alert는 계정에 백업된 기록은 남고 이 기기에서는 로그인 전 기록만 보인다고 알리며, 아직 백업하지 못한 변경 수를 함께 알린다. 로그아웃 때 기기의 계정 사본을 지우는 정리는 아직 구현되지 않았고([모바일 로그북 로드맵](mobile-logbook-roadmap.md)), Alert 문구는 그 정리가 생기면 바꿔야 한다. 알림 설정은 하위 화면 대신 목록 안 스위치이며 `notifications` route는 없다. 정보 group의 앱 버전은 `apps/mobile/package.json`의 version을 읽어 native `MARKETING_VERSION`과 다를 수 있다.
+- Home 로그인 링크는 guest이고 Auth가 설정되어 쓸 수 있는 로그인 방법(provider 또는 개발용 로그인)이 있을 때만 보이며, Settings도 같은 조건을 쓴다.
+
 ## 현재 상태
 
 앱 package는 `@repo/mobile`이다. 현재 의존성은 React Native `0.85.3`, React `19.2.3`, TypeScript, Jest, Metro, `react-native-safe-area-context`, `@react-native-async-storage/async-storage`, `@notifee/react-native`, `@repo/supabase`, `react-native-keychain`, native Google/Apple sign-in package, Gluestack UI v4 alpha package, NativeWind, Tailwind CSS, Reanimated, Worklets, React Native SVG를 포함한다. `@supabase/supabase-js`는 mobile이 직접 소유하지 않고 `packages/supabase` 경계 안에 둔다.
@@ -40,16 +58,16 @@ Updated: 2026-10-22
 주요 source 경계는 다음과 같다.
 
 - `src/App.tsx`: 앱 UI entry.
-- `src/providers.tsx`: app-owned `QueryClientProvider`, `SafeAreaProvider`, `AppPreferencesProvider`, `GluestackUIProvider`, render error boundary, `AuthProvider`, `AccountDataProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
+- `src/providers.tsx`: app-owned `QueryClientProvider`(`retry: 1`), `SafeAreaProvider`, `AppPreferencesProvider`, `GluestackUIProvider`, render error boundary, `AuthProvider`, `AppFeedbackProvider`와 `SignInFeedback`, `AccountDataProvider`, `StatusBar`. App root가 unmount되면 하위 observer cleanup 뒤 QueryClient cache/timer를 정리한다.
 - `src/auth/`: Keychain session adapter, native Google/Apple credential adapter, membership cache, recent-provider preference와 mobile Auth assembly.
 - `src/claim/`: immutable guest snapshot/manifest, exact profile-byte verification, resumable claim service와 persistent claim store.
 - `src/deletion/`: Watch log deletion tombstone, claim/repository/native command reconciliation과 stale import visibility filter.
 - `src/states/account-data.tsx`: 현재 Auth principal에 맞는 repository publication, account/guest row composition, account sync와 claim lifecycle, user/cache isolation.
 - `src/sync/account-outbox.ts`, `src/sync/account-sync-coordinator.ts`: local-first account operation durability, retry와 revision conflict 보존.
 - `src/storage/data-principal.ts`, `src/repositories/principal-repositories.ts`: `guest`와 `user:<uuid>` namespace와 principal-bound repository 구성.
-- `src/states/auth.tsx`: stored evidence, online claims/user/status 검증, foreground revalidation, bounded offline state와 sign-in concurrency를 관리한다.
+- `src/states/auth.tsx`: stored evidence, online claims/user/status 검증, foreground revalidation, bounded offline state와 sign-in concurrency를 관리한다. 재검증 network 단계마다 10초 제한이 있다(위 2026-10-22 경계).
 - `src/screens/auth`: guest-preserving login과 versioned terms/privacy exact set을 제출하는 non-dismissible onboarding 화면.
-- `src/components/navigation/index.tsx`: `@react-navigation/native` 기반 top-level `NavigationContainer`와 custom tab router. 현재 선택된 tab을 다시 누르면 해당 화면을 refresh하고 scroll top을 요청한다. Logbook detail/edit, Plan detail/create/edit, Settings detail은 tab 내부 local route가 아니라 root detail route 상태로 렌더링해 나중에 deep link를 route name과 params로 연결할 수 있게 했다.
+- `src/components/navigation/index.tsx`: `@react-navigation/native` 기반 top-level `NavigationContainer`와 custom tab router. 현재 선택된 tab을 다시 누르면 해당 화면을 refresh하고 scroll top을 요청한다. Logbook create/detail/edit, Plan create/detail/edit, Settings detail은 tab 내부 local route가 아니라 root route 상태로 렌더링해 나중에 deep link를 route name과 params로 연결할 수 있게 했다. 작성·수정 route는 전체 화면 편집기다.
 - `src/components/ui/`: 재사용 UI primitive, instrument control, session card, profile chart, tone type.
 - `components/ui/gluestack-ui-provider/`: generated Gluestack provider, color-mode script, token bridge.
 - `global.css`, `tailwind.config.js`: NativeWind/Tailwind entrypoint와 semantic token configuration.
@@ -58,7 +76,7 @@ Updated: 2026-10-22
 - `src/conditions/open-meteo-home-conditions-provider.ts`: Open-Meteo weather/marine API adapter. 기온과 해안 수온을 가져오고, 도시명은 repo-local native reverse geocoder 결과를 timezone city보다 우선한다.
 - `src/native/reverse-geocoder.ts`: React Native `NativeModules.ReverseGeocoderModule` wrapper. Native module이 없거나 실패하면 `undefined`를 반환해 Open-Meteo timezone fallback을 유지한다.
 - `src/notifications/watch-sync-notification-service.ts`: Notifee permission request, local notification display, notification press bootstrap/event mapping을 다루는 watch sync notification 경계.
-- `src/screens/home`, `src/screens/logbook`, `src/screens/planning`, `src/screens/settings`: route-level 화면 container. Logbook과 Planning 목록은 root navigation callback이 있으면 detail/editor route를 상위로 위임하고, isolated component test에서는 기존 internal route fallback을 유지한다. Settings의 theme, language, device management도 별도 detail route로 열린다.
+- `src/screens/home`, `src/screens/logbook`, `src/screens/planning`, `src/screens/settings`: route-level 화면 container. Logbook과 Planning 목록은 작성·상세 열기를 항상 root navigation callback(`onCreateEntry`, `onOpenEntry`, `onCreatePlan`, `onOpenPlan`)으로 넘기며 화면 내 route fallback은 없다. 편집기·상세 test는 해당 component를 직접 그리는 harness를 쓴다. Settings의 account, theme, language, device management도 별도 detail route로 열린다.
 - `src/screens/memory`: 이전 memory/share preview source가 남아 있지만 현재 bottom tab route에는 연결되어 있지 않다.
 - `src/storage/`: `PersistentKeyValueStore`, AsyncStorage adapter, in-memory test store, versioned JSON store, storage key를 둔다.
 - `src/states/app-preferences.tsx`, `src/states/app-preferences-storage.ts`: 앱 표시 선호를 관리하고 `themePreference`, `language`, `watchSyncNotificationsEnabled`를 저장한다.
@@ -84,8 +102,8 @@ Updated: 2026-10-22
 
 - Home: 위치 권한이 허용되면 device 좌표를 얻고, Open-Meteo provider로 local time, 기온, 해안 수온을 가져온다. 도시명은 iOS `CLGeocoder` 또는 Android `Geocoder` 기반 repo-local native module 결과를 우선 사용하고, native module이 없거나 실패하면 Open-Meteo timezone city로 fallback한다. 이 band는 dive suitability, tide/current/weather warning, route planning, safety recommendation을 제공하지 않는다.
 - Logbook: manual/watch 로그 목록, 검색, 수동 로그 작성과 수정, watch sync action, dive mode별 입력 section, 상세 지표, provenance 표시, 수심 profile, 수온 profile, notes, tags. 로그인 후 account row와 claim에서 defer/retained 된 guest row를 함께 합성하며 같은 `localId`에서는 account copy를 우선한다. 로그인 중 `ownerUserId`가 없는 예외 row만 `이 기기에만 저장` warning 배지를 보이고 account row와 signed-out guest 목록에는 저장 위치 배지를 붙이지 않는다. Watch `captureMode: 'demo'`는 저장 위치와 독립적으로 `데모` 배지를 보일 수 있다.
-- Planning: persistent Planbook으로 다음 다이브 계획을 작성, 수정, 완료하고 완료된 계획에서 Logbook 초안을 열 수 있다. 로그인 후 account 계획과 defer된 guest 계획을 같은 흐름으로 합성하며, `ownerUserId`가 없는 예외 계획 행과 active plan panel에만 `이 기기에만 저장` 배지를 표시한다.
-- Settings: 테마, 언어, watch sync notification opt-in 같은 앱 표시 선호와 paired watch 상태를 grouped list로 관리한다.
+- Planning: persistent Planbook으로 다음 다이브 계획을 작성, 수정, 완료하고 완료된 계획에서 Logbook 초안을 열 수 있다. 로그인 후 account 계획과 defer된 guest 계획을 같은 흐름으로 합성하며, `ownerUserId`가 없는 예외 계획 행에만 `이 기기에만 저장` 배지를 표시한다. 예전 active plan panel은 다가오는 계획이 있을 때만 보이는 `다음 다이빙` 행으로 바뀌었다.
+- Settings: 계정 행, 워치 기록 도착 알림 스위치, 테마, 언어, paired watch 상태, 앱 정보를 grouped list로 관리한다.
 
 Settings는 현재 다음 범위로 제한된다.
 
@@ -110,7 +128,7 @@ Account-data bootstrap은 `loading`, `ready`, `degraded`, `recoveryRequired`를 
 
 로컬 저장소는 같은 bytes를 다시 검증하지 않는다. `PersistentJsonStore`는 저장된 text가 바뀔 때까지 parse·검증한 값을 재사용하고, 쓰기는 key 하나를 원자적으로 바꾸는 `setString`과 readback 한 번이다. 이전 build의 pending/commit journal은 처음 읽거나 쓰기 전에 한 번만 마무리하며, commit marker 없는 pending 값은 버린다. Repository는 호출자에게 넘기는 값만 복사한다. Claim store는 sidecar마다 내용 검증 결과를 그 입력과 함께 기억해 진행 상태만 바뀐 쓰기에서는 진행 field만 검사하고, 입력이 바뀌면 다시 검증한다. 검증된 사본이 메모리에 없으면 sidecar를 하나씩 검사하며 사이마다 JS thread를 양보한 뒤 전체 parse가 그 결과를 재사용한다. 삭제된 워치 세션으로 claim을 무효화할 때는 저장된 text에 session id가 없으면 전체 읽기를 건너뛴다. Hash 입력을 만드는 `canonicalJson`은 `src/utils/canonical-json.ts` 하나이며 key 순서를 key 목록마다 한 번만 계산하고 출력 bytes는 바꾸지 않는다. Auth 재검증이 같은 상태로 끝나면 상태 객체를 유지하고, account-data는 data owner마다 principal 객체를 하나만 써서 bootstrap을 다시 실행하지 않는다. Home 날씨 요청은 JS thread 정지로 마감 timer가 먼저 실행될 수 있어 한 번 더 시도한 뒤 오류를 보인다. 로그북 schema 4는 워치 로그의 미리보기가 `watchCapture.samples`와 `watchCapture.session.samples`에 같을 때 session 쪽을 저장하지 않고 읽을 때 되돌리며, schema 3도 읽는다. 원격 payload와 claim digest는 바뀌지 않는다.
 
-로그북 탭은 제목, 작성하기·워치 동기화 버튼, 검색창, 전체 개수 줄을 위에 고정하고 그 아래 `FlatList` 목록만 스크롤한다. 전체 개수는 로컬 로그북 개수이며 검색 중에는 검색 결과 수와 함께 보이고, 클라우드에서 받는 중이면 그 상태를 함께 보인다. 목록은 20개씩 이어서 보이며 새 검색은 첫 페이지부터 다시 보인다. 활성 로그북 탭을 다시 누르면 목록을 맨 위로 올리고 새로고침한다. 당겨서 새로고침 표시는 당기는 동작에만 붙이고, 훅의 `isRefreshing`은 사용자가 요청한 새로고침만 뜻한다. iOS에서 백그라운드 새로고침에 그 표시를 켜면 코드로 스크롤한 목록 위에 빈 여백이 남았기 때문이다. 이전 개발 빌드가 남긴 `dive-app:debug:bootstrap-trace` key는 시작 때 지운다.
+로그북 탭은 제목, 기록 작성·워치 기록 가져오기 버튼, 검색창, 전체 개수 줄을 위에 고정하고 그 아래 `FlatList` 목록만 스크롤한다. 전체 개수는 로컬 로그북 개수이며 검색 중에는 검색 결과 수와 함께 보이고, 클라우드에서 받는 중이면 그 상태를 함께 보인다. 목록은 20개씩 이어서 보이며 새 검색은 첫 페이지부터 다시 보인다. 활성 로그북 탭을 다시 누르면 목록을 맨 위로 올리고 새로고침한다. 당겨서 새로고침 표시는 당기는 동작에만 붙이고, 훅의 `isRefreshing`은 사용자가 요청한 새로고침만 뜻한다. iOS에서 백그라운드 새로고침에 그 표시를 켜면 코드로 스크롤한 목록 위에 빈 여백이 남았기 때문이다. 이전 개발 빌드가 남긴 `dive-app:debug:bootstrap-trace` key는 시작 때 지운다.
 
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 
