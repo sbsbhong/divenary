@@ -14,7 +14,7 @@
 
 ## 메시지
 
-모든 제어 메시지는 `kind` 키로 종류를 구분한다.
+모든 제어 메시지는 `kind` 키로 종류를 구분한다. 정확한 field와 type의 기준은 `packages/contracts/schemas/watch-link-messages.schema.json`과 `watch-planned-dive.schema.json`이다. `yarn check:quick`이 `packages/contracts/generated/`에 TypeScript·Swift type을 만들고, 모바일 `watch-link.ts`는 생성된 TypeScript type을 쓴다. `__tests__/watch-link-contract.test.ts`는 보내는 쪽 Swift 코드가 스키마의 key를 같은 철자로 쓰는지 검사한다.
 
 | kind | 방향 | 전송 방식 | 내용 |
 | --- | --- | --- | --- |
@@ -33,6 +33,6 @@
 
 ## Android 구현 시 할 일
 
-1. Wear OS 앱이 위 메시지를 같은 키로 보내고 받는다.
+1. Wear OS 앱이 위 스키마의 메시지를 같은 키로 보내고 받는다. 받는 쪽은 모르는 선택 key를 무시해도 된다.
 2. Android 앱에 `WearableCompanionModule` native module을 만들고 `NativeWatchLinkModule`의 메서드와 `DiveWatchSyncPayloadReceived` event를 구현한다.
 3. 앱 코드는 바꾸지 않는다. `resolveNativeWatchLinkModule()`이 Android에서 이 모듈을 찾는다.

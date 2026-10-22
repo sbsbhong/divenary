@@ -1,3 +1,8 @@
+import type {
+  WatchPlannedDive,
+  WatchSessionDeletionAcknowledgement as WatchSessionDeletionAcknowledgementMessage,
+  WatchSessionDeletionCommand as WatchSessionDeletionCommandMessage,
+} from '../../../../packages/contracts/generated/typescript/watch-link';
 import type { DivePlan } from '../types/dive-plan';
 import { buildPlanNotes } from '../utils/dive-plan-to-log-entry';
 
@@ -6,9 +11,9 @@ import { buildPlanNotes } from '../utils/dive-plan-to-log-entry';
  *
  * App code depends only on this interface. Each platform adapts its own transport to it:
  * Apple Watch through WatchConnectivity today, and a Wear OS watch through the Wearable Data
- * Layer later. Everything that crosses the link is plain JSON defined by
- * `packages/contracts` (sessions) or by the types below (control messages), so no message
- * shape depends on a platform.
+ * Layer later. Everything that crosses the link is plain JSON defined by the schemas in
+ * `packages/contracts` (`watch-sync-message`, `watch-link-messages`, `watch-planned-dive`),
+ * so no message shape depends on a platform.
  */
 export type WatchLink = {
   /** Whether this device has a companion transport at all. */
@@ -75,24 +80,17 @@ export function isInvalidPreparedWatchPayloadError(error: unknown): boolean {
   return error instanceof WatchPayloadPreparationError && error.code === 'invalid';
 }
 
-export type WatchSessionDeletionCommand = {
-  formatVersion: 1;
-  commandId: string;
-  localSessionId: string;
-  requestedAt: number;
-  contentRevision?: string;
-  artifactSha256?: string;
-};
+/** A deletion command as the app hands it to the platform layer, which adds `kind` on the wire. */
+export type WatchSessionDeletionCommand = Omit<
+  WatchSessionDeletionCommandMessage,
+  'kind' | 'formatVersion'
+> & {formatVersion: 1};
 
-export type WatchSessionDeletionAcknowledgement = {
-  formatVersion: 1;
-  commandId: string;
-  localSessionId: string;
-  acknowledgedAt: number;
-  result: 'deleted' | 'alreadyAbsent';
-  removedContentRevision?: string;
-  removedArtifactSha256?: string;
-};
+/** A deletion receipt as the platform layer returns it, without the wire `kind`. */
+export type WatchSessionDeletionAcknowledgement = Omit<
+  WatchSessionDeletionAcknowledgementMessage,
+  'kind' | 'formatVersion'
+> & {formatVersion: 1};
 
 export class WatchSessionDeletionBridgeError extends Error {
   constructor(message = 'Malformed Watch session deletion bridge data') {
@@ -121,21 +119,7 @@ export type PlannedWatchDivesUpdateStatus = LinkedWatchInfo & {
 };
 
 /** The planned dive shape the watch receives; it carries no account or backend identifiers. */
-export type WatchPlannedDivePayload = {
-  localId: string;
-  title?: string;
-  siteName?: string;
-  diveMode?: DivePlan['diveMode'];
-  entryStyle?: DivePlan['entryStyle'];
-  plannedAt?: number;
-  plannedMaxDepthMeters?: number;
-  plannedDurationMinutes?: number;
-  gasLabel?: string;
-  buddyIds: string[];
-  gearIds: string[];
-  tags: string[];
-  notes?: string;
-};
+export type WatchPlannedDivePayload = WatchPlannedDive;
 
 export const unavailableLinkedWatchInfo: LinkedWatchInfo = {
   nativeBridgeAvailable: false,
