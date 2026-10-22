@@ -7,6 +7,7 @@ import {
   type LoadingFeedbackOptions,
 } from '../src/hooks/use-loading-feedback';
 import { SkeletonBlock } from '../src/components/ui/skeleton-block';
+import { Row } from '../src/components/ui/grouped-list';
 
 let latest: LoadingFeedback | undefined;
 
@@ -127,5 +128,32 @@ describe('SkeletonBlock', () => {
     expect(classes).toEqual(expect.arrayContaining(['h-9', 'w-9', 'rounded-full', 'bg-skeleton']));
     expect(classes).not.toEqual(expect.arrayContaining(['w-full']));
     expect(classes).not.toEqual(expect.arrayContaining(['h-4']));
+  });
+});
+
+describe('Row pending', () => {
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('is busy and disabled at once and shows its spinner only after 1 s', async () => {
+    const onPress = jest.fn();
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<Row testID="delete" label="Delete log" destructive pending onPress={onPress} />);
+    });
+    const root = renderer!.root;
+    const button = root.findAll(node => node.props.testID === 'delete' && node.props.accessibilityState !== undefined)[0]!;
+    expect(button.props.accessibilityState).toMatchObject({ busy: true, disabled: true });
+    expect(root.findAll(node => node.props.testID === 'delete-spinner')).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(ASYNC_FEEDBACK_TIMING.indicator);
+    });
+    expect(root.findAll(node => node.props.testID === 'delete-spinner').length).toBeGreaterThan(0);
   });
 });

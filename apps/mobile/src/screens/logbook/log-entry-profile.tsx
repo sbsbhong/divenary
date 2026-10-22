@@ -35,7 +35,7 @@ export function LogEntryProfile(props: {
     return null;
   }
 
-  const lineColor = isDepth ? palette.primary : palette.warning;
+  const lineColor = isDepth ? palette.primary : palette.mutedForeground;
   const summary = isDepth
     ? t('sessionProfile.depthSummary', { max: formatLogDepth(chart.maxValue) })
     : t('sessionProfile.temperatureSummary', {

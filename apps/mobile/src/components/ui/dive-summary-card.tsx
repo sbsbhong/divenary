@@ -4,15 +4,9 @@ import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import { HStack } from './hstack';
 import { Text } from './text';
 import { VStack } from './vstack';
-import type { InstrumentTone } from './theme';
 
 type DiveSummaryCardProps = {
   children?: React.ReactNode;
-  /**
-   * @deprecated Has no visual effect: cards are neutral, and primary colour is kept for actions
-   * and selection. Drop it at the call site.
-   */
-  accent?: InstrumentTone;
   variant?: 'card' | 'dark';
   className?: string;
   style?: StyleProp<ViewStyle>;

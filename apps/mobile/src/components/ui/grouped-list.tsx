@@ -3,7 +3,9 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { Box } from './box';
 import { HStack } from './hstack';
 import { CheckIcon, ChevronRightIcon, Icon } from './icon';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import { Pressable } from './pressable';
+import { Spinner } from './spinner';
 import { Switch } from './switch';
 import { Text } from './text';
 import { VStack } from './vstack';
@@ -51,6 +53,8 @@ type RowProps = {
   onPress?: () => void;
   destructive?: boolean;
   disabled?: boolean;
+  /** The row's action is running: busy and disabled at once, spinner in the accessory slot after 1 s. */
+  pending?: boolean;
   testID?: string;
   valueTestID?: string;
   /** Spoken instead of label + value, e.g. when the value is "--:--" or a symbol. */
@@ -64,6 +68,8 @@ type RowProps = {
 /** One grouped row: label, optional muted value, and one accessory. */
 export function Row(props: RowProps): React.JSX.Element {
   const accessory = props.accessory ?? (props.onPress ? { kind: 'chevron' as const } : { kind: 'none' as const });
+  const { showIndicator: showSpinner } = useLoadingFeedback(Boolean(props.pending));
+  const disabled = Boolean(props.disabled || props.pending);
   const content = (
     <HStack space="md" className="min-h-12 items-center px-4 py-3">
       {props.icon ? (
@@ -82,13 +88,19 @@ export function Row(props: RowProps): React.JSX.Element {
           {props.value}
         </Text>
       ) : null}
-      {accessory.kind === 'chevron' ? <Icon as={ChevronRightIcon} className="text-muted-foreground" /> : null}
+      {showSpinner ? (
+        <Spinner
+          testID={props.testID ? `${props.testID}-spinner` : undefined}
+          className={props.destructive ? 'text-destructive' : 'text-muted-foreground'}
+        />
+      ) : null}
+      {accessory.kind === 'chevron' && !showSpinner ? <Icon as={ChevronRightIcon} className="text-muted-foreground" /> : null}
       {accessory.kind === 'check' && accessory.checked ? <Icon as={CheckIcon} className="text-primary" /> : null}
       {accessory.kind === 'switch' ? (
         <Switch
           value={accessory.value}
           onValueChange={accessory.onValueChange}
-          disabled={props.disabled}
+          disabled={disabled}
           accessibilityLabel={props.label}
         />
       ) : null}
@@ -119,10 +131,11 @@ export function Row(props: RowProps): React.JSX.Element {
         accessibilityLabel={props.accessibilityLabel}
         accessibilityHint={props.accessibilityHint}
         accessibilityState={{
-          disabled: props.disabled,
+          disabled,
+          busy: Boolean(props.pending),
           ...(accessory.kind === 'check' ? { selected: accessory.checked } : {}),
         }}
-        disabled={props.disabled}
+        disabled={disabled}
         onPress={props.onPress}
         className="active:bg-muted">
         {content}

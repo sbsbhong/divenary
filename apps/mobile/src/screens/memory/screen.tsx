@@ -32,7 +32,7 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
       <VStack space="lg">
         <Text className="text-3xl font-semibold text-foreground">{t('memory.title')}</Text>
 
-        <DiveSummaryCard accent="primary">
+        <DiveSummaryCard>
           <DiveSummaryCard.Header
             title={session?.siteName ?? t('memory.importDive')}
             right={
@@ -62,7 +62,7 @@ export default function MemoryScreen(props: MemoryScreenProps): React.JSX.Elemen
           </DiveSummaryCard.Body>
         </DiveSummaryCard>
 
-        <DiveSummaryCard accent="primary">
+        <DiveSummaryCard>
           <DiveSummaryCard.Header title={t('memory.reviewSummaries')} />
           <DiveSummaryCard.Body>
             <DiveSummaryCard.Metric label={t('memory.loggedDives')} value={`${props.sessions.length}`} />

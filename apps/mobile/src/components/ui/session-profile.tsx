@@ -25,7 +25,7 @@ function SessionProfileRoot(props: SessionProfileProps): React.JSX.Element {
   });
   const gradientId = `${props.kind}-profile-fill`;
   // Depth follows the app accent; temperature uses the theme's warm orange so the two lines differ.
-  const lineColor = props.kind === 'depth' ? palette.primary : palette.warning;
+  const lineColor = props.kind === 'depth' ? palette.primary : palette.mutedForeground;
   const summary = !chart.isAvailable
     ? t('sessionProfile.noSamples')
     : props.kind === 'depth'

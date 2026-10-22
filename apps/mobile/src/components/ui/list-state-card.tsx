@@ -10,6 +10,8 @@ type ListStateCardProps = {
   message?: string;
   actionLabel?: string;
   onAction?: () => void;
+  /** The action is running (a retry, say): busy at once, spinner after the shared delay. */
+  actionPending?: boolean;
 };
 
 /** One card for empty, filtered-out, and failed list states so each reads differently. */
@@ -20,7 +22,12 @@ export function ListStateCard(props: ListStateCardProps): React.JSX.Element {
         <DiveSummaryCard.Header title={props.title} />
         {props.message ? <Text className="text-sm leading-5 text-muted-foreground">{props.message}</Text> : null}
         {props.actionLabel && props.onAction ? (
-          <InstrumentButton testID={`${props.testID}-action`} label={props.actionLabel} onPress={props.onAction} />
+          <InstrumentButton
+            testID={`${props.testID}-action`}
+            label={props.actionLabel}
+            onPress={props.onAction}
+            pending={props.actionPending}
+          />
         ) : null}
       </VStack>
     </DiveSummaryCard>
