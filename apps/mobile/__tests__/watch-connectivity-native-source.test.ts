@@ -832,7 +832,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('hasActionButton: ActionButtonHint.current.isLikelyUltra');
     expect(hintBar).not.toContain('Button(');
     expect(pager).not.toContain('Button(');
-    expect(pager).toContain('pages.stepFromCrown(by: Int((newTicks - oldTicks).rounded()))');
+    // Fractional crown updates add up to whole steps; each change alone rounded to zero on a real watch.
+    expect(pager).toContain('let detents = crownDetents.consume(newTicks)');
+    expect(pager).toContain('pages.stepFromCrown(by: detents)');
+    expect(pager).not.toContain('(newTicks - oldTicks).rounded()');
     expect(pager).toContain('isHapticFeedbackEnabled: false');
     expect(pager).not.toMatch(/requestActionButtonEnd|handleActionButtonPress/);
     expect(pager).toContain('pages.setAlwaysOn(isLuminanceReduced)');

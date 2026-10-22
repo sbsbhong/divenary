@@ -150,6 +150,18 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(details.text, String(localized: "Crown back ▸ Live"))
     }
 
+    func testCrownStepsCountFractionalUpdatesAsTheyAddUp() {
+        var counter = CrownDetentCounter()
+        // A slow forward turn arrives as small fractions; each alone used to round to no step.
+        XCTAssertEqual([0.1, 0.25, 0.4].map { counter.consume($0) }, [0, 0, 0])
+        XCTAssertEqual(counter.consume(0.6), 1)
+        XCTAssertEqual(counter.consume(1.0), 0)
+        XCTAssertEqual(counter.consume(2.4), 1)
+        XCTAssertEqual(counter.consume(0.2), -2)
+        XCTAssertEqual(counter.consume(.nan), 0)
+        XCTAssertEqual(counter.appliedStep, 0)
+    }
+
     func testRejectedSwitchSaysTheDiveHasAlreadyStarted() {
         let hint = hint(page: .live, availability: .notAtSurface, water: .submerged, showsRejection: true,
                         rejection: .modeSwitchUnavailable)

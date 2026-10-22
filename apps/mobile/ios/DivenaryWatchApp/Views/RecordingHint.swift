@@ -142,6 +142,7 @@ struct RealRecordingPager<Content: View>: View {
 
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var crownTicks: Double = 0
+    @State private var crownDetents = CrownDetentCounter()
     @State private var flashedRejectionID: Int?
     @State private var flashedRejection: DiveActionRejection?
 
@@ -158,8 +159,16 @@ struct RealRecordingPager<Content: View>: View {
                 isContinuous: false,
                 isHapticFeedbackEnabled: false
             )
-            .onChange(of: crownTicks) { oldTicks, newTicks in
-                pages.stepFromCrown(by: Int((newTicks - oldTicks).rounded()))
+            // The page change and its haptic show the turn; the system scroll indicator would only
+            // say the crown moved.
+            .digitalCrownAccessory(.hidden)
+            // The bound value moves in fractions while the crown turns, so pages follow the running
+            // total rather than each small change.
+            .onChange(of: crownTicks) { _, newTicks in
+                let detents = crownDetents.consume(newTicks)
+                if detents != 0 {
+                    pages.stepFromCrown(by: detents)
+                }
             }
             .onAppear {
                 pages.setAlwaysOn(isLuminanceReduced)
@@ -200,6 +209,22 @@ struct RealRecordingPager<Content: View>: View {
             rejection: flashedRejection,
             currentMode: currentMode
         )
+    }
+}
+
+/// Whole crown steps from the rotation value. watchOS updates the value in fractions while the crown
+/// turns and snaps it to the stride only when the crown rests, so each change alone is under one step;
+/// counting against the last whole step keeps every turn.
+struct CrownDetentCounter: Equatable {
+    private(set) var appliedStep = 0
+
+    /// The whole steps since the last call that returned a step. Zero while the turn is still between steps.
+    mutating func consume(_ value: Double) -> Int {
+        guard value.isFinite else { return 0 }
+        let step = Int(value.rounded())
+        let detents = step - appliedStep
+        appliedStep = step
+        return detents
     }
 }
 
