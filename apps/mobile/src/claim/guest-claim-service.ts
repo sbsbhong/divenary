@@ -54,6 +54,9 @@ import {
 } from './profile-bytes';
 import {canonicalJson} from '../utils/canonical-json';
 
+/** Characters that JSON never escapes, so the id appears unchanged in the stored text. */
+const PLAIN_SESSION_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+
 export class GuestClaimServiceError extends Error {
   constructor(
     readonly code: GuestClaimErrorCode,
@@ -371,6 +374,14 @@ export class GuestClaimService {
       );
     }
     return this.serializeMutation(async () => {
+      // Session ids are written verbatim inside the snapshot text, so a snapshot that does not
+      // mention the id cannot hold that session and the full validated read can be skipped.
+      if (
+        PLAIN_SESSION_ID_PATTERN.test(localSessionId) &&
+        (await this.options.store.rawIncludes?.(localSessionId)) === false
+      ) {
+        return;
+      }
       const snapshot = await this.readOwned();
       if (
         snapshot === undefined ||

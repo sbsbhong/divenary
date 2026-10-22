@@ -100,6 +100,8 @@ export type GuestClaimStoreLike = {
   read(): Promise<GuestClaimSnapshot | undefined>;
   write(snapshot: GuestClaimSnapshot): Promise<void>;
   remove?(): Promise<void>;
+  /** Whether the stored text contains `fragment`, checked without validating the snapshot. */
+  rawIncludes?(fragment: string): Promise<boolean>;
 };
 
 export type GuestClaimCheckpointHint =
@@ -176,6 +178,7 @@ export class GuestClaimStore implements GuestClaimStoreLike {
       storage: PersistentKeyValueStore;
       userId: string;
       now?: () => number;
+      yieldToRuntime?: () => Promise<void>;
     },
   ) {
     this.key = dataStorageKeys({ kind: 'user', userId: options.userId }).claim;
@@ -202,11 +205,24 @@ export class GuestClaimStore implements GuestClaimStoreLike {
     return serializeClaimOperation(this.key, () => this.removeUnlocked());
   }
 
+  rawIncludes(fragment: string): Promise<boolean> {
+    return serializeClaimOperation(this.key, async () =>
+      (await this.options.storage.getString(this.key))?.includes(fragment) ?? false,
+    );
+  }
+
   private async readUnlocked(): Promise<GuestClaimSnapshot | undefined> {
     const raw = await this.options.storage.getString(this.key);
     if (raw === undefined) {
       validatedSnapshotCache.delete(this.key);
       return undefined;
+    }
+    if (!this.hasValidatedCopy(raw)) {
+      await warmSidecarChecks(
+        raw,
+        this.options.userId,
+        this.options.yieldToRuntime ?? yieldToEventLoop,
+      );
     }
     const snapshot = this.parseWithCache(raw);
     await this.backfillCheckpointHint(snapshot);
@@ -218,6 +234,11 @@ export class GuestClaimStore implements GuestClaimStoreLike {
    * The same stored text always validates the same way, so a verified copy is reused until the
    * stored text changes. Callers get their own copy and cannot mutate the cached one.
    */
+  private hasValidatedCopy(raw: string): boolean {
+    const cached = validatedSnapshotCache.get(this.key);
+    return cached !== undefined && cached.raw === raw && cached.userId === this.options.userId;
+  }
+
   private parseWithCache(raw: string): GuestClaimSnapshot {
     const cached = validatedSnapshotCache.get(this.key);
     if (cached && cached.raw === raw && cached.userId === this.options.userId) {
@@ -1816,6 +1837,53 @@ function verifySidecarContent(
   }
   verifiedSidecarContents.set(cacheKey, {inputs, verified});
   return verified;
+}
+
+/**
+ * Checks sidecars one at a time with a pause between them before the full parse, so the first
+ * read of a large claim does not hold the JS thread for seconds. The results fill the
+ * per-sidecar cache that the full parse reuses; any problem is reported by the full parse.
+ */
+async function warmSidecarChecks(
+  raw: string,
+  userId: string,
+  yieldToRuntime: () => Promise<void>,
+): Promise<void> {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  if (
+    !isRecord(value) ||
+    (value.schemaVersion !== LEGACY_SIDECAR_SCHEMA_VERSION &&
+      value.schemaVersion !== SIDECAR_SCHEMA_VERSION) ||
+    !isRecord(value.manifest) ||
+    !Array.isArray(value.manifest.items) ||
+    !Array.isArray(value.snapshots)
+  ) {
+    return;
+  }
+  const schemaVersion = value.schemaVersion as GuestClaimSnapshot['schemaVersion'];
+  for (const [index, rawItem] of value.manifest.items.entries()) {
+    try {
+      const item = parseItem(rawItem);
+      const sidecar = parseSidecar(value.snapshots[index], schemaVersion);
+      if (sidecar.key === item.key && sidecar.entityKind === item.entityKind) {
+        verifySidecarContent(userId, schemaVersion, item, sidecar);
+      }
+    } catch {
+      // The full parse rejects the snapshot with the right error.
+    }
+    await yieldToRuntime();
+  }
+}
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise(resolve => {
+    setTimeout(resolve, 0);
+  });
 }
 
 function computeSidecarContent(

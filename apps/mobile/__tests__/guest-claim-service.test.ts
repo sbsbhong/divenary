@@ -2394,6 +2394,33 @@ describe('guest claim service', () => {
     expect(remote.abandon).not.toHaveBeenCalled();
   });
 
+  it('skips the validated read when the snapshot never mentions the deleted session', async () => {
+    const baseWatchLog = watchLog('log-a', []);
+    const guest = repositories(
+      [{...baseWatchLog, watchCapture: {...baseWatchLog.watchCapture!, profile: undefined}}],
+      [],
+    );
+    const store = new GuestClaimStore({
+      storage: new InMemoryKeyValueStore(),
+      userId,
+      now: clock(),
+    });
+    const service = claimService({
+      store,
+      guest,
+      account: repositories([], []),
+      profile: profileStorage(),
+      remote: remoteRepository(store),
+    });
+    await service.defer();
+    const read = jest.spyOn(store, 'read');
+
+    await service.invalidateDeletedWatchSession('session-somewhere-else');
+
+    expect(read).not.toHaveBeenCalled();
+    await expect(store.read()).resolves.toBeDefined();
+  });
+
   it('keeps a changed row retryable when its bulk condition fails', async () => {
     const changedId = 'changed-during-cleanup';
     const guest = repositories([diveLog(changedId)], []);

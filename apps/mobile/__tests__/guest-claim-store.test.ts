@@ -450,6 +450,32 @@ describe('guest claim store', () => {
     await expect(store.read()).rejects.toThrow();
   });
 
+  it('yields between sidecars on the first read and not on a repeated read', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const snapshot = await createGuestClaimSnapshot({
+      userId,
+      logbookRepository: repository([
+        diveLog({ localId: 'log-a', title: 'Moon Island' }),
+        diveLog({ localId: 'log-b', title: 'Sun Island' }),
+      ]),
+      planRepository: repository([]),
+      profileStorage: profileStorage(),
+      now: () => 100,
+    });
+    await new GuestClaimStore({ storage, userId, now: () => 101 }).write(snapshot);
+    const key = dataStorageKeys({ kind: 'user', userId }).claim;
+    // A fresh process has nothing cached, which a re-serialized copy of the text reproduces.
+    await storage.setString(key, JSON.stringify(JSON.parse((await storage.getString(key))!)) + ' ');
+    const yieldToRuntime = jest.fn(async () => undefined);
+    const store = new GuestClaimStore({ storage, userId, now: () => 101, yieldToRuntime });
+
+    await expect(store.read()).resolves.toBeDefined();
+    expect(yieldToRuntime).toHaveBeenCalledTimes(2);
+
+    await store.read();
+    expect(yieldToRuntime).toHaveBeenCalledTimes(2);
+  });
+
   it('accepts a progress-only rewrite but rejects changed sidecar bytes after a verified write', async () => {
     const storage = new InMemoryKeyValueStore();
     const snapshot = await createGuestClaimSnapshot({
