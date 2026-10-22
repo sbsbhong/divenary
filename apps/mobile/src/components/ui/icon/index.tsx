@@ -1670,3 +1670,40 @@ const UnlockIcon = createIcon({
 
 UnlockIcon.displayName = 'UnlockIcon';
 export { UnlockIcon };
+
+const HomeIcon = createIcon({
+  Root: Svg,
+  viewBox: '0 0 24 24',
+  path: (
+    <>
+      <Path
+        d="M3 10.5L12 3L21 10.5V20C21 20.5523 20.5523 21 20 21H15V15H9V21H4C3.44772 21 3 20.5523 3 20V10.5Z"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </>
+  ),
+});
+
+HomeIcon.displayName = 'HomeIcon';
+export { HomeIcon };
+
+const BookIcon = createIcon({
+  Root: Svg,
+  viewBox: '0 0 24 24',
+  path: (
+    <>
+      <Path
+        d="M4 19.5V4.5C4 3.67157 4.67157 3 5.5 3H20V17H5.5C4.67157 17 4 17.6716 4 18.5C4 19.3284 4.67157 20 5.5 20H20"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path d="M8 7H16" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </>
+  ),
+});
+
+BookIcon.displayName = 'BookIcon';
+export { BookIcon };

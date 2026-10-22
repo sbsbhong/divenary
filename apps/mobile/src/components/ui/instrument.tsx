@@ -2,10 +2,11 @@ import React from 'react';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import { Box } from './box';
-import { Button, ButtonIcon, ButtonText } from './button';
+import { Button, ButtonIcon, ButtonSpinner, ButtonText } from './button';
 import { ChevronLeftIcon } from './icon';
 import { Text } from './text';
 import type { InstrumentTone } from './theme';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 
 type StatusPillProps = {
   label: string;
@@ -51,6 +52,11 @@ type InstrumentButtonProps = Omit<React.ComponentProps<typeof Button>, 'children
   variant?: 'primary' | 'secondary' | 'danger';
   className?: string;
   style?: StyleProp<ViewStyle>;
+  /**
+   * The action is running: the button is disabled and busy at once and keeps its label. A
+   * spinner covers the content only if the work is still running after the shared 1 s delay.
+   */
+  pending?: boolean;
 };
 
 const buttonStyles = tva({
@@ -139,25 +145,38 @@ export function InstrumentButton({
   variant = 'secondary',
   className,
   style,
+  pending = false,
   ...pressableProps
 }: InstrumentButtonProps): React.JSX.Element {
+  const { showIndicator } = useLoadingFeedback(pending);
+  const testID = typeof pressableProps.testID === 'string' ? pressableProps.testID : undefined;
+  // The content keeps its space while the spinner covers it, so the button never changes width.
+  const contentStyle = showIndicator ? { opacity: 0 } : undefined;
   const icon = ButtonGlyph ? (
-    <Box
-      testID={typeof pressableProps.testID === 'string' ? `${pressableProps.testID}-icon` : undefined}
-      className="items-center justify-center">
+    <Box testID={testID ? `${testID}-icon` : undefined} className="items-center justify-center" style={contentStyle}>
       <ButtonIcon as={ButtonGlyph} className={buttonIconStyles({ variant })} />
     </Box>
   ) : null;
+  const disabled = pending || Boolean(pressableProps.disabled) || Boolean(pressableProps.isDisabled);
 
   return (
     <Button
       {...pressableProps}
+      disabled={disabled}
+      accessibilityState={{ ...pressableProps.accessibilityState, busy: pending, disabled }}
       variant={instrumentButtonVariant[variant]}
       className={buttonStyles({ variant, class: className })}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
       {iconPlacement === 'leading' ? icon : null}
-      <ButtonText className={buttonTextStyles({ variant })}>{label}</ButtonText>
+      <ButtonText className={buttonTextStyles({ variant })} style={contentStyle}>
+        {label}
+      </ButtonText>
       {iconPlacement === 'trailing' ? icon : null}
+      {showIndicator ? (
+        <Box pointerEvents="none" className="absolute inset-0 items-center justify-center">
+          <ButtonSpinner testID={testID ? `${testID}-spinner` : undefined} className={buttonIconStyles({ variant })} />
+        </Box>
+      ) : null}
     </Button>
   );
 }

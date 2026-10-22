@@ -7,13 +7,17 @@ import { AppPreferencesProvider, useAppPreferences } from './states/app-preferen
 import { AuthProvider } from './states/auth';
 import { AccountDataProvider } from './states/account-data';
 import { AppErrorBoundary } from './components/app-error-boundary';
+import { AppFeedbackProvider } from './components/feedback/app-feedback';
 
 type ProvidersProps = {
   children?: React.ReactNode;
 };
 
 export default function Providers(props: ProvidersProps): React.JSX.Element {
-  const [queryClient] = React.useState(() => new QueryClient());
+  const [queryClient] = React.useState(
+    // One retry: a second failure shows the error state with a retry action instead of a long wait.
+    () => new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
+  );
 
   React.useEffect(() => {
     return () => {
@@ -31,9 +35,9 @@ export default function Providers(props: ProvidersProps): React.JSX.Element {
           <ThemedProviders>
             <AppErrorBoundary>
               <AuthProvider>
-                <AccountDataProvider queryClient={queryClient}>
-                  {props.children}
-                </AccountDataProvider>
+                <AppFeedbackProvider>
+                  <AccountDataProvider queryClient={queryClient}>{props.children}</AccountDataProvider>
+                </AppFeedbackProvider>
               </AuthProvider>
             </AppErrorBoundary>
           </ThemedProviders>

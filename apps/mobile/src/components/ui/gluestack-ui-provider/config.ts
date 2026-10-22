@@ -21,6 +21,7 @@ export const colors = {
     '--ring': '0 113 227',
     '--accent': '245 245 247',
     '--accent-foreground': '0 102 204',
+    '--skeleton': '232 232 237',
   },
   dark: {
     '--primary': '41 151 255',
@@ -42,6 +43,7 @@ export const colors = {
     '--accent': '37 37 39',
     '--accent-foreground': '41 151 255',
     '--ring': '41 151 255',
+    '--skeleton': '58 58 60',
   },
 };
 

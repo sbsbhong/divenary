@@ -10,7 +10,7 @@ module.exports = {
   safelist: [
     {
       pattern:
-        /(bg|border|text|stroke|fill)-(foreground|card|popover|muted|destructive|border|input|ring|primary|secondary|background|accent|warning)(\/\d+)?$/,
+        /(bg|border|text|stroke|fill)-(foreground|card|popover|muted|destructive|border|input|ring|primary|secondary|background|accent|warning|skeleton)(\/\d+)?$/,
     },
     {
       pattern:
@@ -37,6 +37,7 @@ module.exports = {
           DEFAULT: 'rgb(var(--destructive) / <alpha-value>)',
         },
         warning: 'rgb(var(--warning)/<alpha-value>)',
+        skeleton: 'rgb(var(--skeleton)/<alpha-value>)',
         border: 'rgb(var(--border)/<alpha-value>)',
         input: 'rgb(var(--input)/<alpha-value>)',
         ring: 'rgb(var(--ring) / <alpha-value>)',

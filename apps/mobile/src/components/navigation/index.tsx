@@ -47,8 +47,10 @@ import { confirmDestructiveAction } from '../../utils/confirm-destructive-action
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
 import { divePlanToDiveLogEntryDraft } from '../../utils/dive-plan-to-log-entry';
+import { useAppFeedbackBottomInset } from '../feedback/app-feedback';
 import { Box } from '../ui/box';
 import { HStack } from '../ui/hstack';
+import { BookIcon, CalendarDaysIcon, HomeIcon, Icon, SettingsIcon } from '../ui/icon';
 import { InstrumentButton } from '../ui/instrument';
 import { KeyboardAwareScrollView } from '../ui/keyboard-aware-scroll-view';
 import { Pressable } from '../ui/pressable';
@@ -103,7 +105,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const AppTabs = createNavigatorFactory(AppTabNavigator)();
 const rootStackNavigationRef = createNavigationContainerRef<RootStackParamList>();
 const AUTO_IMPORT_TOAST_EDGE_GAP = 16;
-const AUTO_IMPORT_TOAST_TAB_OFFSET = 68;
+const TAB_BAR_OVERLAY_OFFSET = 68;
 const AUTH_LOGIN_SHEET_ALLOWED_DETENTS = resolveAuthLoginSheetAllowedDetents(Platform.OS, Platform.Version);
 
 type AccountClaimAutoRouteInput = {
@@ -197,6 +199,7 @@ export default function RootNavigation(): React.JSX.Element {
   const [completedPromptPlan, setCompletedPromptPlan] = React.useState<DivePlan | undefined>();
   const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
+  useAppFeedbackBottomInset(visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0);
   const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
   const lastRoutedClaimUserIdRef = React.useRef<string | undefined>(undefined);
   const observedClaimUserIdRef = React.useRef<string | undefined>(undefined);
@@ -775,7 +778,7 @@ export default function RootNavigation(): React.JSX.Element {
               className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3 shadow-sm"
               style={({ pressed }) => [
                 {
-                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + (visibleStackRoute === 'tabs' ? AUTO_IMPORT_TOAST_TAB_OFFSET : 0),
+                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + (visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0),
                   transform: [{ scale: pressed ? 0.98 : 1 }],
                 },
               ]}>
@@ -1309,18 +1312,25 @@ const navTabStyles = tva({
   },
 });
 
-const navTabIndicatorStyles = tva({
-  base: 'mb-1 h-0.5 w-5 rounded-full',
+const navTabIconStyles = tva({
+  base: 'mb-0.5',
   variants: {
     selected: {
-      true: 'bg-primary',
-      false: 'bg-transparent',
+      true: 'text-primary',
+      false: 'text-muted-foreground',
     },
   },
   defaultVariants: {
     selected: false,
   },
 });
+
+const NAV_TAB_ICONS: Record<DiveLogbookSection, React.ElementType> = {
+  home: HomeIcon,
+  logbook: BookIcon,
+  planning: CalendarDaysIcon,
+  settings: SettingsIcon,
+};
 
 const navTabTextStyles = tva({
   base: 'text-xs font-semibold',
@@ -1345,7 +1355,7 @@ function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolea
       accessibilityState={{ selected: props.selected }}
       className={navTabStyles({ selected: props.selected })}
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-      <Box className={navTabIndicatorStyles({ selected: props.selected })} />
+      <Icon as={NAV_TAB_ICONS[props.id]} size="lg" className={navTabIconStyles({ selected: props.selected })} />
       <Text className={navTabTextStyles({ selected: props.selected })}>{props.label}</Text>
     </Pressable>
   );
