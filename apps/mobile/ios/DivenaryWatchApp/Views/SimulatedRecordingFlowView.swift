@@ -274,7 +274,9 @@ struct SimulatedRecordingFlowView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
-            if let message = lifecycle.failureFeedback {
+            if case .savePersistenceError = lifecycle.phase {
+                EmptyView()
+            } else if let message = lifecycle.failureFeedback {
                 WatchFlowFailureNote(message: message)
             }
             if recordingMode == .demo, lifecycle.showsRecordingControls {
@@ -462,6 +464,11 @@ struct SimulatedRecordingFlowView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .multilineTextAlignment(.center)
+
+                if let message = lifecycle.failureFeedback {
+                    WatchFlowFailureNote(message: message, dismissesAutomatically: false)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 Button("Retry Save") {
                     _ = endDive()

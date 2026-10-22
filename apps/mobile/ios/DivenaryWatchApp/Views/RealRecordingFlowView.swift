@@ -56,7 +56,9 @@ struct RealRecordingFlowView: View {
         }
         .navigationBarBackButtonHidden(true)
         .safeAreaInset(edge: .bottom) {
-            if let message = coordinator.failureFeedback {
+            if case .savePersistenceError = coordinator.phase {
+                EmptyView()
+            } else if let message = coordinator.failureFeedback {
                 WatchFlowFailureNote(message: message)
             }
         }
@@ -170,6 +172,11 @@ struct RealRecordingFlowView: View {
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .multilineTextAlignment(.center)
 
+                if let message = coordinator.failureFeedback {
+                    WatchFlowFailureNote(message: message, dismissesAutomatically: false)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 Button("Retry Save") {
                     coordinator.retryCompletedSessionSave()
                 }
@@ -188,9 +195,10 @@ struct RealRecordingFlowView: View {
 }
 
 /// A new failure message includes its attempt number, so consecutive failed actions are visible.
-/// The note expires to leave the recording readout clear if a new dive has already started.
+/// Outside save-failure content, the note expires to leave the recording readout clear.
 struct WatchFlowFailureNote: View {
     let message: String
+    var dismissesAutomatically = true
     @State private var isVisible = true
 
     var body: some View {
@@ -205,6 +213,7 @@ struct WatchFlowFailureNote: View {
         }
         .task(id: message) {
             isVisible = true
+            guard dismissesAutomatically else { return }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
             isVisible = false

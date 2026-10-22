@@ -1866,13 +1866,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Last observed dive time"
+            "value" : "Last seen"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "마지막으로 확인한 다이빙 시간"
+            "value" : "마지막 확인"
           }
         }
       }

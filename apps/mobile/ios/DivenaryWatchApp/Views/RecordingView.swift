@@ -469,8 +469,7 @@ private struct FreeDiveActiveInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters)
-                ?? String(localized: "Dive active"), color: DiveWatchTheme.primary)
+            StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: primaryTime,
                 timeCaption: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters))
