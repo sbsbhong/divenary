@@ -1115,8 +1115,16 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters ?? 0, safetyStop.maxDepthMeters) + 2) / 2) * 2');
     expect(recording).toContain('recorder.liveDepthSignal == .live ? recorder.currentDepth : nil');
     expect(recording).toContain('recorder.liveDepthSignal == .live ? recorder.latestAscentRateMetersPerMinute : nil');
-    expect(recording).toContain('Text(String(localized: "Log only · Not certified"))');
+    // No fixed non-certified line during a dive; Home, Wet Ready and the saved summary and detail keep it.
+    expect(recording).not.toContain('Log only · Not certified');
     expect(recording).not.toContain('Text(DiveWatchTheme.safetyDisclaimer)');
+    expect(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/HomeView.swift')).toContain(
+      'Text(String(localized: "Recreational capture and review. Not a certified dive computer."))',
+    );
+    expect(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift')).toContain('DiveDisclaimer()');
+    expect(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionDetailView.swift')).toContain(
+      'text: String(localized: "This app is a log review aid, not certified dive equipment.")',
+    );
     expect(simulated).toContain('markerTitle: recordingMode.markerTitle');
     expect(summary).toContain('Supplemental log · no safety calculation');
     expect(summary).toContain('Recommended safety stop reminder · no safety calculation');

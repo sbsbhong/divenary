@@ -1990,22 +1990,6 @@
         }
       }
     },
-    "Log only · Not certified" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Log only · Not certified"
-          }
-        },
-        "ko" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "기록용 · 인증 장비 아님"
-          }
-        }
-      }
-    },
     "Log time" : {
       "localizations" : {
         "en" : {

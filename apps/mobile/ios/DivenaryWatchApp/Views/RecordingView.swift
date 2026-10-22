@@ -171,12 +171,9 @@ struct RecordingInstrumentView: View {
                 recordingErrorFooter
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text(String(localized: "Log only · Not certified"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(1)
-                    .frame(maxWidth: .infinity)
+                // No fixed non-certified line during a dive (owner decision, 2026-10-22): Home, Wet
+                // Ready and the saved summary and detail carry the full sentence, and the stop
+                // readout already says "Recommended stop".
 
                 // The phase hint replaces a fixed end instruction. Demo ends from its toolbar and
                 // debug recordings show no end hint.

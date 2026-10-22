@@ -116,10 +116,15 @@ const englishInternalWordLeaks = ['session', 'sample', 'capture'].filter(term =>
 
 const checks = [
   {
-    name: 'every recording page keeps the readable short non-certified marker',
+    // Owner decision 2026-10-22: no fixed marker during a dive; the full sentence stays on Home,
+    // Wet Ready and the saved summary and detail.
+    name: 'recording pages carry no fixed non-certified line, other surfaces keep the full sentence',
     failed:
-      !recordingViewSource.includes('Text(String(localized: "Log only · Not certified"))') ||
-      recordingViewSource.includes('Text(DiveWatchTheme.safetyDisclaimer)'),
+      recordingViewSource.includes('Log only · Not certified') ||
+      recordingViewSource.includes('Text(DiveWatchTheme.safetyDisclaimer)') ||
+      !source.includes('Text(String(localized: "Recreational capture and review. Not a certified dive computer."))') ||
+      !source.includes('DiveDisclaimer(text: String(localized: "SAVED LOG ONLY. NON-CERTIFIED ASSISTANT."))') ||
+      !source.includes('text: String(localized: "This app is a log review aid, not certified dive equipment.")'),
   },
   {
     name: 'recording essential labels have an 11pt nominal floor',
