@@ -103,6 +103,8 @@ export type AccountDataContextValue = {
   reconcileDeletedWatchSession(localSessionId: string): Promise<void>;
   requestSync(): Promise<AccountSyncDrainResult>;
   refreshCloudData(): Promise<void>;
+  /** True while account rows are being downloaded from the cloud, page by page. */
+  isCloudRefreshing?: boolean;
   resolveConflict?(
     kind: 'log' | 'plan',
     localId: string,
@@ -307,6 +309,23 @@ export function AccountDataProviderCore({
       queryScope: desiredScope,
       state: {status: 'loading'},
     });
+  // Counts cloud downloads in flight for one data owner; overlapping refreshes share the flag.
+  const [cloudRefresh, setCloudRefresh] = React.useState({scope: '', count: 0});
+  const beginCloudRefresh = React.useCallback((scope: string) => {
+    setCloudRefresh(current => ({
+      scope,
+      count: current.scope === scope ? current.count + 1 : 1,
+    }));
+  }, []);
+  const endCloudRefresh = React.useCallback((scope: string) => {
+    setCloudRefresh(current =>
+      current.scope === scope
+        ? {scope, count: Math.max(0, current.count - 1)}
+        : current,
+    );
+  }, []);
+  const isCloudRefreshing =
+    cloudRefresh.scope === desiredScope && cloudRefresh.count > 0;
   const publishedRef = React.useRef<PublishedAccountData | undefined>(
     undefined,
   );
@@ -666,6 +685,11 @@ export function AccountDataProviderCore({
             await invalidatePrincipalQueries(queryClient, desiredScope);
           }
         });
+        nextPublication.coordinator?.setOnHydratedPage(async () => {
+          if (isCurrent()) {
+            await invalidatePrincipalQueries(queryClient, desiredScope);
+          }
+        });
         nextPublication.coordinator?.setCommitGuard(() => {
           if (!isCurrent() || !isOnline) {
             throw new StaleAccountSyncCommitError();
@@ -692,6 +716,7 @@ export function AccountDataProviderCore({
           };
           const run = async () => {
             let hydrated = 0;
+            beginCloudRefresh(desiredScope);
             try {
               hydrated = (await coordinator.hydrate({online: true})) ?? 0;
               if (!isCurrent()) {
@@ -723,6 +748,7 @@ export function AccountDataProviderCore({
                 console.warn('Failed to hydrate remote account data', error);
               }
             } finally {
+              endCloudRefresh(desiredScope);
               if (nextPublication.cloudRefresh === operation) {
                 nextPublication.cloudRefresh = undefined;
               }
@@ -824,10 +850,12 @@ export function AccountDataProviderCore({
   }, [
     auth.accountDataRepository,
     auth.guestClaimRemoteRepository,
+    beginCloudRefresh,
     bootstrapAttempt,
     dependencies,
     desiredPrincipal,
     desiredScope,
+    endCloudRefresh,
     isOnline,
     notifyGuestInventoryChanged,
     queryClient,
@@ -1291,6 +1319,7 @@ export function AccountDataProviderCore({
     }
 
     const promise = (async () => {
+      beginCloudRefresh(publication.queryScope);
       try {
         await coordinator.drain({online: true});
         const hydrated = await coordinator.hydrate({online: true});
@@ -1332,6 +1361,8 @@ export function AccountDataProviderCore({
           console.warn('Failed to refresh remote account data', error);
         }
         throw error;
+      } finally {
+        endCloudRefresh(publication.queryScope);
       }
     })();
     const operation = {generation, coordinator, promise};
@@ -1343,7 +1374,7 @@ export function AccountDataProviderCore({
         publication.cloudRefresh = undefined;
       }
     }
-  }, [desiredScope, isOnline, queryClient]);
+  }, [beginCloudRefresh, desiredScope, endCloudRefresh, isOnline, queryClient]);
 
   const runClaim = React.useCallback(
     async (operation: 'start' | 'retry' | 'recheckRetained' | 'defer') => {
@@ -1579,6 +1610,7 @@ export function AccountDataProviderCore({
       reconcileDeletedWatchSession,
       requestSync,
       refreshCloudData,
+      isCloudRefreshing,
       resolveConflict,
     };
   }, [
@@ -1587,6 +1619,7 @@ export function AccountDataProviderCore({
     claimPresentation,
     desiredScope,
     guestClaimRemoteRepository,
+    isCloudRefreshing,
     isHistoricalWatchArtifact,
     isOnline,
     isPrincipalSettled,

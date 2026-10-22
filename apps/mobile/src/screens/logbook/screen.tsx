@@ -1,4 +1,5 @@
 import React from 'react';
+import type { FlatList as RNFlatList } from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { ListStateCard } from '../../components/ui/list-state-card';
@@ -6,6 +7,7 @@ import { Box } from '../../components/ui/box';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { InstrumentButton, SafetyText, StatusPill } from '../../components/ui/instrument';
 import { HStack } from '../../components/ui/hstack';
+import { FlatList } from '../../components/ui/flat-list';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
 import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
@@ -13,6 +15,7 @@ import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
+import { Spinner } from '../../components/ui/spinner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
@@ -36,7 +39,8 @@ type LogbookScreenProps = {
   onSyncWatch: () => Promise<WatchSyncActionResult>;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
-  isRefreshing?: boolean;
+  /** True while account logs are still arriving from the cloud. */
+  isCloudLoading?: boolean;
   reselectToken?: number;
   onSaveEntry: (entry: DiveLogEntry) => Promise<DiveLogEntry>;
   onDeleteEntry: (localId: string) => Promise<void>;
@@ -54,6 +58,9 @@ type LogbookScreenProps = {
 
 type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 
+/** Rows added each time the list scrolls near its end. */
+const LOGBOOK_PAGE_SIZE = 20;
+
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
   const palette = useGluestackColors();
@@ -67,7 +74,37 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
   const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
+  const listRef = React.useRef<RNFlatList<DiveLogEntry>>(null);
   const visibleEntries = props.entries;
+  const totalEntryCount = props.totalEntryCount ?? visibleEntries.length;
+  const isFiltering = props.filter.query.trim().length > 0 || Boolean(props.filter.tag);
+  // The shown page count belongs to one search; a new search starts again from the first page.
+  const filterKey = `${props.filter.query}\u0000${props.filter.tag ?? ''}`;
+  const [page, setPage] = React.useState({ filterKey, count: LOGBOOK_PAGE_SIZE });
+  const shownCount = page.filterKey === filterKey ? page.count : LOGBOOK_PAGE_SIZE;
+  const pagedEntries = React.useMemo(() => visibleEntries.slice(0, shownCount), [shownCount, visibleEntries]);
+  const hasMorePages = shownCount < visibleEntries.length;
+  const showNextPage = React.useCallback(() => {
+    if (!hasMorePages) {
+      return;
+    }
+    setPage(current => ({
+      filterKey,
+      count: (current.filterKey === filterKey ? current.count : LOGBOOK_PAGE_SIZE) + LOGBOOK_PAGE_SIZE,
+    }));
+  }, [filterKey, hasMorePages]);
+  // The pull spinner belongs to the pull gesture. Background refreshes (cloud pages, tab
+  // reselect) leave it hidden, so iOS never keeps its inset above a list scrolled from code.
+  const [isPullRefreshing, setIsPullRefreshing] = React.useState(false);
+  const { onRefresh } = props;
+  const pullToRefresh = React.useCallback(async () => {
+    setIsPullRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setIsPullRefreshing(false);
+    }
+  }, [onRefresh]);
   const [selectedId, setSelectedId] = React.useState(visibleEntries[0]?.localId);
   const selectedEntry = visibleEntries.find(entry => entry.localId === selectedId);
 
@@ -109,6 +146,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
     }
 
     previousReselectToken.current = reselectToken;
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     void props.onRefresh();
   }, [props]);
@@ -216,90 +254,139 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
     }
   }, [props, t]);
 
-  return (
-    <KeyboardAwareScrollView
-      ref={scrollViewRef}
-      className="flex-1 bg-background"
-      contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
-      contentInsetAdjustmentBehavior="automatic">
-      <VStack space="lg">
-        <VStack space="md">
-          <HStack className="items-center justify-between">
-            <Text className="flex-1 text-3xl font-semibold leading-9 text-foreground">{t('logbook.title')}</Text>
-            <HStack space="sm">
-              <InstrumentButton
-                testID="logbook-create-action"
-                label={t('logbook.createManual')}
-                icon={EditIcon}
-                variant="primary"
-                onPress={openCreate}
-                className="min-h-11 px-4 py-2"
-              />
-              <InstrumentButton
-                testID="logbook-import-action"
-                label={isSyncingWatch ? t('logbook.syncWatchLoading') : t('logbook.syncWatch')}
-                onPress={syncWatch}
-                disabled={isSyncingWatch}
-                className="min-h-11 px-4 py-2"
-              />
-            </HStack>
-          </HStack>
-          {syncToast ? (
-            <Text
-              testID="logbook-sync-toast"
-              accessibilityLiveRegion="polite"
-              accessibilityRole={syncToast.tone === 'attention' ? 'alert' : undefined}
-              className={
-                syncToast.tone === 'attention'
-                  ? 'rounded-2xl bg-warning/10 px-4 py-3 text-sm font-semibold text-warning'
-                  : 'rounded-2xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary'
-              }>
-              {syncToast.message}
+  const header = (
+    <VStack space="md" className="px-5 pt-4 pb-3">
+      <HStack className="items-center justify-between">
+        <Text className="flex-1 text-3xl font-semibold leading-9 text-foreground">{t('logbook.title')}</Text>
+        <HStack space="sm">
+          <InstrumentButton
+            testID="logbook-create-action"
+            label={t('logbook.createManual')}
+            icon={EditIcon}
+            variant="primary"
+            onPress={openCreate}
+            className="min-h-11 px-4 py-2"
+          />
+          <InstrumentButton
+            testID="logbook-import-action"
+            label={isSyncingWatch ? t('logbook.syncWatchLoading') : t('logbook.syncWatch')}
+            onPress={syncWatch}
+            disabled={isSyncingWatch}
+            className="min-h-11 px-4 py-2"
+          />
+        </HStack>
+      </HStack>
+      {syncToast ? (
+        <Text
+          testID="logbook-sync-toast"
+          accessibilityLiveRegion="polite"
+          accessibilityRole={syncToast.tone === 'attention' ? 'alert' : undefined}
+          className={
+            syncToast.tone === 'attention'
+              ? 'rounded-2xl bg-warning/10 px-4 py-3 text-sm font-semibold text-warning'
+              : 'rounded-2xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary'
+          }>
+          {syncToast.message}
+        </Text>
+      ) : null}
+      {lastScrollTarget === undefined ? null : (
+        <Text testID="logbook-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
+      )}
+      <VStack space="md" className="rounded-2xl bg-card px-4 py-4">
+        <Input className="h-11 rounded-full border-0 bg-muted px-5 shadow-none">
+          <InputSlot testID="logbook-search-icon">
+            <InputIcon as={SearchIcon} className="text-muted-foreground" />
+          </InputSlot>
+          <InputField
+            testID="logbook-search-input"
+            placeholder={t('logbook.searchPlaceholder')}
+            value={props.filter.query}
+            onChangeText={query => props.onFilterChange({ ...props.filter, query })}
+            className="px-0 py-0 text-base font-normal"
+          />
+        </Input>
+      </VStack>
+      {route === 'list' && !props.isLoading ? (
+        <HStack space="sm" className="items-center">
+          <Text testID="logbook-total-count" className="text-sm font-semibold text-muted-foreground">
+            {isFiltering
+              ? t('logbook.filteredCount', { count: visibleEntries.length, total: totalEntryCount })
+              : t('logbook.totalCount', { count: totalEntryCount })}
+          </Text>
+          {props.isCloudLoading ? (
+            <Text testID="logbook-cloud-loading" className="text-sm text-muted-foreground">
+              {t('logbook.cloudLoading')}
             </Text>
           ) : null}
-          {lastScrollTarget === undefined ? null : (
-            <Text testID="logbook-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
-          )}
-          <VStack space="md" className="rounded-2xl bg-card px-4 py-4">
-            <Input className="h-11 rounded-full border-0 bg-muted px-5 shadow-none">
-              <InputSlot testID="logbook-search-icon">
-                <InputIcon as={SearchIcon} className="text-muted-foreground" />
-              </InputSlot>
-              <InputField
-                testID="logbook-search-input"
-                placeholder={t('logbook.searchPlaceholder')}
-                value={props.filter.query}
-                onChangeText={query => props.onFilterChange({ ...props.filter, query })}
-                className="px-0 py-0 text-base font-normal"
-              />
-            </Input>
+        </HStack>
+      ) : null}
+    </VStack>
+  );
+
+  if (route !== 'list') {
+    return (
+      <VStack className="flex-1 bg-background">
+        {header}
+        <KeyboardAwareScrollView
+          ref={scrollViewRef}
+          className="flex-1"
+          contentContainerClassName="px-5 pb-6"
+          contentInsetAdjustmentBehavior="automatic">
+          <VStack space="lg">
+            {(route === 'create' || route === 'edit') && draftEntry ? (
+              <Box testID="log-entry-editor-card-anchor" onLayout={registerEditorOffset}>
+                <LogEntryEditor
+                  entry={draftEntry}
+                  mode={route === 'edit' ? 'edit' : 'create'}
+                  isSaving={props.isSaving}
+                  saveError={props.saveError}
+                  onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
+                  onSave={saveDraft}
+                  onFieldLayout={registerEditorFieldOffset}
+                  onInvalidSubmit={scrollToEditorError}
+                />
+              </Box>
+            ) : null}
+
+            {route === 'detail' && selectedEntry ? (
+              <LogEntryDetail entry={selectedEntry} onBack={() => setRoute('list')} onEdit={openEdit} onDelete={deleteEntry} />
+            ) : null}
+
+            <SafetyText>{t('logbook.safetyText')}</SafetyText>
           </VStack>
-        </VStack>
+        </KeyboardAwareScrollView>
+      </VStack>
+    );
+  }
 
-        {(route === 'create' || route === 'edit') && draftEntry ? (
-          <Box testID="log-entry-editor-card-anchor" onLayout={registerEditorOffset}>
-            <LogEntryEditor
-              entry={draftEntry}
-              mode={route === 'edit' ? 'edit' : 'create'}
-              isSaving={props.isSaving}
-              saveError={props.saveError}
-              onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
-              onSave={saveDraft}
-              onFieldLayout={registerEditorFieldOffset}
-              onInvalidSubmit={scrollToEditorError}
-            />
-          </Box>
-        ) : null}
-
-        {route === 'detail' && selectedEntry ? (
-          <LogEntryDetail entry={selectedEntry} onBack={() => setRoute('list')} onEdit={openEdit} onDelete={deleteEntry} />
-        ) : null}
-
-        {route === 'list' ? (
+  return (
+    <VStack className="flex-1 bg-background">
+      {header}
+      <FlatList<DiveLogEntry>
+        ref={listRef}
+        testID="logbook-list"
+        className="flex-1"
+        contentContainerClassName="px-5 pb-6"
+        data={pagedEntries}
+        keyExtractor={entry => entry.localId}
+        renderItem={({ item }) => (
+          <SessionListItem
+            entry={item}
+            showsDeviceOnlyBadge={Boolean(props.isAuthenticated && item.ownerUserId === undefined)}
+            onOpen={openDetail}
+          />
+        )}
+        ItemSeparatorComponent={ListItemSeparator}
+        initialNumToRender={LOGBOOK_PAGE_SIZE}
+        onEndReached={showNextPage}
+        onEndReachedThreshold={0.5}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={pullToRefresh} tintColor={palette.primary} />}
+        ListEmptyComponent={
           props.isLoading ? (
             <LogbookLoadingState />
-          ) : visibleEntries.length === 0 && props.loadError ? (
+          ) : props.loadError ? (
             <ListStateCard
               testID="logbook-error-state"
               title={t('logbook.loadFailed')}
@@ -307,7 +394,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               actionLabel={t('common.retry')}
               onAction={() => void props.onRefresh()}
             />
-          ) : visibleEntries.length === 0 && (props.totalEntryCount ?? 0) > 0 ? (
+          ) : totalEntryCount > 0 ? (
             <ListStateCard
               testID="logbook-no-results-state"
               title={t('logbook.noSearchResults', { query: props.filter.query.trim() })}
@@ -315,26 +402,30 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               actionLabel={t('logbook.clearSearch')}
               onAction={() => props.onFilterChange({ ...props.filter, query: '' })}
             />
-          ) : visibleEntries.length === 0 ? (
-            <EmptyLogbook />
           ) : (
-            <VStack space="md">
-              {visibleEntries.map(entry => (
-                <SessionListItem
-                  key={entry.localId}
-                  entry={entry}
-                  showsDeviceOnlyBadge={Boolean(props.isAuthenticated && entry.ownerUserId === undefined)}
-                  onOpen={openDetail}
-                />
-              ))}
-            </VStack>
+            <EmptyLogbook />
           )
-        ) : null}
-
-        <SafetyText>{t('logbook.safetyText')}</SafetyText>
-      </VStack>
-    </KeyboardAwareScrollView>
+        }
+        ListFooterComponent={
+          <VStack space="md" className="pt-4">
+            {hasMorePages || (props.isCloudLoading && pagedEntries.length > 0) ? (
+              <HStack testID="logbook-loading-more" space="sm" className="items-center justify-center py-2">
+                <Spinner color={palette.primary} />
+                <Text className="text-sm text-muted-foreground">
+                  {hasMorePages ? t('logbook.loadingMore') : t('logbook.cloudLoading')}
+                </Text>
+              </HStack>
+            ) : null}
+            <SafetyText>{t('logbook.safetyText')}</SafetyText>
+          </VStack>
+        }
+      />
+    </VStack>
   );
+}
+
+function ListItemSeparator(): React.JSX.Element {
+  return <Box className="h-3" />;
 }
 
 function getLogEntryEditorFieldOffset(fieldName: string): number {

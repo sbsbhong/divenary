@@ -5,6 +5,7 @@ import {
 } from '@noble/hashes/utils';
 import type {
   AccountDataCursor,
+  AccountDataPage,
   AccountDataRepository,
   AccountMutationResult,
   RemoteDeletedRecord,
@@ -73,6 +74,8 @@ export type AccountSyncCoordinatorOptions = {
   ) => ScheduledAccountSync;
   yieldToRuntime?: () => Promise<void>;
   onDidProcess?: () => void | Promise<void>;
+  /** Called after each page of remote rows that changed local data, so lists can refresh. */
+  onHydratedPage?: () => void | Promise<void>;
 };
 
 type DrainOptions = {
@@ -150,6 +153,7 @@ export class AccountSyncCoordinator {
   ) => ScheduledAccountSync;
   private readonly yieldToRuntime: () => Promise<void>;
   private onDidProcess?: () => void | Promise<void>;
+  private onHydratedPage?: () => void | Promise<void>;
   private commitGeneration = 0;
   private externalCommitGuard?: AssertCanCommit;
 
@@ -166,10 +170,15 @@ export class AccountSyncCoordinator {
     this.schedule = options.schedule ?? defaultSchedule;
     this.yieldToRuntime = options.yieldToRuntime ?? defaultYieldToRuntime;
     this.onDidProcess = options.onDidProcess;
+    this.onHydratedPage = options.onHydratedPage;
   }
 
   setOnDidProcess(listener: (() => void | Promise<void>) | undefined): void {
     this.onDidProcess = listener;
+  }
+
+  setOnHydratedPage(listener: (() => void | Promise<void>) | undefined): void {
+    this.onHydratedPage = listener;
   }
 
   setCommitGuard(guard: AssertCanCommit | undefined): void {
@@ -244,6 +253,10 @@ export class AccountSyncCoordinator {
     cleanupDrainState(this.userId, state);
   }
 
+  /**
+   * Applies remote rows one page at a time, newest first, so the logbook fills in while later
+   * pages are still downloading instead of waiting for every page.
+   */
   async hydrate(options: DrainOptions): Promise<number> {
     if (!options.online) {
       return 0;
@@ -251,204 +264,21 @@ export class AccountSyncCoordinator {
 
     const assertCanCommit = this.captureCommitGuard();
     assertCanCommit();
-    const [logsResult, plansResult] = await Promise.all([
-      settleHydrationCollection(
-        collectPages(
-          cursor =>
-            this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
-          assertCanCommit,
-        ),
-      ),
-      settleHydrationCollection(
-        collectPages(
-          cursor =>
-            this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
-          assertCanCommit,
-        ),
-      ),
-    ]);
-    assertCanCommit();
     const failures: AccountHydrationFailure[] = [];
-    const logs =
-      logsResult.status === 'fulfilled'
-        ? logsResult.value
-        : (failures.push({
-            entityKind: 'log',
-            phase: 'listing',
-            error: logsResult.reason,
-          }),
-          []);
-    const plans =
-      plansResult.status === 'fulfilled'
-        ? plansResult.value
-        : (failures.push({
-            entityKind: 'plan',
-            phase: 'listing',
-            error: plansResult.reason,
-          }),
-          []);
+    const rows = {attempted: 0};
     let changed = 0;
-    let attemptedRows = 0;
-    const totalRows = plans.length + logs.length;
-
-    for (const remoteValue of plans) {
-      try {
-        await measureSlowStage('account-hydrate-row', async () => {
-          const remote = parseRemotePlan(remoteValue);
-          changed += await withAccountEntityMutationLock(
-            this.userId,
-            'plan',
-            remote.localId,
-            async () => {
-              assertCanCommit();
-              if (
-                (await this.outbox.listEntity(
-                  this.userId,
-                  'plan',
-                  remote.localId,
-                )).length > 0
-              ) {
-                return 0;
-              }
-              const current = await this.planRepository.get(remote.localId);
-              if (current?.cloudSyncStatus === 'pending') {
-                return 0;
-              }
-              const local = remotePlanToLocal(remote, this.userId);
-              const recoveringConflict =
-                current?.cloudSyncStatus === 'conflict';
-              if (
-                recoveringConflict &&
-                !isEquivalentHistoricalConflict(current, local, this.userId)
-              ) {
-                return 0;
-              }
-              if (sameJsonValue(current, local)) {
-                return 0;
-              }
-              try {
-                await this.commitPlanSave(
-                  current,
-                  local,
-                  assertCanCommit,
-                  recoveringConflict
-                    ? () =>
-                        this.outbox.removeEntityConflicts(
-                          this.userId,
-                          'plan',
-                          remote.localId,
-                          {assertCanCommit},
-                        )
-                    : undefined,
-                );
-              } catch (error) {
-                if (
-                  recoveringConflict &&
-                  !isStaleAccountSyncCommitError(error)
-                ) {
-                  await this.restorePlan(current, remote.localId);
-                }
-                throw error;
-              }
-              return 1;
-            },
-          );
-        });
-      } catch (error) {
-        if (isStaleAccountSyncCommitError(error)) {
-          throw error;
-        }
-        failures.push({entityKind: 'plan', phase: 'row', error});
-      }
-      attemptedRows += 1;
-      if (attemptedRows < totalRows) {
-        await this.yieldToRuntime();
-      }
-    }
-    for (const remoteValue of logs) {
-      try {
-        await measureSlowStage('account-hydrate-row', async () => {
-          const remote = parseRemoteLog(remoteValue);
-          changed += await withAccountEntityMutationLock(
-            this.userId,
-            'log',
-            remote.localId,
-            async () => {
-              assertCanCommit();
-              if (
-                (await this.outbox.listEntity(
-                  this.userId,
-                  'log',
-                  remote.localId,
-                )).length > 0
-              ) {
-                return 0;
-              }
-              const current = await this.logbookRepository.get(remote.localId);
-              if (current?.cloudSyncStatus === 'pending') {
-                return 0;
-              }
-              const prepared = await this.prepareHydratedLog(
-                remote,
-                current,
-                assertCanCommit,
-              );
-              const recoveringConflict =
-                current?.cloudSyncStatus === 'conflict';
-              if (
-                recoveringConflict &&
-                !isEquivalentHistoricalConflict(
-                  current,
-                  prepared.local,
-                  this.userId,
-                )
-              ) {
-                await prepared.rollbackProfile?.();
-                return 0;
-              }
-              if (sameJsonValue(current, prepared.local)) {
-                return 0;
-              }
-              try {
-                await this.commitLogSave(
-                  current,
-                  prepared.local,
-                  assertCanCommit,
-                  recoveringConflict
-                    ? () =>
-                        this.outbox.removeEntityConflicts(
-                          this.userId,
-                          'log',
-                          remote.localId,
-                          {assertCanCommit},
-                        )
-                    : undefined,
-                );
-              } catch (error) {
-                if (
-                  recoveringConflict &&
-                  !isStaleAccountSyncCommitError(error)
-                ) {
-                  await this.restoreLog(current, remote.localId);
-                }
-                await prepared.rollbackProfile?.();
-                throw error;
-              }
-              return 1;
-            },
-          );
-        });
-      } catch (error) {
-        if (isStaleAccountSyncCommitError(error)) {
-          throw error;
-        }
-        failures.push({entityKind: 'log', phase: 'row', error});
-      }
-      attemptedRows += 1;
-      if (attemptedRows < totalRows) {
-        await this.yieldToRuntime();
-      }
-    }
+    changed += await this.hydratePages(
+      'plan',
+      cursor => this.accountRepository.listPlans({cursor, limit: PAGE_SIZE}),
+      remoteValue => this.hydratePlanRow(remoteValue, assertCanCommit),
+      {assertCanCommit, failures, rows},
+    );
+    changed += await this.hydratePages(
+      'log',
+      cursor => this.accountRepository.listLogs({cursor, limit: PAGE_SIZE}),
+      remoteValue => this.hydrateLogRow(remoteValue, assertCanCommit),
+      {assertCanCommit, failures, rows},
+    );
     changed += await this.removeRemotelyDeletedRows(assertCanCommit, failures);
     if (failures.length > 0) {
       throw new AccountHydrationError(
@@ -458,6 +288,199 @@ export class AccountSyncCoordinator {
       );
     }
     return changed;
+  }
+
+  private async hydratePages<T>(
+    entityKind: AccountOutboxItem['entityKind'],
+    list: (cursor?: AccountDataCursor) => Promise<AccountDataPage<T>>,
+    applyRow: (remoteValue: T) => Promise<number>,
+    context: {
+      assertCanCommit: AssertCanCommit;
+      failures: AccountHydrationFailure[];
+      rows: {attempted: number};
+    },
+  ): Promise<number> {
+    let changed = 0;
+    let cursor: AccountDataCursor | undefined;
+    do {
+      context.assertCanCommit();
+      let page: AccountDataPage<T>;
+      try {
+        page = await list(cursor);
+      } catch (error) {
+        if (isStaleAccountSyncCommitError(error)) {
+          throw error;
+        }
+        context.failures.push({entityKind, phase: 'listing', error});
+        return changed;
+      }
+      context.assertCanCommit();
+      let pageChanged = 0;
+      for (const remoteValue of page.items) {
+        // Yield between rows so taps are handled while a large account hydrates.
+        if (context.rows.attempted > 0) {
+          await this.yieldToRuntime();
+        }
+        context.rows.attempted += 1;
+        try {
+          pageChanged += await measureSlowStage('account-hydrate-row', () =>
+            applyRow(remoteValue),
+          );
+        } catch (error) {
+          if (isStaleAccountSyncCommitError(error)) {
+            throw error;
+          }
+          context.failures.push({entityKind, phase: 'row', error});
+        }
+      }
+      changed += pageChanged;
+      if (pageChanged > 0) {
+        await this.onHydratedPage?.();
+      }
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return changed;
+  }
+
+  private hydratePlanRow(
+    remoteValue: RemoteDivePlan,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<number> {
+    const remote = parseRemotePlan(remoteValue);
+
+    return withAccountEntityMutationLock(
+      this.userId,
+      'plan',
+      remote.localId,
+      async () => {
+        assertCanCommit();
+        if (
+          (await this.outbox.listEntity(
+            this.userId,
+            'plan',
+            remote.localId,
+          )).length > 0
+        ) {
+          return 0;
+        }
+        const current = await this.planRepository.get(remote.localId);
+        if (current?.cloudSyncStatus === 'pending') {
+          return 0;
+        }
+        const local = remotePlanToLocal(remote, this.userId);
+        const recoveringConflict =
+          current?.cloudSyncStatus === 'conflict';
+        if (
+          recoveringConflict &&
+          !isEquivalentHistoricalConflict(current, local, this.userId)
+        ) {
+          return 0;
+        }
+        if (sameJsonValue(current, local)) {
+          return 0;
+        }
+        try {
+          await this.commitPlanSave(
+            current,
+            local,
+            assertCanCommit,
+            recoveringConflict
+              ? () =>
+                  this.outbox.removeEntityConflicts(
+                    this.userId,
+                    'plan',
+                    remote.localId,
+                    {assertCanCommit},
+                  )
+              : undefined,
+          );
+        } catch (error) {
+          if (
+            recoveringConflict &&
+            !isStaleAccountSyncCommitError(error)
+          ) {
+            await this.restorePlan(current, remote.localId);
+          }
+          throw error;
+        }
+        return 1;
+      },
+    );
+  }
+
+  private hydrateLogRow(
+    remoteValue: RemoteDiveLog,
+    assertCanCommit: AssertCanCommit,
+  ): Promise<number> {
+    const remote = parseRemoteLog(remoteValue);
+    return withAccountEntityMutationLock(
+      this.userId,
+      'log',
+      remote.localId,
+      async () => {
+        assertCanCommit();
+        if (
+          (await this.outbox.listEntity(
+            this.userId,
+            'log',
+            remote.localId,
+          )).length > 0
+        ) {
+          return 0;
+        }
+        const current = await this.logbookRepository.get(remote.localId);
+        if (current?.cloudSyncStatus === 'pending') {
+          return 0;
+        }
+        const prepared = await this.prepareHydratedLog(
+          remote,
+          current,
+          assertCanCommit,
+        );
+        const recoveringConflict =
+          current?.cloudSyncStatus === 'conflict';
+        if (
+          recoveringConflict &&
+          !isEquivalentHistoricalConflict(
+            current,
+            prepared.local,
+            this.userId,
+          )
+        ) {
+          await prepared.rollbackProfile?.();
+          return 0;
+        }
+        if (sameJsonValue(current, prepared.local)) {
+          return 0;
+        }
+        try {
+          await this.commitLogSave(
+            current,
+            prepared.local,
+            assertCanCommit,
+            recoveringConflict
+              ? () =>
+                  this.outbox.removeEntityConflicts(
+                    this.userId,
+                    'log',
+                    remote.localId,
+                    {assertCanCommit},
+                  )
+              : undefined,
+          );
+        } catch (error) {
+          if (
+            recoveringConflict &&
+            !isStaleAccountSyncCommitError(error)
+          ) {
+            await this.restoreLog(current, remote.localId);
+          }
+          await prepared.rollbackProfile?.();
+          throw error;
+        }
+        return 1;
+      },
+    );
   }
 
   /**

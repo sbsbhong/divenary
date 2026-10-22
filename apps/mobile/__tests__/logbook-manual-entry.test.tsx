@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { KeyboardAvoidingView, RefreshControl, ScrollView } from 'react-native';
+import { FlatList, RefreshControl, ScrollView } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import { ButtonIcon } from '../src/components/ui/button';
@@ -289,11 +289,11 @@ function Harness({ repository, isAuthenticated, pendingDraft, onPendingDraftSave
   return (
     <LogbookScreen
       entries={logbook.filteredEntries}
+      totalEntryCount={logbook.entries.length}
       filter={logbook.filter}
       onFilterChange={logbook.setFilter}
       onSyncWatch={logbook.syncWatchPayloads}
       onRefresh={logbook.refresh}
-      isRefreshing={logbook.isRefreshing}
       onSaveEntry={logbook.saveEntry}
       onDeleteEntry={logbook.deleteEntry}
       saveError={logbook.saveError}
@@ -306,6 +306,11 @@ function Harness({ repository, isAuthenticated, pendingDraft, onPendingDraftSave
     />
   );
 }
+
+const textOf = (node: ReactTestRenderer.ReactTestInstance): string => {
+  const children = node.props.children as unknown;
+  return Array.isArray(children) ? children.join('') : String(children);
+};
 
 const renderLogbook = async (
   repository: LocalDiveLogRepository,
@@ -577,12 +582,44 @@ describe('Logbook manual entry flow', () => {
     expect(root.findByProps({ testID: 'logbook-search-icon' })).toBeTruthy();
   });
 
-  test('keeps logbook inputs in a keyboard-aware scroll container', async () => {
-    const renderer = await renderLogbook(new LocalDiveLogRepository([]));
+  test('keeps the search box fixed above a list that scrolls on its own', async () => {
+    const renderer = await renderLogbook(new LocalDiveLogRepository([manualEntry]));
+    const list = renderer.root.findByProps({ testID: 'logbook-list' });
+
+    expect(list.props.keyboardShouldPersistTaps).toBe('handled');
+    expect(list.findAllByProps({ testID: 'logbook-search-input' })).toHaveLength(0);
+    expect(list.findByProps({ testID: 'logbook-list-item-Manual Reef' })).toBeTruthy();
+  });
+
+  test('shows the total log count above the list and the match count while searching', async () => {
+    const renderer = await renderLogbook(new LocalDiveLogRepository([manualEntry, manualEntryWithoutMetrics]));
     const root = renderer.root;
 
-    expect(root.findByType(KeyboardAvoidingView).props.behavior).toBe('padding');
-    expect(root.findByType(ScrollView).props.keyboardShouldPersistTaps).toBe('handled');
+    expect(textOf(root.findByProps({ testID: 'logbook-total-count' }))).toBe('2 logs');
+
+    await changeText(root, 'logbook-search-input', 'Manual');
+
+    expect(textOf(root.findByProps({ testID: 'logbook-total-count' }))).toBe('1 match of 2 logs');
+  });
+
+  test('adds rows in pages as the list reaches its end', async () => {
+    const entries = Array.from({ length: 25 }, (_, index) => {
+      const entry = createBlankDiveLogEntry({ localId: `paged-entry-${index}`, now: 1781351000 + index });
+      entry.manual = { ...entry.manual, site: { name: `Paged Reef ${index}` } };
+      return entry;
+    });
+    const renderer = await renderLogbook(new LocalDiveLogRepository(entries));
+    const list = () => renderer.root.findByProps({ testID: 'logbook-list' });
+
+    expect(list().props.data).toHaveLength(20);
+    expect(renderer.root.findByProps({ testID: 'logbook-loading-more' })).toBeTruthy();
+
+    await ReactTestRenderer.act(async () => {
+      list().props.onEndReached();
+    });
+
+    expect(list().props.data).toHaveLength(25);
+    expect(renderer.root.findAllByProps({ testID: 'logbook-loading-more' })).toHaveLength(0);
   });
 
   test('uses native pull-to-refresh on the logbook scroll view', async () => {
@@ -617,8 +654,9 @@ describe('Logbook manual entry flow', () => {
     expect(renderer!.root.findAllByProps({ testID: 'logbook-empty-state' })).toHaveLength(0);
   });
 
-  test('refreshes when the active logbook tab is selected again', async () => {
+  test('scrolls to the top and refreshes when the active logbook tab is selected again', async () => {
     const onRefresh = jest.fn();
+    const scrollToOffset = jest.spyOn(FlatList.prototype, 'scrollToOffset').mockImplementation(() => undefined);
 
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
     await ReactTestRenderer.act(async () => {
@@ -653,6 +691,8 @@ describe('Logbook manual entry flow', () => {
     });
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
+    expect(scrollToOffset).toHaveBeenCalledWith({ offset: 0, animated: true });
+    scrollToOffset.mockRestore();
   });
 
   test('import action drains pending WatchConnectivity payloads into the logbook', async () => {
@@ -1435,7 +1475,7 @@ describe('Logbook manual entry flow', () => {
     await press(root, 'logbook-list-item-Manual Reef');
     await changeText(root, 'logbook-search-input', 'no matching reef');
 
-    expect(root.findByProps({ testID: 'logbook-empty-state' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'logbook-no-results-state' })).toBeTruthy();
   });
 
   test('failed local save shows an error and allows retrying the same draft', async () => {

@@ -1457,6 +1457,47 @@ describe('AccountSyncCoordinator', () => {
     });
   });
 
+  it('applies each remote page before requesting the next one', async () => {
+    const logbook = new LocalDiveLogRepository();
+    const firstLog = remoteLog({
+      id: '10000000-0000-4000-8000-000000000011',
+      localId: 'first-page-log',
+    });
+    const secondLog = remoteLog({
+      id: '10000000-0000-4000-8000-000000000012',
+      localId: 'second-page-log',
+    });
+    const cursor = {sortTime: '2026-01-01T00:00:00.000Z', id: firstLog.id};
+    const seenBeforeSecondPage: string[] = [];
+    const listLogs = jest.fn(async (input?: {cursor?: typeof cursor}) => {
+      if (input?.cursor === undefined) {
+        return {items: [firstLog], nextCursor: cursor};
+      }
+      seenBeforeSecondPage.push(...(await logbook.list()).map(entry => entry.localId));
+      return {items: [secondLog]};
+    });
+    const onHydratedPage = jest.fn();
+    const coordinator = new AccountSyncCoordinator({
+      userId,
+      outbox: new AccountOutbox({
+        storage: new InMemoryKeyValueStore(),
+        storageKey: 'outbox',
+      }),
+      accountRepository: accountRepository({
+        listLogs,
+        listPlans: jest.fn(async () => ({items: []})),
+      }),
+      logbookRepository: logbook,
+      planRepository: new LocalDivePlanRepository(),
+      onHydratedPage,
+    });
+
+    await expect(coordinator.hydrate({online: true})).resolves.toBe(2);
+
+    expect(seenBeforeSecondPage).toEqual(['first-page-log']);
+    expect(onHydratedPage).toHaveBeenCalledTimes(2);
+  });
+
   it('yields only between hydrated remote rows without changing the update count', async () => {
     const yieldToRuntime = jest.fn().mockResolvedValue(undefined);
     const coordinator = new AccountSyncCoordinator({

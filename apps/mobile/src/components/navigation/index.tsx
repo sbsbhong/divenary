@@ -650,7 +650,7 @@ export default function RootNavigation(): React.JSX.Element {
                         onSyncWatch={logbook.syncWatchPayloads}
                         onRefresh={logbook.refresh}
                         isLoading={logbook.isLoading}
-                        isRefreshing={logbook.isRefreshing}
+                        isCloudLoading={logbook.isCloudLoading}
                         reselectToken={reselectTokens.logbook}
                         onSaveEntry={logbook.saveEntry}
                         onDeleteEntry={logbook.deleteEntry}

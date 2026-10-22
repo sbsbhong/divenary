@@ -41,15 +41,23 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
     [initialPlans, plansQuery.data],
   );
   const [plannedWatchSyncStatus, setPlannedWatchSyncStatus] = React.useState<PlannedWatchDivesUpdateStatus | undefined>();
+  // Background refetches (each cloud page, each save) stay silent; only a requested refresh
+  // shows the refreshing state.
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const refresh = React.useCallback(async () => {
-    if (!options.repository) {
-      try {
-        await accountData?.refreshCloudData();
-      } catch {
-        // Account state retains local rows and exposes the retryable cloud issue.
+    setIsRefreshing(true);
+    try {
+      if (!options.repository) {
+        try {
+          await accountData?.refreshCloudData();
+        } catch {
+          // Account state retains local rows and exposes the retryable cloud issue.
+        }
       }
+      await plansQuery.refetch();
+    } finally {
+      setIsRefreshing(false);
     }
-    await plansQuery.refetch();
   }, [accountData, options.repository, plansQuery]);
   const savePlan = React.useCallback(async (plan: DivePlan) => {
     const saved = await savePlanMutation.mutateAsync(plan);
@@ -95,7 +103,7 @@ export const useDivePlans = (options: UseDivePlansOptions = {}) => {
     savePlan,
     deletePlan,
     isLoading: plansQuery.isLoading,
-    isRefreshing: plansQuery.isRefetching,
+    isRefreshing,
     isSaving: savePlanMutation.isPending,
     isDeleting: deletePlanMutation.isPending,
     plannedWatchSyncStatus,

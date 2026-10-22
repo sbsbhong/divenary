@@ -112,15 +112,23 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
     }
   }, [accountData, deleteEntryMutation, options.repository]);
 
+  // Background refetches (each cloud page, each save) stay silent; only a requested refresh
+  // shows the refreshing state.
+  const [isRefreshing, setIsRefreshing] = React.useState(false);
   const refresh = React.useCallback(async () => {
-    if (!options.repository) {
-      try {
-        await accountData?.refreshCloudData();
-      } catch {
-        // Account state retains local rows and exposes the retryable cloud issue.
+    setIsRefreshing(true);
+    try {
+      if (!options.repository) {
+        try {
+          await accountData?.refreshCloudData();
+        } catch {
+          // Account state retains local rows and exposes the retryable cloud issue.
+        }
       }
+      await entriesQuery.refetch();
+    } finally {
+      setIsRefreshing(false);
     }
-    await entriesQuery.refetch();
   }, [accountData, entriesQuery, options.repository]);
   const loadWatchProfile = React.useCallback(
     (localId: string) => repository.getWatchProfile(localId),
@@ -140,7 +148,8 @@ export const useDiveLogbook = (options: UseDiveLogbookOptions = {}) => {
     saveEntry,
     deleteEntry,
     isLoading: entriesQuery.isLoading,
-    isRefreshing: entriesQuery.isRefetching,
+    isRefreshing,
+    isCloudLoading: options.repository ? false : accountData?.isCloudRefreshing === true,
     isSaving: saveEntryMutation.isPending,
     isDeleting: deleteEntryMutation.isPending,
     listError: entriesQuery.error,
