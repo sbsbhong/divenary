@@ -79,7 +79,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             water: FakeWaterStateReader(),
             actionButtonDonor: donor,
             wetReadyExitScheduler: FakeWetReadyExitScheduler(),
-            sessionStore: FakeDiveSessionStore()
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { $0() }
         )
 
         runtime.adoptSystemSession(WKExtendedRuntimeSession())
@@ -176,7 +177,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             water: FakeWaterStateReader(),
             actionButtonDonor: donor,
             wetReadyExitScheduler: FakeWetReadyExitScheduler(),
-            sessionStore: FakeDiveSessionStore()
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { $0() }
         )
 
         XCTAssertFalse(coordinator.startManual(plan: PreDivePlan(diveMode: .scuba)))
@@ -624,6 +626,42 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(assertSavedSummary(coordinator).id, record.id)
     }
 
+    func testShowsSavingBeforeTheSaveRuns() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(
+            calls: calls,
+            hasCapturedDepthSample: true,
+            stopResult: record
+        )
+        let sessionStore = FakeDiveSessionStore(saveResults: [true])
+        var scheduledSave: (@MainActor () -> Void)?
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: sessionStore,
+            schedulePersistence: { scheduledSave = $0 }
+        )
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        guard case .completing = coordinator.phase else {
+            return XCTFail("Expected completing phase, received \(coordinator.phase)")
+        }
+        XCTAssertTrue(sessionStore.saveAttempts.isEmpty)
+
+        scheduledSave?()
+
+        XCTAssertEqual(assertSavedSummary(coordinator).id, record.id)
+        XCTAssertEqual(sessionStore.saveAttempts.map(\.id), [record.id])
+    }
+
     func testDismissSavedSummaryOnlyChangesUIState() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
@@ -826,7 +864,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             water: FakeWaterStateReader(),
             actionButtonDonor: FakeActionButtonDonor(calls: calls),
             wetReadyExitScheduler: FakeWetReadyExitScheduler(),
-            sessionStore: FakeDiveSessionStore()
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { $0() }
         )
         let acceptedSample = EngineTestFixtures.sample(1, depth: 4)
 
@@ -922,7 +961,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             water: FakeWaterStateReader(),
             actionButtonDonor: FakeActionButtonDonor(calls: calls),
             wetReadyExitScheduler: FakeWetReadyExitScheduler(),
-            sessionStore: FakeDiveSessionStore()
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { $0() }
         )
         addTeardownBlock {
             try? FileManager.default.removeItem(at: rootURL)
@@ -996,7 +1036,8 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             water: water ?? FakeWaterStateReader(),
             actionButtonDonor: donor ?? FakeActionButtonDonor(calls: LifecycleCallLog()),
             wetReadyExitScheduler: scheduler ?? FakeWetReadyExitScheduler(),
-            sessionStore: sessionStore ?? FakeDiveSessionStore()
+            sessionStore: sessionStore ?? FakeDiveSessionStore(),
+            schedulePersistence: { $0() }
         )
     }
 

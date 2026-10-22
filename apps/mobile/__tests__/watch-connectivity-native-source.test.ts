@@ -1019,7 +1019,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(summary).not.toContain('Button("Done"');
     expect(realFlow).toMatch(/case \.savedSummary\(let session\):\s*SavedSessionSummaryView\(\s*session: session,\s*onBack: coordinator\.dismissSavedSummary/);
     expect(simulated).toMatch(/case \.savedSummary\(let session\):\s*SavedSessionSummaryView\(\s*session: session,\s*onBack: dismissSavedSummary/);
-    expect(coordinator).toMatch(/phase = \.completing\(record: record\)\s*guard sessionStore\.save\(record\) else \{\s*phase = \.savePersistenceError\(record: record\)\s*return\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(record: record\)/);
+    expect(coordinator).toContain('phase = .completing(record: record)');
+    expect(coordinator).toMatch(/guard sessionStore\.save\(record\) else \{\s*phase = \.savePersistenceError\(record: record\)\s*return\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(record: record\)/);
     expect(simulated).toMatch(/phase = \.saving\(session\)\s*guard store\.save\(session\) else \{\s*phase = \.savePersistenceError\(session\)\s*return false\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(session\)/);
     expect(realFlow).toContain('coordinator.retryCompletedSessionSave()');
     expect(simulated).toContain('lifecycle.retryCompletedSessionSave()');

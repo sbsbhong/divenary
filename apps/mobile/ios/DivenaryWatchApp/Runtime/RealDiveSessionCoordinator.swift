@@ -90,6 +90,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let water: WaterSubmersionStateReading
     private let actionButtonDonor: DiveActionButtonDonating
     private let wetReadyExitScheduler: WetReadyExitScheduling
+    private let schedulePersistence: (@escaping @MainActor () -> Void) -> Void
     private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
 
     init(
@@ -100,7 +101,8 @@ final class RealDiveSessionCoordinator: ObservableObject {
         water: WaterSubmersionStateReading,
         actionButtonDonor: DiveActionButtonDonating,
         wetReadyExitScheduler: WetReadyExitScheduling? = nil,
-        sessionStore: DiveSessionPersisting
+        sessionStore: DiveSessionPersisting,
+        schedulePersistence: ((@escaping @MainActor () -> Void) -> Void)? = nil
     ) {
         self.preferredMode = preferredMode
         self.updatePreferredMode = updatePreferredMode
@@ -110,6 +112,14 @@ final class RealDiveSessionCoordinator: ObservableObject {
         self.water = water
         self.actionButtonDonor = actionButtonDonor
         self.wetReadyExitScheduler = wetReadyExitScheduler ?? TaskWetReadyExitScheduler()
+        // Saving a long dive holds the main thread. Waiting about one frame first puts the
+        // "Saving" screen on display before that happens.
+        self.schedulePersistence = schedulePersistence ?? { work in
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                work()
+            }
+        }
         runtime.onEvent = { [weak self] event in
             self?.handleRuntimeEvent(event)
         }
@@ -298,7 +308,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             phase = .idle
             return true
         case let .savePersistenceError(record):
-            persistCompletedRecord(record)
+            persistCompletedRecord(record, deferred: false)
             if case .savePersistenceError = phase {
                 // Keep the unsaved journal on disk; launch recovery restores it as an interrupted session.
                 recorder.resetCompletedSession()
@@ -338,8 +348,23 @@ final class RealDiveSessionCoordinator: ObservableObject {
         persistCompletedRecord(record)
     }
 
-    private func persistCompletedRecord(_ record: DiveSessionRecord) {
+    /// Shows the saving state, then saves. `deferred: false` saves right away for callers that
+    /// need the result before they return.
+    private func persistCompletedRecord(_ record: DiveSessionRecord, deferred: Bool = true) {
         phase = .completing(record: record)
+        guard deferred else {
+            finishPersisting(record)
+            return
+        }
+        schedulePersistence { [weak self] in
+            self?.finishPersisting(record)
+        }
+    }
+
+    private func finishPersisting(_ record: DiveSessionRecord) {
+        guard case let .completing(pending) = phase, pending.id == record.id else {
+            return
+        }
         guard sessionStore.save(record) else {
             phase = .savePersistenceError(record: record)
             return
