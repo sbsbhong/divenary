@@ -14,6 +14,8 @@ Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
 Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
 Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
+Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -45,9 +47,9 @@ Generated output은 다음과 같다.
 
 `WatchSyncMessage` type은 `sessionCreated`, `sessionUpdated`, `sessionEnded`를 지원한다. `WatchSession`은 `localSessionId`, `startedAt`, `samples`를 require하고, 대부분의 metadata는 optional이다. `diveMode`가 있으면 `freedive` mode에는 `freedive` nested payload가 필요하고, `scuba` mode에는 `scuba` nested payload가 필요하다. Schema는 `freedive`와 `scuba` payload가 동시에 있는 payload나 mode와 nested payload가 맞지 않는 payload를 거부한다. 모바일 계획에서 시작한 watch session은 `sourcePlanLocalId`와 `planTitle`을 포함해 import 시점에 원본 계획과 다시 연결할 수 있다.
 
-폰과 watch 사이 통신은 플랫폼 중립 `WatchLink` 인터페이스를 거친다. 메시지는 문자열 key와 JSON 기본 값만 쓰며 종류와 전송 의미는 `docs/architecture/watch-link-protocol.md`에 있다. iOS adapter는 WatchConnectivity를 쓰고, Android adapter는 같은 native module 계약을 Wearable Data Layer로 구현하면 앱 코드를 바꾸지 않아도 된다.
+폰과 watch 사이 통신은 플랫폼 중립 `WatchLink` 인터페이스를 거친다. 메시지는 문자열 key와 JSON 기본 값만 쓰며, field의 기준은 `packages/contracts/schemas/watch-link-messages.schema.json`과 `watch-planned-dive.schema.json`이고 전송 의미는 `docs/architecture/watch-link-protocol.md`에 있다. 받는 쪽은 모르는 선택 key를 무시해도 된다. iOS adapter는 WatchConnectivity를 쓰고, Android adapter는 같은 native module 계약을 Wearable Data Layer로 구현하면 앱 코드를 바꾸지 않아도 된다.
 
-모바일 local data는 `guest`와 `user:<uuid>` principal로 분리된다. Account 저장은 durable outbox를 통해 typed Supabase repository로 전달되고, guest claim은 separate persistent manifest로 재개된다. 두 cloud 흐름 모두 현재 authenticated user에 묶이며 user 전환 뒤 stale callback을 publish하지 않는다.
+모바일 local data는 `guest`와 `user:<uuid>` principal로 분리된다. Account hydrate는 원격 계획과 로그를 `started_at` 최신순 페이지마다 바로 로컬에 적용하고, 바뀐 행이 있는 페이지마다 목록을 갱신하므로 뒤 페이지를 받는 동안 앞 로그가 먼저 보인다. 모든 원격 행은 여전히 로컬에 저장되며, 화면 스크롤이 원격 페이지 요청을 끌지 않는다. Account 저장은 durable outbox를 통해 typed Supabase repository로 전달되고, guest claim은 separate persistent manifest로 재개된다. 두 cloud 흐름 모두 현재 authenticated user에 묶이며 user 전환 뒤 stale callback을 publish하지 않는다.
 
 Logbook/Planbook durable JSON은 selected principal별로 fail-closed 검증한다. Parse/schema 오류는 빈 목록으로 바꾸지 않고 main value의 exact raw bytes를 quarantine에 보존한다. 이전 build가 남긴 journal의 검증/복구 오류도 default 목록으로 fallback하지 않으며, 두 경로 모두 `recoveryRequired`를 publish한다. 현재 쓰기는 journal 없이 key 하나를 원자적으로 바꾸고 readback한다. Recovery journal, quarantine과 inactive claim snapshot은 transaction/recovery evidence일 뿐 live device inventory가 아니다. Local 검증이 끝나기 전에는 remote hydration, outbox reconciliation과 claim cleanup을 시작하지 않는다.
 

@@ -1179,3 +1179,17 @@
 - Recorded: claim sidecar 내용 검증은 입력별로 재사용하고, canonical JSON 출력 bytes는 바꾸지 않는다.
 - Recorded: Watch journal은 열어 둔 채 쓰고 10 sample마다 flush하며, 실패 뒤 디스크에서 다시 읽어 잘린 줄과 중복 재시도를 처리한다.
 - Pending: claim snapshot 첫 검증 비용, preview sample 중복, Watch 저장 직전 화면 갱신, envelope의 contract schema화는 남은 일이다.
+
+## [2026-10-22] ingest | 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract
+- Added: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract raw source
+- Updated: 모바일 구조
+- Updated: 동기화 흐름 구조
+- Updated: Watch 앱 구조
+- Updated: Monorepo 구조
+- Updated: ADR: 플랫폼 중립 Watch link
+- Updated: Knowledge Base Index
+- Recorded: account hydrate는 원격 행을 페이지마다 바로 적용하고 목록을 갱신하며, 모든 원격 행을 로컬에 저장하는 구조는 유지한다.
+- Recorded: 로그북은 고정 헤더 아래 목록만 스크롤하고 20개씩 이어서 보이며, 전체 개수와 클라우드 로딩 상태를 보이고, 탭 재선택은 맨 위로 이동한다.
+- Recorded: 로그북 schema 4는 같은 미리보기를 한 번만 저장하고, claim은 무관한 삭제 세션에 전체 읽기를 건너뛰며 첫 검증 중 JS thread를 양보한다.
+- Recorded: Watch는 다이빙 종료 시 저장 중 화면을 먼저 그린 뒤 저장한다.
+- Recorded: 폰-워치 제어 메시지와 계획 다이브는 `packages/contracts` schema가 기준이고 contract test가 보내는 쪽 key 철자를 검사한다.

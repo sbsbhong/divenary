@@ -2,6 +2,8 @@
 
 Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
 Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
+Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
 Updated: 2026-10-22
 
 ## Status
@@ -24,7 +26,8 @@ Accepted
 
 - Android 지원은 Wear OS 앱과 `WearableCompanionModule` 구현으로 끝나며, 화면·상태·저장소 코드는 바꾸지 않는다.
 - Native Swift type 이름(`WatchConnectivityInbox`, `PendingWatchConnectivityPayload`)은 iOS adapter 내부 이름이라 그대로 둔다.
-- Envelope은 아직 property-list 성격의 dictionary이고 `packages/contracts` JSON schema로 옮기지 않았다. Relay가 artifact를 다시 serialize하면 digest가 달라지므로 session 파일 bytes는 그대로 전달해야 한다.
+- 제어 메시지와 계획 다이브는 `packages/contracts`의 `watch-link-messages`, `watch-planned-dive` schema가 기준이다. 모바일은 생성된 TypeScript type을 쓰고, Watch target은 생성된 Swift를 컴파일하지 않는 대신 contract test가 보내는 쪽 key 철자를 검사한다.
+- Relay가 session artifact를 다시 serialize하면 digest가 달라지므로 session 파일 bytes는 그대로 전달해야 한다.
 
 ## Sources
 
@@ -33,3 +36,5 @@ Accepted
 - `apps/mobile/src/companion/default-watch-link.ts`
 - `apps/mobile/__tests__/watch-link.test.ts`
 - `docs/architecture/watch-link-protocol.md`
+- `packages/contracts/schemas/watch-link-messages.schema.json`
+- `apps/mobile/__tests__/watch-link-contract.test.ts`

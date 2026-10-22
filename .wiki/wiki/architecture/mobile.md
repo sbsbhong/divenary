@@ -14,6 +14,8 @@ Sources: Mobile-authoritative Watch log deletion implementation and physical ver
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md)
 Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
+Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
+Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -106,7 +108,9 @@ Styling rule은 현재 코드 기준으로 다음과 같다.
 
 Account-data bootstrap은 `loading`, `ready`, `degraded`, `recoveryRequired`를 구분한다. 선택된 principal의 Logbook/Planbook은 공개 전에 검증하며, durable JSON 오류는 빈 배열로 바꾸지 않고 원본 bytes를 digest-addressed quarantine에 그대로 보존한다. 이전 build가 남긴 recovery journal과 quarantine은 복구 증거이지 현재 로그나 계획 inventory가 아니다. 검증 실패는 `recoveryRequired`로 전환하고 remote hydration, outbox reconciliation, claim inspection/cleanup과 저장·삭제를 시작하지 않는다. 검증된 local repositories를 먼저 publish한 뒤 자동 account hydration을 첫 상호작용 뒤 예약하고, remote row 사이에 cooperative yield를 둔다. Optional 단계 실패는 이미 공개한 로컬 데이터를 철회하지 않고 Home recovery banner에서 재시도하게 한다. 선택된 principal의 local repository 구성 자체가 실패하면 다른 principal로 fallback하지 않고 preserve-data recovery screen을 표시한다. 예상하지 못한 render error도 같은 비파괴적 recovery screen으로 전환한다.
 
-로컬 저장소는 같은 bytes를 다시 검증하지 않는다. `PersistentJsonStore`는 저장된 text가 바뀔 때까지 parse·검증한 값을 재사용하고, 쓰기는 key 하나를 원자적으로 바꾸는 `setString`과 readback 한 번이다. 이전 build의 pending/commit journal은 처음 읽거나 쓰기 전에 한 번만 마무리하며, commit marker 없는 pending 값은 버린다. Repository는 호출자에게 넘기는 값만 복사한다. Claim store는 sidecar마다 내용 검증 결과를 그 입력과 함께 기억해 진행 상태만 바뀐 쓰기에서는 진행 field만 검사하고, 입력이 바뀌면 다시 검증한다. Hash 입력을 만드는 `canonicalJson`은 `src/utils/canonical-json.ts` 하나이며 key 순서를 key 목록마다 한 번만 계산하고 출력 bytes는 바꾸지 않는다. Auth 재검증이 같은 상태로 끝나면 상태 객체를 유지하고, account-data는 data owner마다 principal 객체를 하나만 써서 bootstrap을 다시 실행하지 않는다. Home 날씨 요청은 JS thread 정지로 마감 timer가 먼저 실행될 수 있어 한 번 더 시도한 뒤 오류를 보인다.
+로컬 저장소는 같은 bytes를 다시 검증하지 않는다. `PersistentJsonStore`는 저장된 text가 바뀔 때까지 parse·검증한 값을 재사용하고, 쓰기는 key 하나를 원자적으로 바꾸는 `setString`과 readback 한 번이다. 이전 build의 pending/commit journal은 처음 읽거나 쓰기 전에 한 번만 마무리하며, commit marker 없는 pending 값은 버린다. Repository는 호출자에게 넘기는 값만 복사한다. Claim store는 sidecar마다 내용 검증 결과를 그 입력과 함께 기억해 진행 상태만 바뀐 쓰기에서는 진행 field만 검사하고, 입력이 바뀌면 다시 검증한다. 검증된 사본이 메모리에 없으면 sidecar를 하나씩 검사하며 사이마다 JS thread를 양보한 뒤 전체 parse가 그 결과를 재사용한다. 삭제된 워치 세션으로 claim을 무효화할 때는 저장된 text에 session id가 없으면 전체 읽기를 건너뛴다. Hash 입력을 만드는 `canonicalJson`은 `src/utils/canonical-json.ts` 하나이며 key 순서를 key 목록마다 한 번만 계산하고 출력 bytes는 바꾸지 않는다. Auth 재검증이 같은 상태로 끝나면 상태 객체를 유지하고, account-data는 data owner마다 principal 객체를 하나만 써서 bootstrap을 다시 실행하지 않는다. Home 날씨 요청은 JS thread 정지로 마감 timer가 먼저 실행될 수 있어 한 번 더 시도한 뒤 오류를 보인다. 로그북 schema 4는 워치 로그의 미리보기가 `watchCapture.samples`와 `watchCapture.session.samples`에 같을 때 session 쪽을 저장하지 않고 읽을 때 되돌리며, schema 3도 읽는다. 원격 payload와 claim digest는 바뀌지 않는다.
+
+로그북 탭은 제목, 작성하기·워치 동기화 버튼, 검색창, 전체 개수 줄을 위에 고정하고 그 아래 `FlatList` 목록만 스크롤한다. 전체 개수는 로컬 로그북 개수이며 검색 중에는 검색 결과 수와 함께 보이고, 클라우드에서 받는 중이면 그 상태를 함께 보인다. 목록은 20개씩 이어서 보이며 새 검색은 첫 페이지부터 다시 보인다. 활성 로그북 탭을 다시 누르면 목록을 맨 위로 올리고 새로고침한다. 당겨서 새로고침 표시는 당기는 동작에만 붙이고, 훅의 `isRefreshing`은 사용자가 요청한 새로고침만 뜻한다. iOS에서 백그라운드 새로고침에 그 표시를 켜면 코드로 스크롤한 목록 위에 빈 여백이 남았기 때문이다. 이전 개발 빌드가 남긴 `dive-app:debug:bootstrap-trace` key는 시작 때 지운다.
 
 Watch import는 `localSessionId`와 `endedAt` 기반 `importKey`로 deduplicate하고, 기존 manual/mobile field와 `importedAt`을 보존하며, watch capture와 sync status를 최신 payload로 갱신한다. 결과는 watch 시작 시간, 수동 입력 시작 시간, 생성 시간 기준으로 최신 항목이 먼저 오도록 정렬한다. Persistent 저장소와 in-memory 저장소는 같은 clone, sort, watch merge helper를 사용해 이 동작을 맞춘다.
 

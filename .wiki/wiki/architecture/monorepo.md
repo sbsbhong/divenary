@@ -2,7 +2,9 @@
 
 Sources: pre-Karpathy wiki page, 2026-06-28; Wave 3A Supabase Auth foundation 구현 증거, 2026-07-15; Guest data account claim implementation evidence, 2026-07-20; Guest data account claim staging promotion evidence, 2026-07-20
 Raw: [Pre-Karpathy: Monorepo 구조](../../raw/architecture/monorepo.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md)
-Updated: 2026-07-20
+Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
+Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
+Updated: 2026-10-22
 
 ## 요약
 
@@ -34,7 +36,7 @@ Workspace 책임은 다음과 같다.
 
 - `apps/mobile`: React Native 모바일 앱, iOS native app, embedded watchOS companion target, principal-partitioned local Logbook/Planbook, account outbox/sync, resumable guest claim, watch sync receive/import 경계와 Auth 사용자 흐름을 담당한다.
 - `apps/mobile/ios/DivenaryWatchApp`: `apps/mobile` workspace 내부의 SwiftUI watch source다. watch 쪽 기록, 로컬 watch 저장, 동기화 가능한 export payload, WatchConnectivity enqueue PoC를 담당한다.
-- `packages/contracts`: JSON Schema contract와 generated TypeScript/Swift contract output을 담당한다.
+- `packages/contracts`: JSON Schema contract와 generated TypeScript/Swift contract output을 담당한다. Session message(`watch-sync-message`)와 폰-워치 제어 메시지(`watch-link-messages`), 계획 다이브(`watch-planned-dive`) schema가 있다.
 - `packages/supabase`: generated database type, typed client factory, onboarding parser, provider-independent Auth repository와 typed account Logbook/Planbook/profile/guest claim repository를 담당한다.
 - `packages/shared-utils`: 현재 source implementation이 없는 예약된 workspace다.
 - `supabase/`: local configuration, Auth/account-data migration과 seed, owner RLS, private `dive-profiles` Storage, guest claim finalizer/Edge Function, pgTAP/REST tests와 hosted 환경에서 격리된 CLI wrapper를 담당한다. Staging deployment와 disposable-user verifier 근거가 있으며 production과는 분리한다.

@@ -6,6 +6,8 @@ Sources: Mobile-authoritative Watch log deletion implementation and physical ver
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md); [Watch Wet Ready and automatic local save](../../raw/architecture/2026-09-01-watch-wet-ready-auto-save.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
 Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
 Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract, 2026-10-22
+Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -62,6 +64,7 @@ sensor range를 넘었거나 sample 공백이 30초를 넘은 기록은 저장�
 - Action Button start도 같은 preferred mode로 app-scoped coordinator를 시작한다. `StartDiveIntent`는 다음 Action Button action으로 end intent를 donate한다.
 - automatic과 Action Button start는 selected planned dive를 저장하거나 추론하지 않는다. manual start만 explicit plan을 유지한다.
 - recording이 시작된 뒤에는 armed mode나 active `PreDivePlan`을 바꾸지 않는다.
+- 다이빙이 끝나면 저장 중 단계로 바꾼 뒤 한 frame쯤 지나서 저장해 저장 중 화면이 먼저 그려지게 한다. 같은 기록이 아직 저장 중일 때만 저장하며, 저장 실패 화면을 벗어나 다음 다이빙을 시작하는 경로는 즉시 저장한다.
 - saved summary, no-sample, 저장 실패 상태가 남아 있어도 다음 시작은 거부되지 않는다. `prepareForNewSession()`이 summary를 닫고 no-sample·시작 실패 recording을 취소한다. 저장 실패 기록은 저장 재시도가 성공하거나 recorder의 completed state만 정리하고 journal은 남긴다. 다시 물에 들어가면 saved summary를 닫고 Wet Ready로 간다.
 - demo/debug 시작은 선택한 계획의 연결(`sourcePlanLocalId`, 계획 title, `plan-` tag)을 떼고, 저장할 때 계획을 실행됨으로 표시하는 것은 real 기록뿐이다.
 
