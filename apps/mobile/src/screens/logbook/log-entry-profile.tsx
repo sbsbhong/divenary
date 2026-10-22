@@ -17,7 +17,7 @@ const TEMPERATURE_CHART_HEIGHT = 40;
 /**
  * A quiet profile line drawn straight on the group surface, without a box of its own. Depth uses
  * the accent; temperature is lower and thinner in the warm tone so it reads as secondary.
- * VoiceOver reads the range and the sample count.
+ * VoiceOver reads the title and the range.
  */
 export function LogEntryProfile(props: {
   samples: WatchDepthSample[];
@@ -37,11 +37,10 @@ export function LogEntryProfile(props: {
 
   const lineColor = isDepth ? palette.primary : palette.warning;
   const summary = isDepth
-    ? t('sessionProfile.depthSummary', { max: formatLogDepth(chart.maxValue), count: chart.rawSampleCount })
+    ? t('sessionProfile.depthSummary', { max: formatLogDepth(chart.maxValue) })
     : t('sessionProfile.temperatureSummary', {
         min: formatLogTemperature(chart.minValue),
         max: formatLogTemperature(chart.maxValue),
-        count: chart.rawSampleCount,
       });
 
   return (

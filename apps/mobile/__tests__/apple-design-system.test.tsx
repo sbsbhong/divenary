@@ -71,6 +71,8 @@ const DESIGN_GUARDED_SCREENS: ReadonlyArray<readonly string[]> = [
   ['src', 'screens', 'auth', 'login-screen.tsx'],
   ['src', 'screens', 'auth', 'onboarding-screen.tsx'],
   ['src', 'screens', 'home', 'screen.tsx'],
+  ['src', 'screens', 'home', 'conditions-card.tsx'],
+  ['src', 'screens', 'home', 'latest-log-card.tsx'],
   ['src', 'screens', 'logbook', 'screen.tsx'],
   ['src', 'screens', 'logbook', 'log-entry-editor.tsx'],
   ['src', 'screens', 'logbook', 'log-entry-mode-fields.tsx'],
@@ -84,9 +86,9 @@ const DESIGN_GUARDED_SCREENS: ReadonlyArray<readonly string[]> = [
   ['src', 'screens', 'memory', 'screen.tsx'],
   ['src', 'screens', 'settings', 'screen.tsx'],
   ['src', 'screens', 'recovery', 'screen.tsx'],
+  ['src', 'screens', 'account-claim', 'screen.tsx'],
+  ['src', 'screens', 'auth', 'social-login-button.tsx'],
   ['src', 'components', 'navigation', 'index.tsx'],
-  // Editor files join here as they move onto the shared parts, for example
-  // ['src', 'screens', 'logbook', 'log-entry-editor.tsx'] and ['src', 'screens', 'planning', 'plan-editor.tsx'].
 ];
 
 const DESIGN_GUARDED_SHARED_PARTS: ReadonlyArray<readonly string[]> = [
@@ -98,7 +100,29 @@ const DESIGN_GUARDED_SHARED_PARTS: ReadonlyArray<readonly string[]> = [
   ['src', 'components', 'ui', 'sticky-action-bar.tsx'],
   ['src', 'components', 'ui', 'skeleton-block.tsx'],
   ['src', 'components', 'ui', 'detail-skeleton.tsx'],
+  ['src', 'components', 'ui', 'picker-sheet.tsx'],
+  ['src', 'components', 'ui', 'list-state-card.tsx'],
+  ['src', 'components', 'ui', 'list-status-badge.tsx'],
+  ['src', 'components', 'ui', 'sync-conflict-banner.tsx'],
+  ['src', 'components', 'ui', 'number-wheel-picker.tsx'],
+  ['src', 'components', 'ui', 'multi-column-number-wheel-picker.tsx'],
+  ['src', 'components', 'ui', 'wheel-picker-core.tsx'],
   ['src', 'components', 'feedback', 'app-feedback.tsx'],
+  // The shared editor form parts.
+  ['src', 'screens', 'common', 'form', 'editor-screen.tsx'],
+  ['src', 'screens', 'common', 'form', 'editor-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'field-row.tsx'],
+  ['src', 'screens', 'common', 'form', 'value-row.tsx'],
+  ['src', 'screens', 'common', 'form', 'value-picker-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'pressure-fields.tsx'],
+  ['src', 'screens', 'common', 'form', 'collapsible-section.tsx'],
+  ['src', 'screens', 'common', 'form', 'date-time-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'badge-list-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'star-rating-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'compound-number-wheel-fields.tsx'],
+  ['src', 'screens', 'common', 'form', 'fixed-option-field.tsx'],
+  ['src', 'screens', 'common', 'form', 'numeric-slider-field.tsx'],
+  ['src', 'screens', 'account-claim', 'depth-trace-progress.tsx'],
 ];
 
 function ThemeToggle(): React.JSX.Element {

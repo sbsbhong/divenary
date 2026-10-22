@@ -81,7 +81,7 @@ describe('list and sync feedback states', () => {
 
     await press(renderer, 'logbook-import-action');
 
-    expect(textOf(renderer, 'app-feedback-message')).toBe('워치 기록 2개를 가져왔고 1개는 아직 가져오지 못했습니다.');
+    expect(textOf(renderer, 'app-feedback-message')).toBe('워치 기록 2개를 이 기기에 저장했습니다. 1개는 아직 가져오지 못했습니다.');
   });
 
   test('keeps the empty logbook apart from loading and offers both ways to start', async () => {
@@ -89,8 +89,8 @@ describe('list and sync feedback states', () => {
 
     expect(renderer.root.findAllByProps({ testID: 'logbook-empty-state' }).length).toBeGreaterThan(0);
     expect(renderer.root.findAllByProps({ testID: 'logbook-loading-state' })).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'logbook-empty-create-action' }).props.label).toBe('작성하기');
-    expect(renderer.root.findByProps({ testID: 'logbook-empty-sync-action' }).props.label).toBe('워치 동기화');
+    expect(renderer.root.findByProps({ testID: 'logbook-empty-create-action' }).props.label).toBe('기록 작성');
+    expect(renderer.root.findByProps({ testID: 'logbook-empty-sync-action' }).props.label).toBe('워치 기록 가져오기');
   });
 
   test('distinguishes a search with no matches from an empty logbook', async () => {

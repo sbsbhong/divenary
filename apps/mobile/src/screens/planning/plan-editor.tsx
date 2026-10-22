@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
-import { Keyboard } from 'react-native';
+import { AccessibilityInfo, Keyboard } from 'react-native';
 import { useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { InstrumentButton } from '../../components/ui/instrument';
@@ -117,6 +117,12 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
       }
       editorRef.current?.scrollToAnchor(anchor);
       onInvalidSubmit?.(fieldName);
+
+      // The scroll is silent, so VoiceOver hears why the save stopped.
+      const message = firstErrorMessage(fieldErrors, fieldName);
+      if (message) {
+        AccessibilityInfo.announceForAccessibility(message);
+      }
     },
     [onInvalidSubmit],
   );
@@ -152,6 +158,8 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
   );
 
   const isBusy = saveAction !== undefined || Boolean(props.isSaving);
+  // 필수 marks only where a save can run the full check: 계획 확정 on a new plan, or Save on a planned one.
+  const requiresFullPlan = mode === 'create' || basePlan.status === 'planned';
 
   return (
     <EditorScreen
@@ -195,10 +203,10 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
         )
       }>
       <EditorAnchor name="basics" anchorTestID="planning-editor-basics-anchor">
-        <PlanBasicsSection control={form.control} errors={errors} />
+        <PlanBasicsSection control={form.control} errors={errors} requiresFullPlan={requiresFullPlan} />
       </EditorAnchor>
       <EditorAnchor name="plannedValues" anchorTestID="planning-editor-planned-values-anchor">
-        <PlanValuesSection control={form.control} errors={errors} diveMode={activeDiveMode} />
+        <PlanValuesSection control={form.control} errors={errors} diveMode={activeDiveMode} requiresFullPlan={requiresFullPlan} />
       </EditorAnchor>
       <EditorAnchor name="notes" anchorTestID="planning-editor-notes-anchor">
         <PlanNotesSection control={form.control} errors={errors} />
@@ -216,6 +224,17 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
       </EditorAnchor>
     </EditorScreen>
   );
+}
+
+/** The message of the field that blocked the save; pressure errors sit one level down. */
+function firstErrorMessage(errors: FieldErrors<PlanFormValues>, field: keyof PlanFormValues): string | undefined {
+  if (field === 'plannedPressure') {
+    const pressure = errors.plannedPressure;
+    return pressure?.unit?.message ?? pressure?.start?.message ?? pressure?.end?.message ?? pressure?.message;
+  }
+
+  const message = errors[field]?.message;
+  return typeof message === 'string' ? message : undefined;
 }
 
 /** Opens 세부 정보 on load when the plan already has something inside it. */

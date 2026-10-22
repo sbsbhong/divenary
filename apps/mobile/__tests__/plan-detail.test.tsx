@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, type AlertButton } from 'react-native';
+import { AccessibilityInfo, Alert, type AlertButton } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import type { PlannedWatchDivesUpdateStatus } from '../src/companion/watch-link';
 import i18n from '../src/i18n';
@@ -173,7 +173,7 @@ describe('Plan detail', () => {
     expect(textOf(renderer, 'planning-detail-row-notes-value')).toBe('Meet at 8');
     const footers = renderer.root.findAll(node => typeof node.type === 'string' && typeof node.props.children === 'string');
     expect(footers.some(node => node.props.children === 'These are planned values, not measurements.')).toBe(true);
-    expect(footers.some(node => node.props.children === 'A planning memo, not a basis for remaining-gas decisions.')).toBe(true);
+    expect(footers.some(node => node.props.children === 'For planning notes only, not for tank pressure decisions.')).toBe(true);
   });
 
   test('shows unknown values as -- and hides empty optional sections', async () => {
@@ -197,7 +197,10 @@ describe('Plan detail', () => {
   test('shows the planned depth note above the supported watch depth', async () => {
     const renderer = await render({ plan: plan({ title: 'Deep', plannedValues: { plannedMaxDepthMeters: 42 } }) });
 
-    expect(textOf(renderer, 'planning-detail-unsupported-depth-warning')).toContain('Outside Apple Watch v1 supported depth');
+    const warning = textOf(renderer, 'planning-detail-unsupported-depth-warning');
+    expect(warning).toContain('This plan is deeper than the app supports on Apple Watch');
+    // Still a planning note, never safety guidance.
+    expect(warning).toContain('do not use it for safety decisions');
   });
 
   test('translates default checklist items by id and saves a tap at once', async () => {
@@ -215,7 +218,7 @@ describe('Plan detail', () => {
 
     expect(textOf(renderer, 'planning-detail-checklist-progress')).toBe('0/3');
     const siteItem = renderer.root.findByProps({ testID: 'planning-detail-checklist-site' });
-    expect(siteItem.props.accessibilityLabel).toBe('사이트 상태 확인');
+    expect(siteItem.props.accessibilityLabel).toBe('다이빙 포인트 상태 확인');
     expect(siteItem.props.accessibilityRole).toBe('checkbox');
     expect(siteItem.props.accessibilityState).toEqual({ checked: false, disabled: false });
 
@@ -251,13 +254,14 @@ describe('Plan detail', () => {
     const planned = plan({ status: 'planned', title: 'Watch plan' });
 
     const sent = await render({ plan: planned, watchSyncStatus: linkedWatch });
-    expect(textOf(sent, 'planning-detail-watch-status-value')).toBe('Sent to watch');
+    // A request without a receipt: the copy never says the watch has the plan.
+    expect(textOf(sent, 'planning-detail-watch-status-value')).toBe('Watch transfer requested');
 
     const unpaired = await render({ plan: planned, watchSyncStatus: { ...linkedWatch, isPaired: false } });
-    expect(textOf(unpaired, 'planning-detail-watch-status-value')).toBe('Watch connection needed');
+    expect(textOf(unpaired, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
 
     const contextError = await render({ plan: planned, watchSyncStatus: { ...linkedWatch, lastContextErrorCode: 7001 } });
-    expect(textOf(contextError, 'planning-detail-watch-status-value')).toBe('Watch connection needed');
+    expect(textOf(contextError, 'planning-detail-watch-status-value')).toBe('Watch transfer unconfirmed');
 
     const draft = await render({ plan: plan({ status: 'draft', title: 'Draft' }), watchSyncStatus: linkedWatch });
     expect(textOf(draft, 'planning-detail-watch-status-value')).toBe('iPhone only');
@@ -270,16 +274,18 @@ describe('Plan detail', () => {
     expect(exists(unknown, 'planning-detail-watch-status')).toBe(false);
   });
 
-  test('lists the missing fields instead of promoting an incomplete draft', async () => {
+  test('lists and announces the missing fields instead of promoting an incomplete draft', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
     const onPromote = jest.fn().mockResolvedValue(undefined);
     const renderer = await render({ plan: plan({ title: 'Idea', diveMode: 'scuba' }), onPromote });
 
     await press(renderer, 'planning-detail-promote');
 
+    const message = 'To confirm this plan, fill in: Date & time, Dive site, Planned max depth, Planned dive time';
     expect(onPromote).not.toHaveBeenCalled();
-    expect(textOf(renderer, 'planning-detail-promote-missing')).toBe(
-      'Fill in before setting as planned: Date & time, Site, Planned max depth, Planned time',
-    );
+    expect(textOf(renderer, 'planning-detail-promote-missing')).toBe(message);
+    // The note shows under the button without moving focus, so VoiceOver is told.
+    expect(announce).toHaveBeenCalledWith(message);
   });
 
   test('promotes a complete draft to planned', async () => {
@@ -304,14 +310,56 @@ describe('Plan detail', () => {
 
     expect(onComplete).toHaveBeenCalledWith(planned);
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].title).toBe('Create a log draft now?');
-    expect(alerts[0].buttons.map(button => button.text)).toEqual(['Later', 'Create log draft']);
+    expect(alerts[0].title).toBe('Add a log now?');
+    expect(alerts[0].buttons.map(button => button.text)).toEqual(['Later', 'Add log']);
 
     alerts[0].buttons.find(button => button.style === 'cancel')?.onPress?.();
     expect(onCreateLogFromPlan).not.toHaveBeenCalled();
 
     alerts[0].buttons.find(button => button.style !== 'cancel')?.onPress?.();
     expect(onCreateLogFromPlan).toHaveBeenCalledWith(completed);
+  });
+
+  test('completes with a tick that is still saving and locks the checklist while completing', async () => {
+    captureAlerts();
+    let finishChecklist: () => void = () => undefined;
+    let finishComplete: () => void = () => undefined;
+    const onSaveChecklist = jest.fn(
+      (_items: DivePlanChecklistItem[]) =>
+        new Promise<void>(resolve => {
+          finishChecklist = resolve;
+        }),
+    );
+    const onComplete = jest.fn(
+      (_plan: DivePlan) =>
+        new Promise<void>(resolve => {
+          finishComplete = resolve;
+        }),
+    );
+    const planned = plan({ status: 'planned', title: 'Race', checklistItems: createDefaultPlanChecklist() });
+    const renderer = await render({ plan: planned, onSaveChecklist, onComplete });
+
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({ testID: 'planning-detail-checklist-site' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.root.findByProps({ testID: 'planning-detail-complete' }).props.onPress();
+    });
+
+    // The completion carries the tick, so whichever save lands last keeps it.
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ checklistItems: expect.arrayContaining([expect.objectContaining({ id: 'site', completed: true })]) }),
+    );
+    // A tick during the status save would write a stale status back, so the rows wait.
+    const gearItem = renderer.root.findByProps({ testID: 'planning-detail-checklist-gear' });
+    expect(gearItem.props.disabled).toBe(true);
+    expect(gearItem.props.accessibilityState).toEqual({ checked: false, disabled: true });
+
+    await ReactTestRenderer.act(async () => {
+      finishChecklist();
+      finishComplete();
+    });
+    expect(renderer.root.findByProps({ testID: 'planning-detail-checklist-gear' }).props.disabled).toBe(false);
   });
 
   test('keeps the plan and shows a short error when a status change fails', async () => {

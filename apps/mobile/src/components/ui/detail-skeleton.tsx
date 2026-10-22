@@ -14,8 +14,7 @@ type DetailSkeletonProps = {
   testID?: string;
 };
 
-// Each line sits in a sized Box and fills it: SkeletonBlock's own `w-full` class would win over a
-// width class passed to it.
+// Each line sits in a sized Box and fills it, so the line widths read as the layout they stand in for.
 const SUMMARY_FACT_WIDTHS = ['w-1/2', 'w-2/3', 'w-2/5'] as const;
 const ROW_WIDTHS = [
   { label: 'w-1/3', value: 'w-1/5' },

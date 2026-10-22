@@ -53,6 +53,8 @@ type SettingsScreenProps = {
   rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
   /** Counts account changes saved on this device that the cloud has not received yet. */
   loadPendingChangeCount?: () => Promise<number>;
+  /** Sends waiting account changes now; the count is read again once this settles. */
+  syncPendingChanges?: () => Promise<unknown>;
   /** True while account records are being downloaded from the cloud. */
   isCloudRefreshing?: boolean;
   appVersion?: string;
@@ -73,6 +75,7 @@ export default function SettingsScreen({
   onOpenAccountClaim,
   rejectedWatchPayloadStore = defaultWatchRejectedPayloadStore,
   loadPendingChangeCount,
+  syncPendingChanges,
   isCloudRefreshing = false,
   appVersion = packageJson.version,
   route: controlledRoute,
@@ -93,8 +96,11 @@ export default function SettingsScreen({
   const signOutInFlight = React.useRef(false);
   const loadPendingChangeCountRef = React.useRef(loadPendingChangeCount);
   loadPendingChangeCountRef.current = loadPendingChangeCount;
+  const syncPendingChangesRef = React.useRef(syncPendingChanges);
+  syncPendingChangesRef.current = syncPendingChanges;
   const route = controlledRoute ?? localRoute;
-  const isSignedIn = auth.state.status === 'authenticated' || auth.state.status === 'authenticatedOffline';
+  const authStatus = auth.state.status;
+  const isSignedIn = authStatus === 'authenticated' || authStatus === 'authenticatedOffline';
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
@@ -220,15 +226,24 @@ export default function SettingsScreen({
       return;
     }
     let active = true;
-    void readPendingChangeCount().then(count => {
-      if (active) {
-        setPendingChangeCount(count);
-      }
-    });
+    const showPendingChangeCount = () =>
+      readPendingChangeCount().then(count => {
+        if (active) {
+          setPendingChangeCount(count);
+        }
+      });
+    void showPendingChangeCount();
+    // Waiting changes usually go out moments after this opens; count again once that pass settles.
+    const sync = syncPendingChangesRef.current;
+    if (sync && authStatus === 'authenticated' && !isCloudRefreshing) {
+      void sync()
+        .catch(() => undefined)
+        .then(showPendingChangeCount);
+    }
     return () => {
       active = false;
     };
-  }, [isSignedIn, readPendingChangeCount, route]);
+  }, [authStatus, isCloudRefreshing, isSignedIn, readPendingChangeCount, route]);
 
   const watchStatusLoading = linkedWatchInfo === undefined && !linkedWatchLookupFailed;
   const showWatchStatusLoading = useContentLoading(watchStatusLoading, 'linked-watch');
@@ -312,7 +327,11 @@ export default function SettingsScreen({
     setPendingChangeCount(count);
     const message = [
       t('settings.account.signOutMessage'),
-      typeof count === 'number' && count > 0 ? t('settings.account.signOutPendingChanges', { count }) : undefined,
+      count === 'unknown'
+        ? t('settings.account.signOutPendingUnknown')
+        : count > 0
+          ? t('settings.account.signOutPendingChanges', { count })
+          : undefined,
     ]
       .filter(Boolean)
       .join('\n\n');
@@ -436,7 +455,7 @@ export default function SettingsScreen({
                 <Row
                   testID="settings-row-account-claim"
                   label={t('accountClaim.settingsAction')}
-                  value={`${eligibleAccountClaimCount}`}
+                  value={t('accountClaim.settingsCount', { count: eligibleAccountClaimCount })}
                   valueTestID="settings-account-claim-count"
                   onPress={onOpenAccountClaim}
                 />

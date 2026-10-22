@@ -98,10 +98,12 @@ describe('preview metric placeholders', () => {
 
     const text = collectText(renderer!.toJSON());
 
-    expect(text).toContain('--.-- m');
-    expect(text).toContain('--:--');
+    // Same unknown-value format as the log list and detail.
+    expect(text).toContain('-- m');
+    expect(text).toContain('--분');
     expect(text).not.toContain('0.0 m');
     expect(text).not.toContain('0:00');
+    expect(text).not.toContain('0분');
   });
 
   test('Home preview uses native pull-to-refresh', async () => {
@@ -192,7 +194,7 @@ describe('preview metric placeholders', () => {
 
     const text = collectText(renderer!.toJSON());
 
-    expect(text).toEqual(expect.arrayContaining(['--.-- m', '--:--']));
+    expect(text).toEqual(expect.arrayContaining(['-- m', '--:--']));
     expect(text).not.toContain('0.0 m');
     expect(text).not.toContain('0:00');
   });

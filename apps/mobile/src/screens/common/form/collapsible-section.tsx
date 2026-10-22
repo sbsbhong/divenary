@@ -64,7 +64,8 @@ export function CollapsibleSection(props: CollapsibleSectionProps): React.JSX.El
             <VStack className="flex-1">
               <Text className="text-base font-semibold text-card-foreground">{props.title}</Text>
               {!expanded && props.summary ? (
-                <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+                // Korean wraps between words here, so a two-line summary never splits a word like 태그.
+                <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={2} lineBreakStrategyIOS="hangul-word">
                   {props.summary}
                 </Text>
               ) : null}

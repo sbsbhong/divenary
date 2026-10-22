@@ -21,7 +21,7 @@ import {
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import { AppState, Platform } from 'react-native';
+import { AccessibilityInfo, AppState, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import type { DiveLogbookSection } from '../../types/dive-session';
@@ -47,6 +47,7 @@ import { confirmDestructiveAction } from '../../utils/confirm-destructive-action
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
 import { divePlanToDiveLogEntryDraft } from '../../utils/dive-plan-to-log-entry';
+import { toCompletedDivePlan, toPlannedDivePlan, withDivePlanChecklist } from '../../utils/update-dive-plan';
 import { useAppFeedbackBottomInset } from '../feedback/app-feedback';
 import { Box } from '../ui/box';
 import { DetailSkeleton } from '../ui/detail-skeleton';
@@ -89,7 +90,6 @@ type NavigationRouteName = 'home' | 'logbook' | 'planning' | 'settings';
 
 type AutoImportToast = {
   entryLocalId: string;
-  siteName: string;
 };
 
 type PendingLogDraft = {
@@ -107,6 +107,8 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 const AppTabs = createNavigatorFactory(AppTabNavigator)();
 const rootStackNavigationRef = createNavigationContainerRef<RootStackParamList>();
 const AUTO_IMPORT_TOAST_EDGE_GAP = 16;
+// App feedback that arrives while the watch toast is up sits this far above it.
+const AUTO_IMPORT_TOAST_STACK_GAP = 8;
 const TAB_BAR_OVERLAY_OFFSET = 68;
 const AUTH_LOGIN_SHEET_ALLOWED_DETENTS = resolveAuthLoginSheetAllowedDetents(Platform.OS, Platform.Version);
 
@@ -202,7 +204,12 @@ export default function RootNavigation(): React.JSX.Element {
   const [pendingLogDraft, setPendingLogDraft] = React.useState<PendingLogDraft | undefined>();
   const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
-  useAppFeedbackBottomInset(visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0);
+  const [autoImportToastHeight, setAutoImportToastHeight] = React.useState(0);
+  const chromeBottomOffset = visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0;
+  // App feedback stacks above the watch toast instead of covering its buttons.
+  useAppFeedbackBottomInset(
+    chromeBottomOffset + (autoImportToast ? autoImportToastHeight + AUTO_IMPORT_TOAST_STACK_GAP : 0),
+  );
   const pendingNotificationOpenRef = React.useRef<string | undefined>(undefined);
   const lastRoutedClaimUserIdRef = React.useRef<string | undefined>(undefined);
   const observedClaimUserIdRef = React.useRef<string | undefined>(undefined);
@@ -294,26 +301,19 @@ export default function RootNavigation(): React.JSX.Element {
     [],
   );
 
-  const resetToLogbookCreate = React.useCallback((draft: PendingLogDraft) => {
+  const replaceWithLogbookCreate = React.useCallback((draft: PendingLogDraft) => {
     rootNavigationActions.current?.navigate('logbook');
 
     if (!rootStackNavigationRef.isReady()) {
       return;
     }
 
+    // The log editor takes the plan detail's place, so Back lands on the Logbook tab. The earlier
+    // reset rebuilt the tabs route and was refused on its first try, so the first tap did nothing.
     rootStackNavigationRef.dispatch(
-      CommonActions.reset({
-        index: 1,
-        routes: [
-          { name: 'tabs' },
-          {
-            name: 'logbookCreate',
-            params: {
-              draftLocalId: draft.entry.localId,
-              sourcePlanLocalId: draft.sourcePlanLocalId,
-            },
-          },
-        ],
+      StackActions.replace('logbookCreate', {
+        draftLocalId: draft.entry.localId,
+        sourcePlanLocalId: draft.sourcePlanLocalId,
       }),
     );
   }, []);
@@ -326,9 +326,9 @@ export default function RootNavigation(): React.JSX.Element {
       };
 
       setPendingLogDraft(draft);
-      resetToLogbookCreate(draft);
+      replaceWithLogbookCreate(draft);
     },
-    [resetToLogbookCreate],
+    [replaceWithLogbookCreate],
   );
 
   const markPendingDraftSaved = React.useCallback(
@@ -432,10 +432,9 @@ export default function RootNavigation(): React.JSX.Element {
       if (AppState.currentState && AppState.currentState !== 'active') {
         return;
       }
-      setAutoImportToast({
-        entryLocalId: entry.localId,
-        siteName: entry.manual.site.name ?? entry.watchCapture?.session.siteName ?? t('logbook.untitledDive'),
-      });
+      setAutoImportToast({ entryLocalId: entry.localId });
+      // iOS has no polite live region, so say once that the toast appeared.
+      AccessibilityInfo.announceForAccessibility(t('watchSync.autoImportedTitle'));
     },
     [t],
   );
@@ -743,7 +742,16 @@ export default function RootNavigation(): React.JSX.Element {
                     state: accountData.claim.state,
                   }}
                   onOpenAccountClaim={openAccountClaim}
-                  loadPendingChangeCount={async () => (await accountData.outbox?.list())?.length ?? 0}
+                  loadPendingChangeCount={async () => {
+                    const outbox = accountData.outbox;
+                    if (!outbox) {
+                      return 0;
+                    }
+                    // A change held back by a conflict has not reached the account either.
+                    const [items, conflicts] = await Promise.all([outbox.list(), outbox.listConflicts()]);
+                    return items.length + conflicts.length;
+                  }}
+                  syncPendingChanges={accountData.requestSync}
                   isCloudRefreshing={accountData.isCloudRefreshing}
                 />
               )}
@@ -761,19 +769,23 @@ export default function RootNavigation(): React.JSX.Element {
               right: insets.right,
               top: insets.top,
             }}>
-            {/* Unlike app feedback this carries an action, so it stays until the diver closes it. */}
+            {/* Unlike app feedback this carries an action, so it stays until the diver closes it.
+                It uses the same inverted surface so it never blends into the list cards below.
+                Not one accessibility element: VoiceOver reaches each button on its own. */}
             <Pressable
               testID="watch-auto-import-toast"
+              accessible={false}
               onPress={openImportedLogToast}
-              className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3"
+              onLayout={event => setAutoImportToastHeight(event.nativeEvent.layout.height)}
+              className="absolute left-4 right-4 rounded-2xl bg-foreground px-4 py-3"
               style={({ pressed }) => [
                 {
-                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + (visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0),
+                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset,
                   transform: [{ scale: pressed ? 0.95 : 1 }],
                 },
               ]}>
               <VStack space="sm">
-                <Text testID="watch-auto-import-message" className="text-sm font-semibold text-card-foreground">
+                <Text testID="watch-auto-import-message" className="text-sm font-semibold text-background">
                   {t('watchSync.autoImportedTitle', {
                     defaultValue: 'Watch log saved',
                   })}
@@ -782,7 +794,7 @@ export default function RootNavigation(): React.JSX.Element {
                   <InstrumentButton
                     testID="watch-auto-import-open-log"
                     label={t('watchSync.openImportedLog', {
-                      defaultValue: 'Write log',
+                      defaultValue: 'View log',
                     })}
                     variant="primary"
                     onPress={openImportedLogToast}
@@ -954,7 +966,7 @@ function LogbookDetailRoute(
   }, [loadWatchProfile, props.route.params.localId]);
 
   if (!entry) {
-    return <MissingRouteScreen navigation={props.navigation} listLoading={props.logbook.isLoading} />;
+    return <MissingRouteScreen navigation={props.navigation} kind="logbook" list={props.logbook} />;
   }
 
   return (
@@ -997,7 +1009,7 @@ function LogbookEditRoute(
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
 
   if (!entry) {
-    return <MissingRouteScreen navigation={props.navigation} listLoading={props.logbook.isLoading} />;
+    return <MissingRouteScreen navigation={props.navigation} kind="logbook" list={props.logbook} />;
   }
 
   return (
@@ -1100,7 +1112,7 @@ function PlanningDetailRoute(
   );
 
   if (!plan) {
-    return <MissingRouteScreen navigation={props.navigation} listLoading={props.planning.isLoading} />;
+    return <MissingRouteScreen navigation={props.navigation} kind="planning" list={props.planning} />;
   }
 
   return (
@@ -1114,22 +1126,8 @@ function PlanningDetailRoute(
           })
         }
         // The detail checks the required fields before it calls this.
-        onPromote={nextPlan =>
-          props.planning.savePlan({
-            ...nextPlan,
-            status: 'planned',
-            updatedAt: Date.now() / 1000,
-          })
-        }
-        onComplete={nextPlan => {
-          const timestamp = Date.now() / 1000;
-          return props.planning.savePlan({
-            ...nextPlan,
-            status: 'completed',
-            completedAt: timestamp,
-            updatedAt: timestamp,
-          });
-        }}
+        onPromote={nextPlan => props.planning.savePlan(toPlannedDivePlan(nextPlan))}
+        onComplete={nextPlan => props.planning.savePlan(toCompletedDivePlan(nextPlan))}
         onDelete={async localId => {
           await props.planning.deletePlan(localId);
           props.navigation.goBack();
@@ -1137,13 +1135,7 @@ function PlanningDetailRoute(
         onCreateLogFromPlan={props.onCreateLogFromPlan}
         hasExistingConvertedLog={hasExistingConvertedLog}
         onOpenConvertedLog={localId => props.navigation.navigate('logbookDetail', { localId })}
-        onSaveChecklist={checklistItems =>
-          props.planning.savePlan({
-            ...plan,
-            checklistItems,
-            updatedAt: Date.now() / 1000,
-          })
-        }
+        onSaveChecklist={checklistItems => props.planning.savePlan(withDivePlanChecklist(plan, checklistItems))}
         watchSyncStatus={props.planning.plannedWatchSyncStatus}
         onResolveConflict={
           accountData?.resolveConflict
@@ -1163,7 +1155,7 @@ function PlanningEditRoute(
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
 
   if (!plan) {
-    return <MissingRouteScreen navigation={props.navigation} listLoading={props.planning.isLoading} />;
+    return <MissingRouteScreen navigation={props.navigation} kind="planning" list={props.planning} />;
   }
 
   return (
@@ -1189,10 +1181,37 @@ function RoutedPlanEditor(props: {
   planning: ReturnType<typeof useDivePlans>;
   onSaved: (plan: DivePlan) => void;
 }): React.JSX.Element {
-  const { t } = useTranslation();
   const { navigation } = props;
+  const discardGuard = useDiscardChangesGuard(navigation);
+
+  return (
+    <PlanEditor
+      plan={props.plan}
+      mode={props.mode}
+      isSaving={props.planning.isSaving}
+      onCancel={() => navigation.goBack()}
+      onDirtyChange={discardGuard.setDirty}
+      onSave={async nextPlan => {
+        const savedPlan = await props.planning.savePlan(nextPlan);
+        discardGuard.markLeavingAfterSave();
+        props.onSaved(savedPlan);
+        return savedPlan;
+      }}
+    />
+  );
+}
+
+/**
+ * Asks before an editor route closes with unsaved edits. A route that leaves after a save calls
+ * `markLeavingAfterSave` first, so that exit does not ask.
+ */
+function useDiscardChangesGuard(navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'dispatch'>): {
+  setDirty: (isDirty: boolean) => void;
+  markLeavingAfterSave: () => void;
+} {
+  const { t } = useTranslation();
   const leavingAfterSaveRef = React.useRef(false);
-  const [isDirty, setIsDirty] = React.useState(false);
+  const [isDirty, setDirty] = React.useState(false);
 
   usePreventRemove(isDirty, ({ data }) => {
     if (leavingAfterSaveRef.current) {
@@ -1209,32 +1228,16 @@ function RoutedPlanEditor(props: {
     });
   });
 
-  return (
-    <PlanEditor
-      plan={props.plan}
-      mode={props.mode}
-      isSaving={props.planning.isSaving}
-      onCancel={() => navigation.goBack()}
-      onDirtyChange={setIsDirty}
-      onSave={async nextPlan => {
-        const savedPlan = await props.planning.savePlan(nextPlan);
-        leavingAfterSaveRef.current = true;
-        props.onSaved(savedPlan);
-        return savedPlan;
-      }}
-    />
-  );
+  const markLeavingAfterSave = React.useCallback(() => {
+    leavingAfterSaveRef.current = true;
+  }, []);
+
+  return { setDirty, markLeavingAfterSave };
 }
 
-type ScrollViewHandle = React.ComponentRef<typeof KeyboardAwareScrollView>;
-
-function RoutedScrollScreen(props: {
-  children: React.ReactNode;
-  scrollViewRef?: React.Ref<ScrollViewHandle>;
-}): React.JSX.Element {
+function RoutedScrollScreen(props: { children: React.ReactNode }): React.JSX.Element {
   return (
     <KeyboardAwareScrollView
-      ref={props.scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
       contentInsetAdjustmentBehavior="automatic">
@@ -1243,14 +1246,48 @@ function RoutedScrollScreen(props: {
   );
 }
 
+type RouteListState = {
+  isLoading: boolean;
+  isRefreshing: boolean;
+  listError: unknown;
+  refresh: () => Promise<void>;
+};
+
 function MissingRouteScreen(props: {
   navigation: NativeStackNavigationProp<RootStackParamList>;
-  /** While the list is still on its first load the item may just not be there yet. */
-  listLoading?: boolean;
+  /** The list the item comes from; it names the load-failed copy. */
+  kind: 'logbook' | 'planning';
+  /**
+   * The item may just not be there yet (first load) or the list may have failed to load. Only a
+   * list that loaded without the item means it is gone.
+   */
+  list: RouteListState;
 }): React.JSX.Element {
   const { t } = useTranslation();
 
-  if (props.listLoading) {
+  if (props.list.listError) {
+    return (
+      <RoutedScrollScreen>
+        <VStack testID="navigation-route-load-failed" space="md" className="rounded-2xl bg-card px-4 py-4">
+          <Text className="text-lg font-semibold text-card-foreground">{t(`${props.kind}.loadFailed`)}</Text>
+          <Text className="text-sm leading-5 text-muted-foreground">{t(`${props.kind}.loadFailedMessage`)}</Text>
+          <InstrumentButton
+            testID="navigation-route-retry"
+            variant="primary"
+            label={t('common.retry')}
+            pending={props.list.isRefreshing}
+            onPress={() => {
+              // A failed retry shows up as the list error again.
+              props.list.refresh().catch(() => undefined);
+            }}
+          />
+          <InstrumentButton label={t('logbook.backToList', { defaultValue: 'Back to list' })} onPress={() => props.navigation.goBack()} />
+        </VStack>
+      </RoutedScrollScreen>
+    );
+  }
+
+  if (props.list.isLoading) {
     return (
       <RoutedScrollScreen>
         <DetailSkeleton testID="navigation-route-loading" onBack={() => props.navigation.goBack()} />

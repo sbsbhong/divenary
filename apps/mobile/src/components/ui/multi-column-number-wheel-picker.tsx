@@ -364,6 +364,7 @@ function MultiColumnCenterInputTrigger(props: {
             <InputField
               ref={props.inputRef}
               testID={`${props.testID}-input`}
+              aria-label={props.directInput.accessibilityLabel ?? t('wheelPicker.enterNumber')}
               value={props.draftValue}
               onChangeText={props.onChangeDraft}
               onSubmitEditing={props.onCommit}

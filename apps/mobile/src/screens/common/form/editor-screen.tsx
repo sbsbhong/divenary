@@ -1,5 +1,14 @@
 import React from 'react';
-import { AccessibilityInfo, Platform, type ScrollView as RNScrollView } from 'react-native';
+import {
+  AccessibilityInfo,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  TextInput,
+  type HostInstance,
+  type ScrollView as RNScrollView,
+} from 'react-native';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../../components/ui/box';
 import { HStack } from '../../../components/ui/hstack';
@@ -11,6 +20,8 @@ import { VStack } from '../../../components/ui/vstack';
 
 /** Space left above an anchor after scrolling to it. */
 const ANCHOR_TOP_GAP = 16;
+/** Space kept between a focused text field and the save bar while the keyboard is up. */
+const FOCUSED_FIELD_GAP = 16;
 
 type EditorAnchorRegistry = (name: string, y: number) => void;
 
@@ -33,7 +44,10 @@ type EditorScreenProps = {
   /** A save failure shown right above the actions and announced to VoiceOver when it appears. */
   actionError?: string;
   actionErrorTestID?: string;
-  /** `-body` is the scroll content and `-scroll-target` records the last anchor scroll for tests. */
+  /**
+   * `-body` is the scroll content, `-scroll-target` records the last anchor scroll for tests, and
+   * `-keyboard-avoiding` and `-action-bar` hold the body and the save bar above the keyboard.
+   */
   testID: string;
   /** Grouped sections. Wrap each one you may scroll to in an `EditorAnchor`. */
   children: React.ReactNode;
@@ -41,15 +55,22 @@ type EditorScreenProps = {
 
 /**
  * The full-screen editor frame both editors share: a pinned header with back and title, a
- * scrolling body, and the save action pinned above the home indicator and the keyboard.
+ * scrolling body, and the save action pinned above the home indicator and the keyboard. While the
+ * keyboard is up, the focused text field scrolls into view above the save bar.
  */
 export const EditorScreen = React.forwardRef<EditorScreenHandle, EditorScreenProps>(function EditorScreenWithRef(
   props,
   ref,
 ): React.JSX.Element {
   const { t } = useTranslation();
+  const rootRef = React.useRef<React.ComponentRef<typeof VStack>>(null);
   const scrollRef = React.useRef<RNScrollView>(null);
+  const actionBarRef = React.useRef<React.ComponentRef<typeof Box>>(null);
+  const scrollOffsetRef = React.useRef(0);
   const bodyOffsetRef = React.useRef(0);
+  // How far below the top of the window the editor starts (the app draws under the status bar
+  // inset). The keyboard position is reported in window coordinates, so the avoiding view needs it.
+  const [windowOffsetY, setWindowOffsetY] = React.useState(0);
   const anchorOffsetsRef = React.useRef<Record<string, number>>({});
   const [lastScrollTarget, setLastScrollTarget] = React.useState<number>();
   const { actionError } = props;
@@ -82,8 +103,37 @@ export const EditorScreen = React.forwardRef<EditorScreenHandle, EditorScreenPro
     }
   }, [actionError]);
 
+  // Runs once the keyboard is up and the body has shrunk above the save bar, and again when focus
+  // moves to another field (iOS sends the event for each one).
+  React.useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', () => {
+      const focusedInput: HostInstance | null = TextInput.State.currentlyFocusedInput();
+      const actionBar = actionBarRef.current;
+      if (!focusedInput || !actionBar) {
+        return;
+      }
+
+      focusedInput.measureInWindow((_inputX, inputY, _inputWidth, inputHeight) => {
+        actionBar.measureInWindow((_barX, barY) => {
+          const hiddenHeight = inputY + inputHeight + FOCUSED_FIELD_GAP - barY;
+          if (hiddenHeight > 0) {
+            scrollRef.current?.scrollTo({ y: scrollOffsetRef.current + hiddenHeight, animated: true });
+          }
+        });
+      });
+    });
+
+    return () => subscription.remove();
+  }, []);
+
   return (
-    <VStack testID={props.testID} className="flex-1 bg-background">
+    <VStack
+      ref={rootRef}
+      testID={props.testID}
+      className="flex-1 bg-background"
+      onLayout={() => {
+        rootRef.current?.measureInWindow((_x, y) => setWindowOffsetY(y));
+      }}>
       <HStack space="md" className="items-center px-5 pb-2 pt-2">
         <ScreenBackButton
           testID={props.backTestID}
@@ -106,36 +156,57 @@ export const EditorScreen = React.forwardRef<EditorScreenHandle, EditorScreenPro
           </Text>
         </VStack>
       </HStack>
-      <ScrollView
-        ref={scrollRef}
-        className="flex-1"
-        contentContainerClassName="px-5 pt-4 pb-6"
-        keyboardShouldPersistTaps="handled"
-        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
-        <EditorAnchorContext.Provider value={registerAnchor}>
-          <VStack
-            testID={`${props.testID}-body`}
-            space="xl"
-            onLayout={event => {
-              bodyOffsetRef.current = event.nativeEvent.layout.y;
-            }}>
-            {props.children}
-          </VStack>
-        </EditorAnchorContext.Provider>
-        {lastScrollTarget === undefined ? null : (
-          <Text testID={`${props.testID}-scroll-target`} className="hidden">{`${lastScrollTarget}`}</Text>
-        )}
-      </ScrollView>
-      <StickyActionBar testID={`${props.testID}-actions`}>
-        {actionError ? (
-          <Text testID={props.actionErrorTestID} className="text-sm leading-5 text-destructive">
-            {actionError}
-          </Text>
-        ) : null}
-        {props.actions}
-      </StickyActionBar>
+      <KeyboardAvoidingView
+        testID={`${props.testID}-keyboard-avoiding`}
+        style={styles.fill}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={windowOffsetY}>
+        <ScrollView
+          ref={scrollRef}
+          className="flex-1"
+          contentContainerClassName="px-5 pt-4 pb-6"
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          scrollEventThrottle={16}
+          onScroll={event => {
+            scrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+          }}>
+          <EditorAnchorContext.Provider value={registerAnchor}>
+            <VStack
+              testID={`${props.testID}-body`}
+              space="xl"
+              onLayout={event => {
+                bodyOffsetRef.current = event.nativeEvent.layout.y;
+              }}>
+              {props.children}
+            </VStack>
+          </EditorAnchorContext.Provider>
+          {lastScrollTarget === undefined ? null : (
+            <Text testID={`${props.testID}-scroll-target`} className="hidden">{`${lastScrollTarget}`}</Text>
+          )}
+        </ScrollView>
+        {/*
+          The surrounding avoiding view lifts the bar by the whole keyboard height. The bar's own
+          avoiding view measures against its parent, and inside this box that never overlaps the
+          keyboard, so the bar is not lifted twice.
+        */}
+        <Box ref={actionBarRef} testID={`${props.testID}-action-bar`}>
+          <StickyActionBar testID={`${props.testID}-actions`}>
+            {actionError ? (
+              <Text testID={props.actionErrorTestID} className="text-sm leading-5 text-destructive">
+                {actionError}
+              </Text>
+            ) : null}
+            {props.actions}
+          </StickyActionBar>
+        </Box>
+      </KeyboardAvoidingView>
     </VStack>
   );
+});
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
 });
 
 /**

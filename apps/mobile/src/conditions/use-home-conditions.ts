@@ -16,8 +16,9 @@ export type HomeConditionsController = {
   isRefreshing: boolean;
   /** The latest request failed, so the ready values on screen are the last ones that loaded. */
   refreshFailed: boolean;
+  /** Starts a new request even when one is still running, so a stuck load gets a fresh try. */
   retry: () => void;
-  /** Same as `retry`, but resolves when the request settles (pull-to-refresh waits on it). */
+  /** Reloads, sharing a request already in flight, and resolves when it settles (pull-to-refresh waits on it). */
   refresh: () => Promise<void>;
   openSettings: () => Promise<void>;
 };
@@ -76,7 +77,7 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     }
   }, []);
 
-  const loadConditions = React.useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
+  const loadConditions = React.useCallback(async (mode: 'initial' | 'refresh' | 'retry' = 'initial') => {
     const currentRequestId = requestId.current + 1;
     requestId.current = currentRequestId;
     const hasInFlightRequest = inFlightConditionsByLocale.has(options.locale);
@@ -102,11 +103,14 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     }
 
     try {
-      const nextSnapshot = await getOrCreateConditionsRequest({
-        locale: options.locale,
-        locationService,
-        conditionsProvider: options.conditionsProvider,
-      });
+      const nextSnapshot = await getOrCreateConditionsRequest(
+        {
+          locale: options.locale,
+          locationService,
+          conditionsProvider: options.conditionsProvider,
+        },
+        { replaceInFlight: mode === 'retry' },
+      );
 
       if (!isMounted.current || requestId.current !== currentRequestId) {
         return;
@@ -181,8 +185,8 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
   const refresh = React.useCallback(() => loadConditions('refresh'), [loadConditions]);
 
   const retry = React.useCallback(() => {
-    void refresh();
-  }, [refresh]);
+    void loadConditions('retry');
+  }, [loadConditions]);
 
   return {
     snapshot,
@@ -209,8 +213,12 @@ function getFreshReadyConditions(locale: string): ReadyHomeConditionsSnapshot | 
   return cached.snapshot;
 }
 
-function getOrCreateConditionsRequest(request: HomeConditionsRequest): Promise<HomeConditionsSnapshot> {
-  const existingRequest = inFlightConditionsByLocale.get(request.locale);
+function getOrCreateConditionsRequest(
+  request: HomeConditionsRequest,
+  options: { replaceInFlight: boolean },
+): Promise<HomeConditionsSnapshot> {
+  // A replaced request still settles and may fill the cache; this hook ignores its result.
+  const existingRequest = options.replaceInFlight ? undefined : inFlightConditionsByLocale.get(request.locale);
 
   if (existingRequest) {
     return existingRequest;

@@ -5,7 +5,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import ReactTestRenderer from 'react-test-renderer';
-import { Alert, AppState, type AlertButton } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, type AlertButton } from 'react-native';
 import metadataRichFixture from '../../../packages/contracts/fixtures/metadata-rich-watch-sync-message.json';
 import App from '../src/App';
 import { resolveAuthLoginSheetAllowedDetents } from '../src/components/navigation';
@@ -689,6 +689,128 @@ describe('App navigation', () => {
     jest.restoreAllMocks();
   });
 
+  test('completes a routed plan with its checklist and links the log written from it', async () => {
+    const alertCalls: Array<{ title: string; buttons: AlertButton[] }> = [];
+    jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      alertCalls.push({ title, buttons: buttons ?? [] });
+    });
+    const { defaultWatchLink } = jest.requireMock('../src/companion/default-watch-link') as {
+      defaultWatchLink: { updatePlannedDives: jest.Mock };
+    };
+    const { toWatchPlannedDivePayloads } = jest.requireActual('../src/companion/watch-link') as typeof import('../src/companion/watch-link');
+    const watchPlanTitles = () => {
+      const calls = defaultWatchLink.updatePlannedDives.mock.calls;
+      return toWatchPlannedDivePayloads(calls[calls.length - 1]?.[0] ?? []).map(payload => payload.title);
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    const pressID = async (testID: string) => {
+      await ReactTestRenderer.act(async () => {
+        await root.findAll(node => node.props.testID === testID && typeof node.props.onPress === 'function')[0].props.onPress();
+        await new Promise<void>(resolve => setTimeout(resolve, 0));
+      });
+    };
+    const typeInto = async (testID: string, value: string) => {
+      await ReactTestRenderer.act(async () => {
+        root.findAll(node => node.props.testID === testID && typeof node.props.onChangeText === 'function')[0].props.onChangeText(value);
+      });
+    };
+    const pickValue = async (testID: string, value: string) => {
+      await pressID(`${testID}-trigger`);
+      await pressID(`${testID}-input-trigger`);
+      await typeInto(`${testID}-input`, value);
+      await ReactTestRenderer.act(async () => {
+        root
+          .findAll(node => node.props.testID === `${testID}-input` && typeof node.props.onSubmitEditing === 'function')[0]
+          .props.onSubmitEditing();
+      });
+      await pressID(`${testID}-done`);
+    };
+    const pickDate = async (testID: string, value: Date) => {
+      await pressID(`${testID}-trigger`);
+      await ReactTestRenderer.act(async () => {
+        root
+          .findAll(node => node.props.testID === `${testID}-picker` && typeof node.props.onValueChange === 'function')[0]
+          .props.onValueChange({ nativeEvent: { timestamp: value.getTime(), utcOffset: 0 } }, value);
+      });
+      await pressID(`${testID}-done`);
+    };
+    const hostText = (testID: string) =>
+      root.findAll(node => node.props.testID === testID && typeof node.type === 'string')[0]?.props.children;
+
+    // A complete plan confirmed in the routed editor reaches the watch payload.
+    await openRoutedPlanCreate(root);
+    await typePlanTitle(root, '주말 리프');
+    await pickDate('planning-editor-planned-at', new Date(2030, 5, 20, 9, 30));
+    await typeInto('planning-editor-site-name', '블루 코너');
+    await pickValue('planning-editor-planned-max-depth', '18');
+    await pickValue('planning-editor-planned-duration', '40');
+    await pressID('planning-editor-save-planned');
+    await waitForTestID(root, 'planning-detail-complete');
+    expect(watchPlanTitles()).toContain('주말 리프');
+
+    // A checklist tap is stored, completing keeps it, and the completed plan leaves the watch payload.
+    await pressID('planning-detail-checklist-site');
+    await pressID('planning-detail-complete');
+    await waitForTestID(root, 'planning-detail-create-log');
+    expect(hostText('planning-detail-checklist-progress')).toBe('1/3');
+    expect(root.findAllByProps({ testID: 'planning-detail-complete' })).toHaveLength(0);
+    expect(watchPlanTitles()).not.toContain('주말 리프');
+
+    // One tap on the completion prompt opens a log editor that carries the dive site.
+    expect(alertCalls).toHaveLength(1);
+    await ReactTestRenderer.act(async () => {
+      alertCalls[0].buttons.find(button => button.style !== 'cancel')?.onPress?.();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+    await waitForTestID(root, 'log-entry-editor-site-name');
+    expect(
+      root.findAll(node => node.props.testID === 'log-entry-editor-site-name' && typeof node.props.onChangeText === 'function')[0]
+        .props.value,
+    ).toBe('블루 코너');
+
+    // Saving the log links it to the plan, so the plan opens that log instead of offering another.
+    await pickDate('log-entry-editor-started-at', new Date(2026, 5, 20, 9, 30));
+    await pickValue('log-entry-editor-duration', '45:00');
+    await pickValue('log-entry-editor-max-depth', '18.6');
+    await pressID('log-entry-editor-save');
+    await waitForTestID(root, 'log-entry-detail-back');
+    await pressID('log-entry-detail-back');
+    // Back from the new log lands on the Logbook tab.
+    expect(root.findAllByProps({ testID: 'logbook-create-action' }).length).toBeGreaterThan(0);
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'nav-tab-planning' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      root
+        .findAll(
+          node =>
+            typeof node.props.testID === 'string' &&
+            node.props.testID.startsWith('planning-plan-row-') &&
+            typeof node.props.onPress === 'function',
+        )[0]
+        .props.onPress();
+    });
+    await waitForTestID(root, 'planning-detail-open-log');
+    expect(root.findAllByProps({ testID: 'planning-detail-create-log' })).toHaveLength(0);
+
+    // Deleting the plan goes back to a list without it.
+    await pressID('planning-detail-delete');
+    await ReactTestRenderer.act(async () => {
+      alertCalls[alertCalls.length - 1].buttons.find(button => button.style === 'destructive')?.onPress?.();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+    await waitForTestID(root, 'planning-empty-state');
+    expect(root.findAllByProps({ testID: 'planning-detail-title' })).toHaveLength(0);
+    jest.restoreAllMocks();
+  });
+
   const openRoutedLogCreate = async (root: ReactTestRenderer.ReactTestInstance) => {
     // A fresh app has no logs, so Home offers its empty-state write action.
     await ReactTestRenderer.act(async () => {
@@ -900,6 +1022,9 @@ describe('App navigation', () => {
         })),
       },
     };
+    const announceForAccessibility = jest
+      .spyOn(AccessibilityInfo, 'announceForAccessibility')
+      .mockImplementation(() => undefined);
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -923,9 +1048,13 @@ describe('App navigation', () => {
     await waitForTestID(root, 'watch-auto-import-toast');
 
     expect(root.findByProps({ testID: 'watch-auto-import-toast' })).toBeTruthy();
+    // VoiceOver reaches both buttons instead of one merged element, and hears the toast once.
+    expect(root.findByProps({ testID: 'watch-auto-import-toast' }).props.accessible).toBe(false);
+    expect(announceForAccessibility).toHaveBeenCalledWith('워치 기록 저장됨');
     expect(root.findByProps({ testID: 'watch-auto-import-message' }).props.children).toBe('워치 기록 저장됨');
     expect(root.findAll(node => node.props.children === '워치 다이브 기록이 이 기기에 저장되었습니다.')).toHaveLength(0);
-    expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('로그 작성');
+    // The button opens the saved log's detail, so it says so.
+    expect(root.findByProps({ testID: 'watch-auto-import-open-log' }).props.label).toBe('기록 보기');
     expect(root.findByProps({ testID: 'watch-auto-import-dismiss' }).props.label).toBe('닫기');
 
     await ReactTestRenderer.act(async () => {
@@ -937,6 +1066,7 @@ describe('App navigation', () => {
       'Easy recreational checkout dive. Not for decompression planning.',
     );
     expect(root.findByProps({ testID: 'log-entry-detail-depth-profile' })).toBeTruthy();
+    announceForAccessibility.mockRestore();
   });
 
   test('keeps automatic watch import toasts inside the safe-area overlay', async () => {

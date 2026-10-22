@@ -29,11 +29,10 @@ function SessionProfileRoot(props: SessionProfileProps): React.JSX.Element {
   const summary = !chart.isAvailable
     ? t('sessionProfile.noSamples')
     : props.kind === 'depth'
-      ? t('sessionProfile.depthSummary', { max: formatDepth(chart.maxValue), count: chart.rawSampleCount })
+      ? t('sessionProfile.depthSummary', { max: formatDepth(chart.maxValue) })
       : t('sessionProfile.temperatureSummary', {
           min: formatTemperature(chart.minValue),
           max: formatTemperature(chart.maxValue),
-          count: chart.rawSampleCount,
         });
 
   return (

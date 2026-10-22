@@ -13,13 +13,32 @@ import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { MobileDiveSession } from '../../types/dive-session';
-import { formatDate, formatDepth, formatDuration } from '../../utils/dive-formatters';
 import { buildProfileRenderModel } from '../../utils/session-profile-chart';
 import { getSessionDurationSeconds, getSessionMaxDepthMeters } from '../../utils/session-summary';
 import { getUnsupportedDepthForLogEntry, getUnsupportedDepthForWatchSession } from '../../utils/unsupported-depth';
+import {
+  formatLogDate,
+  formatLogDepth,
+  formatLogDuration,
+  getLogDisplayTitle,
+  getLogMeasuredValue,
+  getLogStartedAt,
+} from '../logbook/log-formatters';
 
 const SPARKLINE_WIDTH = 320;
 const SPARKLINE_HEIGHT = 56;
+
+type TranslateFn = ReturnType<typeof useTranslation>['t'];
+
+type LatestLogSummary = {
+  title: string;
+  startedAt: number | undefined;
+  maxDepthMeters: number | undefined;
+  durationSeconds: number | undefined;
+  isDemoCapture: boolean;
+  isTestCapture: boolean;
+  hasUnsupportedDepth: boolean;
+};
 
 export function LatestLogCard(props: {
   session: MobileDiveSession;
@@ -28,23 +47,18 @@ export function LatestLogCard(props: {
   onOpen?: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const isDemoCapture = props.session.captureMode === 'demo';
-  const isTestCapture = isDemoCapture && (props.session.tags?.includes('debug-test-capture') ?? false);
-  const unsupportedDepth = props.entry
-    ? getUnsupportedDepthForLogEntry(props.entry)
-    : getUnsupportedDepthForWatchSession(props.session);
-  const durationSeconds = getSessionDurationSeconds(props.session);
+  const summary = getLatestLogSummary(props.session, props.entry, t, props.locale);
   const markers =
-    isDemoCapture || unsupportedDepth ? (
+    summary.isDemoCapture || summary.hasUnsupportedDepth ? (
       <HStack space="xs" className="flex-wrap items-center justify-end">
-        {isDemoCapture ? (
+        {summary.isDemoCapture ? (
           <ListStatusBadge
             testID="home-latest-demo-badge"
             kind="demo"
-            label={isTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
+            label={summary.isTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
           />
         ) : null}
-        {unsupportedDepth ? (
+        {summary.hasUnsupportedDepth ? (
           <StatusPill testID="home-latest-unsupported-depth" label={t('logbook.unsupportedDepthMarker')} tone="muted" />
         ) : null}
       </HStack>
@@ -55,19 +69,25 @@ export function LatestLogCard(props: {
       <VStack space="xs">
         <DiveSummaryCard.Header
           eyebrow={t('home.latestLog')}
-          title={props.session.siteName ?? t('logbook.untitledDive')}
+          title={summary.title}
+          titleTestID="home-latest-title"
           right={markers}
         />
         <Text testID="home-latest-date" size="sm" className="text-muted-foreground">
-          {formatDate(props.session.startedAt, props.locale, t('formatters.unknownDate'))}
+          {formatLogDate(summary.startedAt, props.locale, t('formatters.unknownDate'))}
         </Text>
       </VStack>
       <DepthSparkline session={props.session} />
       <HStack space="md">
-        <LatestLogFact label={t('home.maxDepth')} value={formatDepth(getSessionMaxDepthMeters(props.session))} />
+        <LatestLogFact
+          label={t('home.maxDepth')}
+          value={formatLogDepth(summary.maxDepthMeters)}
+          valueTestID="home-latest-max-depth"
+        />
         <LatestLogFact
           label={t('home.diveTime')}
-          value={durationSeconds === undefined ? '--:--' : formatDuration(durationSeconds)}
+          value={formatLogDuration(summary.durationSeconds, t)}
+          valueTestID="home-latest-dive-time"
         />
       </HStack>
     </DiveSummaryCard>
@@ -166,11 +186,51 @@ export function LatestLogErrorCard(props: { isRetrying: boolean; onRetry: () => 
   );
 }
 
-function LatestLogFact(props: { label: string; value: string }): React.JSX.Element {
+/**
+ * With the entry, the card follows the log list and detail: the display title, manual corrections
+ * over watch values, and the Test marker from the watch capture. The session alone is a fallback.
+ */
+function getLatestLogSummary(
+  session: MobileDiveSession,
+  entry: DiveLogEntry | undefined,
+  t: TranslateFn,
+  locale: string,
+): LatestLogSummary {
+  if (entry) {
+    const watchSession = entry.watchCapture?.session;
+    const isDemoCapture = watchSession?.captureMode === 'demo';
+
+    return {
+      title: getLogDisplayTitle(entry, t, locale),
+      startedAt: getLogStartedAt(entry),
+      maxDepthMeters: getLogMeasuredValue(entry, 'maxDepthMeters').value,
+      durationSeconds: getLogMeasuredValue(entry, 'durationSeconds').value,
+      isDemoCapture,
+      isTestCapture: isDemoCapture && (watchSession?.tags?.includes('debug-test-capture') ?? false),
+      hasUnsupportedDepth: getUnsupportedDepthForLogEntry(entry) !== undefined,
+    };
+  }
+
+  const isDemoCapture = session.captureMode === 'demo';
+
+  return {
+    title: session.siteName ?? t('logbook.untitledDive'),
+    startedAt: session.startedAt,
+    maxDepthMeters: getSessionMaxDepthMeters(session),
+    durationSeconds: getSessionDurationSeconds(session),
+    isDemoCapture,
+    isTestCapture: isDemoCapture && (session.tags?.includes('debug-test-capture') ?? false),
+    hasUnsupportedDepth: getUnsupportedDepthForWatchSession(session) !== undefined,
+  };
+}
+
+function LatestLogFact(props: { label: string; value: string; valueTestID?: string }): React.JSX.Element {
   return (
     <VStack space="xs" className="flex-1">
       <Text className="text-xs font-semibold uppercase text-muted-foreground">{props.label}</Text>
-      <Text className="text-xl font-semibold leading-7 text-card-foreground">{props.value}</Text>
+      <Text testID={props.valueTestID} className="text-xl font-semibold leading-7 text-card-foreground">
+        {props.value}
+      </Text>
     </VStack>
   );
 }

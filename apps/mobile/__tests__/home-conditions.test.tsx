@@ -180,7 +180,7 @@ describe('Home conditions interface', () => {
       {status: 'unavailable'},
       {
         recovery: {
-          title: '일부 데이터를 확인하지 못했습니다',
+          title: '일부 기록을 불러오지 못했습니다',
           description: '저장된 기록은 계속 사용할 수 있습니다.',
           actionLabel: '다시 시도',
           onPress,
@@ -223,10 +223,10 @@ describe('Home conditions interface', () => {
     expect(root.findByProps({ testID: 'home-conditions-local-time' }).props.children).toMatch(/\d{1,2}:\d{2}/);
     expect(root.findByProps({ testID: 'home-conditions-air-tile' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-conditions-air-tile-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.20 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.2 °C');
     expect(root.findByProps({ testID: 'home-conditions-water-tile' })).toBeTruthy();
     expect(root.findByProps({ testID: 'home-conditions-water-tile-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'home-conditions-water-temperature' }).props.children).toBe('22.80 °C');
+    expect(root.findByProps({ testID: 'home-conditions-water-temperature' }).props.children).toBe('22.8 °C');
   });
 
   it('credits Open-Meteo in small print next to the updated time', async () => {
@@ -322,6 +322,112 @@ describe('Home conditions interface', () => {
     });
 
     expect(onOpenLog).toHaveBeenCalledWith(latestEntry);
+  });
+
+  it('titles a watch log with the import default site like the logbook, in the current language', async () => {
+    const latestEntry = watchSessionToDiveLogEntry({
+      session: { localSessionId: 'default-site-1', startedAt: 1782440000, endedAt: 1782442000, samples: [] },
+      now: 1782443000,
+      localId: 'default-site-log-1',
+    });
+    const preferencesStorage: AppPreferencesStorage = {
+      load: jest.fn(async () => ({
+        themePreference: 'system' as const,
+        language: 'en' as const,
+        watchSyncNotificationsEnabled: false,
+      })),
+      save: jest.fn(async () => undefined),
+    };
+    const { renderer } = await renderHome(readyJejuSnapshot, {
+      sessions: [diveLogEntryToMobileSession(latestEntry)],
+      latestEntry,
+      onOpenLog: jest.fn(),
+      preferencesStorage,
+    });
+    const title = renderer.root.findByProps({ testID: 'home-latest-title' }).props.children as string;
+
+    expect(title.startsWith('Watch log · ')).toBe(true);
+    expect(title).not.toContain('워치 다이브');
+  });
+
+  it('shows the depth, dive time and start the diver corrected by hand, not the watch values', async () => {
+    const watchEntry = watchSessionToDiveLogEntry({
+      session: {
+        localSessionId: 'corrected-1',
+        siteName: 'Munseom',
+        startedAt: 1782440000,
+        endedAt: 1782442832,
+        maxDepthMeters: 18.4,
+        samples: [],
+      },
+      now: 1782443000,
+      localId: 'corrected-log-1',
+    });
+    const correctedStartedAt = 1782436400;
+    const latestEntry = {
+      ...watchEntry,
+      manual: {
+        ...watchEntry.manual,
+        measuredValues: {
+          ...watchEntry.manual.measuredValues,
+          startedAt: correctedStartedAt,
+          maxDepthMeters: 12,
+          durationSeconds: 2400,
+        },
+      },
+      provenance: {
+        ...watchEntry.provenance,
+        startedAt: 'manual' as const,
+        maxDepthMeters: 'manual' as const,
+        durationSeconds: 'manual' as const,
+      },
+    };
+    const { renderer } = await renderHome(readyJejuSnapshot, {
+      sessions: [diveLogEntryToMobileSession(latestEntry)],
+      latestEntry,
+      onOpenLog: jest.fn(),
+    });
+    const root = renderer.root;
+    const expectedDate = new Intl.DateTimeFormat('ko', {
+      ...(new Date(correctedStartedAt * 1000).getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' as const }),
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(new Date(correctedStartedAt * 1000));
+
+    expect(root.findByProps({ testID: 'home-latest-max-depth' }).props.children).toBe('12.0 m');
+    expect(root.findByProps({ testID: 'home-latest-dive-time' }).props.children).toBe('40분');
+    expect(root.findByProps({ testID: 'home-latest-date' }).props.children).toBe(expectedDate);
+  });
+
+  it('formats watch values like the log detail and reads the Test marker from the watch capture', async () => {
+    const watchEntry = watchSessionToDiveLogEntry({
+      session: {
+        localSessionId: 'test-capture-1',
+        captureMode: 'demo',
+        siteName: 'Test Reef',
+        startedAt: 1782440000,
+        endedAt: 1782442832,
+        maxDepthMeters: 18.4,
+        tags: ['debug-test-capture'],
+        samples: [],
+      },
+      now: 1782443000,
+      localId: 'test-capture-log-1',
+    });
+    // The editor can drop the tag from the editable tags; the watch capture still marks a Test log.
+    const latestEntry = { ...watchEntry, manual: { ...watchEntry.manual, tags: [] } };
+    const { renderer } = await renderHome(readyJejuSnapshot, {
+      sessions: [diveLogEntryToMobileSession(latestEntry)],
+      latestEntry,
+      onOpenLog: jest.fn(),
+    });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'home-latest-max-depth' }).props.children).toBe('18.4 m');
+    expect(root.findByProps({ testID: 'home-latest-dive-time' }).props.children).toBe('47분 12초');
+    expect(root.findByProps({ testID: 'home-latest-demo-badge' }).props.label).toBe('테스트');
   });
 
   it('shows a delayed latest log skeleton and no fake 0 count while logbook data is loading', async () => {
@@ -466,6 +572,112 @@ describe('Home conditions interface', () => {
     expect(renderer.root.findAllByProps({ testID: 'home-next-plan-row' })).toHaveLength(0);
   });
 
+  it('drops a next plan whose time has passed on the next render, even with the same plans array', async () => {
+    const realNow = Date.now.bind(Date);
+    let clockOffsetMs = 0;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + clockOffsetMs);
+    const plans = [createPlan({ localId: 'soon', status: 'planned', title: 'Soon Reef', plannedAt: Math.floor(realNow() / 1000) + 60 })];
+    const provider: HomeConditionsProvider = { getCurrentConditions: jest.fn(async () => readyJejuSnapshot) };
+    const locationService = createGrantedLocationService();
+    // A parent re-render passes the same plans array, as after a refetch that returned the same data.
+    const renderElement = () => (
+      <AppPreferencesProvider>
+        <HomeScreen
+          sessions={[]}
+          plans={plans}
+          conditionsProvider={provider}
+          locationService={locationService}
+          onCreateLog={jest.fn()}
+          onCreatePlan={jest.fn()}
+          onRefresh={jest.fn()}
+        />
+      </AppPreferencesProvider>
+    );
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    try {
+      await ReactTestRenderer.act(async () => {
+        renderer = ReactTestRenderer.create(renderElement());
+        mountedRenderers.push(renderer);
+        await flushPromises();
+        await flushPromises();
+      });
+      expect(renderer!.root.findAllByProps({ testID: 'home-next-plan-row' }).length).toBeGreaterThan(0);
+
+      clockOffsetMs = 120_000;
+      await ReactTestRenderer.act(async () => {
+        renderer!.update(renderElement());
+      });
+
+      expect(renderer!.root.findAllByProps({ testID: 'home-next-plan-row' })).toHaveLength(0);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('adds a short line at 4 s and a working retry at 10 s while the first conditions load runs', async () => {
+    jest.useFakeTimers();
+    const provider: HomeConditionsProvider = {
+      getCurrentConditions: jest.fn(() => new Promise<HomeConditionsSnapshot>(() => undefined)),
+    };
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(
+        <AppPreferencesProvider>
+          <HomeScreen
+            sessions={[]}
+            conditionsProvider={provider}
+            locationService={createGrantedLocationService()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
+            onRefresh={jest.fn()}
+          />
+        </AppPreferencesProvider>,
+      );
+      mountedRenderers.push(renderer);
+      await flushMicrotasks();
+    });
+    const root = renderer!.root;
+    const message = () => root.findAllByProps({ testID: 'home-conditions-loading-message' });
+    const retryAction = () => root.findAllByProps({ testID: 'home-conditions-loading-retry-action' });
+
+    expect(root.findByProps({ testID: 'home-conditions-loading' }).props.accessibilityState).toEqual({ busy: true });
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(1);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(3999);
+    });
+    expect(message()).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(message()[0].props.children).toBe('주변 날씨를 불러오는 중');
+    expect(retryAction()).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(5999);
+    });
+    expect(retryAction()).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(root.findByProps({ testID: 'home-conditions-long-running' }).props.children).toBe(
+      '주변 날씨를 불러오는 데 시간이 오래 걸리고 있습니다.',
+    );
+    expect(retryAction()[0].props.pending).toBe(false);
+
+    // The retry starts a fresh request instead of waiting on the stuck one, and stays busy meanwhile.
+    await ReactTestRenderer.act(async () => {
+      retryAction()[0].props.onPress();
+      await flushMicrotasks();
+    });
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(2);
+    expect(retryAction()[0].props.pending).toBe(true);
+  });
+
   it('keeps ready values while refreshing and shows the button spinner only after 1 s', async () => {
     let resolveRefresh: (snapshot: HomeConditionsSnapshot) => void = () => undefined;
     const provider: HomeConditionsProvider = {
@@ -491,7 +703,7 @@ describe('Home conditions interface', () => {
     // Busy and disabled at once, values unchanged, no spinner yet.
     expect(refreshButton().props.accessibilityState).toEqual({ busy: true, disabled: true });
     expect(root.findAllByProps({ testID: 'home-conditions-refresh-spinner' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.20 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.2 °C');
     expect(root.findByProps({ testID: 'home-conditions-city' }).props.children).toBe('Jeju City');
 
     await ReactTestRenderer.act(async () => {
@@ -503,7 +715,7 @@ describe('Home conditions interface', () => {
       jest.advanceTimersByTime(1);
     });
     expect(root.findAllByProps({ testID: 'home-conditions-refresh-spinner' }).length).toBeGreaterThan(0);
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.20 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.2 °C');
 
     await ReactTestRenderer.act(async () => {
       resolveRefresh({ ...readyJejuSnapshot, cityName: 'Busan', airTemperatureCelsius: 25.1, updatedAt: 1782448200 });
@@ -511,7 +723,7 @@ describe('Home conditions interface', () => {
     });
 
     expect(root.findByProps({ testID: 'home-conditions-city' }).props.children).toBe('Busan');
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('25.10 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('25.1 °C');
     expect(root.findAllByProps({ testID: 'home-conditions-refresh-spinner' })).toHaveLength(0);
     expect(refreshButton().props.accessibilityState).toEqual({ busy: false, disabled: false });
   });
@@ -534,7 +746,7 @@ describe('Home conditions interface', () => {
     });
 
     expect(root.findAllByProps({ testID: 'home-conditions-unavailable' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.20 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('24.2 °C');
     expect(root.findByProps({ testID: 'home-conditions-refresh-failed' }).props.children).toBe(
       '새로 불러오지 못했습니다. 마지막으로 확인한 내용을 표시합니다.',
     );
@@ -586,7 +798,7 @@ describe('Home conditions interface', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'home-conditions-city' }).props.children).toBe('Seoul');
-    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('27.00 °C');
+    expect(root.findByProps({ testID: 'home-conditions-air-temperature' }).props.children).toBe('27.0 °C');
     expect(root.findAllByProps({ testID: 'home-conditions-water-temperature' })).toHaveLength(0);
     expect(root.findByProps({ testID: 'home-conditions-water-unavailable' })).toBeTruthy();
   });
@@ -648,8 +860,8 @@ describe('Home conditions interface', () => {
     });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('위치 권한이 필요합니다.');
-    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toContain('위치 권한');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('주변 날씨를 보려면 위치를 허용해 주세요.');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toBe('설정에서 Divenary의 위치 접근을 켤 수 있습니다.');
 
     await ReactTestRenderer.act(async () => {
       await root.findByProps({ testID: 'home-conditions-open-settings-action' }).props.onPress();
@@ -689,7 +901,7 @@ describe('Home conditions interface', () => {
     }, { locationService, preferencesStorage });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('Location permission needed');
-    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toContain('location permission');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied' }).props.children).toBe('Allow location to see local weather.');
+    expect(root.findByProps({ testID: 'home-conditions-permission-denied-body' }).props.children).toBe('You can turn on location access for Divenary in Settings.');
   });
 });

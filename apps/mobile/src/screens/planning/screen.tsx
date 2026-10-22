@@ -39,7 +39,7 @@ const PLAN_FILTERS: PlanFilter[] = ['all', 'draft', 'planned', 'completed'];
 
 /**
  * The planbook list. Create, detail and edit are root stack routes; this screen only lists plans,
- * with a 다음 다이브 summary while an upcoming planned dive exists.
+ * with a 다음 다이빙 summary while an upcoming planned dive exists.
  */
 export default function PlanningScreen(props: PlanningScreenProps): React.JSX.Element {
   const { i18n, t } = useTranslation();

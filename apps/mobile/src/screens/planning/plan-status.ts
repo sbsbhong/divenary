@@ -3,7 +3,7 @@ import { isWatchVisiblePlan, type PlannedWatchDivesUpdateStatus } from '../../co
 import type { InstrumentTone } from '../../components/ui/theme';
 import type { DivePlan, DivePlanChecklistItem, DivePlanStatus } from '../../types/dive-plan';
 
-/** The fields `계획으로 정하기` needs. A draft may leave any of them empty. */
+/** The fields `계획 확정` needs. A draft may leave any of them empty. */
 export type PlanRequiredField = 'plannedAt' | 'diveMode' | 'siteName' | 'plannedMaxDepth' | 'plannedDuration';
 
 export function getMissingPlanFields(plan: DivePlan): PlanRequiredField[] {

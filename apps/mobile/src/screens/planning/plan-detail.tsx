@@ -69,7 +69,10 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
   const [missingFields, setMissingFields] = React.useState<PlanRequiredField[]>([]);
   const [isDeleting, setIsDeleting] = React.useState(false);
   const [deleteFailed, setDeleteFailed] = React.useState(false);
+  const checklist = useChecklistSaves(plan.checklistItems, props.onSaveChecklist);
   const datePassed = isPlanDatePassed(plan);
+  const describeMissing = (fields: PlanRequiredField[]) =>
+    t('planning.promoteMissing', { fields: fields.map(field => t(REQUIRED_FIELD_LABEL_KEYS[field])).join(', ') });
 
   React.useEffect(() => {
     if (actionError) {
@@ -94,21 +97,30 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
     }
   };
 
+  // Status saves carry the checklist as shown, so a tick that is still saving is not undone.
+  const currentPlan = (): DivePlan => ({ ...plan, checklistItems: checklist.items });
+
   const promote = () => {
     const missing = getMissingPlanFields(plan);
     setMissingFields(missing);
-    if (missing.length || !props.onPromote) {
+    if (missing.length) {
+      // The note appears under the button without moving focus, so VoiceOver hears it here.
+      AccessibilityInfo.announceForAccessibility(describeMissing(missing));
+      return;
+    }
+    if (!props.onPromote) {
       return;
     }
 
     runStatusAction('promote', async () => {
-      await props.onPromote?.(plan);
+      await props.onPromote?.(currentPlan());
     });
   };
 
   const complete = () =>
     runStatusAction('complete', async () => {
-      const savedPlan = (await props.onComplete(plan)) ?? { ...plan, status: 'completed' as const };
+      const planToComplete = currentPlan();
+      const savedPlan = (await props.onComplete(planToComplete)) ?? { ...planToComplete, status: 'completed' as const };
       // Completing never writes a log by itself; the diver chooses whether to start a draft now.
       Alert.alert(t('planning.completedPrompt.title'), t('planning.completedPrompt.message'), [
         { text: t('planning.completedPrompt.later'), style: 'cancel' },
@@ -168,7 +180,12 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
       <ExpectedConditionsSection plan={plan} />
       <PeopleGearSection plan={plan} />
       <NotesSection plan={plan} />
-      <ChecklistSection plan={plan} onSaveChecklist={props.onSaveChecklist} />
+      <ChecklistSection
+        items={checklist.items}
+        saveFailed={checklist.saveFailed}
+        // While a status save runs, a tick would be written over by it (or write over it).
+        onToggle={props.onSaveChecklist && !statusAction ? checklist.toggle : undefined}
+      />
 
       <VStack space="sm">
         {plan.status === 'draft' && props.onPromote ? (
@@ -207,9 +224,7 @@ export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
         ) : null}
         {missingFields.length ? (
           <Text testID="planning-detail-promote-missing" className="px-1 text-sm leading-5 text-destructive">
-            {t('planning.promoteMissing', {
-              fields: missingFields.map(field => t(REQUIRED_FIELD_LABEL_KEYS[field])).join(', '),
-            })}
+            {describeMissing(missingFields)}
           </Text>
         ) : null}
         {actionError ? (
@@ -478,24 +493,17 @@ function NotesSection(props: { plan: DivePlan }): React.JSX.Element | null {
 }
 
 /**
- * Preparation reminders the diver ticks off. A tap saves at once; while saves are in flight the
- * rows show the latest taps, and a failed save puts the stored state back with a short note.
+ * A checklist tap saves at once. While saves are in flight `items` holds the latest taps, and a
+ * failed save puts the stored state back with a short note.
  */
-function ChecklistSection(props: {
-  plan: DivePlan;
-  onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>;
-}): React.JSX.Element | null {
-  const { t } = useTranslation();
+function useChecklistSaves(
+  storedItems: DivePlanChecklistItem[],
+  onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>,
+): { items: DivePlanChecklistItem[]; saveFailed: boolean; toggle: (id: string) => void } {
   const [pendingItems, setPendingItems] = React.useState<DivePlanChecklistItem[]>();
   const [saveFailed, setSaveFailed] = React.useState(false);
   const inFlightRef = React.useRef(0);
-  const items = pendingItems ?? props.plan.checklistItems;
-  const doneCount = items.filter(item => item.completed).length;
-  const { onSaveChecklist } = props;
-
-  if (!items.length) {
-    return null;
-  }
+  const items = pendingItems ?? storedItems;
 
   const toggle = (id: string) => {
     if (!onSaveChecklist) {
@@ -515,6 +523,23 @@ function ChecklistSection(props: {
         }
       });
   };
+
+  return { items, saveFailed, toggle };
+}
+
+/** Preparation reminders the diver ticks off. Without `onToggle` the rows are read-only. */
+function ChecklistSection(props: {
+  items: DivePlanChecklistItem[];
+  saveFailed: boolean;
+  onToggle?: (id: string) => void;
+}): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const { items, onToggle } = props;
+  const doneCount = items.filter(item => item.completed).length;
+
+  if (!items.length) {
+    return null;
+  }
 
   return (
     <VStack space="sm">
@@ -540,9 +565,9 @@ function ChecklistSection(props: {
                 testID={`planning-detail-checklist-${item.id}`}
                 accessibilityRole="checkbox"
                 accessibilityLabel={label}
-                accessibilityState={{ checked: item.completed, disabled: !onSaveChecklist }}
-                disabled={!onSaveChecklist}
-                onPress={() => toggle(item.id)}
+                accessibilityState={{ checked: item.completed, disabled: !onToggle }}
+                disabled={!onToggle}
+                onPress={() => onToggle?.(item.id)}
                 className="active:bg-muted">
                 <HStack space="md" className="min-h-12 items-center px-4 py-3">
                   <Icon
@@ -558,7 +583,7 @@ function ChecklistSection(props: {
           );
         })}
       </Section>
-      {saveFailed ? (
+      {props.saveFailed ? (
         <Text testID="planning-detail-checklist-error" className="px-1 text-sm leading-5 text-destructive">
           {t('planning.checklistError')}
         </Text>

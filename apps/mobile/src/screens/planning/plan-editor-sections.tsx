@@ -24,6 +24,11 @@ type SectionProps = {
   errors: FieldErrors<PlanFormValues>;
 };
 
+type RequiredMarkProps = {
+  /** True where a save can run the full check, so the fields it needs show 필수. A draft check needs none of them. */
+  requiresFullPlan: boolean;
+};
+
 const diveModes: NonNullable<WatchSession['diveMode']>[] = ['scuba', 'freedive'];
 const entryStyles: DiveEntryStyle[] = ['shore', 'boat', 'pool'];
 const waterConditionOptions: NonNullable<WatchSession['waterCondition']>[] = ['calm', 'mild', 'choppy', 'surge', 'current', 'unknown'];
@@ -39,7 +44,7 @@ function nextFullHour(): Date {
 }
 
 /** 기본: title, date and time, mode, entry and site. */
-export function PlanBasicsSection(props: SectionProps): React.JSX.Element {
+export function PlanBasicsSection(props: SectionProps & RequiredMarkProps): React.JSX.Element {
   const { t } = useTranslation();
   const siteInputRef = React.useRef<React.ComponentRef<typeof InputField>>(null);
 
@@ -72,7 +77,7 @@ export function PlanBasicsSection(props: SectionProps): React.JSX.Element {
             label={t('planning.plannedAt')}
             value={field.value}
             onChange={field.onChange}
-            required
+            required={props.requiresFullPlan}
             clearable
             defaultValue={nextFullHour()}
             error={props.errors.plannedAt?.message}
@@ -126,7 +131,7 @@ export function PlanBasicsSection(props: SectionProps): React.JSX.Element {
         render={({ field }) => (
           <FieldRow
             label={t('planning.siteName')}
-            required
+            required={props.requiresFullPlan}
             hasValue={Boolean(field.value.trim())}
             error={props.errors.siteName?.message}
             errorTestID="planning-editor-site-name-error">
@@ -148,8 +153,10 @@ export function PlanBasicsSection(props: SectionProps): React.JSX.Element {
   );
 }
 
-/** 계획값: planned depth and time, plus the gas label (scuba) or the repetition target (freedive). */
-export function PlanValuesSection(props: SectionProps & { diveMode: NonNullable<WatchSession['diveMode']> }): React.JSX.Element {
+/** 계획 수심·시간: planned depth and time, plus the gas label (scuba) or the target dive count (freedive). */
+export function PlanValuesSection(
+  props: SectionProps & RequiredMarkProps & { diveMode: NonNullable<WatchSession['diveMode']> },
+): React.JSX.Element {
   const { t } = useTranslation();
 
   return (
@@ -163,7 +170,7 @@ export function PlanValuesSection(props: SectionProps & { diveMode: NonNullable<
             valueMeters={field.value}
             onChange={field.onChange}
             maxMeters={60}
-            required
+            required={props.requiresFullPlan}
             separated={false}
             error={props.errors.plannedMaxDepthMeters?.message}
             footer={
@@ -192,7 +199,7 @@ export function PlanValuesSection(props: SectionProps & { diveMode: NonNullable<
             startValue={45}
             quickValues={[30, 45, 60]}
             formatValue={minutes => t('form.durationMinutes', { minutes })}
-            required
+            required={props.requiresFullPlan}
             error={props.errors.plannedDurationMinutes?.message}
             testID="planning-editor-planned-duration"
           />

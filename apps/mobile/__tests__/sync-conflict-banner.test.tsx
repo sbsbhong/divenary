@@ -31,7 +31,7 @@ describe('sync conflict banner', () => {
     const renderer = await render(<LogEntryDetail entry={entry} onResolveConflict={onResolveConflict} />);
 
     expect(renderer.root.findByProps({ testID: 'sync-conflict-title' }).props.children).toBe(
-      '다른 기기에서 수정된 버전이 있어요',
+      '다른 기기에서 수정한 내용이 있습니다',
     );
     await press(renderer, 'sync-conflict-keep-local');
     await press(renderer, 'sync-conflict-use-remote');
@@ -47,7 +47,7 @@ describe('sync conflict banner', () => {
     await press(renderer, 'sync-conflict-use-remote');
 
     expect(renderer.root.findByProps({ testID: 'sync-conflict-error' }).props.children).toBe(
-      '충돌을 해결하지 못했습니다. 네트워크 연결을 확인한 뒤 다시 시도하세요.',
+      '선택한 내용을 저장하지 못했습니다. 다시 시도해 주세요.',
     );
     expect(renderer.root.findByProps({ testID: 'sync-conflict-keep-local' })).toBeTruthy();
   });

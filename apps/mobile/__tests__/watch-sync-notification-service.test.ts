@@ -108,7 +108,7 @@ describe('watch sync notification service', () => {
 
     expect(notifee.createChannel).toHaveBeenCalledWith({
       id: 'watch-sync-imports',
-      name: 'Watch sync imports',
+      name: 'Watch log notifications',
       importance: 3,
     });
     expect(notifee.displayNotification).toHaveBeenCalledWith(expect.objectContaining({
@@ -127,7 +127,7 @@ describe('watch sync notification service', () => {
 
     expect(notifee.createChannel).toHaveBeenCalledWith({
       id: 'watch-sync-imports',
-      name: '워치 기록 저장',
+      name: '워치 기록 알림',
       importance: 3,
     });
     expect(notifee.displayNotification).toHaveBeenCalledWith(expect.objectContaining({

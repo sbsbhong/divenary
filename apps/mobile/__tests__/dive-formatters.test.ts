@@ -7,4 +7,10 @@ describe('dive formatters', () => {
     expect(formatLength(25.125)).toBe('25.13 m');
     expect(formatTemperature(21.236)).toBe('21.24 °C');
   });
+
+  it('shows an unknown value as -- with its unit, never 0', () => {
+    expect(formatDepth(undefined)).toBe('-- m');
+    expect(formatLength(undefined)).toBe('-- m');
+    expect(formatTemperature(undefined)).toBe('-- °C');
+  });
 });

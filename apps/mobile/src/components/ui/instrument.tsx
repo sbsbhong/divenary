@@ -130,7 +130,7 @@ export function ScreenBackButton({
       variant="ghost"
       size="icon"
       className={screenBackButtonStyles({ class: className })}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.98 : 1 }] }, style]}>
+      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
       <Box testID={typeof testID === 'string' ? `${testID}-icon` : undefined} className="items-center justify-center">
         <ButtonIcon as={ChevronLeftIcon} className="text-primary" />
       </Box>

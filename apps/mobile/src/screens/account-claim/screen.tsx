@@ -467,6 +467,8 @@ function PreparingContent({
   onClose(): void;
 }): React.JSX.Element {
   const {t} = useTranslation();
+  // A quick check shows nothing: the status text waits for the shared delay with the spinner.
+  const {showIndicator} = useLoadingFeedback(true);
 
   return (
     <VStack
@@ -474,8 +476,20 @@ function PreparingContent({
       accessibilityState={{busy: true}}
       space="lg"
       className="items-center py-8">
-      <DelayedSpinner label={t('accountClaim.preparingTitle')} />
-      <VStack space="xs" className="items-center">
+      <ReservedSpinner
+        label={t('accountClaim.preparingTitle')}
+        visible={showIndicator}
+      />
+      <VStack
+        testID="account-claim-preparing-text"
+        accessibilityElementsHidden={!showIndicator}
+        importantForAccessibility={
+          showIndicator ? 'auto' : 'no-hide-descendants'
+        }
+        space="xs"
+        className={
+          showIndicator ? 'items-center opacity-100' : 'items-center opacity-0'
+        }>
         <Text
           accessibilityRole="header"
           className="text-center text-xl font-semibold leading-7 text-foreground">
@@ -590,15 +604,17 @@ function CleanupContent({
   onClose(): void;
 }): React.JSX.Element {
   const {t} = useTranslation();
+  const {showIndicator} = useLoadingFeedback(true);
 
   return (
     <VStack
       accessibilityState={{busy: true}}
       space="lg"
       className="items-center py-8">
-      <DelayedSpinner
+      <ReservedSpinner
         testID="account-claim-cleanup-spinner"
         label={t('accountClaim.cleanupTitle')}
+        visible={showIndicator}
       />
       <VStack space="xs" className="items-center">
         <Text
@@ -620,23 +636,23 @@ function CleanupContent({
   );
 }
 
-/** A large spinner whose slot is reserved at once and drawn only after the shared 1 s delay. */
-function DelayedSpinner({
+/** A large spinner whose slot is reserved at once; the caller shows it after the shared 1 s delay. */
+function ReservedSpinner({
   label,
   testID,
+  visible,
 }: {
   label: string;
   testID?: string;
+  visible: boolean;
 }): React.JSX.Element {
-  const {showIndicator} = useLoadingFeedback(true);
-
   return (
     <Spinner
       testID={testID}
       aria-label={label}
       size="large"
       className="text-muted-foreground"
-      style={{opacity: showIndicator ? 1 : 0}}
+      style={{opacity: visible ? 1 : 0}}
     />
   );
 }

@@ -43,19 +43,35 @@ export function formatLogDuration(seconds: number | undefined, t: TFunction): st
     : t('form.durationMinutesSeconds', { minutes, seconds: remainder });
 }
 
-/** Start and end pressure as one value, for example `200 → 50 bar`. Log metadata only. */
+/**
+ * Start and end pressure as one value, for example `200 → 50 bar`, with `--` for the one that is not
+ * known, so a single value never reads as the other. Log metadata only.
+ */
 export function formatLogPressure(pressure: DivePressureValues | undefined): string | undefined {
   if (!pressure || (pressure.start === undefined && pressure.end === undefined)) {
     return undefined;
   }
 
   const unit = pressure.unit ?? 'bar';
+  const start = pressure.start === undefined ? '--' : formatPressureNumber(pressure.start);
+  const end = pressure.end === undefined ? '--' : formatPressureNumber(pressure.end);
 
-  if (pressure.end === undefined) {
-    return `${formatPressureNumber(pressure.start!)} ${unit}`;
+  return `${start} → ${end} ${unit}`;
+}
+
+/** The same pressure for VoiceOver: each known value with its own label, for example `시작 압력 200 bar`. */
+export function formatLogPressureSpoken(pressure: DivePressureValues | undefined, t: TFunction): string | undefined {
+  if (!pressure) {
+    return undefined;
   }
 
-  return `${pressure.start === undefined ? '--' : formatPressureNumber(pressure.start)} → ${formatPressureNumber(pressure.end)} ${unit}`;
+  const unit = pressure.unit ?? 'bar';
+  const parts = [
+    pressure.start === undefined ? undefined : `${t('logbook.startPressure')} ${formatPressureNumber(pressure.start)} ${unit}`,
+    pressure.end === undefined ? undefined : `${t('logbook.endPressure')} ${formatPressureNumber(pressure.end)} ${unit}`,
+  ].filter((part): part is string => part !== undefined);
+
+  return parts.length ? parts.join(', ') : undefined;
 }
 
 /** A 1-5 rating such as visibility or exertion: `3/5`. */

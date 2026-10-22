@@ -14,6 +14,8 @@ type BadgeListInputProps = {
   values: string[];
   onChange: (values: string[]) => void;
   inputTestID: string;
+  /** What VoiceOver calls the text field, normally the row's visible label. */
+  accessibilityLabel?: string;
   /** Prefix for `-badge-<value>`, `-remove-<value>` and `-suggestion-<value>`. */
   badgeTestIDPrefix: string;
   placeholder?: string;
@@ -128,6 +130,8 @@ export const BadgeListInput = React.forwardRef<BadgeListFieldHandle, BadgeListIn
       <Input className="h-11 rounded-xl bg-background">
         <InputField
           testID={props.inputTestID}
+          // Without a label the vendored field announces the English words "Input Field".
+          aria-label={props.accessibilityLabel ?? props.placeholder}
           value={pendingValue}
           onChangeText={handleChangeText}
           onSubmitEditing={handleSubmitEditing}
@@ -181,7 +185,7 @@ export const BadgeListField = React.forwardRef<BadgeListFieldHandle, BadgeListFi
       errorTestID={`${inputProps.inputTestID}-error`}
       className={className}
     >
-      <BadgeListInput ref={ref} {...inputProps} />
+      <BadgeListInput ref={ref} accessibilityLabel={label} {...inputProps} />
     </EditorField>
   );
 });

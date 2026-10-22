@@ -66,6 +66,13 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
     }
   }, [errorMessage]);
 
+  React.useEffect(() => {
+    // The sheet is locked meanwhile, so VoiceOver has to hear why nothing is happening.
+    if (progressMessage) {
+      AccessibilityInfo.announceForAccessibility(progressMessage);
+    }
+  }, [progressMessage]);
+
   const signIn = React.useCallback(
     async (provider: SocialProvider | 'development') => {
       if (actionInFlight.current) {
@@ -208,7 +215,6 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
         {progressMessage ? (
           <Text
             testID="auth-login-progress"
-            accessibilityLiveRegion="polite"
             maxFontSizeMultiplier={1.5}
             className="text-center text-sm leading-5 text-muted-foreground">
             {progressMessage}

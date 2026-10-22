@@ -1,5 +1,5 @@
 import React from 'react';
-import { AccessibilityInfo } from 'react-native';
+import { AccessibilityInfo, Keyboard, ScrollView, TextInput, View, type MeasureInWindowOnSuccessCallback } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import i18n from '../src/i18n';
@@ -556,6 +556,40 @@ describe('EditorScreen', () => {
     expect(announce).toHaveBeenCalledWith('Could not save this log.');
     announce.mockRestore();
   });
+
+  test('measures the keyboard from where the editor starts and scrolls a hidden focused field above the save bar', async () => {
+    // Window positions as on a phone: the editor starts under a 47 pt status bar inset, the save
+    // bar sits above the keyboard at y 600, and the focused field ends at y 640, under the bar.
+    const measureInWindow = jest
+      .spyOn(View.prototype, 'measureInWindow')
+      .mockImplementation(function (this: { props: { testID?: string } }, callback) {
+        callback(0, this.props.testID === 'editor-action-bar' ? 600 : 47, 390, 100);
+      });
+    const focusedInput = jest
+      .spyOn(TextInput.State, 'currentlyFocusedInput')
+      .mockReturnValue({ measureInWindow: (callback: MeasureInWindowOnSuccessCallback) => callback(0, 596, 300, 44) } as never);
+    const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo');
+    const addKeyboardListener = jest.spyOn(Keyboard, 'addListener');
+    const renderer = await renderEditor({});
+
+    await ReactTestRenderer.act(async () => {
+      host(renderer, 'editor')!.props.onLayout({ nativeEvent: { layout: { y: 0 } } });
+    });
+    expect(renderer.root.findByProps({ testID: 'editor-keyboard-avoiding' }).props.keyboardVerticalOffset).toBe(47);
+
+    const keyboardDidShow = addKeyboardListener.mock.calls.find(([eventName]) => eventName === 'keyboardDidShow')?.[1];
+    await ReactTestRenderer.act(async () => {
+      keyboardDidShow?.({} as never);
+    });
+
+    // The field ends at 640; with the 16 pt gap it needs 56 pt more to clear the bar at 600.
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 56, animated: true });
+
+    measureInWindow.mockRestore();
+    focusedInput.mockRestore();
+    scrollTo.mockRestore();
+    addKeyboardListener.mockRestore();
+  });
 });
 
 describe('FieldRow and BadgeListInput', () => {
@@ -579,6 +613,7 @@ describe('FieldRow and BadgeListInput', () => {
             values={values ?? []}
             onChange={nextValues => change(nextValues)}
             inputTestID="buddies-input"
+            accessibilityLabel="Buddies"
             badgeTestIDPrefix="buddies"
             autoCapitalize="words"
             suggestions={['Mina', 'Alex']}
@@ -589,6 +624,8 @@ describe('FieldRow and BadgeListInput', () => {
 
     expect(exists(renderer, 'buddies-suggestion-Mina')).toBe(false);
     expect(host(renderer, 'buddies-input')?.props.autoCapitalize).toBe('words');
+    // VoiceOver hears the row's label, not the vendored field's English default "Input Field".
+    expect(host(renderer, 'buddies-input')?.props['aria-label']).toBe('Buddies');
     await press(renderer, 'buddies-suggestion-Alex');
 
     expect(onChange).toHaveBeenLastCalledWith(['Mina', 'Alex']);

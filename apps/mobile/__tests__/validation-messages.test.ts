@@ -10,12 +10,12 @@ describe('form validation messages', () => {
   test('uses Korean particles that match the field label', async () => {
     await i18n.changeLanguage('ko');
 
-    expect(numberValidationMessages('duration', 'select').required).toBe('시간을 선택해주세요.');
-    expect(numberValidationMessages('repetitionCount', 'select').required).toBe('반복 횟수를 선택해주세요.');
-    expect(numberValidationMessages('repetitionTarget', 'select').min).toBe('반복 목표는 0 이상이어야 합니다.');
+    expect(numberValidationMessages('duration', 'select').required).toBe('다이빙 시간을 선택해 주세요.');
+    expect(numberValidationMessages('repetitionCount', 'select').required).toBe('다이빙 횟수를 선택해 주세요.');
+    expect(numberValidationMessages('repetitionTarget', 'select').min).toBe('목표 횟수는 0 이상이어야 합니다.');
     expect(numberValidationMessages('maxDepth', 'select').min).toBe('최대 수심(m)은 0 이상이어야 합니다.');
     expect(numberValidationMessages('startPressure', 'enter', 'bar').max.replace('{max}', '300')).toBe(
-      '시작 압력은 300bar 이하로 입력해주세요.',
+      '시작 압력은 300 bar 이하로 입력해 주세요.',
     );
   });
 
@@ -37,9 +37,13 @@ describe('form validation messages', () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       const fieldErrors = result.error.flatten().fieldErrors;
-      expect(fieldErrors.siteName).toContain('Enter a site name.');
-      expect(fieldErrors.durationSeconds).toContain('Duration is required.');
+      expect(fieldErrors.siteName).toContain('Enter a dive site.');
+      expect(fieldErrors.durationSeconds).toContain('Dive time is required.');
       expect(fieldErrors.startedAt).toContain('Choose a date and time.');
     }
+    // The unit follows the limit after a space, as in the value rows.
+    expect(numberValidationMessages('startPressure', 'enter', 'bar').max.replace('{max}', '300')).toBe(
+      'Start pressure must be 300 bar or less.',
+    );
   });
 });

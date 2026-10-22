@@ -16,12 +16,14 @@ import type { WatchSession, WatchSessionCommon } from '../../types/dive-session'
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { firstNonBlankText } from '../../utils/notes';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
+import { getVisibleLogTags, isUntouchedWatchPressureDefault } from '../../utils/watch-session-to-dive-log-entry';
 import { RowSeparator } from '../common/form/field-row';
 import {
   formatLogDate,
   formatLogDepth,
   formatLogDuration,
   formatLogPressure,
+  formatLogPressureSpoken,
   formatLogScale,
   formatLogTemperature,
   getLogDisplayTitle,
@@ -279,7 +281,8 @@ const ARMED_SAFETY_STOP_STATUSES: SafetyStopStatus[] = ['armed', 'active', 'paus
 function WatchScubaRows(props: { session: WatchSessionCommon }): React.JSX.Element {
   const { t } = useTranslation();
   const safetyStop = props.session.scuba!.safetyStop;
-  const statusLabel = t(`logbook.watchScuba.safetyStopStatuses.${safetyStop.status}`, { defaultValue: safetyStop.status });
+  // A status this build does not know reads as unknown, never as its raw code.
+  const statusLabel = t(`logbook.watchScuba.safetyStopStatuses.${safetyStop.status}`, { defaultValue: '--' });
   const wasArmed = ARMED_SAFETY_STOP_STATUSES.includes(safetyStop.status);
 
   return (
@@ -374,7 +377,7 @@ function getDetailRows(entry: DiveLogEntry, t: TranslateFn): DetailRow[] {
       label: t('logbook.entryStyle'),
       value: entry.manual.entryStyle ? t(`entryStyles.${entry.manual.entryStyle}`) : undefined,
     },
-    isScuba ? { id: 'gas-label', label: t('logbook.gasLabel'), value: measuredValues.gasLabel ?? t('logbook.airGas') } : undefined,
+    isScuba ? { id: 'gas-label', label: t('logbook.gasLabel'), value: formatGasLabel(measuredValues.gasLabel, t) } : undefined,
     isScuba ? { id: 'gear', label: t('logbook.gear'), value: listText(entry.manual.gearIds) } : undefined,
     isScuba
       ? {
@@ -388,7 +391,15 @@ function getDetailRows(entry: DiveLogEntry, t: TranslateFn): DetailRow[] {
       : undefined,
     isScuba ? { id: 'visibility-rating', label: t('logbook.visibilityRating'), value: formatLogScale(measuredValues.visibilityRating) } : undefined,
     { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: formatLogScale(measuredValues.perceivedExertion) },
-    isScuba ? { id: 'pressure', label: t('logbook.pressure'), value: formatLogPressure(measuredValues.pressure) } : undefined,
+    // The watch does not measure tank pressure, so its untouched import default is not shown.
+    isScuba && !isUntouchedWatchPressureDefault(entry)
+      ? {
+          id: 'pressure',
+          label: t('logbook.pressure'),
+          value: formatLogPressure(measuredValues.pressure),
+          spokenValue: formatLogPressureSpoken(measuredValues.pressure, t),
+        }
+      : undefined,
     isFreedive
       ? {
           id: 'repetition-count',
@@ -398,9 +409,14 @@ function getDetailRows(entry: DiveLogEntry, t: TranslateFn): DetailRow[] {
       : undefined,
     isFreedive ? { id: 'training-focus', label: t('logbook.trainingFocus'), value: measuredValues.trainingFocus } : undefined,
     { id: 'buddies', label: t('logbook.buddyNames'), value: listText(entry.manual.buddyIds) },
-    { id: 'tags', label: t('logbook.tags'), value: listText(entry.manual.tags) },
+    { id: 'tags', label: t('logbook.tags'), value: listText(getVisibleLogTags(entry)) },
     { id: 'marine-life', label: t('logbook.observedMarineLife'), value: listText(entry.manual.observedMarineLife) },
   ]);
+}
+
+/** The stored gas is the literal `Air`; it reads in the current language. Any other label shows as stored. */
+function formatGasLabel(gasLabel: string | undefined, t: TranslateFn): string {
+  return !gasLabel || gasLabel.trim().toLowerCase() === 'air' ? t('logbook.airGas') : gasLabel;
 }
 
 function compactRows(rows: Array<{ id: string; label: string; value: string | undefined; spokenValue?: string } | undefined>): DetailRow[] {

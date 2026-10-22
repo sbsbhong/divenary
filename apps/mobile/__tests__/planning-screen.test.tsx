@@ -94,7 +94,7 @@ describe('Planning list', () => {
     await i18n.changeLanguage('ko');
   });
 
-  test('has one primary New plan action and opens the routed editor and detail', async () => {
+  test('has one primary Create plan action and opens the routed editor and detail', async () => {
     const onCreatePlan = jest.fn();
     const onOpenPlan = jest.fn();
     const renderer = await render({
@@ -104,7 +104,7 @@ describe('Planning list', () => {
     });
 
     expect(host(renderer, 'planning-title')!.props.children).toBe('Plans');
-    expect(renderer.root.findAll(node => node.props.label === 'New plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
+    expect(renderer.root.findAll(node => node.props.label === 'Create plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
     expect(renderer.root.findByProps({ testID: 'planning-create-action-icon' }).findByType(ButtonIcon).props.as).toBe(AddIcon);
 
     await press(renderer, 'planning-create-action');
@@ -254,7 +254,7 @@ describe('Planning list', () => {
   test('keeps one new-plan button on the empty planning screen', async () => {
     const renderer = await render();
 
-    expect(renderer.root.findAll(node => node.props.label === 'New plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
+    expect(renderer.root.findAll(node => node.props.label === 'Create plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
     expect(exists(renderer, 'planning-empty-state')).toBe(true);
     expect(renderer.root.findAllByProps({ testID: 'planning-empty-state-action' })).toHaveLength(0);
   });

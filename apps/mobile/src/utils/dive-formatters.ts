@@ -1,6 +1,6 @@
 import type { DivePressureValues } from '../types/dive-log-entry';
 
-export const formatDate = (seconds?: number, locale = 'ko', unknownLabel = '알 수 없는 날짜') => {
+export const formatDate = (seconds?: number, locale = 'ko', unknownLabel = '--') => {
   if (!seconds) {
     return unknownLabel;
   }
@@ -28,7 +28,7 @@ export const formatDuration = (seconds: number) => {
 
 export const formatDepth = (meters?: number) => {
   if (meters === undefined) {
-    return '--.-- m';
+    return '-- m';
   }
 
   return `${formatDecimal(meters)} m`;
@@ -36,7 +36,7 @@ export const formatDepth = (meters?: number) => {
 
 export const formatLength = (meters?: number) => {
   if (meters === undefined) {
-    return '--.-- m';
+    return '-- m';
   }
 
   return `${formatDecimal(meters)} m`;
@@ -44,7 +44,7 @@ export const formatLength = (meters?: number) => {
 
 export const formatTemperature = (celsius?: number) => {
   if (celsius === undefined) {
-    return '--.-- °C';
+    return '-- °C';
   }
 
   return `${formatDecimal(celsius)} °C`;

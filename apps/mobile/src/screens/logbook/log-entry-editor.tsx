@@ -261,8 +261,10 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
             control={form.control}
             name="diveMode"
             render={({ field }) => (
-              <FieldRow label={t('logbook.diveMode')} layout="inline" error={errors.diveMode?.message}>
-                <HStack space="xs" className="w-56 rounded-full bg-muted p-1">
+              // Stacked like the entry style row: beside the label, a fixed-width selector pushed the
+              // label out of the row on a phone.
+              <FieldRow label={t('logbook.diveMode')} layout="stacked" error={errors.diveMode?.message}>
+                <HStack space="xs" className="rounded-full bg-muted p-1">
                   {diveModes.map(diveMode => (
                     <SelectorPill
                       key={diveMode}
@@ -291,6 +293,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
                 <Input className="h-11 rounded-xl bg-background">
                   <InputField
                     testID="log-entry-editor-site-name"
+                    aria-label={t('logbook.siteName')}
                     value={field.value}
                     onChangeText={field.onChange}
                     placeholder={t('logbook.siteNamePlaceholder')}
@@ -405,6 +408,7 @@ export function LogEntryEditor(props: LogEntryEditorProps): React.JSX.Element {
                   <TextareaInput
                     ref={notesRef}
                     testID="log-entry-editor-notes"
+                    aria-label={t('logbook.notes')}
                     value={field.value ?? ''}
                     onChangeText={field.onChange}
                     placeholder={t('logbook.notesPlaceholder')}

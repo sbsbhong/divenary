@@ -347,15 +347,15 @@ describe('LoginScreen', () => {
     expect(JSON.stringify(renderer.toJSON())).not.toContain('"children":["D"]');
   });
 
-  test('says why to sign in and that records on this device stay until the user imports them', async () => {
+  test('says why to sign in and that the diver chooses whether earlier records move to the account', async () => {
     createAuthFixture();
     const renderer = await render(<LoginScreen />);
 
     expect(renderer.root.findByProps({ testID: 'auth-login-benefit' }).props.children).toBe(
-      '기록을 백업하고 여러 기기에서 동기화합니다.',
+      '기록을 백업하고 다른 기기에서도 볼 수 있습니다.',
     );
     expect(renderer.root.findByProps({ testID: 'auth-login-device-records' }).props.children).toBe(
-      '이 기기의 기록은 직접 가져오기 전까지 유지됩니다.',
+      '로그인 전에 남긴 기록은 계정으로 옮길지 직접 선택할 수 있습니다.',
     );
   });
 
@@ -368,7 +368,8 @@ describe('LoginScreen', () => {
 
   test.each([
     ['offline', new AuthRepositoryError('network', { operation: 'sign-in' }), '네트워크에 연결할 수 없습니다. 연결을 확인한 뒤 다시 시도하세요.'],
-    ['a server problem', new AuthRepositoryError('server', { operation: 'sign-in', status: 500 }), '로그인 서버에 문제가 있습니다. 잠시 후 다시 시도하세요.'],
+    // A rejected token is classified as 'server' too, so the copy does not blame the server.
+    ['a server problem', new AuthRepositoryError('server', { operation: 'sign-in', status: 500 }), '로그인하지 못했습니다. 잠시 후 다시 시도하세요.'],
     ['a provider failure', new NativeSocialAuthError('provider'), '이 방법으로 로그인하지 못했습니다. 다시 시도하거나 다른 방법으로 로그인하세요.'],
     ['an unknown failure', new Error('raw-provider-payload@example.com'), '로그인하지 못했습니다. 다시 시도하세요.'],
   ])('explains %s and announces it', async (_caseName, error, message) => {
@@ -392,18 +393,25 @@ describe('LoginScreen', () => {
 
   test('adds a short line at 4 s and a network hint at 10 s while Auth is still exchanging the token', async () => {
     jest.useFakeTimers();
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
     createAuthFixture({ state: { status: 'authenticating', provider: 'apple' } });
     const renderer = await render(<LoginScreen />);
     const progress = () => renderer.root.findAllByProps({ testID: 'auth-login-progress' });
 
     await advance(3999);
     expect(progress()).toHaveLength(0);
+    expect(announce).not.toHaveBeenCalled();
 
     await advance(1);
     expect(progress()[0]?.props.children).toBe('로그인을 확인하는 중입니다.');
+    // The sheet is locked, so VoiceOver hears each line once.
+    expect(announce).toHaveBeenLastCalledWith('로그인을 확인하는 중입니다.');
 
     await advance(6000);
     expect(progress()[0]?.props.children).toBe('시간이 오래 걸리고 있습니다. 네트워크 연결을 확인하세요.');
+    expect(announce).toHaveBeenLastCalledWith('시간이 오래 걸리고 있습니다. 네트워크 연결을 확인하세요.');
+    expect(announce).toHaveBeenCalledTimes(2);
+    announce.mockRestore();
 
     createAuthFixture({ state: { status: 'guest' } });
     await rerender(renderer, <LoginScreen />);
@@ -742,6 +750,26 @@ describe('OnboardingScreen', () => {
     );
     expect(renderer.root.findByProps({ testID: 'auth-onboarding-submit' }).props.disabled).toBe(true);
     expect(renderer.root.findByProps({ testID: 'auth-onboarding-cancel' }).props.disabled).toBe(false);
+  });
+
+  test('stays quiet after cancel turns the state guest while the modal closes', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    const fixture = createAuthFixture({
+      state: { status: 'pendingOnboarding', userId, documents: requiredDocuments },
+    });
+    const renderer = await render(<OnboardingScreen />);
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({ testID: 'auth-onboarding-cancel' }).props.onPress();
+    });
+    expect(fixture.cancelOnboarding).toHaveBeenCalledTimes(1);
+
+    createAuthFixture({ state: { status: 'guest' } });
+    await rerender(renderer, <OnboardingScreen />);
+
+    expect(renderer.root.findAllByProps({ testID: 'auth-onboarding-error' })).toHaveLength(0);
+    expect(announce).not.toHaveBeenCalled();
+    announce.mockRestore();
   });
 
   test('makes consent, legal links, submit, and cancel accessible 44-point controls', async () => {

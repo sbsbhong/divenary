@@ -202,15 +202,19 @@ describe('Plan editor', () => {
     });
   });
 
-  test('blocks Set as planned until the required fields are filled', async () => {
+  test('blocks Confirm plan until the required fields are filled and announces why', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
     const onInvalidSubmit = jest.fn();
     const { renderer, repository } = await renderEditor({ onInvalidSubmit });
 
     await press(renderer, 'planning-editor-save-planned');
 
+    // The scroll to the first blocked field is silent, so VoiceOver hears its message.
+    expect(announce).toHaveBeenCalledWith(textOf(renderer, 'planning-editor-planned-at-error'));
+
     expect(textOf(renderer, 'planning-editor-planned-at-error')).toBe('Choose a planned date and time.');
-    expect(textOf(renderer, 'planning-editor-site-name-error')).toBe('Enter a site name.');
-    expect(textOf(renderer, 'planning-editor-planned-duration-error')).toBe('Planned duration (min) is required.');
+    expect(textOf(renderer, 'planning-editor-site-name-error')).toBe('Enter a dive site.');
+    expect(textOf(renderer, 'planning-editor-planned-duration-error')).toBe('Planned dive time (min) is required.');
     expect(textOf(renderer, 'planning-editor-planned-max-depth-error')).toBe('Planned max depth (m) is required.');
     expect(onInvalidSubmit).toHaveBeenCalledWith('plannedAt');
     expect(await repository.list()).toEqual([]);
@@ -250,7 +254,7 @@ describe('Plan editor', () => {
 
     await press(renderer, 'planning-editor-save-draft');
 
-    expect(textOf(renderer, 'planning-editor-site-name-error')).toBe('Enter a plan title or a site.');
+    expect(textOf(renderer, 'planning-editor-site-name-error')).toBe('Enter a plan title or dive site.');
     expect(exists(renderer, 'planning-editor-planned-at-error')).toBe(false);
     expect(await repository.list()).toEqual([]);
   });
@@ -297,6 +301,23 @@ describe('Plan editor', () => {
     expect(savedPlan).toMatchObject({ status: 'completed', completedAt: 1781356000, objective: 'Notes after the dive' });
   });
 
+  test('marks fields required only where a save runs the full check', async () => {
+    const requiredMark = i18n.t('form.required');
+
+    // Confirm plan on a new plan needs the date and time, the dive site, the depth and the dive time.
+    const { renderer: created } = await renderEditor();
+    expect(textNodes(created, requiredMark)).toHaveLength(4);
+
+    const { renderer: planned } = await renderEditor({ plan: plan({ status: 'planned', title: 'Planned' }), mode: 'edit' });
+    expect(textNodes(planned, requiredMark)).toHaveLength(4);
+
+    // A draft or a completed plan saves with the light check, so nothing says required.
+    const { renderer: draft } = await renderEditor({ plan: plan({ title: 'Idea' }), mode: 'edit' });
+    expect(textNodes(draft, requiredMark)).toHaveLength(0);
+    const { renderer: completed } = await renderEditor({ plan: plan({ status: 'completed', title: 'Done' }), mode: 'edit' });
+    expect(textNodes(completed, requiredMark)).toHaveLength(0);
+  });
+
   test('keeps a planned plan complete: clearing a required value blocks Save', async () => {
     const existing = plan({
       localId: 'planned',
@@ -323,7 +344,9 @@ describe('Plan editor', () => {
     await fillRequiredFields(renderer, 'Forty Two Plan Reef');
     await setNumber(renderer, 'planning-editor-planned-max-depth', 42);
 
-    expect(textOf(renderer, 'planning-editor-unsupported-depth-warning')).toContain('Outside Apple Watch v1 supported depth');
+    expect(textOf(renderer, 'planning-editor-unsupported-depth-warning')).toContain(
+      'This plan is deeper than the app supports on Apple Watch',
+    );
     await press(renderer, 'planning-editor-save-planned');
 
     const [savedPlan] = await repository.list();
@@ -407,15 +430,16 @@ describe('Plan editor', () => {
     expect(exists(tagged, 'planning-editor-details-content')).toBe(true);
   });
 
-  test('labels expected pressure as a memo and says it is not a reserve rule', async () => {
+  test('labels expected pressure as planning notes and says it is not a reserve rule', async () => {
     const { renderer } = await renderEditor();
 
     await press(renderer, 'planning-editor-details-toggle');
 
-    expect(textOf(renderer, 'planning-editor-water-condition-label')).toBe('Expected water condition');
-    expect(textNodes(renderer, 'Expected start pressure (memo)').length).toBeGreaterThan(0);
-    expect(textNodes(renderer, 'Expected end pressure (memo)').length).toBeGreaterThan(0);
-    expect(textNodes(renderer, 'A planning memo, not a basis for remaining-gas decisions.')).toHaveLength(1);
+    expect(textOf(renderer, 'planning-editor-water-condition-label')).toBe('Expected water conditions');
+    expect(textNodes(renderer, 'Tank pressure notes').length).toBeGreaterThan(0);
+    expect(textNodes(renderer, 'Expected start pressure').length).toBeGreaterThan(0);
+    expect(textNodes(renderer, 'Expected end pressure').length).toBeGreaterThan(0);
+    expect(textNodes(renderer, 'For planning notes only, not for tank pressure decisions.')).toHaveLength(1);
     // No quick chips that could read like a suggested reserve.
     await press(renderer, 'planning-editor-pressure-end-trigger');
     expect(renderer.root.findAll(node => typeof node.props.testID === 'string' && node.props.testID.startsWith('planning-editor-pressure-end-chip-'))).toHaveLength(0);

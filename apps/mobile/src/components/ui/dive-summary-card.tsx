@@ -13,8 +13,7 @@ type DiveSummaryCardProps = {
    * and selection. Drop it at the call site.
    */
   accent?: InstrumentTone;
-  /** `parchment` is a deprecated alias of `card` and draws the same surface. */
-  variant?: 'card' | 'parchment' | 'dark';
+  variant?: 'card' | 'dark';
   className?: string;
   style?: StyleProp<ViewStyle>;
 };
@@ -47,9 +46,8 @@ const cardStyles = tva({
 });
 
 function DiveSummaryCardRoot(props: DiveSummaryCardProps): React.JSX.Element {
-  const variant = props.variant === 'parchment' ? 'card' : props.variant;
   return (
-    <VStack space="lg" className={cardStyles({ variant, class: props.className })} style={props.style}>
+    <VStack space="lg" className={cardStyles({ variant: props.variant, class: props.className })} style={props.style}>
       {props.children}
     </VStack>
   );

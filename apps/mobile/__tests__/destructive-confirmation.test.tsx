@@ -76,7 +76,7 @@ describe('destructive action confirmation', () => {
 
     expect(onDelete).not.toHaveBeenCalled();
     expect(alerts).toHaveLength(1);
-    expect(alerts[0].title).toBe('로그를 삭제할까요?');
+    expect(alerts[0].title).toBe('기록을 삭제할까요?');
     expect(alerts[0].message).toBe('이 작업은 되돌릴 수 없습니다.');
     expect(alerts[0].buttons.map(button => [button.text, button.style])).toEqual([
       ['취소', 'cancel'],
@@ -120,7 +120,7 @@ describe('destructive action confirmation', () => {
     await pressDelete(renderer, 'log-entry-detail-delete');
 
     expect(alerts[0].message).toBe(
-      '워치의 원본 기록과 계정에 동기화된 사본도 함께 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
+      '워치의 원본 기록도 함께 삭제되고, 이 계정으로 로그인한 다른 기기에서도 기록이 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
     );
   });
 

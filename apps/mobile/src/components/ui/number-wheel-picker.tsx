@@ -501,6 +501,7 @@ function NumberWheelPickerCenterInputTrigger(): React.JSX.Element {
               <InputField
                 ref={inputRef}
                 testID={`${testID}-input`}
+                aria-label={t('wheelPicker.enterNumber')}
                 value={draftValue}
                 onChangeText={changeDraft}
                 onSubmitEditing={commitDraft}

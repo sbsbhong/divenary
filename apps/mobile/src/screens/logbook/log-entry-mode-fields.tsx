@@ -134,6 +134,7 @@ export function LogEntryDetailFields(props: LogEntryDetailFieldsProps): React.JS
             <FieldRow label={t('logbook.buddyNames')} layout="stacked" separated={false}>
               <BadgeListInput
                 ref={props.badgeRefs.buddies}
+                accessibilityLabel={t('logbook.buddyNames')}
                 values={field.value}
                 onChange={field.onChange}
                 inputTestID="log-entry-editor-buddies-input"
@@ -153,6 +154,7 @@ export function LogEntryDetailFields(props: LogEntryDetailFieldsProps): React.JS
             <FieldRow label={t('logbook.tags')} layout="stacked">
               <BadgeListInput
                 ref={props.badgeRefs.tags}
+                accessibilityLabel={t('logbook.tags')}
                 values={field.value}
                 onChange={field.onChange}
                 inputTestID="log-entry-editor-tags-input"
@@ -171,6 +173,7 @@ export function LogEntryDetailFields(props: LogEntryDetailFieldsProps): React.JS
             <FieldRow label={t('logbook.observedMarineLife')} layout="stacked">
               <BadgeListInput
                 ref={props.badgeRefs.observedMarineLife}
+                accessibilityLabel={t('logbook.observedMarineLife')}
                 values={field.value}
                 onChange={field.onChange}
                 inputTestID="log-entry-editor-marine-life-input"
@@ -206,6 +209,7 @@ function ScubaFields(props: LogEntryDetailFieldsProps): React.JSX.Element {
           <FieldRow label={t('logbook.gear')} layout="stacked">
             <BadgeListInput
               ref={props.badgeRefs.gearIds}
+              accessibilityLabel={t('logbook.gear')}
               values={field.value}
               onChange={field.onChange}
               inputTestID="log-entry-editor-gear"
@@ -280,6 +284,7 @@ function FreediveFields(props: LogEntryDetailFieldsProps): React.JSX.Element {
             <Input className="h-11 rounded-xl bg-background">
               <InputField
                 testID="log-entry-editor-training-focus"
+                aria-label={t('logbook.trainingFocus')}
                 value={field.value ?? ''}
                 onChangeText={field.onChange}
                 placeholder={t('logbook.trainingFocusPlaceholder')}

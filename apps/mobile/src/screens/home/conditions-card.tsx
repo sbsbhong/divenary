@@ -7,12 +7,12 @@ import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { HStack } from '../../components/ui/hstack';
 import { AlertCircleIcon, Icon, MapPinIcon, RepeatIcon, SettingsIcon, SunIcon, WavesIcon } from '../../components/ui/icon';
 import { InstrumentButton } from '../../components/ui/instrument';
-import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
+import { SkeletonBlock } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { HomeConditionsSnapshot } from '../../conditions/home-conditions';
 import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
-import { formatTemperature } from '../../utils/dive-formatters';
+import { formatLogTemperature } from '../logbook/log-formatters';
 
 type HomeConditionsCardProps = {
   snapshot: HomeConditionsSnapshot;
@@ -23,15 +23,13 @@ type HomeConditionsCardProps = {
   onOpenSettings: () => Promise<void>;
 };
 
-/** Location conditions for context only. It gives no dive-suitability or safety advice. */
+/** Local weather for context only. It gives no dive-suitability or safety advice. */
 export function HomeConditionsCard(props: HomeConditionsCardProps): React.JSX.Element {
   const { t } = useTranslation();
   const snapshot = props.snapshot;
-  const isLoading = snapshot.status === 'loading' || snapshot.status === 'idle';
-  const showSkeleton = useContentLoading(isLoading, props.locale);
 
-  if (isLoading) {
-    return <HomeConditionsLoadingCard visible={showSkeleton} />;
+  if (snapshot.status === 'loading' || snapshot.status === 'idle') {
+    return <HomeConditionsLoadingCard locale={props.locale} onRetry={props.onRetry} />;
   }
 
   if (snapshot.status === 'permissionDenied') {
@@ -154,7 +152,7 @@ function ReadyConditionsCard(props: {
           <ConditionTile
             testID="home-conditions-air-tile"
             label={t('home.conditions.airTemperature')}
-            value={formatTemperature(snapshot.airTemperatureCelsius)}
+            value={formatLogTemperature(snapshot.airTemperatureCelsius)}
             valueTestID="home-conditions-air-temperature"
             icon={SunIcon}
           />
@@ -162,7 +160,7 @@ function ReadyConditionsCard(props: {
             <ConditionTile
               testID="home-conditions-water-tile"
               label={t('home.conditions.waterTemperature')}
-              value={formatTemperature(snapshot.waterTemperatureCelsius)}
+              value={formatLogTemperature(snapshot.waterTemperatureCelsius)}
               valueTestID="home-conditions-water-temperature"
               icon={WavesIcon}
             />
@@ -198,33 +196,68 @@ function ReadyConditionsCard(props: {
   );
 }
 
-/** Mirrors the ready card: header row, two tiles and the updated line. */
-function HomeConditionsLoadingCard(props: { visible: boolean }): React.JSX.Element {
+/**
+ * Mirrors the ready card: header row, two tiles and the updated line. The slots appear after 1 s.
+ * The updated line's slot says it is still loading from 4 s and offers a retry from 10 s, because
+ * the location fix and the weather request can each take several seconds.
+ */
+function HomeConditionsLoadingCard(props: { locale: string; onRetry: () => void }): React.JSX.Element {
   const { t } = useTranslation();
+  // Mounted only while loading, so the delays count from the start of this load.
+  const feedback = useLoadingFeedback(true, { resetKey: props.locale });
+  const [isRetrying, setIsRetrying] = React.useState(false);
+  const visible = feedback.showIndicator;
+
+  const retry = () => {
+    setIsRetrying(true);
+    props.onRetry();
+  };
 
   return (
     <DiveSummaryCard>
-      <VStack
-        testID="home-conditions-loading"
-        space="md"
-        accessible
-        accessibilityLabel={t('home.conditions.loading')}
-        accessibilityState={{ busy: true }}>
-        <HStack className="items-start justify-between" space="md">
-          <HStack space="sm" className="flex-1 items-start">
-            <SkeletonBlock visible={props.visible} className="mt-0.5 h-9 w-9 rounded-full" />
-            <VStack space="xs" className="flex-1">
-              <SkeletonBlock visible={props.visible} className="my-0.5 h-6 w-32" />
-              <SkeletonBlock visible={props.visible} className="h-4 w-16" />
-            </VStack>
+      <VStack space="md">
+        <VStack
+          testID="home-conditions-loading"
+          space="md"
+          accessible
+          accessibilityLabel={t('home.conditions.loading')}
+          accessibilityState={{ busy: true }}>
+          <HStack className="items-start justify-between" space="md">
+            <HStack space="sm" className="flex-1 items-start">
+              <SkeletonBlock visible={visible} className="mt-0.5 h-9 w-9 rounded-full" />
+              <VStack space="xs" className="flex-1">
+                <SkeletonBlock visible={visible} className="my-0.5 h-6 w-32" />
+                <SkeletonBlock visible={visible} className="h-4 w-16" />
+              </VStack>
+            </HStack>
+            <SkeletonBlock visible={visible} className="h-9 w-9 rounded-full" />
           </HStack>
-          <SkeletonBlock visible={props.visible} className="h-9 w-9 rounded-full" />
-        </HStack>
-        <HStack space="md">
-          <ConditionTileSkeleton visible={props.visible} />
-          <ConditionTileSkeleton visible={props.visible} />
-        </HStack>
-        <SkeletonBlock visible={props.visible} className="h-3 w-28" />
+          <HStack space="md">
+            <ConditionTileSkeleton visible={visible} />
+            <ConditionTileSkeleton visible={visible} />
+          </HStack>
+        </VStack>
+        {/* Outside the grouped busy element so VoiceOver can reach the retry action. */}
+        {feedback.isLongRunning ? (
+          <VStack space="sm">
+            <Text testID="home-conditions-long-running" size="xs" className="leading-4 text-muted-foreground">
+              {t('home.conditions.longRunning')}
+            </Text>
+            <InstrumentButton
+              testID="home-conditions-loading-retry-action"
+              label={t('home.conditions.tryAgain')}
+              icon={RepeatIcon}
+              pending={isRetrying}
+              onPress={retry}
+            />
+          </VStack>
+        ) : feedback.showExtendedFeedback ? (
+          <Text testID="home-conditions-loading-message" size="xs" className="leading-4 text-muted-foreground">
+            {t('home.conditions.loading')}
+          </Text>
+        ) : (
+          <SkeletonBlock visible={visible} className="my-0.5 h-3 w-28" />
+        )}
       </VStack>
     </DiveSummaryCard>
   );
@@ -277,7 +310,7 @@ function NeutralIconBubble(props: { icon: React.ElementType; testID?: string }):
 
 function formatConditionsTime(seconds: number | undefined, locale: string): string {
   if (!seconds) {
-    return '--:--';
+    return '--';
   }
 
   return new Intl.DateTimeFormat(locale, {

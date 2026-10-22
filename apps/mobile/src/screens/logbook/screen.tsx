@@ -22,6 +22,7 @@ import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DiveSessionFilter } from '../../types/dive-session';
 import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
+import { getVisibleLogTags } from '../../utils/watch-session-to-dive-log-entry';
 import { diveLogEntryToMobileSession } from '../../states/use-dive-logbook';
 import {
   formatLogDate,
@@ -69,6 +70,9 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const visibleEntries = props.entries;
   const totalEntryCount = props.totalEntryCount ?? visibleEntries.length;
   const isFiltering = props.filter.query.trim().length > 0 || Boolean(props.filter.tag);
+  // A failed first load has no count to show; a failed refresh keeps the last list and says so.
+  const hasFirstLoadFailed = Boolean(props.loadError) && totalEntryCount === 0;
+  const hasRefreshFailed = Boolean(props.loadError) && totalEntryCount > 0;
   // The shown page count belongs to one search; a new search starts again from the first page.
   const filterKey = `${props.filter.query}\u0000${props.filter.tag ?? ''}`;
   const [page, setPage] = React.useState({ filterKey, count: LOGBOOK_PAGE_SIZE });
@@ -141,34 +145,32 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
 
   const header = (
     <VStack space="md" className="px-5 pt-4 pb-3">
-      <ScreenHeader
-        title={t('logbook.title')}
-        trailing={
-          <>
-            <InstrumentButton
-              testID="logbook-create-action"
-              label={t('logbook.createManual')}
-              icon={EditIcon}
-              variant="primary"
-              onPress={props.onCreateEntry}
-              className="min-h-11 px-4 py-2"
-            />
-            <InstrumentButton
-              testID="logbook-import-action"
-              label={t('logbook.syncWatch')}
-              onPress={syncWatch}
-              pending={isSyncingWatch}
-              className="min-h-11 px-4 py-2"
-            />
-          </>
-        }
-      />
+      <ScreenHeader title={t('logbook.title')} />
+      {/* Both ways to add a log share a row of their own; their labels do not fit beside the title. */}
+      <HStack space="sm">
+        <InstrumentButton
+          testID="logbook-create-action"
+          label={t('logbook.createManual')}
+          icon={EditIcon}
+          variant="primary"
+          onPress={props.onCreateEntry}
+          className="min-h-11 flex-1 px-4 py-2"
+        />
+        <InstrumentButton
+          testID="logbook-import-action"
+          label={t('logbook.syncWatch')}
+          onPress={syncWatch}
+          pending={isSyncingWatch}
+          className="min-h-11 flex-1 px-4 py-2"
+        />
+      </HStack>
       <Input className="h-11 rounded-full border-0 bg-card px-5 shadow-none">
         <InputSlot testID="logbook-search-icon">
           <InputIcon as={SearchIcon} className="text-muted-foreground" />
         </InputSlot>
         <InputField
           testID="logbook-search-input"
+          aria-label={t('logbook.searchLabel')}
           placeholder={t('logbook.searchPlaceholder')}
           value={props.filter.query}
           onChangeText={query => props.onFilterChange({ ...props.filter, query })}
@@ -184,7 +186,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
           <Box className="w-24">
             <SkeletonBlock visible={showLoadingSkeleton} />
           </Box>
-        ) : (
+        ) : hasFirstLoadFailed ? null : (
           <Text testID="logbook-total-count" className="text-sm font-semibold text-muted-foreground">
             {isFiltering
               ? t('logbook.filteredCount', { count: visibleEntries.length, total: totalEntryCount })
@@ -192,6 +194,11 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
           </Text>
         )}
       </HStack>
+      {hasRefreshFailed ? (
+        <Text testID="logbook-refresh-failed" className="text-sm leading-5 text-muted-foreground">
+          {t('logbook.refreshFailed')}
+        </Text>
+      ) : null}
     </VStack>
   );
 
@@ -346,7 +353,8 @@ const SessionListItem = React.memo(function SessionListItem(props: {
   const session = diveLogEntryToMobileSession(entry);
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const tags = session.tags?.length ? session.tags.join(', ') : undefined;
+  const visibleTags = getVisibleLogTags(entry);
+  const tags = visibleTags.length ? visibleTags.join(', ') : undefined;
   // The test ID keeps the stored site name; the visible title may be a localized fallback.
   const siteName = session.siteName ?? t('logbook.untitledDive');
   const title = getLogDisplayTitle(entry, t, locale);

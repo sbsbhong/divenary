@@ -31,8 +31,10 @@ export default function OnboardingScreen(): React.JSX.Element {
   const actionInFlight = React.useRef(false);
   // Without valid documents nothing can be agreed to; the user can only cancel and sign in again.
   const documentsAvailable = documents.length > 0 && documents.every(document => getSafeLegalUrl(document.documentUrl) !== undefined);
+  // After cancel the state turns guest while the modal is still closing; that is not a missing document.
+  const documentsMissing = auth.state.status === 'pendingOnboarding' && !documentsAvailable;
   const allDocumentsChecked = documents.length > 0 && documents.every(document => checked[document.kind] === true);
-  const errorMessage = !documentsAvailable
+  const errorMessage = documentsMissing
     ? t('auth.onboarding.documentsUnavailable')
     : error?.kind === 'openFailed'
       ? t('auth.onboarding.linkUnavailable')

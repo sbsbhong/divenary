@@ -8,6 +8,7 @@ import {
 import type { DiveEntryStyle } from '../../types/dive-plan';
 import type { DiveLogEntry, DiveLogFieldProvenance, DiveLogManualMeasuredValues, DivePressureValues } from '../../types/dive-log-entry';
 import type { WatchSession } from '../../types/dive-session';
+import { getVisibleLogTags, isUntouchedWatchPressureDefault } from '../../utils/watch-session-to-dive-log-entry';
 
 export type LogEntryFormValues = {
   startedAt: Date | undefined;
@@ -125,11 +126,12 @@ export function entryToLogEntryFormValues(entry: DiveLogEntry): LogEntryFormValu
     repetitionCount: measuredValues.repetitionCount,
     trainingFocus: measuredValues.trainingFocus ?? '',
     buddies: [...entry.manual.buddyIds],
-    tags: [...entry.manual.tags],
+    tags: [...getVisibleLogTags(entry)],
     observedMarineLife: [...entry.manual.observedMarineLife],
     notes: entry.manual.notes ?? '',
     rating: entry.manual.rating,
-    pressure: pressureToFormValue(measuredValues.pressure),
+    // The watch's untouched 150 bar import default shows as empty; saving keeps it stored as it was.
+    pressure: isUntouchedWatchPressureDefault(entry) ? { unit: 'bar' } : pressureToFormValue(measuredValues.pressure),
   };
 }
 
@@ -188,7 +190,7 @@ export function logEntryFormValuesToEntry(
       entryStyle: values.entryStyle,
       buddyIds: [...values.buddies],
       gearIds: diveMode === 'scuba' ? [...values.gearIds] : [],
-      tags: [...values.tags],
+      tags: withHiddenWatchTags(entry, values.tags),
       observedMarineLife: [...values.observedMarineLife],
       notes: emptyToUndefined(values.notes ?? ''),
       rating: values.rating,
@@ -424,7 +426,11 @@ function applyModeSpecificValues(
     applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'waterCondition', 'waterCondition', values.waterCondition);
     applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'visibilityRating', 'visibilityRating', values.visibilityRating);
     applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'perceivedExertion', 'perceivedExertion', values.perceivedExertion);
-    applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'pressure', 'pressure', normalizePressure(values.pressure));
+    const pressure =
+      isUntouchedWatchPressureDefault(entry) && !isDirty(dirtyFields, 'pressure')
+        ? entry.manual.measuredValues.pressure
+        : normalizePressure(values.pressure);
+    applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'pressure', 'pressure', pressure);
   }
 
   if (diveMode === 'freedive') {
@@ -432,6 +438,21 @@ function applyModeSpecificValues(
     applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'trainingFocus', 'trainingFocus', emptyToUndefined(values.trainingFocus ?? ''));
     applyModeMeasuredValue(entry, measuredValues, provenance, dirtyFields, 'perceivedExertion', 'perceivedExertion', values.perceivedExertion);
   }
+}
+
+/**
+ * The editor shows only the tags a diver sees. Saving puts the watch's hidden bookkeeping tags back,
+ * and an unchanged list saves exactly as it was stored.
+ */
+function withHiddenWatchTags(entry: DiveLogEntry, visibleTags: string[]): string[] {
+  const storedVisibleTags = getVisibleLogTags(entry);
+
+  if (storedVisibleTags.length === visibleTags.length && storedVisibleTags.every((tag, index) => tag === visibleTags[index])) {
+    return [...entry.manual.tags];
+  }
+
+  const hiddenTags = entry.manual.tags.filter(tag => !storedVisibleTags.includes(tag));
+  return [...hiddenTags, ...visibleTags.filter(tag => !hiddenTags.includes(tag))];
 }
 
 function normalizePressure(value: DivePressureValues): DivePressureValues | undefined {

@@ -219,6 +219,39 @@ describe('useHomeConditions', () => {
     expect(provider.getCurrentConditions).toHaveBeenCalledTimes(2);
   });
 
+  it('starts a fresh request on retry while a stuck one is still in flight, and ignores the stuck result', async () => {
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn(async () => grantedLocation),
+    };
+    const stuckRequest = createDeferred<HomeConditionsSnapshot>();
+    const provider: HomeConditionsProvider = {
+      getCurrentConditions: jest.fn()
+        .mockImplementationOnce(() => stuckRequest.promise)
+        .mockResolvedValueOnce({ ...readySnapshot, cityName: 'Busan' }),
+    };
+    const onController = jest.fn<void, [HomeConditionsController]>();
+    const render = await renderHarness({ locationService, provider, onController });
+    const controller = onController.mock.calls[onController.mock.calls.length - 1][0];
+
+    expect(render.latestSnapshot()).toEqual({ status: 'loading' });
+
+    await ReactTestRenderer.act(async () => {
+      controller.retry();
+      await flushPromises();
+      await flushPromises();
+    });
+
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(2);
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Busan' });
+
+    await ReactTestRenderer.act(async () => {
+      stuckRequest.resolve({ ...readySnapshot, cityName: 'Stale City' });
+      await flushPromises();
+    });
+
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Busan' });
+  });
+
   it('reuses a fresh ready snapshot when Home remounts with the same locale', async () => {
     const locationService: LocationService = {
       getCurrentLocation: jest.fn(async () => grantedLocation),

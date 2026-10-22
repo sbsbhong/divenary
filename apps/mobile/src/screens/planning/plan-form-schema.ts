@@ -92,7 +92,7 @@ const pressureSchema = z
     }
   });
 
-// Fields both checks share. Only what `계획으로 정하기` needs differs between them.
+// Fields both checks share. Only what `계획 확정` needs differs between them.
 const planFieldShape = {
   title: z.string().optional(),
   diveMode: z.enum(['scuba', 'freedive']),
@@ -111,7 +111,7 @@ const planFieldShape = {
   plannedPressure: pressureSchema,
 };
 
-/** `계획으로 정하기`: a date, a site, a planned max depth and a planned duration are required. */
+/** `계획 확정`: a date, a site, a planned max depth and a planned duration are required. */
 export const planFormSchema = z.object({
   ...planFieldShape,
   plannedAt: z.union([z.date(), z.undefined()]).superRefine((value, context) => {

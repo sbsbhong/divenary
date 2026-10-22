@@ -20,7 +20,8 @@ import { useHomeConditions } from '../../conditions/use-home-conditions';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DivePlan } from '../../types/dive-plan';
 import type { MobileDiveSession } from '../../types/dive-session';
-import { formatDate } from '../../utils/dive-formatters';
+import { formatLogDate } from '../logbook/log-formatters';
+import { planTitle, selectNextPlan } from '../planning/plan-status';
 import { HomeConditionsCard } from './conditions-card';
 import { LatestLogCard, LatestLogEmptyCard, LatestLogErrorCard, LatestLogLoadingCard } from './latest-log-card';
 
@@ -79,7 +80,9 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   const isFirstLoad = Boolean(props.isLoading) && !hasLogs;
   const hasFirstLoadError = !isFirstLoad && !hasLogs && Boolean(props.loadError);
   const showLatestSkeleton = useContentLoading(isFirstLoad);
-  const nextPlan = React.useMemo(() => selectNextPlan(props.plans ?? [], Date.now() / 1000), [props.plans]);
+  // Not memoized on `plans`: the array keeps its identity across same-data refetches, and a plan
+  // whose time has passed must drop off on the next render (foreground, refresh, tab change).
+  const nextPlan = selectNextPlan(props.plans ?? [], Date.now() / 1000);
   const isEmpty = !isFirstLoad && !hasFirstLoadError && !hasLogs;
 
   // Pull-to-refresh and tab reselect refresh the logbook and the conditions together.
@@ -175,7 +178,7 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
               testID="home-next-plan-row"
               separated={false}
               icon={CalendarDaysIcon}
-              label={nextPlan.title ?? nextPlan.site.name ?? t('home.untitledPlan')}
+              label={planTitle(nextPlan, t)}
               detail={describeNextPlan(nextPlan, locale, t('formatters.unknownDate'))}
               onPress={onOpenPlan ? () => onOpenPlan(nextPlan) : undefined}
             />
@@ -270,25 +273,8 @@ function HomeRecoveryCard(
   );
 }
 
-/** The nearest planned dive that has not started yet. Drafts, completed and past plans are skipped. */
-function selectNextPlan(plans: DivePlan[], nowSeconds: number): DivePlan | undefined {
-  let nextPlan: DivePlan | undefined;
-
-  for (const plan of plans) {
-    if (plan.status !== 'planned' || plan.plannedAt === undefined || plan.plannedAt < nowSeconds) {
-      continue;
-    }
-
-    if (!nextPlan || plan.plannedAt < (nextPlan.plannedAt ?? Infinity)) {
-      nextPlan = plan;
-    }
-  }
-
-  return nextPlan;
-}
-
 function describeNextPlan(plan: DivePlan, locale: string, unknownDateLabel: string): string {
-  const date = formatDate(plan.plannedAt, locale, unknownDateLabel);
+  const date = formatLogDate(plan.plannedAt, locale, unknownDateLabel);
   const siteName = plan.site.name?.trim();
 
   // The site is the row label when the plan has no title, so it is not repeated here.

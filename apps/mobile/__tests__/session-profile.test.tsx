@@ -23,7 +23,7 @@ describe('session profile', () => {
   });
 
   test('summarizes the depth profile for VoiceOver and draws with the theme color', async () => {
-    const renderer = await render(<SessionProfile testID="profile" samples={samples} kind="depth" title="수심 프로필" />);
+    const renderer = await render(<SessionProfile testID="profile" samples={samples} kind="depth" title="수심 그래프" />);
     const [container] = renderer.root.findAll(
       node => node.props.testID === 'profile' && typeof node.props.accessibilityLabel === 'string',
     );
@@ -31,14 +31,15 @@ describe('session profile', () => {
       .findAll(node => typeof node.props.stroke === 'string')
       .map(node => node.props.stroke as string);
 
-    expect(container?.props.accessibilityLabel).toBe('수심 프로필. 최대 수심 12.40 m · 샘플 3개');
+    // VoiceOver hears the depth, not how many sensor readings were taken.
+    expect(container?.props.accessibilityLabel).toBe('수심 그래프. 최대 수심 12.40 m');
     expect(strokes.length).toBeGreaterThan(0);
     expect(strokes).not.toContain('#0ea5e9');
   });
 
   test('shows a localized empty state when no samples exist', async () => {
-    const renderer = await render(<SessionProfile testID="profile" samples={[]} kind="depth" title="수심 프로필" />);
+    const renderer = await render(<SessionProfile testID="profile" samples={[]} kind="depth" title="수심 그래프" />);
 
-    expect(renderer.root.findAll(node => node.props.children === '샘플 없음').length).toBeGreaterThan(0);
+    expect(renderer.root.findAll(node => node.props.children === '측정값 없음').length).toBeGreaterThan(0);
   });
 });

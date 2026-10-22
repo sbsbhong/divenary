@@ -44,7 +44,8 @@ export function numberValidationMessages(
     required: String(i18n.t(`validation.required${verb}`, grammar)),
     invalid: String(i18n.t('validation.invalidNumber', grammar)),
     min: String(i18n.t('validation.minZero', grammar)),
-    max: String(i18n.t(`validation.max${verb}`, { ...grammar, max: `{max}${maxSuffix}` })),
+    // A unit such as `bar` follows the limit after a space, as in the value rows: `300 bar`.
+    max: String(i18n.t(`validation.max${verb}`, { ...grammar, max: maxSuffix ? `{max} ${maxSuffix}` : '{max}' })),
     integer: String(i18n.t('validation.integerSelect', grammar)),
   };
 }

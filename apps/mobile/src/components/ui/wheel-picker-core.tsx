@@ -119,7 +119,7 @@ function getOptionPresentation(distanceFromCenter: number): OptionPresentation {
 
   if (distanceFromCenter === 2) {
     return {
-      valueClassName: 'text-base font-medium text-muted-foreground/60',
+      valueClassName: 'text-base font-normal text-muted-foreground/60',
       unitClassName: 'text-xs font-semibold text-muted-foreground/60',
       scale: 0.98,
       opacity: 0.42,
@@ -127,7 +127,7 @@ function getOptionPresentation(distanceFromCenter: number): OptionPresentation {
   }
 
   return {
-    valueClassName: 'text-sm font-medium text-muted-foreground/40',
+    valueClassName: 'text-sm font-normal text-muted-foreground/40',
     unitClassName: 'text-xs font-semibold text-muted-foreground/40',
     scale: 0.94,
     opacity: 0.24,

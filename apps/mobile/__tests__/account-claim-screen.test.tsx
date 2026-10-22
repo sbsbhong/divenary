@@ -99,11 +99,11 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findByProps({ testID: 'account-claim-title' }).props
         .children,
-    ).toBe('기기 데이터를 계정으로 가져올까요?');
+    ).toBe('로그인 전에 남긴 기록을 계정으로 옮길까요?');
     expect(
       renderer.root.findByProps({ testID: 'account-claim-log-count' }).props
         .children,
-    ).toBe('다이빙 로그 24개');
+    ).toBe('다이빙 기록 24개');
     expect(
       renderer.root.findByProps({ testID: 'account-claim-plan-count' }).props
         .children,
@@ -135,11 +135,11 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findByProps({testID: 'account-claim-import-explanation'})
         .props.children,
-    ).toBe('가져오기: 기록을 계정으로 옮겨 다른 기기와 동기화합니다.');
+    ).toBe('계정으로 옮기면 다른 기기에서도 이 기록을 볼 수 있습니다.');
     expect(
       renderer.root.findByProps({testID: 'account-claim-keep-explanation'})
         .props.children,
-    ).toBe('기기에 유지: 이 기기에만 남기고, 나중에 설정에서 가져올 수 있습니다.');
+    ).toBe('기기에만 보관하면 나중에 설정에서 옮길 수 있습니다.');
     expect(
       renderer.root.findAllByProps({testID: 'account-claim-offline-note'}),
     ).toHaveLength(0);
@@ -183,7 +183,7 @@ describe('AccountClaimScreen', () => {
     ).toBe('2 dive plans');
   });
 
-  test('draws the preparing spinner only after the shared 1 s delay', async () => {
+  test('draws the preparing spinner and text only after the shared 1 s delay', async () => {
     jest.useFakeTimers();
     try {
       const pendingRefresh = deferred<void>();
@@ -195,20 +195,32 @@ describe('AccountClaimScreen', () => {
       });
       const spinner = () =>
         preparing.findAll(
-          node => node.props['aria-label'] === '가져올 데이터를 확인하는 중',
+          node => node.props['aria-label'] === '옮길 기록을 확인하는 중',
         )[0];
+      const text = () =>
+        renderer.root.findByProps({testID: 'account-claim-preparing-text'});
 
       expect(preparing.props.accessibilityState).toEqual({busy: true});
       expect(StyleSheet.flatten(spinner()?.props.style)).toMatchObject({
         opacity: 0,
       });
+      // A quick check flashes nothing: the text keeps its slot but stays hidden.
+      expect(text().props.className).toContain('opacity-0');
+      expect(text().props.accessibilityElementsHidden).toBe(true);
 
       await ReactTestRenderer.act(async () => {
-        jest.advanceTimersByTime(1000);
+        jest.advanceTimersByTime(999);
+      });
+      expect(text().props.className).toContain('opacity-0');
+
+      await ReactTestRenderer.act(async () => {
+        jest.advanceTimersByTime(1);
       });
       expect(StyleSheet.flatten(spinner()?.props.style)).toMatchObject({
         opacity: 1,
       });
+      expect(text().props.className).toContain('opacity-100');
+      expect(text().props.accessibilityElementsHidden).toBe(false);
     } finally {
       jest.useRealTimers();
     }
@@ -224,11 +236,11 @@ describe('AccountClaimScreen', () => {
 
     expect(
       renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
-    ).toBe('기기 데이터를 계정으로 가져올까요?');
+    ).toBe('로그인 전에 남긴 기록을 계정으로 옮길까요?');
     expect(
       renderer.root.findByProps({testID: 'account-claim-log-count'}).props
         .children,
-    ).toBe('다이빙 로그 24개');
+    ).toBe('다이빙 기록 24개');
 
     await ReactTestRenderer.act(async () => {
       await renderer.root.findByProps({testID: 'account-claim-import'}).props
@@ -293,7 +305,7 @@ describe('AccountClaimScreen', () => {
 
     expect(
       renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
-    ).toBe('기기 데이터를 정리하는 중');
+    ).toBe('기록 옮기기를 마무리하는 중');
     expect(
       renderer.root.findAllByProps({testID: 'account-claim-progress-count'}),
     ).toHaveLength(0);
@@ -301,7 +313,7 @@ describe('AccountClaimScreen', () => {
       renderer.root.findByProps({testID: 'account-claim-cleanup-spinner'}),
     ).toBeTruthy();
     expect(JSON.stringify(renderer.toJSON())).toContain(
-      '계정 저장은 완료되었습니다.',
+      '계정에 기록을 저장했습니다.',
     );
   });
 
@@ -633,7 +645,7 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findByProps({ testID: 'account-claim-title' }).props
         .children,
-    ).toBe('가져오기를 완료하지 못했습니다');
+    ).toBe('기록 옮기기를 마치지 못했습니다');
     expect(JSON.stringify(renderer.toJSON())).not.toContain('remote_conflict');
 
     await ReactTestRenderer.act(async () => {
@@ -697,7 +709,7 @@ describe('AccountClaimScreen', () => {
       renderer.root.findByProps({testID: 'account-claim-failure-detail'}).props
         .children,
     ).toBe(
-      '계정 기록은 보존되어 있습니다. 기기 원본 정리를 다시 시도해 주세요.',
+      '계정에 기록은 저장했지만 옮기기를 마치지 못했습니다. 다시 시도해 주세요.',
     );
     expect(
       renderer.root.findByProps({testID: 'account-claim-retry'}),
@@ -717,7 +729,7 @@ describe('AccountClaimScreen', () => {
     });
 
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
-      '32개를 계정으로 가져왔습니다',
+      '기록 32개를 계정으로 옮겼습니다',
     );
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledTimes(1);
     expect(mockGoBack).toHaveBeenCalledTimes(1);
@@ -741,18 +753,18 @@ describe('AccountClaimScreen', () => {
 
     expect(
       renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
-    ).toBe('기기 데이터를 가져왔습니다');
+    ).toBe('일부 기록을 옮겼습니다');
     expect(
       renderer.root.findByProps({testID: 'account-claim-result-summary'}).props
         .children,
-    ).toContain('13개');
+    ).toBe('기록 13개를 계정으로 옮겼습니다.');
     expect(
       renderer.root.findByProps({testID: 'account-claim-retained-item'}).props
         .children,
     ).toContain('위치 다이브');
     expect(mockGoBack).not.toHaveBeenCalled();
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenCalledWith(
-      '13개를 가져왔고 1개는 기기에 유지했습니다',
+      '기록 13개를 옮겼고 1개는 이 기기에 남아 있습니다',
     );
 
     await ReactTestRenderer.act(async () => {
@@ -779,9 +791,10 @@ describe('AccountClaimScreen', () => {
 
     expect(
       renderer.root.findByProps({testID: 'account-claim-title'}).props.children,
-    ).toBe('일부 데이터를 확인해야 합니다');
+    ).toBe('옮기지 못한 기록이 있습니다');
+    expect(serialized).toContain('이 기록의 수심 그래프를 읽지 못해 옮기지 않았습니다.');
     expect(serialized).not.toContain('0 / 1');
-    expect(serialized).not.toContain('가져오기를 완료하지 못했습니다');
+    expect(serialized).not.toContain('기록 옮기기를 마치지 못했습니다');
     expect(serialized).not.toContain('profile_corrupt');
 
     await ReactTestRenderer.act(async () => {

@@ -63,6 +63,7 @@ type RenderOptions = {
   onOpenAccountClaim?: () => void;
   rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
   loadPendingChangeCount?: () => Promise<number>;
+  syncPendingChanges?: () => Promise<unknown>;
   isCloudRefreshing?: boolean;
   appVersion?: string;
 };
@@ -89,6 +90,7 @@ const renderSettings = async (options?: RenderOptions) => {
           accountClaim={options?.accountClaim}
           onOpenAccountClaim={options?.onOpenAccountClaim}
           loadPendingChangeCount={options?.loadPendingChangeCount}
+          syncPendingChanges={options?.syncPendingChanges}
           isCloudRefreshing={options?.isCloudRefreshing}
           appVersion={options?.appVersion}
         />
@@ -180,7 +182,7 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(renderedText(root.findByProps({ testID: 'settings-section-account' }))).toContain('계정');
-    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에 저장 중');
+    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에만 저장');
     expect(root.findByProps({ testID: 'settings-account-status' }).props.onPress).toBeUndefined();
     expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
     expect(JSON.stringify(renderer.toJSON())).not.toContain('로그인');
@@ -195,7 +197,7 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
     const accountRow = root.findByProps({ testID: 'settings-account-action' });
 
-    expect(renderedText(accountRow)).toBe('로그인 | 기록을 백업하고 여러 기기에서 동기화합니다.');
+    expect(renderedText(accountRow)).toBe('로그인 | 기록을 백업하고 다른 기기에서도 볼 수 있습니다.');
     await ReactTestRenderer.act(async () => {
       accountRow.props.onPress();
     });
@@ -207,7 +209,7 @@ describe('SettingsScreen', () => {
     mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, availableProviders: [] }));
     const renderer = await renderSettings({ onOpenLogin: jest.fn() });
 
-    expect(renderedText(renderer.root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에 저장 중');
+    expect(renderedText(renderer.root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에만 저장');
     expect(renderer.root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
 
     mockUseAuth.mockReturnValue(
@@ -227,7 +229,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings();
     const root = renderer.root;
 
-    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('필수 동의 필요');
+    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('이용약관·개인정보 동의 필요');
     expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'settings-row-account' })).toHaveLength(0);
   });
@@ -262,7 +264,7 @@ describe('SettingsScreen', () => {
 
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('계정');
     expect(renderedText(root.findByProps({ testID: 'settings-account-identity' }))).toBe('Apple로 로그인됨');
-    expect(root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('보낼 변경 2개');
+    expect(root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('백업 대기 2건');
 
     await ReactTestRenderer.act(async () => {
       await root.findByProps({ testID: 'settings-account-sign-out' }).props.onPress();
@@ -272,9 +274,10 @@ describe('SettingsScreen', () => {
     expect(alert).toHaveBeenCalledTimes(1);
     const [title, message] = alert.mock.calls[0];
     expect(title).toBe('로그아웃할까요?');
-    expect(message).toContain('계정 기록은 클라우드에 남습니다.');
-    expect(message).toContain('이 기기에서는 게스트 기록만 보입니다.');
-    expect(message).toContain('아직 보내지 못한 변경 2개');
+    expect(message).toContain(i18n.t('settings.account.signOutMessage'));
+    expect(message).toContain('기록은 그대로 남습니다.');
+    expect(message).toContain('아직 백업하지 못한 변경 2건');
+    expect(message).not.toMatch(/클라우드|게스트/);
     expect(alertButtons?.map(button => button.style)).toEqual(['cancel', 'destructive']);
 
     await ReactTestRenderer.act(async () => {
@@ -290,12 +293,64 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
     await flush();
 
-    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('보낼 변경 없음');
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('백업 대기 없음');
     await ReactTestRenderer.act(async () => {
       await renderer.root.findByProps({ testID: 'settings-account-sign-out' }).props.onPress();
     });
 
-    expect(alert.mock.calls[0][1]).not.toContain('보내지 못한');
+    expect(alert.mock.calls[0][1]).not.toContain('백업하지 못한');
+  });
+
+  test('warns that changes may be waiting when the count cannot be read', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({
+      route: 'account',
+      loadPendingChangeCount: async () => {
+        throw new Error('storage unavailable');
+      },
+    });
+    await flush();
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({ testID: 'settings-account-sign-out' }).props.onPress();
+    });
+
+    expect(alert.mock.calls[0][1]).toContain('아직 백업하지 못한 변경이 있을 수 있습니다.');
+  });
+
+  test('counts waiting changes again once the backup pass started on open settles', async () => {
+    let finishSync: (() => void) | undefined;
+    const syncPendingChanges = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          finishSync = resolve;
+        }),
+    );
+    const loadPendingChangeCount = jest.fn().mockResolvedValueOnce(1).mockResolvedValue(0);
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({ route: 'account', loadPendingChangeCount, syncPendingChanges });
+    await flush();
+    const status = () => renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children;
+
+    expect(syncPendingChanges).toHaveBeenCalledTimes(1);
+    expect(status()).toBe('백업 대기 1건');
+
+    await ReactTestRenderer.act(async () => {
+      finishSync?.();
+    });
+    await flush();
+
+    expect(status()).toBe('백업 대기 없음');
+  });
+
+  test('does not start a backup pass while signed in offline', async () => {
+    const syncPendingChanges = jest.fn(async () => undefined);
+    mockUseAuth.mockReturnValue(signedIn({ state: { status: 'authenticatedOffline', userId: 'user-id' } }));
+    await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0, syncPendingChanges });
+    await flush();
+
+    expect(syncPendingChanges).not.toHaveBeenCalled();
   });
 
   test('keeps sign-out busy while it runs and shows its spinner only after 1 s', async () => {
@@ -351,8 +406,8 @@ describe('SettingsScreen', () => {
       onOpenAccountClaim,
     });
 
-    expect(renderedText(renderer.root.findByProps({ testID: 'settings-row-account-claim' }))).toContain('기기 데이터 가져오기');
-    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('5');
+    expect(renderedText(renderer.root.findByProps({ testID: 'settings-row-account-claim' }))).toContain('로그인 전 기록 옮기기');
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('기록 5개');
     await ReactTestRenderer.act(async () => {
       renderer.root.findByProps({ testID: 'settings-row-account-claim' }).props.onPress();
     });
@@ -378,7 +433,7 @@ describe('SettingsScreen', () => {
       onOpenAccountClaim: jest.fn(),
     });
 
-    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('1');
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('기록 1개');
   });
 
   const staleClaimStates: GuestClaimViewState[] = [
@@ -420,7 +475,7 @@ describe('SettingsScreen', () => {
       onOpenAccountClaim: jest.fn(),
     });
 
-    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('1');
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('기록 1개');
   });
 
   test.each([
@@ -480,8 +535,8 @@ describe('SettingsScreen', () => {
     const detail = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
     const syncRow = detail.root.findByProps({ testID: 'settings-row-sync' });
     expect(detail.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('오프라인');
-    expect(renderedText(syncRow)).toContain('로컬 데이터');
-    expect(renderedText(syncRow)).toContain('확인할 수 없습니다');
+    expect(renderedText(syncRow)).toContain('이 기기에 저장된 기록은 계속 볼 수 있습니다.');
+    expect(renderedText(syncRow)).toContain('백업 상태는 인터넷에 연결되면 확인할 수 있습니다.');
     expect(detail.root.findByProps({ testID: 'settings-account-sign-out' })).toBeTruthy();
   });
 
@@ -490,7 +545,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings({ route: 'account', isCloudRefreshing: true, loadPendingChangeCount: async () => 0 });
     await flush();
 
-    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('불러오는 중');
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('계정의 기록을 불러오는 중');
   });
 
   test('shows an unknown pending count as -- instead of zero', async () => {
@@ -510,7 +565,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings();
     const root = renderer.root;
 
-    expect(renderedText(root.findByProps({ testID: 'settings-section-devices' }))).toContain('기기 관리');
+    expect(renderedText(root.findByProps({ testID: 'settings-section-devices' }))).toContain('연결 기기');
     expect(renderedText(root.findByProps({ testID: 'settings-row-devices' }))).toContain('Seongbin Apple Watch');
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
     expect(findControl(root, 'settings-row-devices').props.accessibilityRole).toBe('button');
@@ -596,7 +651,7 @@ describe('SettingsScreen', () => {
     await flush();
 
     expect(alert).toHaveBeenCalledWith(
-      'Notification permission needed',
+      'Allow watch log notifications',
       'Allow notifications for this app in device Settings, then return to turn this on automatically.',
       [
         { text: 'Cancel', style: 'cancel' },
@@ -657,7 +712,7 @@ describe('SettingsScreen', () => {
     const renderer = await renderSettings({ route: 'devices' });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('기기 관리');
+    expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('연결 기기');
     expect(renderedText(root.findByProps({ testID: 'settings-linked-watch' }))).toContain('Seongbin Apple Watch');
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
   });
@@ -670,10 +725,10 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-rejected-watch-title' }).props.children).toBe(
-      '가져오지 못한 워치 기록 2건',
+      '가져오지 못한 워치 기록 2개',
     );
     expect(root.findByProps({ testID: 'settings-rejected-watch-guidance' }).props.children).toBe(
-      '워치에는 원본이 남아 있습니다. iPhone과 워치 앱을 최신 버전으로 업데이트한 뒤 워치에서 다시 동기화하세요.',
+      '원본 기록은 워치에 남아 있습니다. 두 기기의 Divenary를 업데이트한 뒤 워치에서 기록을 다시 보내 주세요.',
     );
 
     await ReactTestRenderer.act(async () => {
@@ -748,7 +803,7 @@ describe('SettingsScreen', () => {
         Promise.resolve({ isSupported: true, isPaired: true, isWatchAppInstalled: false, isReachable: false }),
     });
 
-    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('워치 앱 없음');
+    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('워치에 Divenary 설치 필요');
   });
 
   test('explains when the iOS native watch bridge is missing from the installed app', async () => {
@@ -764,7 +819,7 @@ describe('SettingsScreen', () => {
     });
 
     expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe(
-      '워치 연동을 사용하려면 앱을 업데이트하세요',
+      '워치 연동을 사용할 수 없음',
     );
   });
 
