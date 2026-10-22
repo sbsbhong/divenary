@@ -22,3 +22,9 @@ protocol DepthSensorProvider: AnyObject {
     @MainActor
     func stop()
 }
+
+/// Live-only measurement metadata; never added to recorded samples or the sync payload.
+protocol LiveWaterTemperatureProviding: AnyObject {
+    @MainActor
+    var liveWaterTemperature: (celsius: Double, measuredAt: Date)? { get }
+}

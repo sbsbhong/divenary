@@ -2,6 +2,12 @@ import XCTest
 @testable import DivenaryWatchApp
 
 final class FreeDiveSessionEngineTests: XCTestCase {
+    func testSurfaceIntervalRequiresObservedSurfaceDepth() {
+        XCTAssertNil(DiveFormatters.observedSurfaceInterval(90, depthMeters: nil))
+        XCTAssertNil(DiveFormatters.observedSurfaceInterval(90, depthMeters: 2))
+        XCTAssertEqual(DiveFormatters.observedSurfaceInterval(90, depthMeters: 0.5), 90)
+    }
+
     func testStartingSessionCreatesNoSegmentUntilMeaningfulDescent() {
         var engine = FreeDiveSessionEngine(startedAt: EngineTestFixtures.start)
         engine.append(EngineTestFixtures.sample(0, depth: 0.2))

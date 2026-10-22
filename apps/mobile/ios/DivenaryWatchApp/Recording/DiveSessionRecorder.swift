@@ -18,6 +18,9 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     @Published private(set) var maxDepth: Double = 0
     @Published private(set) var waterTemperatureCelsius: Double?
     @Published private(set) var elapsedTime: TimeInterval = 0
+    var freeDivePrimaryTime: TimeInterval {
+        liveDepthSignal == .live ? (freeSnapshot?.activeSegment?.durationSeconds ?? 0) : elapsedTime
+    }
     var hasCapturedDepthSample: Bool { lastRawSample != nil }
     @Published private(set) var latestAscentRateMetersPerMinute: Double = 0
     @Published private(set) var safetyStopRemainingSeconds: TimeInterval = 180
@@ -42,6 +45,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     private var profileSampler: OneHertzProfileSampler?
     private var unconfirmedProfileSamples: ArraySlice<DepthSample> = []
     private var lastRawSample: DepthSample?
+    private var lastTemperatureSampleAt: Date?
     private var displayAscentRateEstimator = DisplayAscentRateEstimator()
     private var elapsedTimer: Timer?
     private let recommendedAscentRateMetersPerMinute: Double = 9
@@ -259,6 +263,19 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     func refreshLiveDepthSignal() {
+        if isRecording, let temperatureProvider = sensorProvider as? LiveWaterTemperatureProviding {
+            let reading = temperatureProvider.liveWaterTemperature
+            lastTemperatureSampleAt = reading?.measuredAt
+            let freshTemperature = reading.flatMap {
+                now().timeIntervalSince($0.measuredAt) < WaterSubmersionCoordinator.temperatureFreshnessSeconds
+                    ? $0.celsius : nil
+            }
+            publish(\.waterTemperatureCelsius, freshTemperature)
+        }
+        if let lastTemperatureSampleAt,
+           now().timeIntervalSince(lastTemperatureSampleAt) >= WaterSubmersionCoordinator.temperatureFreshnessSeconds {
+            publish(\.waterTemperatureCelsius, nil)
+        }
         let nextSignal: LiveDepthSignal
         switch sensorCondition {
         case .sensorError:
@@ -279,7 +296,9 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
     }
 
     private var depthCoverageIsUnreliable: Bool {
-        sensorRangeExceededAt != nil || longestSampleGapSeconds > Self.unreliableSampleGapSeconds
+        let trailingGap = now().timeIntervalSince(lastRawSample?.timestamp ?? startedAt ?? now())
+        return sensorRangeExceededAt != nil
+            || max(longestSampleGapSeconds, trailingGap) > Self.unreliableSampleGapSeconds
     }
 
     private func resetSensorCoverage() {
@@ -287,6 +306,8 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         sensorRangeExceededAt = nil
         sensorRangeLimitMeters = nil
         longestSampleGapSeconds = 0
+        lastTemperatureSampleAt = nil
+        waterTemperatureCelsius = nil
         liveDepthSignal = .awaitingFirstSample
     }
 
@@ -308,17 +329,20 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
             return
         }
 
-        if let previousSample = lastRawSample {
+        if let previousTimestamp = lastRawSample?.timestamp ?? startedAt {
             longestSampleGapSeconds = max(
                 longestSampleGapSeconds,
-                sample.timestamp.timeIntervalSince(previousSample.timestamp)
+                sample.timestamp.timeIntervalSince(previousTimestamp)
             )
         }
         lastRawSample = sample
         // Each published change re-renders the recording screen, so only changed values are set.
         publish(\.currentDepth, sample.depthMeters)
-        if let measuredTemperature = sample.waterTemperatureCelsius {
-            publish(\.waterTemperatureCelsius, measuredTemperature)
+        // Simulated providers measure with each sample. The real provider exposes the original
+        // temperature timestamp separately so a later depth callback cannot extend freshness.
+        if !(sensorProvider is LiveWaterTemperatureProviding) {
+            lastTemperatureSampleAt = sample.waterTemperatureCelsius == nil ? nil : sample.timestamp
+            publish(\.waterTemperatureCelsius, sample.waterTemperatureCelsius)
         }
         let ascentRate = displayAscentRateEstimator.append(sample)
         publish(\.latestAscentRateMetersPerMinute, ascentRate)
@@ -357,7 +381,7 @@ final class DiveSessionRecorder: ObservableObject, DiveSessionRecording {
         }
     }
 
-    private func updateElapsedTime() {
+    func updateElapsedTime() {
         guard let startedAt else {
             elapsedTime = 0
             return

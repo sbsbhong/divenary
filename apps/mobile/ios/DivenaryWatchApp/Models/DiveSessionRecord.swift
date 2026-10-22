@@ -280,6 +280,20 @@ struct ScubaDiveSession: Codable, Equatable {
 }
 
 struct SafetyStopRecord: Codable, Equatable {
+    var reviewRemainingSeconds: TimeInterval? { status == .unknown ? nil : remainingSeconds }
+    var reviewTimeInZoneSeconds: TimeInterval? { status == .unknown ? nil : timeInZoneSeconds }
+
+    func isDisplayTimerPaused(depthMeters: Double?) -> Bool {
+        depthMeters == nil || status == .pausedTooDeep || status == .pausedTooShallow
+    }
+
+    var withUnknownCoverage: SafetyStopRecord {
+        SafetyStopRecord(status: .unknown, required: required, recommendationType: recommendationType,
+            completed: false, targetDepthMeters: targetDepthMeters, minDepthMeters: minDepthMeters,
+            maxDepthMeters: maxDepthMeters, durationSeconds: durationSeconds, startedAt: startedAt,
+            completedAt: nil, remainingSeconds: remainingSeconds, timeInZoneSeconds: timeInZoneSeconds)
+    }
+
     let status: SafetyStopStatus
     let required: Bool
     let recommendationType: SafetyStopRecommendationType
@@ -1007,6 +1021,10 @@ private struct RecordWatchDepthSamplePayload: Encodable {
 extension DiveSessionRecord {
     var exceedsSupportedDepth: Bool {
         unsupportedDepth?.exceeded == true
+    }
+
+    var recoveryLabel: String? {
+        profile?.interrupted == true ? String(localized: "Recovered after interruption") : nil
     }
 
     var captureProvenanceLabel: String? {

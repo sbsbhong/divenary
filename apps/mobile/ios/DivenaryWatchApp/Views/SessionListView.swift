@@ -6,7 +6,18 @@ struct SessionListView: View {
     var body: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                if store.sessions.isEmpty {
+                if store.historyReadState == .failed {
+                    InstrumentCard(accent: DiveWatchTheme.secondary) {
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(String(localized: "Could not read saved records."))
+                                .font(.system(size: 12))
+                                .foregroundStyle(DiveWatchTheme.text)
+                            Button(String(localized: "Retry")) { store.retryLoadingHistory() }
+                                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+                        }
+                    }
+                }
+                if store.sessions.isEmpty && store.historyReadState == .loaded {
                     EmptySessionsView()
                 } else {
                     ForEach(store.sessions) { session in
@@ -72,6 +83,11 @@ private struct SessionRow: View {
                             SessionMetadataPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
                         }
                         SessionSyncStatusPill(syncStatus: session.syncStatus)
+                    }
+                    if let recoveryLabel = session.recoveryLabel {
+                        Text(recoveryLabel)
+                            .font(.system(size: 10))
+                            .foregroundStyle(DiveWatchTheme.secondary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

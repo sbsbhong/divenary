@@ -10,6 +10,8 @@ Sources: 2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치
 Raw: [2026-10-22 로그북 페이지 로딩, 저장 형식 정리, 폰-워치 메시지 contract](../../raw/architecture/2026-10-22-logbook-paging-and-contract-messages.md)
 Sources: 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22
 Raw: [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md)
+Sources: 워치 복구·실시간 값 후속 리뷰와 현재 구현, 2026-10-22
+Raw: [워치 복구·실시간 값 후속 리뷰](../../raw/architecture/2026-10-22-watch-review-recovery-and-live-values.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -60,10 +62,13 @@ smoothed rate와 transient warning은 기록 화면의 비인증 보조 referenc
 
 sensor range를 넘었거나 sample 공백이 30초를 넘은 기록은 저장할 때 권장 스탑을 `unknown`으로 남긴다. `unsupportedDepth`에는 sensor가 알려준 한계와 처음 넘은 시각을 기록한다. 권장 스탑의 진행·일시정지·미완료 상태는 caution 앰버 색과 Recommended stop 문구를 쓰고 `danger` 빨강이나 action 파랑은 쓰지 않으며, 완료는 보조 회색이다.
 
+프리다이빙의 잠수 구간에서 수심이 실시간 상태가 아니면 큰 숫자는 계속 흐르는 전체 기록 시간이다. 마지막 관측 잠수 시간은 보조 항목에 남기며, 새 측정 없이 수심이나 수면 휴식 구간을 만들지 않는다. 실시간 수온은 센서의 실제 수온 측정 시각부터 60초가 되면 `--`로 바뀐다. 수심 측정에 같은 수온이 다시 실려 와도 유효 시간을 연장하지 않으며, 이 시각은 실시간 provider 경로에만 있고 저장·동기화 payload에는 추가하지 않는다.
+
 ## 시작 규칙
 
 - manual start는 사용자가 고른 명시적 `PreDivePlan`으로 recorder를 시작하고 Divenary가 runtime session을 시작한다.
 - 물 감지가 `submerged`가 되면 recorder를 시작하지 않고 `wetReady(mode:)`를 표시한다. 마지막 `preferredDiveMode`를 기본값으로 쓰며 Digital Crown 회전으로 Freedive/Scuba armed mode를 즉시 바꾼다. Crown press는 Water Lock의 watchOS system action이며 앱 입력이나 확인으로 쓰지 않는다.
+- Wet Ready는 자동 실행 권한이 `.active`여도 아직 기록 중이라는 뜻이 아니다. 모든 권한 상태에서 미기록 안내와 홈 화면 복귀를 제공하며, 복귀 뒤 마를 때까지 같은 물 감지로 다시 열리지 않게 한다.
 - system auto-launch는 `Settings > General > Auto-Launch > When Submerged`에서 선택된 Divenary에 watchOS가 runtime session을 제공할 때만 시작한다. Wet Ready가 먼저 있으면 armed mode를 `PreDivePlan`에 고정하고, runtime event가 water UI event보다 먼저 오면 `preferredDiveMode`를 fallback으로 쓴다. app-local depth threshold나 elapsed-time trigger는 recording start 조건이 아니다.
 - Action Button start도 같은 preferred mode(Wet Ready면 armed mode)로 app-scoped coordinator를 시작한다. Action Button intent chain은 아래 "Action Button과 기록 화면"을 따른다.
 - automatic과 Action Button start는 selected planned dive를 저장하거나 추론하지 않는다. manual start만 explicit plan을 유지한다.
@@ -86,6 +91,8 @@ Manifest와 deleted-session ledger는 파일 수정 시각과 크기가 같으�
 
 Recovery는 session별로 격리한다. newline으로 끝난 record는 모두 strict decode하고, newline 없는 마지막 record가 decode되지 않을 때만 앞선 durable prefix를 보존한다. decode 가능한 마지막 record에는 newline을 보완한다. metadata mismatch나 interior corruption처럼 복구할 수 없는 active state는 `Sessions/<localSessionId>/Quarantine/<UUID>/`로 active metadata, journal, pending sidecar만 옮긴다. 같은 directory의 canonical `session-<revision>.json`과 manifest identity는 유지하므로 canonical save retry와 다른 interrupted session recovery가 영향을 받지 않는다.
 
+History 재시도는 manifest뿐 아니라 중단된 기록의 디렉터리 읽기와 저장 실패도 다시 처리한다. 프로세스 전체에 등록한 현재 실행 중 시작 기록은 store를 다시 만들어도 복구 대상으로 삼지 않는다. 개별 journal을 읽지 못했거나 보존된 격리 자료가 있으면 정상 기록을 보여 주면서도 읽기 실패 상태를 유지한다.
+
 recording 중 append가 불확실하면 화면 하단에 compact storage retry 상태를 표시하고, pending append가 실제로 해결된 뒤에만 해당 상태를 지운다. raw callback, 1Hz sampling boundary, generated sync contract, canonical artifact와 historical ascent field는 바꾸지 않는다.
 
 ## Action Button과 기록 화면
@@ -97,7 +104,7 @@ Action Button의 모든 누르기는 단계를 아는 intent 하나로 처리한
 - 대기, Wet Ready, 저장 요약, no-sample, 시작·저장 실패 화면: 기존 Action Button start를 실행한다(`.started` 또는 `.rejected(.startFailed)`).
 - 저장 중(`completing`)과 runtime 전환 대기(`awaitingRuntimeInvalidation`): `.rejected(.busy)`.
 - 실제 기록 중: 다음 화면으로 넘긴다. 종료 화면에서 누를 때만 아래 종료 규칙의 `requestActionButtonEnd()`를 호출하고, guard가 거부하면 Live로 돌아가며 `.rejected(.endUnavailable)`이다.
-- demo/debug 기록은 bridge에 자체 종료 override를 설치해 누르기를 그쪽으로 보내고 화면을 넘기지 않는다.
+- demo/debug 기록은 bridge에 자체 종료 override를 설치해 누르기를 그쪽으로 보내고 화면을 넘기지 않는다. 저장 실패 화면에서는 같은 기록의 저장을 재시도하며, 이 화면이 다시 나타나도 연결을 복원한다. 홈 화면 복귀는 보류 기록을 앱 범위에 넘기고 journal을 유지한다.
 
 `RecordingPageModel`(`coordinator.recordingPages`)은 실제 기록의 화면 `live`, `details`, `end`를 관리한다. `end`는 water state가 `notSubmerged`이고 기록이 `minimumHardwareEndElapsedSeconds`(180초) 이상일 때만 Action Button 순환에 들어간다. 물 밖이지만 180초 전이면 남은 시간을 센다. 크라운 회전은 `live`와 `details` 사이만 움직이고 종료 화면을 고르거나 종료하지 않는다. 다음 경우에는 다이버의 조작 없이 Live로 돌아간다: 10초 동안 누르지 않음, 프리다이빙 단계 변화(하강·수면), 권장 스탑이 `active`가 됨, 실시간 수심 신호가 `live`에서 벗어남, Always-On 진입, 종료 화면에 있는 동안 종료 조건이 사라짐. 크라운 화면 넘김은 실제 기록에만 연결하며 demo/debug는 크라운으로 수심을 흉내 낸다.
 

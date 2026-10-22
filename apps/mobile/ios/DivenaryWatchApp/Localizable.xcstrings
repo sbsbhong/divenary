@@ -1,6 +1,22 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ (%lld)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$lld)"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@ (%2$lld)"
+          }
+        }
+      }
+    },
     "%@ · %@" : {
       "localizations" : {
         "en" : {
@@ -129,6 +145,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "동작 버튼"
+          }
+        }
+      }
+    },
+    "Action Button: retry save, then start a new dive." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button: retry save, then start a new dive."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼은 저장을 재시도한 뒤 새 기록을 시작합니다."
           }
         }
       }
@@ -508,6 +540,22 @@
         }
       }
     },
+    "Back to Home" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back to Home"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면으로"
+          }
+        }
+      }
+    },
     "Buddy" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -605,6 +653,54 @@
         }
       }
     },
+    "Could not read saved records." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not read saved records."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장된 기록을 읽지 못했습니다."
+          }
+        }
+      }
+    },
+    "Could not return Home. Please retry." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not return Home. Please retry."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면으로 돌아가지 못했습니다. 다시 시도하세요."
+          }
+        }
+      }
+    },
+    "Could not start recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Could not start recording."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록을 시작하지 못했습니다."
+          }
+        }
+      }
+    },
     "Count" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -618,6 +714,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "카운트"
+          }
+        }
+      }
+    },
+    "Crown back ▸ Live" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown back ▸ Live"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 뒤로 ▸ 실시간"
+          }
+        }
+      }
+    },
+    "Crown forward ▸ Details" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown forward ▸ Details"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 앞으로 ▸ 상세"
           }
         }
       }
@@ -1360,6 +1488,22 @@
         }
       }
     },
+    "Ending recording" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ending recording"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록을 종료하고 있습니다."
+          }
+        }
+      }
+    },
     "Exertion" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1637,6 +1781,22 @@
         }
       }
     },
+    "Kept for automatic save retry from Home." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kept for automatic save retry from Home."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록을 보관하고 홈 화면에서 자동으로 저장을 재시도합니다."
+          }
+        }
+      }
+    },
     "Last depth" : {
       "localizations" : {
         "en" : {
@@ -1701,6 +1861,22 @@
         }
       }
     },
+    "Last observed dive time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last observed dive time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마지막으로 확인한 다이빙 시간"
+          }
+        }
+      }
+    },
     "Live Log" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1714,6 +1890,86 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "라이브 로그"
+          }
+        }
+      }
+    },
+    "Not recording yet" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not recording yet"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "아직 기록을 시작하지 않았습니다."
+          }
+        }
+      }
+    },
+    "Recovered after interruption" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recovered after interruption"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "중단 후 복구됨"
+          }
+        }
+      }
+    },
+    "Save failed. Your log is kept." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save failed. Your log is kept."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장하지 못했습니다. 기록은 보관하고 있습니다."
+          }
+        }
+      }
+    },
+    "Select a plan for starts from Home. Tap again to clear." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select a plan for starts from Home. Tap again to clear."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면에서 시작할 때 사용할 계획을 선택하세요. 다시 누르면 선택을 해제합니다."
+          }
+        }
+      }
+    },
+    "Start recording from Home." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start recording from Home."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "홈 화면에서 기록을 시작하세요."
           }
         }
       }
@@ -2922,6 +3178,22 @@
         }
       }
     },
+    "Send failed. Try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Send failed. Try again."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "전송하지 못했습니다. 다시 시도하세요."
+          }
+        }
+      }
+    },
     "Sensor ready" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3536,6 +3808,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "스쿠버 테스트"
+          }
+        }
+      }
+    },
+    "The Action Button retries saving this demo log." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The Action Button retries saving this demo log."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼을 누르면 이 데모 기록을 다시 저장합니다."
           }
         }
       }

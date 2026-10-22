@@ -2,6 +2,15 @@ import XCTest
 @testable import DivenaryWatchApp
 
 final class ScubaDiveEngineTests: XCTestCase {
+    func testReplayAndFinalizationTreatBoundaryAndInteriorGapsAsUnknown() {
+        for times in [[31.0, 32], [0, 31], [0, 1]] {
+            var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
+            times.forEach { engine.append(EngineTestFixtures.sample($0, depth: 2)) }
+            let end = times == [0, 1] ? 32.0 : times.last!
+            XCTAssertEqual(engine.finish(at: EngineTestFixtures.date(end)).safetyStop.status, .unknown)
+        }
+    }
+
     func testRepeatedFinishReturnsSameSessionID() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
         engine.append(EngineTestFixtures.sample(0, depth: 0))
@@ -16,10 +25,10 @@ final class ScubaDiveEngineTests: XCTestCase {
     func testEngineTracksMaxDepthAndSafetyStopRecord() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: "Air")
         engine.append(EngineTestFixtures.sample(0, depth: 0))
-        engine.append(EngineTestFixtures.sample(60, depth: 21.2))
+        EngineTestFixtures.samples(from: 1, through: 599, depth: 21.2).forEach { engine.append($0) }
         EngineTestFixtures.samples(from: 600, through: 780, depth: 5).forEach { engine.append($0) }
 
-        let session = engine.finish(at: EngineTestFixtures.date(900))
+        let session = engine.finish(at: EngineTestFixtures.date(780))
 
         XCTAssertEqual(session.maxDepthMeters, 21.2)
         XCTAssertEqual(session.gasLabel, "Air")
@@ -88,7 +97,7 @@ final class ScubaDiveEngineTests: XCTestCase {
     func testFinishMarksSurfacedRequiredStopIncomplete() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))
-        engine.append(EngineTestFixtures.sample(60, depth: 20))
+        EngineTestFixtures.samples(from: 1, through: 119, depth: 20).forEach { engine.append($0) }
         engine.append(EngineTestFixtures.sample(120, depth: 0.4))
 
         let session = engine.finish(at: EngineTestFixtures.date(150))
@@ -101,7 +110,7 @@ final class ScubaDiveEngineTests: XCTestCase {
     func testShallowFinishDoesNotRequireSafetyStop() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))
-        engine.append(EngineTestFixtures.sample(60, depth: 4))
+        EngineTestFixtures.samples(from: 1, through: 119, depth: 4).forEach { engine.append($0) }
         engine.append(EngineTestFixtures.sample(120, depth: 0.4))
 
         let session = engine.finish(at: EngineTestFixtures.date(150))
@@ -114,9 +123,9 @@ final class ScubaDiveEngineTests: XCTestCase {
     func testCompletedStopFollowedBySurfacedFinishStaysCompleted() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
         engine.append(EngineTestFixtures.sample(0, depth: 0))
-        engine.append(EngineTestFixtures.sample(60, depth: 18))
+        EngineTestFixtures.samples(from: 1, through: 119, depth: 18).forEach { engine.append($0) }
         EngineTestFixtures.samples(from: 120, through: 300, depth: 5).forEach { engine.append($0) }
-        engine.append(EngineTestFixtures.sample(360, depth: 0.4))
+        EngineTestFixtures.samples(from: 301, through: 420, depth: 0.4).forEach { engine.append($0) }
 
         let session = engine.finish(at: EngineTestFixtures.date(420))
 
@@ -125,7 +134,7 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertTrue(session.safetyStop.completed)
     }
 
-    func testNoSamplesFinishReturnsEmptySummaryAndNoRequiredStop() {
+    func testNoSamplesFinishReturnsUnknownStop() {
         var engine = ScubaDiveEngine(startedAt: EngineTestFixtures.start, gasLabel: nil)
 
         let session = engine.finish(at: EngineTestFixtures.date(60))
@@ -133,7 +142,7 @@ final class ScubaDiveEngineTests: XCTestCase {
         XCTAssertEqual(session.maxDepthMeters, 0)
         XCTAssertEqual(session.averageDepthMeters, 0)
         XCTAssertNil(session.waterTemperatureCelsius)
-        XCTAssertEqual(session.safetyStop.status, .notRequired)
+        XCTAssertEqual(session.safetyStop.status, .unknown)
         XCTAssertFalse(session.safetyStop.required)
         XCTAssertFalse(session.safetyStop.completed)
     }
@@ -400,6 +409,47 @@ final class SimulatedRecordingLifecycleControllerTests: XCTestCase {
         assertSavedSummary(controller.phase, sessionID: session.id)
     }
 
+    func testActionButtonRetriesTheSameUnsavedDemoWithoutStoppingAgain() throws {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, store) = makeSystem(session: session, saveResults: [false, false, true])
+        controller.handleFlowAppearance(plan: PreDivePlan(diveMode: .scuba))
+        XCTAssertFalse(controller.handleActionButtonPress())
+        XCTAssertTrue(controller.keepsActionButtonOverride)
+        let first = try XCTUnwrap(controller.failureFeedback)
+        XCTAssertFalse(controller.handleActionButtonPress())
+        XCTAssertNotEqual(first, controller.failureFeedback)
+        XCTAssertTrue(controller.keepsActionButtonOverride)
+        assertSavePersistenceError(controller.phase, sessionID: session.id)
+        XCTAssertTrue(controller.handleActionButtonPress())
+        XCTAssertFalse(controller.keepsActionButtonOverride)
+        XCTAssertEqual(store.saveCount, 3)
+        XCTAssertEqual(recorder.stopCount, 1)
+        XCTAssertEqual(recorder.cancelCount, 0)
+        XCTAssertEqual(recorder.resetCount, 1)
+        assertSavedSummary(controller.phase, sessionID: session.id)
+    }
+
+    func testUnsavedDemoReappearanceRestoresItsActionButtonRoute() {
+        let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let (controller, recorder, store) = makeSystem(session: session, saveResults: [false, true])
+        let real = CountingDemoFallbackController()
+        let bridge = DiveActionButtonBridge(controller: real)
+        controller.handleFlowAppearance(plan: PreDivePlan())
+        let token = bridge.installEndOverride { controller.handleActionButtonPress() }
+        XCTAssertEqual(bridge.performDiveAction(), .rejected(.endUnavailable))
+        bridge.removeEndOverride(token)
+        controller.handleFlowDisappearance()
+        XCTAssertFalse(controller.handleFlowAppearance(plan: PreDivePlan()))
+        XCTAssertTrue(controller.keepsActionButtonOverride)
+        _ = bridge.installEndOverride { controller.handleActionButtonPress() }
+        XCTAssertEqual(bridge.performDiveAction(), .endRequested)
+        XCTAssertEqual(real.pressCount, 0)
+        XCTAssertEqual(store.saveCount, 2)
+        XCTAssertEqual(recorder.stopCount, 1)
+        XCTAssertEqual(recorder.cancelCount, 0)
+        assertSavedSummary(controller.phase, sessionID: session.id)
+    }
+
     func testFailedAutomaticSaveKeepsCaptureForRetry() {
         let session = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
         let (controller, recorder, store) = makeSystem(
@@ -557,5 +607,15 @@ private final class RecordingSimulatedSessionStore: SimulatedRecordingSessionSto
     func save(_ session: DiveSessionRecord) -> Bool {
         saveCount += 1
         return saveResults.isEmpty ? true : saveResults.removeFirst()
+    }
+}
+
+@MainActor
+private final class CountingDemoFallbackController: RealDiveActionControlling {
+    private(set) var pressCount = 0
+
+    func handleActionButtonPress() -> DiveActionOutcome {
+        pressCount += 1
+        return .started
     }
 }

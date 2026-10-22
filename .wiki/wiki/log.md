@@ -1225,3 +1225,6 @@
 - Recorded: 워치 UX benchmark·inventory·docs-gap 보고서 요약, 12개 채택 가능 패턴·피할 패턴·원문 URL과 소유자 결정을 `raw/design/2026-10-22-watch-ux-review.md`에 먼저 보존했다.
 - Recorded: A(기록 정확성)·B(막힌 흐름)는 소유자가 현재 수정 중이라고 알렸고, D1–D6 기능과 E1–E3 결정을 승인된 백로그로 등록했다. D6는 P0 Wave 2, D1–D5는 Wave 4이며 안전 검토는 Wave 5, E3 계약 결정 뒤 계획 전달 검증은 Wave 1에 연결한다.
 - Pending: 상승 속도 표시·센서 이상 알림·계획 수신 확인은 결정 대기다. 북마크 입력 역할·contract와 실제 하드웨어 검증도 완료로 표시하지 않는다. 기존 자동 안전 관련 햅틱 금지와 사실 기록·비인증 경계를 유지한다.
+
+## [2026-10-22] ingest | Watch 앱 구조
+- Updated: 1Hz 프로파일 파일 저장과 동기화

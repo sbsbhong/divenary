@@ -45,7 +45,7 @@ final class WaterSubmersionCoordinator: NSObject, ObservableObject, WaterSubmers
     private let managerFactory: () -> CMWaterSubmersionManager?
     private var manager: CMWaterSubmersionManager?
     private var hasStartedMonitoring = false
-    private var latestTemperature: (celsius: Double, measuredAt: Date)?
+    private(set) var latestTemperature: (celsius: Double, measuredAt: Date)?
 
     init(managerFactory: @escaping () -> CMWaterSubmersionManager? = {
         guard CMWaterSubmersionManager.waterSubmersionAvailable else {

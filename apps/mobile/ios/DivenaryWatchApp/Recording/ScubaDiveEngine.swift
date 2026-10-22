@@ -6,6 +6,8 @@ struct ScubaDiveEngine {
     private let gasLabel: String?
     private var currentDepth: Double = 0
     private var sampleCount = 0
+    private var lastSampleAt: Date?
+    private var longestSampleGapSeconds: TimeInterval = 0
     private var depthSum: Double = 0
     private var temperatureCount = 0
     private var temperatureSum: Double = 0
@@ -34,6 +36,9 @@ struct ScubaDiveEngine {
             return
         }
 
+        longestSampleGapSeconds = max(longestSampleGapSeconds,
+            sample.timestamp.timeIntervalSince(lastSampleAt ?? startedAt))
+        lastSampleAt = sample.timestamp
         currentDepth = sample.depthMeters
         sampleCount += 1
         depthSum += sample.depthMeters
@@ -48,6 +53,8 @@ struct ScubaDiveEngine {
     }
 
     mutating func finish(at date: Date) -> ScubaDiveSession {
+        let coverageIsUnreliable = lastSampleAt == nil || max(longestSampleGapSeconds,
+            date.timeIntervalSince(lastSampleAt ?? startedAt)) > 30
         if currentDepthMeters <= 0.8 {
             safetyStopController.markSurfaced(at: date)
         }
@@ -63,7 +70,9 @@ struct ScubaDiveEngine {
             gasLabel: gasLabel,
             latestAscentRateMetersPerMinute: latestAscentRateMetersPerMinute,
             maxAscentRateMetersPerMinute: maxAscentRateMetersPerMinute,
-            safetyStop: safetyStopController.record
+            safetyStop: coverageIsUnreliable
+                ? safetyStopController.record.withUnknownCoverage
+                : safetyStopController.record
         )
     }
 

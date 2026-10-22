@@ -1,9 +1,13 @@
 import Foundation
 
 @MainActor
-final class RealDepthSensorProvider: DepthSensorProvider, DepthSensorConditionReporting {
+final class RealDepthSensorProvider: DepthSensorProvider, DepthSensorConditionReporting, LiveWaterTemperatureProviding {
     var onSample: ((DepthSample) -> Void)?
     var onCondition: ((DepthSensorCondition) -> Void)?
+
+    var liveWaterTemperature: (celsius: Double, measuredAt: Date)? {
+        coordinator.latestTemperature
+    }
 
     private let coordinator: WaterSubmersionCoordinator
 

@@ -34,6 +34,8 @@ extension DiveSessionStore: SimulatedRecordingSessionStoring {}
 @MainActor
 final class SimulatedRecordingLifecycleController: ObservableObject {
     @Published private(set) var phase: SimulatedRecordingLifecyclePhase = .ready
+    @Published private(set) var failureFeedback: String?
+    private var failureCount = 0
 
     var hidesSystemBackButton: Bool {
         switch phase {
@@ -49,6 +51,21 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
             return true
         }
         return false
+    }
+
+    var keepsActionButtonOverride: Bool {
+        switch phase {
+        case .recording, .saving, .savePersistenceError:
+            return true
+        default:
+            return false
+        }
+    }
+
+    @discardableResult
+    func handleActionButtonPress() -> Bool {
+        if case .savePersistenceError = phase { return retryCompletedSessionSave() }
+        return finishRecording()
     }
 
     private let recorder: any SimulatedRecordingLifecycleRecording
@@ -110,6 +127,16 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
     }
 
     @discardableResult
+    func returnHomeKeepingPendingRecord(_ keepRecord: (DiveSessionRecord) -> Void) -> Bool {
+        guard case let .savePersistenceError(session) = phase else { return false }
+        keepRecord(session)
+        // Reset memory only; the journal remains available for recovery after relaunch too.
+        recorder.resetCompletedSession()
+        markCompleted()
+        return true
+    }
+
+    @discardableResult
     func dismissSavedSummary() -> Bool {
         guard case .savedSummary = phase else { return false }
         markCompleted()
@@ -123,6 +150,7 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         case .recording:
             guard recorder.cancelSession() else {
                 phase = .cleanupError
+                reportFailure(String(localized: "Could not return Home. Please retry."))
                 return
             }
             markCompleted()
@@ -134,9 +162,9 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
 
     @discardableResult
     func retryExternalCleanup() -> Bool {
-        guard didStart, !didComplete, case .cleanupError = phase,
-              recorder.cancelSession()
-        else {
+        guard didStart, !didComplete, case .cleanupError = phase else { return false }
+        guard recorder.cancelSession() else {
+            reportFailure(String(localized: "Could not return Home. Please retry."))
             return false
         }
         markCompleted()
@@ -146,9 +174,11 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
     private func startRecording(plan: PreDivePlan) -> Bool {
         guard recorder.startSession(plan: plan) else {
             phase = .persistenceError
+            reportFailure(String(localized: "Could not start recording."))
             return false
         }
         didStart = true
+        failureFeedback = nil
         phase = .recording
         return true
     }
@@ -158,17 +188,24 @@ final class SimulatedRecordingLifecycleController: ObservableObject {
         phase = .saving(session)
         guard store.save(session) else {
             phase = .savePersistenceError(session)
+            reportFailure(String(localized: "Save failed. Your log is kept."))
             return false
         }
 
         recorder.resetCompletedSession()
         phase = .savedSummary(session)
+        failureFeedback = nil
         return true
     }
 
     private func markCompleted() {
         didComplete = true
         phase = .completed
+    }
+
+    private func reportFailure(_ message: String) {
+        failureCount += 1
+        failureFeedback = String(localized: "\(message) (\(failureCount))")
     }
 }
 
@@ -178,6 +215,7 @@ struct SimulatedRecordingFlowView: View {
     let recordingMode: WatchRecordingMode
     let actionButtonBridge: DiveActionButtonBridge
     let actionButtonDonor: DiveActionButtonDonating
+    let keepPendingRecord: (DiveSessionRecord) -> Void
 
     @StateObject private var recorder: DiveSessionRecorder
     @StateObject private var lifecycle: SimulatedRecordingLifecycleController
@@ -191,7 +229,8 @@ struct SimulatedRecordingFlowView: View {
         plan: PreDivePlan,
         recordingMode: WatchRecordingMode,
         actionButtonBridge: DiveActionButtonBridge,
-        actionButtonDonor: DiveActionButtonDonating
+        actionButtonDonor: DiveActionButtonDonating,
+        keepPendingRecord: @escaping (DiveSessionRecord) -> Void
     ) {
         precondition(recordingMode != .real, "Real recording must use the app-scoped service graph")
         guard let sensorProvider = recordingMode.makeSimulatedSensorProvider() else {
@@ -203,6 +242,7 @@ struct SimulatedRecordingFlowView: View {
         self.recordingMode = recordingMode
         self.actionButtonBridge = actionButtonBridge
         self.actionButtonDonor = actionButtonDonor
+        self.keepPendingRecord = keepPendingRecord
         let recorder = DiveSessionRecorder(
             sensorProvider: sensorProvider,
             captureMode: recordingMode.captureMode
@@ -234,6 +274,9 @@ struct SimulatedRecordingFlowView: View {
             }
         }
         .safeAreaInset(edge: .bottom) {
+            if let message = lifecycle.failureFeedback {
+                WatchFlowFailureNote(message: message)
+            }
             if recordingMode == .demo, lifecycle.showsRecordingControls {
                 Text(String(localized: "Adjust depth with the Digital Crown"))
                     .font(.system(size: 9, weight: .regular))
@@ -247,9 +290,9 @@ struct SimulatedRecordingFlowView: View {
                 dismiss()
                 return
             }
+            if lifecycle.keepsActionButtonOverride { installActionButtonEndOverride() }
             guard case .recording = lifecycle.phase else { return }
             recorder.setDemoDepthMeters(controlledDepthMeters)
-            installActionButtonEndOverride()
             crownDepthControlFocused = true
         }
         .onDisappear {
@@ -372,8 +415,8 @@ struct SimulatedRecordingFlowView: View {
 
     @discardableResult
     private func endDive() -> Bool {
-        let didFinish = lifecycle.finishRecording()
-        if case .recording = lifecycle.phase {
+        let didFinish = lifecycle.handleActionButtonPress()
+        if lifecycle.keepsActionButtonOverride {
             return didFinish
         }
         removeActionButtonEndOverride()
@@ -399,22 +442,41 @@ struct SimulatedRecordingFlowView: View {
     }
 
     private var savePersistenceErrorView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
+        ScrollView {
+            VStack(spacing: 10) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.danger)
 
-            Text("Keeping your captured log.")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .multilineTextAlignment(.center)
+                Text("Keeping your captured log.")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .multilineTextAlignment(.center)
 
-            Button("Retry Save") {
-                _ = lifecycle.retryCompletedSessionSave()
+                Text(String(localized: "Kept for automatic save retry from Home."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .multilineTextAlignment(.center)
+
+                Text(String(localized: "The Action Button retries saving this demo log."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .multilineTextAlignment(.center)
+
+                Button("Retry Save") {
+                    _ = endDive()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+
+                Button(String(localized: "Back to Home")) {
+                    guard lifecycle.returnHomeKeepingPendingRecord(keepPendingRecord) else { return }
+                    removeActionButtonEndOverride()
+                    dismiss()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
             }
-            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+            .padding(.horizontal, DiveWatchTheme.edgeMargin)
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
     }

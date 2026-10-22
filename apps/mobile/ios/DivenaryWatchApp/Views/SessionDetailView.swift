@@ -31,6 +31,12 @@ struct SessionDetailView: View {
                                 .minimumScaleFactor(0.62)
                         }
 
+                        if let recoveryLabel = session.recoveryLabel {
+                            Text(recoveryLabel)
+                                .font(.system(size: 12))
+                                .foregroundStyle(DiveWatchTheme.secondary)
+                        }
+
                         Text(DiveFormatters.sessionDate.string(from: session.startedAt))
                             .font(DiveWatchTheme.metricFont(size: 20, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.text)
@@ -53,6 +59,13 @@ struct SessionDetailView: View {
                         Label("Send Again", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+                }
+
+                if let feedback = store.syncRetryFeedback[session.id] {
+                    Text(feedback)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(DiveWatchTheme.danger)
+                        .multilineTextAlignment(.center)
                 }
 
                 HStack(spacing: 8) {
@@ -253,10 +266,10 @@ private struct SafetyStopResultSection: View {
                 VStack(spacing: 6) {
                     SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
                     SummaryRow(title: String(localized: "Recommendation"), value: String(localized: "Recommended reminder"))
-                    SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
+                    SummaryRow(title: String(localized: "Completed"), value: safetyStop.status == .unknown ? "--" : localizedBoolean(safetyStop.completed))
                     SummaryRow(title: String(localized: "Target / zone"), value: targetZoneText)
-                    SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))
-                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
+                    SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.reviewRemainingSeconds))
+                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.reviewTimeInZoneSeconds))
                     if let startedAt = safetyStop.startedAt {
                         SummaryRow(title: String(localized: "Started"), value: DiveFormatters.sessionDate.string(from: startedAt))
                     }

@@ -188,6 +188,22 @@ final class RecordingPageModelTests: XCTestCase {
         XCTAssertEqual(haptics.events, [.pageChange])
     }
 
+    func testAlwaysOnIgnoresCrownAndActionPageAdvancesUntilDisplayWakes() {
+        let haptics = RecordedDiveHaptics()
+        let model = makeRecordingModel(haptics: haptics, signals: atSurface(elapsed: 300))
+        model.advanceFromActionButton()
+        model.advanceFromActionButton()
+        model.setAlwaysOn(true)
+        for _ in 0..<4 {
+            model.stepFromCrown(by: 1)
+            XCTAssertEqual(model.advanceFromActionButton(), .live)
+        }
+        XCTAssertEqual(model.page, .live)
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange])
+        model.setAlwaysOn(false)
+        XCTAssertEqual(model.advanceFromActionButton(), .details)
+    }
+
     func testLosingEligibilityOnTheEndPageReturnsToLive() {
         let model = makeRecordingModel(signals: atSurface(elapsed: 200))
         model.advanceFromActionButton()

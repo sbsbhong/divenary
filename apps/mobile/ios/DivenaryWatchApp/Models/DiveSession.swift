@@ -83,14 +83,15 @@ struct PreDivePlan: Codable, Equatable {
     var gasLabel: String = String(localized: "Air")
     var siteName: String = ""
     var buddyName: String = ""
+    var plannedBuddyIds: [String]?
     var gearIds: [String] = []
     var userTags: [String] = []
     var quickNote: String = ""
-    var plannedMaxDepthMeters: Double = 18
+    var plannedMaxDepthMeters: Double?
     var plannedDurationMinutes: Double?
 
     var buddyIds: [String] {
-        normalizedToken(from: buddyName).map { [$0] } ?? []
+        plannedBuddyIds ?? normalizedToken(from: buddyName).map { [$0] } ?? []
     }
 
     var tags: [String] {
@@ -99,7 +100,8 @@ struct PreDivePlan: Codable, Equatable {
         if let sourcePlanLocalId {
             values.append("plan-\(sourcePlanLocalId)")
         }
-        if plannedMaxDepthMeters > 0 {
+        if let plannedMaxDepthMeters, plannedMaxDepthMeters.isFinite,
+           plannedMaxDepthMeters > 0, plannedMaxDepthMeters < Double(Int.max) {
             values.append("planned-\(Int(plannedMaxDepthMeters))m")
         }
         return values
@@ -157,11 +159,11 @@ struct WatchPlannedDive: Codable, Identifiable, Equatable {
             diveMode: diveMode ?? .scuba,
             gasLabel: gasLabel ?? String(localized: "Air"),
             siteName: siteName ?? "",
-            buddyName: buddyIds.joined(separator: ", "),
+            plannedBuddyIds: buddyIds,
             gearIds: gearIds ?? [],
             userTags: tags,
             quickNote: notes ?? "",
-            plannedMaxDepthMeters: plannedMaxDepthMeters ?? 18,
+            plannedMaxDepthMeters: plannedMaxDepthMeters,
             plannedDurationMinutes: plannedDurationMinutes
         )
     }

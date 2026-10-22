@@ -237,6 +237,12 @@ final class DiveProfileArtifactStoreTests: XCTestCase {
 
         XCTAssertEqual(recovered.map(\.metadata.localSessionId), [validMetadata.localSessionId])
         XCTAssertEqual(recovered.first?.samples.first?.depthMeters, validSample.depthMeters)
+        XCTAssertTrue(store.activeRecordingReadFailed)
+        _ = try store.loadActiveRecordings()
+        XCTAssertTrue(store.activeRecordingReadFailed)
+        let reloaded = DiveProfileArtifactStore(rootURL: rootURL)
+        _ = try reloaded.loadActiveRecordings()
+        XCTAssertTrue(reloaded.activeRecordingReadFailed)
     }
 
     func testCorruptMetadataIsQuarantinedWithItsActiveJournal() throws {

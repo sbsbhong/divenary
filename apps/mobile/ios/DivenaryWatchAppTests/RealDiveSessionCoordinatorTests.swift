@@ -5,6 +5,188 @@ import XCTest
 
 @MainActor
 final class RealDiveSessionCoordinatorTests: XCTestCase {
+    func testWetReadyHomeExitDoesNotStartOrCancelARecording() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.receiveWaterState(.submerged)
+        coordinator.dismissWetReady()
+        assertIdle(coordinator)
+        coordinator.receiveWaterState(.submerged)
+        assertIdle(coordinator)
+        XCTAssertTrue(calls.values.isEmpty)
+        coordinator.receiveWaterState(.notSubmerged)
+        coordinator.receiveWaterState(.submerged)
+        assertWetReady(coordinator, mode: .scuba)
+        coordinator.dismissWetReady()
+        coordinator.startManual(plan: PreDivePlan())
+        coordinator.dismissWetReady()
+        assertRecording(coordinator, source: .manual)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+    }
+
+    func testDemoSaveFailureTransfersExactRecordForHomeRetryAndNeverCancels() {
+        let calls = LifecycleCallLog()
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(calls: calls, stopResult: record)
+        let lifecycle = SimulatedRecordingLifecycleController(recorder: recorder,
+            store: FakeDiveSessionStore(saveResults: [false, false, false]))
+        _ = lifecycle.handleFlowAppearance(plan: PreDivePlan())
+        XCTAssertFalse(lifecycle.finishRecording())
+        XCTAssertFalse(lifecycle.retryCompletedSessionSave())
+        let first = lifecycle.failureFeedback
+        XCTAssertFalse(lifecycle.retryCompletedSessionSave())
+        XCTAssertNotEqual(lifecycle.failureFeedback, first)
+        var kept: DiveSessionRecord?
+        XCTAssertTrue(lifecycle.returnHomeKeepingPendingRecord { kept = $0 })
+        lifecycle.handleFlowDisappearance()
+        XCTAssertEqual(kept?.id, record.id)
+        XCTAssertEqual(kept?.samples, record.samples)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+        XCTAssertEqual(recorder.resetCompletedSessionCallCount, 1)
+    }
+
+    func testDemoRepeatedStartAndCleanupFailuresEachChangeFeedback() {
+        let calls = LifecycleCallLog()
+        let recorder = FakeDiveRecorder(calls: calls, startResults: [false, false, false, true],
+                                        cancelResults: [false, false, false])
+        let lifecycle = SimulatedRecordingLifecycleController(recorder: recorder, store: FakeDiveSessionStore())
+        _ = lifecycle.handleFlowAppearance(plan: PreDivePlan())
+        XCTAssertFalse(lifecycle.retryStart(plan: PreDivePlan()))
+        let first = lifecycle.failureFeedback
+        XCTAssertFalse(lifecycle.retryStart(plan: PreDivePlan()))
+        XCTAssertNotEqual(lifecycle.failureFeedback, first)
+        XCTAssertTrue(lifecycle.retryStart(plan: PreDivePlan()))
+        lifecycle.handleFlowDisappearance()
+        XCTAssertFalse(lifecycle.retryExternalCleanup())
+        let cleanupFeedback = lifecycle.failureFeedback
+        XCTAssertFalse(lifecycle.retryExternalCleanup())
+        XCTAssertNotEqual(lifecycle.failureFeedback, cleanupFeedback)
+    }
+
+    func testEndPressImmediatelyPublishesPendingStateAndRejectsRepeatUntilRuntimeFinishes() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 180, hasCapturedDepthSample: true)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder,
+                                          water: FakeWaterStateReader(latestState: .notSubmerged))
+        coordinator.startManual(plan: PreDivePlan())
+        coordinator.recordingPages.receive(signals(water: .notSubmerged, elapsed: 180))
+        _ = coordinator.handleActionButtonPress()
+        _ = coordinator.handleActionButtonPress()
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .endRequested)
+        XCTAssertTrue(coordinator.isEnding)
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.busy))
+        XCTAssertFalse(coordinator.requestActionButtonEnd())
+        XCTAssertEqual(runtime.invalidateCallCount, 1)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        XCTAssertFalse(coordinator.isEnding)
+        assertSavedSummary(coordinator)
+    }
+
+    func testAlwaysOnPressesCannotEndFromAnInvisibleEndPage() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let coordinator = makeCoordinator(runtime: runtime,
+            recorder: FakeDiveRecorder(calls: calls, elapsedTime: 300),
+            water: FakeWaterStateReader(latestState: .notSubmerged))
+        coordinator.startManual(plan: PreDivePlan())
+        coordinator.recordingPages.receive(signals(water: .notSubmerged, elapsed: 300))
+        _ = coordinator.handleActionButtonPress()
+        _ = coordinator.handleActionButtonPress()
+        coordinator.recordingPages.setAlwaysOn(true)
+        for _ in 0..<4 {
+            coordinator.recordingPages.stepFromCrown(by: 1)
+            XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.live))
+        }
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+        coordinator.recordingPages.setAlwaysOn(false)
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.details))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.end))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .endRequested)
+    }
+
+    func testRepeatedNoSamplesDoneFailureHasVisibleFeedback() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, cancelResults: [false, false, false])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        coordinator.dismissNoSamples()
+        let first = coordinator.failureFeedback
+        coordinator.dismissNoSamples()
+        XCTAssertNotNil(first)
+        XCTAssertNotEqual(coordinator.failureFeedback, first)
+        XCTAssertEqual(recorder.cancelCallCount, 3)
+    }
+
+    func testSaveFailureHomeExitRetainsRecordForLaterRetryWithoutCancel() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true, stopResult: record)
+        let store = FakeDiveSessionStore(saveResults: [false, false, true])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, sessionStore: store)
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        coordinator.returnHomeKeepingPendingRecord()
+        assertIdle(coordinator)
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+        coordinator.retryPendingRecords()
+        coordinator.retryPendingRecords()
+        coordinator.retryPendingRecords()
+        XCTAssertEqual(store.saveAttempts.map(\.id), [record.id, record.id, record.id])
+        assertIdle(coordinator)
+    }
+
+    func testFailedActionRetryStartsNextDiveWithVisibleFeedbackAndRetainsPendingRecord() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let record = DiveSessionRecord.largeDebugFixture(sampleCount: 1)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true, stopResult: record)
+        let store = FakeDiveSessionStore(saveResults: [false, false, true])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, sessionStore: store)
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        let firstFeedback = coordinator.failureFeedback
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .started)
+        XCTAssertNotEqual(coordinator.failureFeedback, firstFeedback)
+        XCTAssertNotNil(coordinator.failureFeedback)
+        coordinator.retryPendingRecords()
+        XCTAssertEqual(store.saveAttempts.map(\.id), [record.id, record.id, record.id])
+        XCTAssertEqual(recorder.cancelCallCount, 0)
+        assertRecording(coordinator, source: .actionButton)
+    }
+
+    func testEachFailedDoneAndSaveRetryPublishesDistinctFeedback() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, startResults: [false], cancelResults: [false, false])
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        coordinator.startManual(plan: PreDivePlan())
+        coordinator.dismissStartPersistenceError()
+        let first = coordinator.failureFeedback
+        coordinator.dismissStartPersistenceError()
+        XCTAssertNotNil(first)
+        XCTAssertNotEqual(coordinator.failureFeedback, first)
+        assertStartPersistenceError(coordinator, source: .manual)
+
+        let saveRuntime = FakeDiveRuntime(calls: calls)
+        let saveCoordinator = makeCoordinator(runtime: saveRuntime,
+            recorder: FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true),
+            sessionStore: FakeDiveSessionStore(saveResults: [false, false, false]))
+        saveCoordinator.startManual(plan: PreDivePlan())
+        saveRuntime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        saveCoordinator.retryCompletedSessionSave()
+        let retryFeedback = saveCoordinator.failureFeedback
+        saveCoordinator.retryCompletedSessionSave()
+        XCTAssertNotNil(retryFeedback)
+        XCTAssertNotEqual(saveCoordinator.failureFeedback, retryFeedback)
+    }
+
     func testManualRecorderStartFailureDoesNotStartRuntimeOrDonateDiveAction() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
@@ -1454,7 +1636,7 @@ private final class FakeWetReadyExitScheduler: WetReadyExitScheduling {
 }
 
 @MainActor
-private final class FakeDiveSessionStore: DiveSessionPersisting {
+private final class FakeDiveSessionStore: DiveSessionPersisting, SimulatedRecordingSessionStoring {
     private var saveResults: [Bool]
     private(set) var saveAttempts: [DiveSessionRecord] = []
 
@@ -1562,7 +1744,7 @@ private final class CoordinatorRuntimeAdapter: DiveRuntimeSessionAdapter {
 }
 
 @MainActor
-private final class FakeDiveRecorder: DiveSessionRecording {
+private final class FakeDiveRecorder: DiveSessionRecording, SimulatedRecordingLifecycleRecording {
     var elapsedTime: TimeInterval
     var currentDepth: Double
     var hasCapturedDepthSample: Bool

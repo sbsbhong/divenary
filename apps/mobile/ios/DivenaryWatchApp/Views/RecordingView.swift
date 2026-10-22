@@ -291,6 +291,7 @@ struct RecordingInstrumentView: View {
             FreeDiveActiveInstrument(
                 currentDepthMeters: displayedDepthMeters,
                 activeDiveTime: snapshot.activeSegment?.durationSeconds ?? 0,
+                primaryTime: recorder.freeDivePrimaryTime,
                 maxDepthMeters: snapshot.maxDepthMeters,
                 ascentRateMetersPerMinute: displayedAscentRate,
                 sensorDisplayLimitMeters: sensorDisplayLimitMeters
@@ -419,7 +420,9 @@ private struct FreeSurfaceReadyInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "Surface ready"), color: DiveWatchTheme.secondary)
+            StatusPill(title: currentDepthMeters == nil
+                ? String(localized: "Depth unavailable") : String(localized: "Surface ready"),
+                color: DiveWatchTheme.secondary)
 
             Spacer(minLength: 2)
 
@@ -453,6 +456,7 @@ private struct FreeSurfaceReadyInstrument: View {
 private struct FreeDiveActiveInstrument: View {
     let currentDepthMeters: Double?
     let activeDiveTime: TimeInterval
+    let primaryTime: TimeInterval
     let maxDepthMeters: Double
     let ascentRateMetersPerMinute: Double?
     var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
@@ -465,12 +469,22 @@ private struct FreeDiveActiveInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
+            StatusPill(title: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters)
+                ?? String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
-            DepthOrTimeMetric(depthMeters: currentDepthMeters, time: activeDiveTime)
+            DepthOrTimeMetric(depthMeters: currentDepthMeters, time: primaryTime,
+                timeCaption: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters))
 
             HStack(spacing: 7) {
-                DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: activeDiveTime)
+                if currentDepthMeters == nil {
+                    LiveInstrumentMetric(
+                        title: String(localized: "Last observed dive time"),
+                        value: DiveFormatters.duration(activeDiveTime),
+                        keepsInAlwaysOn: true
+                    )
+                } else {
+                    DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: activeDiveTime)
+                }
                 LiveInstrumentMetric(
                     title: String(localized: "Ascent"),
                     value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
@@ -587,16 +601,23 @@ private struct FreeSurfaceIntervalInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "Surface interval"), color: DiveWatchTheme.secondary)
+            StatusPill(title: observedInterval == nil
+                ? String(localized: "Depth unavailable") : String(localized: "Surface interval"),
+                color: DiveWatchTheme.secondary)
 
             BigMetricText(
-                value: DiveFormatters.duration(surfaceRestTime),
+                value: DiveFormatters.duration(observedInterval),
                 color: DiveWatchTheme.secondary,
-                accessibilityTitle: String(localized: "Surface interval")
+                accessibilityTitle: observedInterval == nil
+                    ? String(localized: "Depth unavailable") : String(localized: "Surface interval")
             )
 
             FreeLastDiveMetrics(lastSegment: lastSegment)
         }
+    }
+
+    private var observedInterval: TimeInterval? {
+        DiveFormatters.observedSurfaceInterval(surfaceRestTime, depthMeters: currentDepthMeters)
     }
 
     private var maxScaleMeters: Double {
@@ -713,7 +734,7 @@ private struct SafetyStopInstrument: View {
     }
 
     private var isTimerPaused: Bool {
-        safetyStop.status == .pausedTooDeep || safetyStop.status == .pausedTooShallow
+        safetyStop.isDisplayTimerPaused(depthMeters: currentDepthMeters)
     }
 
     /// A recommended stop is the supplementary caution amber while it counts and while it pauses:
@@ -821,6 +842,7 @@ private struct BigMetricText: View {
 private struct DepthOrTimeMetric: View {
     let depthMeters: Double?
     let time: TimeInterval
+    var timeCaption: String?
 
     var body: some View {
         if let depthMeters {
@@ -832,9 +854,10 @@ private struct DepthOrTimeMetric: View {
             )
         } else {
             BigMetricText(
+                caption: timeCaption,
                 value: DiveFormatters.duration(time),
                 color: DiveWatchTheme.text,
-                accessibilityTitle: String(localized: "Time")
+                accessibilityTitle: timeCaption ?? String(localized: "Time")
             )
         }
     }
@@ -999,6 +1022,7 @@ private struct EndPageInstrument: View {
     FreeDiveActiveInstrument(
         currentDepthMeters: 18.4,
         activeDiveTime: 46,
+        primaryTime: 46,
         maxDepthMeters: 22.1,
         ascentRateMetersPerMinute: 3.6
     )

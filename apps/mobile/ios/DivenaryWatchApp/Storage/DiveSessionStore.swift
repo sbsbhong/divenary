@@ -1,9 +1,17 @@
 import Combine
 import Foundation
 
+enum DiveHistoryReadState: Equatable {
+    case loaded
+    case failed
+}
+
 @MainActor
 final class DiveSessionStore: ObservableObject {
     @Published private(set) var sessions: [DiveSessionRecord] = []
+    @Published private(set) var historyReadState: DiveHistoryReadState = .loaded
+    @Published private(set) var syncRetryFeedback: [UUID: String] = [:]
+    private var syncRetryAttempts: [UUID: Int] = [:]
     @Published private(set) var plannedDives: [WatchPlannedDive] = []
     @Published var preferredDiveMode: DiveMode
 
@@ -44,6 +52,7 @@ final class DiveSessionStore: ObservableObject {
             deletionRecoverySucceeded = false
         }
         load()
+        recoverInterruptedRecordings()
         loadPlannedDives()
         self.syncTransport.onTransferStatusChanged = { [weak self] artifact, syncStatus in
             Task { @MainActor in
@@ -140,6 +149,16 @@ final class DiveSessionStore: ObservableObject {
         retryPendingSyncs()
     }
 
+    /// Retry unfinished startup recovery while excluding recordings begun in this process.
+    func retryLoadingHistory() {
+        guard resumePendingDeletionsIfNeeded() else {
+            historyReadState = .failed
+            return
+        }
+        load()
+        recoverInterruptedRecordings()
+    }
+
     /// Finishes deletions interrupted in an earlier run before any read or write, so a deleted
     /// session cannot come back. A launch-time failure is retried instead of blocking every save.
     @discardableResult
@@ -153,7 +172,7 @@ final class DiveSessionStore: ObservableObject {
             return false
         }
         deletionRecoverySucceeded = true
-        // Interrupted-recording recovery waits for the next launch so it cannot touch a live recording.
+        // History retry separately recovers only journals from earlier processes.
         if let entries = try? profileStore.loadEntries() {
             sessions = entries.map(\.displayRecord)
         }
@@ -170,6 +189,11 @@ final class DiveSessionStore: ObservableObject {
     private func applySyncStatuses(
         _ updates: [(artifact: DiveProfileArtifactIdentity, status: DiveSyncStatus)]
     ) {
+        for (artifact, status) in updates {
+            let effectiveStatus: DiveSyncStatus = sessions.first(where: { $0.id == artifact.localSessionId })?.syncStatus == .synced
+                ? .synced : status
+            updateSyncRetryFeedback(sessionID: artifact.localSessionId, status: effectiveStatus)
+        }
         guard deletionRecoverySucceeded,
               !updates.isEmpty,
               let entries = try? profileStore.loadEntries() else {
@@ -204,9 +228,14 @@ final class DiveSessionStore: ObservableObject {
 
     /// Sends one saved session again after its transfer failed.
     func retrySync(sessionID: UUID) {
+        syncRetryAttempts[sessionID, default: 0] += 1
         guard resumePendingDeletionsIfNeeded(),
-              let entry = try? profileStore.loadEntries().first(where: { $0.id == sessionID }),
-              entry.displayRecord.syncStatus != .synced else {
+              let entry = try? profileStore.loadEntries().first(where: { $0.id == sessionID }) else {
+            updateSyncRetryFeedback(sessionID: sessionID, status: .failed)
+            return
+        }
+        guard entry.displayRecord.syncStatus != .synced else {
+            updateSyncRetryFeedback(sessionID: sessionID, status: .synced)
             return
         }
         let syncStatus = syncTransport.enqueue(
@@ -214,6 +243,16 @@ final class DiveSessionStore: ObservableObject {
             fileURL: profileStore.artifactURL(for: entry.artifact)
         )
         applySyncStatuses([(entry.artifact, syncStatus)])
+    }
+
+    private func updateSyncRetryFeedback(sessionID: UUID, status: DiveSyncStatus) {
+        guard let attempt = syncRetryAttempts[sessionID] else { return }
+        if status == .failed {
+            let message = String(localized: "Send failed. Try again.")
+            syncRetryFeedback[sessionID] = String(localized: "\(message) (\(attempt))")
+        } else {
+            syncRetryFeedback[sessionID] = nil
+        }
     }
 
     private func retryPendingSyncs() {
@@ -263,59 +302,88 @@ final class DiveSessionStore: ObservableObject {
 
     private func load() {
         guard deletionRecoverySucceeded else {
-            sessions = []
+            historyReadState = .failed
             return
         }
-        defer { recoverInterruptedRecordings() }
+        historyReadState = .loaded
         if fileManager.fileExists(atPath: recordsStorageURL.path) {
             do {
                 sessions = try profileStore.migrateLegacyRecords(at: recordsStorageURL)
                     .map(\.displayRecord)
             } catch {
-                sessions = (try? profileStore.loadEntries().map(\.displayRecord)) ?? []
+                historyReadState = .failed
+                if let entries = try? profileStore.loadEntries() {
+                    sessions = entries.map(\.displayRecord)
+                }
             }
             return
         }
 
-        if let entries = try? profileStore.loadEntries(), !entries.isEmpty {
-            sessions = entries.map(\.displayRecord)
+        do {
+            sessions = try profileStore.loadEntries().map(\.displayRecord)
+        } catch {
+            historyReadState = .failed
             return
         }
 
         if let data = userDefaults.data(forKey: storageKey) {
             do {
                 let records = try JSONDecoder().decode([DiveSessionRecord].self, from: data)
-                sessions = try records.map { try profileStore.finalize(record: $0).displayRecord }
-                    .sorted { $0.startedAt > $1.startedAt }
+                try migrateUserDefaultsRecords(records)
                 userDefaults.removeObject(forKey: storageKey)
             } catch {
-                sessions = []
-                userDefaults.removeObject(forKey: storageKey)
+                historyReadState = .failed
             }
             return
         }
 
         guard let legacyData = userDefaults.data(forKey: legacyStorageKey) else {
-            sessions = []
             return
         }
 
         do {
             let legacySessions = try JSONDecoder().decode([DiveSession].self, from: legacyData)
-            sessions = legacySessions
+            let records = legacySessions
                 .map(DiveSessionRecord.init(legacySession:))
                 .map { $0.sanitizedForPersistence() }
                 .sorted { $0.startedAt > $1.startedAt }
-            sessions = try sessions.map { try profileStore.finalize(record: $0).displayRecord }
-                .sorted { $0.startedAt > $1.startedAt }
+            try migrateUserDefaultsRecords(records)
+            userDefaults.removeObject(forKey: legacyStorageKey)
         } catch {
-            sessions = []
+            historyReadState = .failed
         }
     }
 
+    private func migrateUserDefaultsRecords(_ records: [DiveSessionRecord]) throws {
+        var entries = try profileStore.loadEntries()
+        for record in records {
+            if try profileStore.isSessionDeleted(record.id) { continue }
+            if let existing = entries.first(where: { $0.id == record.id }) {
+                try profileStore.verifyArtifact(existing.artifact)
+                guard try profileStore.matchesCanonicalArtifact(
+                    for: record.sanitizedForPersistence(), existing: existing.artifact,
+                    explicitProfile: record.profile
+                ) else { throw CocoaError(.fileWriteFileExists) }
+            } else {
+                let entry = try profileStore.finalize(record: record)
+                try profileStore.verifyArtifact(entry.artifact)
+                entries.append(entry)
+            }
+        }
+        // Publish and remove the source only after every artifact and the manifest can be read.
+        sessions = try profileStore.loadEntries().map(\.displayRecord)
+    }
+
     private func recoverInterruptedRecordings() {
-        guard deletionRecoverySucceeded,
-              let recordings = try? profileStore.loadActiveRecordings() else { return }
+        guard deletionRecoverySucceeded else { return }
+        let recordings: [ActiveDiveRecording]
+        do {
+            recordings = try profileStore.loadActiveRecordings(excludingCurrentProcess: true)
+            if profileStore.activeRecordingReadFailed { historyReadState = .failed }
+        } catch {
+            historyReadState = .failed
+            return
+        }
         for recording in recordings where !sessions.contains(where: { $0.id == recording.metadata.localSessionId }) {
             guard !recording.samples.isEmpty else { continue }
             let endedAt = recording.samples.last?.timestamp ?? recording.metadata.startedAt
@@ -368,6 +436,8 @@ final class DiveSessionStore: ObservableObject {
             if let entry = try? profileStore.finalize(record: record) {
                 sessions.append(entry.displayRecord)
                 try? profileStore.clearActiveRecording(sessionID: record.id)
+            } else {
+                historyReadState = .failed
             }
         }
         sessions.sort { $0.startedAt > $1.startedAt }

@@ -101,6 +101,7 @@ final class RecordingPageModel: ObservableObject {
     @Published private(set) var lastActionFeedback: DiveActionFeedback?
 
     private(set) var isRecording = false
+    private var isAlwaysOn = false
     private var signals = RecordingPageSignals()
     private var actionFeedbackCount = 0
     private var signalSubscription: AnyCancellable?
@@ -185,7 +186,7 @@ final class RecordingPageModel: ObservableObject {
     /// An Action Button press that is not on the End page. Returns the page now shown.
     @discardableResult
     func advanceFromActionButton() -> RecordingPage {
-        guard isRecording else { return page }
+        guard isRecording, !isAlwaysOn else { return page }
         showPage(pages[(pageIndex + 1) % pages.count], reason: .actionButton)
         return page
     }
@@ -193,7 +194,7 @@ final class RecordingPageModel: ObservableObject {
     /// Crown rotation by whole detents: positive moves toward Details, negative toward Live.
     /// It stops at Details and never selects the End page; turning back from the End page leaves it.
     func stepFromCrown(by detents: Int) {
-        guard isRecording, detents != 0 else { return }
+        guard isRecording, !isAlwaysOn, detents != 0 else { return }
         let crownPages: [RecordingPage] = [.live, .details]
         let target: RecordingPage
         switch page {
@@ -209,6 +210,7 @@ final class RecordingPageModel: ObservableObject {
 
     /// Views report `isLuminanceReduced` here. Dimming to Always-On returns to Live without a haptic.
     func setAlwaysOn(_ isAlwaysOn: Bool) {
+        self.isAlwaysOn = isAlwaysOn
         guard isAlwaysOn, isRecording else { return }
         returnToLive(.alwaysOn)
     }

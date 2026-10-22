@@ -88,12 +88,20 @@ final class RealDiveSessionCoordinator: ObservableObject {
                 recordingPages.setRecording(true)
             } else {
                 recordingPages.setRecording(false)
+                isEnding = false
             }
         }
     }
 
     /// Readout pages for the real recording screen. Views observe it; the Action Button and crown move it.
     let recordingPages: RecordingPageModel
+    @Published private(set) var isEnding = false
+    @Published private(set) var failureFeedback: String?
+    private var failureCount = 0
+    // Records remain backed by their existing on-disk journals until save succeeds.
+    // Retain their completed values too, so Home can retry without waiting for a relaunch.
+    private var pendingRecords: [UUID: DiveSessionRecord] = [:]
+    private var suppressesWetReadyUntilDry = false
 
     private let preferredMode: () -> DiveMode
     private let updatePreferredMode: (DiveMode) -> Void
@@ -154,6 +162,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return false
         }
 
+        failureFeedback = nil
         guard recorder.startSession(plan: plan) else {
             phase = .startPersistenceError(source: .manual)
             return false
@@ -174,7 +183,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         let outcome: DiveActionOutcome
         switch phase {
         case .recording:
-            outcome = handleRecordingActionButtonPress()
+            outcome = isEnding ? .rejected(.busy) : handleRecordingActionButtonPress()
         case .completing, .awaitingRuntimeInvalidation:
             outcome = .rejected(.busy)
         case .idle, .wetReady, .savedSummary, .noSamples, .startPersistenceError, .savePersistenceError:
@@ -188,6 +197,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
             haptics.play(.endRequested)
         case .rejected:
             haptics.play(.rejected)
+            if outcome == .rejected(.startFailed) {
+                reportFailure(String(localized: "Could not start recording."))
+            }
         case .pageChanged:
             // The page model plays the page-change haptic for both the Action Button and the crown.
             break
@@ -227,12 +239,14 @@ final class RealDiveSessionCoordinator: ObservableObject {
         switch state {
         case .submerged:
             wetReadyExitScheduler.cancel()
+            guard !suppressesWetReadyUntilDry else { return }
             if case .savedSummary = phase {
                 phase = .idle
             }
             guard case .idle = phase else { return }
             phase = .wetReady(mode: preferredMode())
         case .notSubmerged:
+            suppressesWetReadyUntilDry = false
             guard case .wetReady = phase else { return }
             wetReadyExitScheduler.schedule { [weak self] in
                 guard let self,
@@ -258,17 +272,47 @@ final class RealDiveSessionCoordinator: ObservableObject {
         phase = .wetReady(mode: mode)
     }
 
+    func dismissWetReady() {
+        guard case .wetReady = phase else { return }
+        wetReadyExitScheduler.cancel()
+        suppressesWetReadyUntilDry = water.latestState != .notSubmerged
+        phase = .idle
+    }
+
     /// The existing end path: out of the water and at least `minimumHardwareEndElapsedSeconds` in.
     func requestActionButtonEnd() -> Bool {
         guard case .recording = phase,
+              !isEnding,
               recorder.elapsedTime >= minimumHardwareEndElapsedSeconds,
               water.latestState == .notSubmerged
         else {
             return false
         }
 
+        isEnding = true
         runtime.invalidate()
         return true
+    }
+
+    func keepPendingRecordForRetry(_ record: DiveSessionRecord) {
+        pendingRecords[record.id] = record
+    }
+
+    func returnHomeKeepingPendingRecord() {
+        guard case let .savePersistenceError(record) = phase else { return }
+        keepPendingRecordForRetry(record)
+        // This clears memory only. Never cancel: cancellation deletes the unsaved journal.
+        recorder.resetCompletedSession()
+        suppressesWetReadyUntilDry = water.latestState != .notSubmerged
+        phase = .idle
+    }
+
+    func retryPendingRecords() {
+        for record in Array(pendingRecords.values) {
+            if sessionStore.save(record) {
+                pendingRecords.removeValue(forKey: record.id)
+            }
+        }
     }
 
     func retryCompletedSessionSave() {
@@ -288,6 +332,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
 
         guard recorder.cancelSession() else {
+            reportFailure(String(localized: "Could not return Home. Please retry."))
             return
         }
         phase = .idle
@@ -298,6 +343,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
         guard recorder.cancelSession() else {
+            reportFailure(String(localized: "Could not return Home. Please retry."))
             return
         }
         phase = .idle
@@ -362,8 +408,10 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private func prepareForNewSession() -> Bool {
         switch phase {
         case .idle, .wetReady:
+            failureFeedback = nil
             return true
         case .savedSummary:
+            failureFeedback = nil
             phase = .idle
             return true
         case .noSamples, .startPersistenceError:
@@ -376,6 +424,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
             persistCompletedRecord(record, deferred: false)
             if case .savePersistenceError = phase {
                 // Keep the unsaved journal on disk; launch recovery restores it as an interrupted session.
+                keepPendingRecordForRetry(record)
                 recorder.resetCompletedSession()
             }
             phase = .idle
@@ -432,12 +481,19 @@ final class RealDiveSessionCoordinator: ObservableObject {
         }
         guard sessionStore.save(record) else {
             phase = .savePersistenceError(record: record)
+            reportFailure(String(localized: "Save failed. Your log is kept."))
             return
         }
 
         recorder.resetCompletedSession()
         phase = .savedSummary(record: record)
+        failureFeedback = nil
         haptics.play(.saved)
+    }
+
+    private func reportFailure(_ message: String) {
+        failureCount += 1
+        failureFeedback = String(localized: "\(message) (\(failureCount))")
     }
 
     private func cancelWithoutSamples(source: RealDiveStartSource) {

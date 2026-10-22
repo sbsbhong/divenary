@@ -283,7 +283,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(sessionStore).toContain('handleSessionDeletion');
     expect(sessionStore).toContain('sessions.removeAll');
     expect(sessionStore).not.toContain('swipeActions');
-    expect(sessionStore).not.toContain('onDelete');
+    expect(sessionStore).not.toMatch(/\.onDelete\s*\(/);
+    expect(sessionStore).toContain('if try profileStore.isSessionDeleted(record.id) { continue }');
   });
 
   it('uses the immediate deletion channel even while a background deletion transfer is outstanding', () => {
@@ -606,8 +607,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).toContain('startRealDive(mode: .scuba)');
     expect(home).toContain('let startPlan = explicitStartPlan(for: diveMode)');
     expect(home).toContain('realCoordinator.startManual(plan: startPlan)');
-    expect(explicitStartPlan).toContain('plan.sourcePlanLocalId == nil || plan.diveMode == diveMode');
-    expect(explicitStartPlan).toContain('return preservesSelectedPlan ? next : next.withoutPlannedDiveLink');
+    expect(explicitStartPlan).toContain('HomePlanSelection.startPlan(plan, mode: diveMode, plannedDives: store.plannedDives)');
+    expect(home).toMatch(/if next.sourcePlanLocalId != nil, next.diveMode != mode \{\s*next = PreDivePlan\(diveMode: mode\)/);
+    expect(home).toContain('plannedDives.first { $0.localId == id }?.preDivePlan');
+    expect(home).toContain('.onChange(of: store.plannedDives)');
   });
 
   it('keeps demo and debug recordings away from planned dives', () => {
@@ -784,7 +787,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(toolbarBlock).toContain('Image(systemName: "xmark")');
     expect(toolbarBlock).toContain('.accessibilityLabel(Text("End demo"))');
     expect(toolbarBlock).toContain('_ = endDive()');
-    expect(endDive).toContain('lifecycle.finishRecording()');
+    expect(endDive).toContain('lifecycle.handleActionButtonPress()');
+    expect(endDive).toContain('if lifecycle.keepsActionButtonOverride');
     expect(endDive).not.toContain('cancelSession');
     expect(recording).toMatch(/case \.demo:\s*return \.toolbarEnd/);
     expect(recording).toMatch(/case \.debugTest:\s*return \.hidden/);
@@ -808,7 +812,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('String(localized: "End available in \\(DiveFormatters.countdown(seconds: seconds))")');
     expect(hint).toContain('String(localized: "Action ▸ End page")');
     expect(hint).toContain('String(localized: "Press to end & save")');
-    expect(hint).toContain('String(localized: "Crown ▸ Details \\(position)/\\(pageCount)")');
+    expect(hint).toContain('String(localized: "Crown forward ▸ Details")');
+    expect(hint).toContain('String(localized: "Crown back ▸ Live")');
     expect(hint).toContain('let input: Input = hasActionButton || page == .end ? .actionButton : .crown');
     // The chip names what the next press shows: Live goes to Details first, Details to the End page.
     expect(hint).toMatch(/case \.nextPage\(\.end, _\):\s*return String\(localized: "Action ▸ End page"\)/);
@@ -823,7 +828,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(pager).toContain('isHapticFeedbackEnabled: false');
     expect(pager).not.toMatch(/requestActionButtonEnd|handleActionButtonPress/);
     expect(pager).toContain('pages.setAlwaysOn(isLuminanceReduced)');
-    expect(pager).toContain('isLuminanceReduced ? .live : pages.page');
+    expect(pager).toMatch(/private var displayedPage: RecordingPage \{\s*pages.page\s*\}/);
+    const pageModel = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/RecordingPageModel.swift');
+    expect(pageModel).toContain('guard isRecording, !isAlwaysOn else { return page }');
+    expect(pageModel).toContain('guard isRecording, !isAlwaysOn, detents != 0 else { return }');
     expect(pager).toMatch(/case \.rejected = feedback\.outcome/);
     expect(realFlow).toContain('pages: coordinator.recordingPages');
     // Demo and debug keep crown depth and their own end path; only real recording pages.
@@ -897,12 +905,14 @@ describe('WatchConnectivity native source contract', () => {
     const korean = (key: string) => catalog.strings[key]?.localizations?.ko?.stringUnit?.value;
     // Watch keys are the English source text; the shown English comes from the catalog's en value.
     const english = (key: string) => catalog.strings[key]?.localizations?.en?.stringUnit?.value;
-    const startCopy = wetReady.slice(wetReady.indexOf('private var startCopy'), wetReady.indexOf('private var accent'));
+    const startCopy = wetReady.slice(wetReady.indexOf('struct WetReadyStartGuidance'), wetReady.indexOf('struct WetReadyView'));
     const summaryHeader = summary.slice(summary.indexOf('struct SessionSummaryContent'), summary.indexOf('private var commonMetricsSection'));
 
-    expect(startCopy).toMatch(/case \.active:\s*return String\(localized: "Recording starts when watchOS starts the dive session\."\)/);
-    expect(startCopy).toMatch(/case \.inactive where hasActionButton:\s*return String\(localized: "If you assigned Divenary to the Action Button, press it to start recording\."\)/);
-    expect(startCopy).toMatch(/case \.inactive, \.unknown:\s*return String\(localized: "Start from Home before entering the water\."\)/);
+    expect(startCopy).toMatch(/if autoLaunchStatus == \.active \{\s*return String\(localized: "Recording starts when watchOS starts the dive session\."\)/);
+    expect(startCopy).toMatch(/if hasActionButton \{\s*return String\(localized: "If you assigned Divenary to the Action Button, press it to start recording\."\)/);
+    expect(startCopy).toContain('String(localized: "Start recording from Home.")');
+    expect(startCopy).toContain('String(localized: "Not recording yet")');
+    expect(wetReady).toContain('Button(String(localized: "Back to Home"), action: onHome)');
     expect(wetReady).not.toContain('Underwater recording starts automatically.');
     expect(wetReady).toContain('.frame(maxWidth: .infinity, minHeight: 44)');
     expect(realFlow).toContain('autoLaunchStatus: autoLaunchStatus');
@@ -925,6 +935,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(english('Action ▸ Details %lld/%lld')).toBe('Action Button ▸ Details %1$lld/%2$lld');
     expect(korean('Crown ▸ Details %lld/%lld')).toBe('크라운 ▸ 상세 %1$lld/%2$lld');
     expect(korean('Crown ▸ Live %lld/%lld')).toBe('크라운 ▸ 실시간 %1$lld/%2$lld');
+    expect(korean('Crown forward ▸ Details')).toBe('크라운 앞으로 ▸ 상세');
+    expect(korean('Crown back ▸ Live')).toBe('크라운 뒤로 ▸ 실시간');
     expect(korean('Digital Crown')).toBe('디지털 크라운');
     expect(korean('Rotate the Digital Crown to choose a mode.')).toBe('디지털 크라운을 돌려 다이빙 종류를 선택하세요.');
     // Same words as the phone: 평점 and 다시 시도.
@@ -1052,7 +1064,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(simulated).toContain('recordingMode.prepare(plan: plan)');
     expect(simulated).toContain('digitalCrownRotation');
     expect(coordinator).toContain('private let minimumHardwareEndElapsedSeconds: TimeInterval = 180');
-    expect(coordinator).toMatch(/guard case \.recording = phase,\s*recorder\.elapsedTime >= minimumHardwareEndElapsedSeconds,\s*water\.latestState == \.notSubmerged/);
+    expect(coordinator).toMatch(/guard case \.recording = phase,\s*!isEnding,\s*recorder\.elapsedTime >= minimumHardwareEndElapsedSeconds,\s*water\.latestState == \.notSubmerged/);
     expect(coordinator).not.toContain('surfaceEndDepthMeters');
     expect(simulated).toContain('.focusable(recordingMode.controlPolicy.usesCrownDepthControl)');
     expect(recording).toMatch(/var usesCrownDepthControl: Bool \{\s*self == \.simulated/);
@@ -1242,7 +1254,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(sample).toContain('depthMeters.isFinite');
     expect(sample).toContain('pressureKPa.isFinite');
     expect(sample).toContain('(waterTemperatureCelsius?.isFinite ?? true)');
-    expect(recorder).toMatch(/private func append\(_ sample: DepthSample\) \{\s*guard isRecording, sample\.isValidRecordingSample else \{\s*return\s*\}\s*if let previousSample = lastRawSample \{/);
+    expect(recorder).toMatch(/private func append\(_ sample: DepthSample\) \{\s*guard isRecording, sample\.isValidRecordingSample else \{\s*return\s*\}\s*if let previousTimestamp = lastRawSample\?\.timestamp \?\? startedAt \{/);
     expect(freeEngine).toContain('guard sample.isValidRecordingSample else');
     expect(scubaEngine).toContain('guard sample.isValidRecordingSample else');
   });
@@ -1268,10 +1280,12 @@ describe('WatchConnectivity native source contract', () => {
     expect(realFlow).toMatch(/case \.savedSummary\(let session\):\s*SavedSessionSummaryView\(\s*session: session,\s*onBack: coordinator\.dismissSavedSummary/);
     expect(simulated).toMatch(/case \.savedSummary\(let session\):\s*SavedSessionSummaryView\(\s*session: session,\s*onBack: dismissSavedSummary/);
     expect(coordinator).toContain('phase = .completing(record: record)');
-    expect(coordinator).toMatch(/guard sessionStore\.save\(record\) else \{\s*phase = \.savePersistenceError\(record: record\)\s*return\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(record: record\)/);
-    expect(simulated).toMatch(/phase = \.saving\(session\)\s*guard store\.save\(session\) else \{\s*phase = \.savePersistenceError\(session\)\s*return false\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(session\)/);
+    expect(coordinator).toMatch(/guard sessionStore\.save\(record\) else \{\s*phase = \.savePersistenceError\(record: record\)\s*reportFailure\(String\(localized: "Save failed\. Your log is kept\."\)\)\s*return\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(record: record\)/);
+    expect(simulated).toMatch(/phase = \.saving\(session\)\s*guard store\.save\(session\) else \{\s*phase = \.savePersistenceError\(session\)\s*reportFailure\(String\(localized: "Save failed\. Your log is kept\."\)\)\s*return false\s*\}\s*recorder\.resetCompletedSession\(\)\s*phase = \.savedSummary\(session\)/);
     expect(realFlow).toContain('coordinator.retryCompletedSessionSave()');
-    expect(simulated).toContain('lifecycle.retryCompletedSessionSave()');
+    expect(simulated).toContain('if case .savePersistenceError = phase { return retryCompletedSessionSave() }');
+    expect(simulated).toContain('The Action Button retries saving this demo log.');
+    expect(simulated).toContain('if lifecycle.keepsActionButtonOverride { installActionButtonEndOverride() }');
     expect(summary).not.toContain('Picker("Rating"');
     expect(summary).not.toContain('Picker("Exertion"');
     expect(summary).not.toContain('Picker("Visibility"');

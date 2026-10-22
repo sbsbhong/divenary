@@ -4,6 +4,8 @@ Sources: Diving App accepted design and implementation, 2026-07-12; Wave 3A Supa
 Raw: [1Hz 프로파일 파일 저장과 WatchConnectivity 신뢰성 결정](../../raw/architecture/2026-07-12-one-hertz-profile-file-sync.md); [Wave 3A Supabase Auth foundation 구현 증거](../../raw/architecture/2026-07-15-wave3a-auth-foundation-implementation.md); [Guest data account claim implementation evidence](../../raw/architecture/2026-07-19-guest-data-account-claim-implementation.md); [Guest data account claim staging promotion evidence](../../raw/architecture/2026-07-20-guest-data-account-claim-staging-promotion.md); [Physical device cold start and data integrity](../../raw/architecture/2026-07-26-physical-device-cold-start-data-integrity.md); [Local log import performance and reliability evidence](../../raw/architecture/2026-07-28-local-log-import-reliability.md); [Local log import review hardening evidence](../../raw/architecture/2026-07-28-local-log-import-review-hardening.md)
 Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
 Raw: [2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계](../../raw/architecture/2026-10-22-performance-and-watch-link-boundary.md)
+Sources: 워치 복구·실시간 값 후속 리뷰와 현재 구현, 2026-10-22
+Raw: [워치 복구·실시간 값 후속 리뷰](../../raw/architecture/2026-10-22-watch-review-recovery-and-live-values.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -84,11 +86,12 @@ iOS에서 사용자가 알림을 이미 거부했다면 `requestPermission()`은
 
 ## 장애 복구와 검증
 
-- legacy monolithic Watch file은 모든 migrated artifact가 검증된 뒤 삭제한다.
+- legacy monolithic Watch file과 UserDefaults 이관은 같은 ID의 기존 artifact도 정규화된 전체 내용이 동일한지 비교한다. 충돌하면 원본을 남기며, 파일 원본은 최종 manifest를 캐시 없이 다시 읽고 모든 대상 artifact를 검증한 뒤 삭제한다.
 - 앱이 기록 중 종료되면 다음 launch에서 NDJSON journal을 복원해 `interrupted` profile artifact로 finalize하고 review 가능한 세션으로 남긴다.
 - corrupted/truncated inbound file은 repository에 전달하거나 ACK하지 않는다.
 - repository/profile/I/O 실패와 prepared derived-file 무결성 실패는 raw inbound item을 남겨 다음 drain에서 재생성·재시도하고 같은 batch의 다음 descriptor를 계속 처리한다.
 - contract 또는 prepared metadata가 잘못된 항목은 drop-ACK해 뒤 항목을 영구 차단하지 않는다.
+- 저장 기록의 수동 재전송은 manifest 읽기 실패, 즉시 전송 실패, 비동기 전송 실패를 화면에 알린다. 반복 실패도 시도 번호가 바뀌며, 전송 대기나 성공으로 바뀌면 실패 안내를 지운다.
 - duplicate identity는 native inbox와 Watch outstanding transfer에서 합친다.
 - Logbook/Planbook의 fail-closed recovery journal과 exact-byte quarantine은 복구 증거이며 live Watch/profile inventory에 포함하지 않는다.
 - 자동 검증은 3시간 상한, sparse/invalid/temperature sample, large artifact digest, migration, file-only route, mobile import/dedupe와 permission lifecycle을 포함한다.

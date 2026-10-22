@@ -98,9 +98,9 @@ const activeCatalogValues = language =>
 const koreanGlossaryLeaks = ['Action', 'Crown', '방수 잠금', '세션', '샘플', '캡처', 'Home'].filter(term =>
   activeCatalogValues('ko').some(value => value.includes(term)),
 );
-// 디지털 크라운 in sentences; the bare 크라운 only in the short page chips ("크라운 ▸ 상세 1/2").
+// 디지털 크라운 in sentences; 크라운 (optionally 앞으로/뒤로) only in short page chips.
 const koreanCrownSpellingLeaks = activeCatalogValues('ko').filter(value =>
-  value.replaceAll('디지털 크라운', '').replaceAll('크라운 ▸', '').includes('크라운'),
+  value.replaceAll('디지털 크라운', '').replace(/^크라운(?: 앞으로| 뒤로)? ▸ /, '').includes('크라운'),
 );
 // The recommended stop is never a mandatory "safety stop", in shown or stale copy.
 const englishCatalogValues = stringCatalogEntries

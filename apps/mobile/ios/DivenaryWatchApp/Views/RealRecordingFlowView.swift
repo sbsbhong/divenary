@@ -19,7 +19,8 @@ struct RealRecordingFlowView: View {
                     currentDepthMeters: water.latestDepthMeters,
                     autoLaunchStatus: autoLaunchStatus,
                     hasActionButton: ActionButtonHint.current.isLikelyUltra,
-                    onSelect: coordinator.selectWetReadyMode
+                    onSelect: coordinator.selectWetReadyMode,
+                    onHome: coordinator.dismissWetReady
                 )
             case .recording(_, let plan):
                 RecordingInstrumentView(
@@ -30,6 +31,11 @@ struct RealRecordingFlowView: View {
                     waterState: water.latestState,
                     pages: coordinator.recordingPages
                 )
+                .overlay {
+                    if coordinator.isEnding {
+                        endingView
+                    }
+                }
             case .completing:
                 savingView
             case .savedSummary(let session):
@@ -49,6 +55,11 @@ struct RealRecordingFlowView: View {
             }
         }
         .navigationBarBackButtonHidden(true)
+        .safeAreaInset(edge: .bottom) {
+            if let message = coordinator.failureFeedback {
+                WatchFlowFailureNote(message: message)
+            }
+        }
         .onChange(of: scenePhase) { _, nextPhase in
             if nextPhase == .active {
                 coordinator.retryCompletedSessionSave()
@@ -111,6 +122,19 @@ struct RealRecordingFlowView: View {
     }
 
     /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire.
+    private var endingView: some View {
+        VStack(spacing: 10) {
+            ProgressView()
+                .tint(DiveWatchTheme.primary)
+            Text(String(localized: "Ending recording"))
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+            BusyPressNote(pages: coordinator.recordingPages)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+
     private var savingView: some View {
         VStack(spacing: 10) {
             ProgressView()
@@ -125,24 +149,66 @@ struct RealRecordingFlowView: View {
     }
 
     private var savePersistenceErrorView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
+        ScrollView {
+            VStack(spacing: 10) {
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                    .font(.system(size: 24, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.danger)
 
-            Text("Keeping your captured log.")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .multilineTextAlignment(.center)
+                Text("Keeping your captured log.")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .multilineTextAlignment(.center)
 
-            Button("Retry Save") {
-                coordinator.retryCompletedSessionSave()
+                Text(String(localized: "Kept for automatic save retry from Home."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .multilineTextAlignment(.center)
+
+                Text(String(localized: "Action Button: retry save, then start a new dive."))
+                    .font(.system(size: 11))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .multilineTextAlignment(.center)
+
+                Button("Retry Save") {
+                    coordinator.retryCompletedSessionSave()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .primary))
+
+                Button(String(localized: "Back to Home")) {
+                    coordinator.returnHomeKeepingPendingRecord()
+                }
+                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
             }
-            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+            .padding(.horizontal, DiveWatchTheme.edgeMargin)
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+}
+
+/// A new failure message includes its attempt number, so consecutive failed actions are visible.
+/// The note expires to leave the recording readout clear if a new dive has already started.
+struct WatchFlowFailureNote: View {
+    let message: String
+    @State private var isVisible = true
+
+    var body: some View {
+        Group {
+            if isVisible {
+                Text(message)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, DiveWatchTheme.edgeMargin)
+            }
+        }
+        .task(id: message) {
+            isVisible = true
+            try? await Task.sleep(for: .seconds(4))
+            guard !Task.isCancelled else { return }
+            isVisible = false
+        }
     }
 }
 

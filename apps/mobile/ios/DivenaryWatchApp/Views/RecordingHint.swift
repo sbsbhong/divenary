@@ -77,9 +77,9 @@ struct RecordingHint: Equatable {
         case .nextPage(_, .actionButton):
             return String(localized: "Action ▸ Live \(position)/\(pageCount)")
         case .nextPage(.details, .crown):
-            return String(localized: "Crown ▸ Details \(position)/\(pageCount)")
+            return String(localized: "Crown forward ▸ Details")
         case .nextPage(_, .crown):
-            return String(localized: "Crown ▸ Live \(position)/\(pageCount)")
+            return String(localized: "Crown back ▸ Live")
         case let .endAvailableIn(seconds):
             return String(localized: "End available in \(DiveFormatters.countdown(seconds: seconds))")
         case .pressToEnd:
@@ -145,9 +145,9 @@ struct RealRecordingPager<Content: View>: View {
             }
     }
 
-    /// Always-On always draws the Live page; the model returns to it too.
+    /// The same page is drawn and acted on. Always-On keeps the model on Live.
     private var displayedPage: RecordingPage {
-        isLuminanceReduced ? .live : pages.page
+        pages.page
     }
 
     private var hint: RecordingHint {

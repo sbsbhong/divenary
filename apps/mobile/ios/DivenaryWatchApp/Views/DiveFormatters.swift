@@ -2,6 +2,15 @@ import Foundation
 import SwiftUI
 
 enum DiveFormatters {
+    static func freeDiveTimeCaption(depthMeters: Double?) -> String? {
+        depthMeters == nil ? String(localized: "Session time") : nil
+    }
+
+    static func observedSurfaceInterval(_ seconds: TimeInterval, depthMeters: Double?) -> TimeInterval? {
+        guard let depthMeters, depthMeters <= 0.8 else { return nil }
+        return seconds
+    }
+
     static let sessionDate: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateStyle = .short

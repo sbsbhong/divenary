@@ -3,6 +3,52 @@ import XCTest
 
 /// The one-line hint under a real recording, for each phase the page model reports.
 final class RecordingHintTests: XCTestCase {
+    @MainActor
+    func testRemovedPlanClearsAllSelectedMetadataButKeepsMode() {
+        let selected = PreDivePlan(sourcePlanLocalId: "executed", title: "Old reef", diveMode: .freedive, siteName: "Old site")
+        XCTAssertEqual(HomePlanSelection.validated(selected, plannedDives: []), PreDivePlan(diveMode: .freedive))
+        XCTAssertNil(HomePlanSelection.startPlan(selected, mode: .scuba, plannedDives: []).sourcePlanLocalId)
+    }
+
+    @MainActor
+    func testManualStartReadsCurrentPlanAndModeSwitchDropsSelection() {
+        let current = WatchPlannedDive(localId: "p1", title: "Updated", siteName: nil, diveMode: .scuba,
+                                      entryStyle: nil, plannedAt: nil, plannedMaxDepthMeters: 12,
+                                      plannedDurationMinutes: nil, gasLabel: nil, buddyIds: [], gearIds: nil,
+                                      tags: [], notes: nil)
+        let stale = PreDivePlan(sourcePlanLocalId: "p1", title: "Old", diveMode: .scuba)
+        XCTAssertEqual(HomePlanSelection.startPlan(stale, mode: .scuba, plannedDives: [current]), current.preDivePlan)
+        XCTAssertEqual(HomePlanSelection.startPlan(stale, mode: .freedive, plannedDives: [current]), PreDivePlan(diveMode: .freedive))
+        XCTAssertEqual(HomePlanSelection.instructions, String(localized: "Select a plan for starts from Home. Tap again to clear."))
+    }
+
+    func testWetReadyUnknownStatusStillOffersConditionalActionButtonAndHomeExit() {
+        let ultra = WetReadyStartGuidance(autoLaunchStatus: .unknown, hasActionButton: true)
+        XCTAssertEqual(ultra.text, String(localized: "If you assigned Divenary to the Action Button, press it to start recording."))
+        for status in [DepthAutoLaunchStatus.inactive, .unknown] {
+            let guidance = WetReadyStartGuidance(autoLaunchStatus: status, hasActionButton: false)
+            XCTAssertTrue(guidance.showsHomeButton)
+            XCTAssertEqual(guidance.text, String(localized: "Start recording from Home."))
+        }
+        XCTAssertEqual(WetReadyStartGuidance.notRecordingText, String(localized: "Not recording yet"))
+    }
+
+    func testWetReadyActiveAutoLaunchStillOffersHomeAndNotRecordingLine() {
+        for hasActionButton in [true, false] {
+            let guidance = WetReadyStartGuidance(autoLaunchStatus: .active, hasActionButton: hasActionButton)
+            XCTAssertTrue(guidance.showsHomeButton)
+            XCTAssertEqual(guidance.text, String(localized: "Recording starts when watchOS starts the dive session."))
+        }
+        XCTAssertEqual(WetReadyStartGuidance.notRecordingText, String(localized: "Not recording yet"))
+    }
+
+    func testCrownHintsNameForwardAndBackInsteadOfPromisingACycle() {
+        XCTAssertEqual(hint(page: .live, availability: .available, water: .notSubmerged, hasActionButton: false).text,
+                       String(localized: "Crown forward ▸ Details"))
+        XCTAssertEqual(hint(page: .details, availability: .available, water: .notSubmerged, hasActionButton: false).text,
+                       String(localized: "Crown back ▸ Live"))
+    }
+
     func testUnderwaterNamesTheNextActionPageAndThePosition() {
         let live = hint(page: .live, availability: .notAtSurface, water: .submerged)
         let details = hint(page: .details, availability: .notAtSurface, water: .submerged)

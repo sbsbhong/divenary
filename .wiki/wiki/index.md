@@ -31,11 +31,11 @@
 | [구현 우선순위 기록](architecture/implementation-priorities.md)                      | 기존 P0를 유지하고 소유자가 승인한 워치 UX D1–D6를 Wave 2·4에 배치하며 구현 가능·결정·하드웨어 상태를 구분한다. | 2026-10-22 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
 | [모바일 구조](architecture/mobile.md) | 작성·수정은 전체 화면 routed 편집기이고 목록 로딩 전 상세 route는 `DetailSkeleton`을 보이며, 시작 shell은 Auth 확인 동안 guest를 열지 않고 Auth 단계마다 10초 제한이 있고, 결과 배너는 account-data gate 위에 두며, 워치 가져오기 기본값·내부 태그는 저장값을 두고 화면에서만 숨긴다. | 2026-10-22 |
-| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 prepared profile을 native file로 채택하며, Watch 기록 journal은 열어 둔 채 1Hz 줄을 쓰고 10 sample마다 flush한다. | 2026-10-22 |
+| [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | 1Hz 파일 동기화, 이관 원본의 내용 충돌 보존과 최종 manifest 검증, 재전송 실패 안내를 정리한다. | 2026-10-22 |
 | [Monorepo 구조](architecture/monorepo.md) | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리하고, contracts에 session과 폰-워치 제어 메시지 schema를 둔다. | 2026-10-22 |
 | [Supabase 구조](architecture/supabase.md) | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단하고, mobile Auth 단계의 10초 시간 초과는 로그아웃 없이 transport failure로 다루되 onboarding 실패는 guest로 연다. | 2026-10-22 |
 | [동기화 흐름 구조](architecture/sync-flow.md) | 폰-워치 메시지는 `packages/contracts` schema가 기준이고, account hydrate는 원격 행을 최신순 페이지마다 바로 로컬에 적용하며, durable JSON은 원자적 단일 key 쓰기를 쓴다. | 2026-10-22 |
-| [Watch 앱 구조](architecture/watch-app.md) | 현행 워치 기록·입력 구조를 유지하고 상승 속도 표시와 benchmark의 충돌, 북마크 입력 결정, 약 6 m 센서 범위 밖 화면 백로그를 연결한다. | 2026-10-22 |
+| [Watch 앱 구조](architecture/watch-app.md) | 워치 기록·입력 구조, 현재 프로세스 기록을 제외한 복구 재시도, 실시간 수심·수온 유효성 및 데모 저장 실패 버튼 경계를 정리한다. | 2026-10-22 |
 
 ## domains
 

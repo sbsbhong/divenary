@@ -2,6 +2,21 @@ import XCTest
 @testable import DivenaryWatchApp
 
 final class SafetyStopControllerTests: XCTestCase {
+    func testLiveStopTimerIsQualifiedWhenDepthIsUnavailable() {
+        let record = activeController().record
+        XCTAssertTrue(record.isDisplayTimerPaused(depthMeters: nil))
+        XCTAssertFalse(record.isDisplayTimerPaused(depthMeters: 5))
+    }
+
+    func testUnknownCoverageDoesNotDisplayDefiniteReviewTimes() {
+        let record = activeController().record.withUnknownCoverage
+        XCTAssertNil(record.reviewRemainingSeconds)
+        XCTAssertNil(record.reviewTimeInZoneSeconds)
+        XCTAssertFalse(record.completed)
+        XCTAssertNil(record.completedAt)
+        XCTAssertNotNil(activeController().record.reviewRemainingSeconds)
+    }
+
     func testMaxDepthBelowTenMetersIsNotRequired() {
         var controller = SafetyStopController()
         controller.update(maxDepthMeters: 9.9, sample: EngineTestFixtures.sample(0, depth: 4))

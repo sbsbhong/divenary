@@ -95,6 +95,28 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
     private var cachedManifest: (stamp: FileStamp, entries: [DiveProfileManifestEntry])?
     private var cachedDeletedSessionIds: (stamp: FileStamp, sessionIds: Set<UUID>)?
     private var openJournals: [UUID: OpenJournal] = [:]
+    private(set) var activeRecordingReadFailed = false
+
+    // A recording begun in this process is never a launch-recovery candidate, even if history
+    // or the recorder opens another store instance. Keep the registration through save failures.
+    private final class RecordingStarts: @unchecked Sendable {
+        private let lock = NSLock()
+        private var directories = Set<URL>()
+
+        func register(_ directory: URL) {
+            lock.lock()
+            defer { lock.unlock() }
+            directories.insert(directory.standardizedFileURL)
+        }
+
+        func contains(_ directory: URL) -> Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return directories.contains(directory.standardizedFileURL)
+        }
+    }
+
+    private static let recordingStarts = RecordingStarts()
 
     init(
         rootURL: URL? = nil,
@@ -341,6 +363,10 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             }
             if let existing = entries.first(where: { $0.id == record.id }) {
                 try verifyArtifact(existing.artifact)
+                guard try matchesCanonicalArtifact(
+                    for: record.sanitizedForPersistence(), existing: existing.artifact,
+                    explicitProfile: record.profile
+                ) else { throw CocoaError(.fileWriteFileExists) }
                 continue
             }
             let entry = try finalize(record: record)
@@ -348,11 +374,19 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             entries.append(entry)
         }
 
-        for entry in entries where records.contains(where: { $0.id == entry.id }) {
+        // Read back the final manifest and every source record before removing the only legacy copy.
+        cachedManifest = nil
+        let finalEntries = try loadEntries()
+        for record in records where try !isSessionDeleted(record.id) {
+            guard let entry = finalEntries.first(where: { $0.id == record.id }),
+                  try matchesCanonicalArtifact(
+                    for: record.sanitizedForPersistence(), existing: entry.artifact,
+                    explicitProfile: record.profile
+                  ) else { throw CocoaError(.fileReadCorruptFile) }
             try verifyArtifact(entry.artifact)
         }
         try fileManager.removeItem(at: legacyURL)
-        return try loadEntries()
+        return finalEntries
     }
 
     func beginRecording(_ metadata: ActiveDiveRecordingMetadata) throws {
@@ -360,6 +394,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
             throw CocoaError(.fileWriteFileExists)
         }
         let directory = sessionDirectory(for: metadata.localSessionId)
+        Self.recordingStarts.register(directory)
         let metadataURL = activeMetadataURL(for: metadata.localSessionId)
         let journalURL = recordingJournalURL(for: metadata.localSessionId)
 
@@ -414,7 +449,8 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         journal.lastSample = sample
     }
 
-    func loadActiveRecordings() throws -> [ActiveDiveRecording] {
+    func loadActiveRecordings(excludingCurrentProcess: Bool = false) throws -> [ActiveDiveRecording] {
+        activeRecordingReadFailed = false
         let sessionsURL = rootURL.appendingPathComponent("Sessions", isDirectory: true)
         guard fileManager.fileExists(atPath: sessionsURL.path) else {
             return []
@@ -427,6 +463,11 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
         )
         var recordings: [ActiveDiveRecording] = []
         for directory in directories {
+            if excludingCurrentProcess, Self.recordingStarts.contains(directory) { continue }
+            // Quarantine preserves unreadable source data; reloading history must not hide it.
+            if fileManager.fileExists(atPath: directory.appendingPathComponent("Quarantine").path) {
+                activeRecordingReadFailed = true
+            }
             let metadataURL = directory.appendingPathComponent("active-recording.json")
             guard fileManager.fileExists(atPath: metadataURL.path) else {
                 continue
@@ -449,6 +490,7 @@ final class DiveProfileArtifactStore: DiveProfileRecordingStoring {
                 let samples = try loadJournalSamples(at: journalURL)
                 recordings.append(ActiveDiveRecording(metadata: metadata, samples: samples))
             } catch {
+                activeRecordingReadFailed = true
                 if shouldQuarantineActiveRecording(for: error) {
                     try? quarantineActiveRecording(in: directory)
                 }

@@ -1,5 +1,29 @@
 import SwiftUI
 
+enum HomePlanSelection {
+    static var instructions: String {
+        String(localized: "Select a plan for starts from Home. Tap again to clear.")
+    }
+
+    static func validated(_ selection: PreDivePlan, plannedDives: [WatchPlannedDive]) -> PreDivePlan {
+        guard let id = selection.sourcePlanLocalId else { return selection }
+        return plannedDives.first { $0.localId == id }?.preDivePlan
+            ?? PreDivePlan(diveMode: selection.diveMode)
+    }
+
+    static func startPlan(_ selection: PreDivePlan, mode: DiveMode, plannedDives: [WatchPlannedDive]) -> PreDivePlan {
+        var next = validated(selection, plannedDives: plannedDives)
+        if next.sourcePlanLocalId != nil, next.diveMode != mode {
+            next = PreDivePlan(diveMode: mode)
+        }
+        next.diveMode = mode
+        if mode == .scuba, next.gasLabel.isEmpty {
+            next.gasLabel = String(localized: "Air")
+        }
+        return next
+    }
+}
+
 struct HomeView: View {
     @ObservedObject var store: DiveSessionStore
     // Home only forwards these and reacts to submersion changes, so it does not observe them:
@@ -104,7 +128,8 @@ struct HomeView: View {
                                 plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                                 recordingMode: .demo,
                                 actionButtonBridge: actionButtonBridge,
-                                actionButtonDonor: actionButtonDonor
+                                actionButtonDonor: actionButtonDonor,
+                                keepPendingRecord: realCoordinator.keepPendingRecordForRetry
                             )
                         }
                     } label: {
@@ -125,7 +150,8 @@ struct HomeView: View {
                                     plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
                                     recordingMode: .debugTest,
                                     actionButtonBridge: actionButtonBridge,
-                                    actionButtonDonor: actionButtonDonor
+                                    actionButtonDonor: actionButtonDonor,
+                                    keepPendingRecord: realCoordinator.keepPendingRecordForRetry
                                 )
                             }
                         } label: {
@@ -144,7 +170,8 @@ struct HomeView: View {
                                     plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
                                     recordingMode: .debugTest,
                                     actionButtonBridge: actionButtonBridge,
-                                    actionButtonDonor: actionButtonDonor
+                                    actionButtonDonor: actionButtonDonor,
+                                    keepPendingRecord: realCoordinator.keepPendingRecordForRetry
                                 )
                             }
                         } label: {
@@ -186,15 +213,21 @@ struct HomeView: View {
             .onAppear {
                 applyPreferredDiveMode()
                 loadInitialSensorAvailability()
+                plan = HomePlanSelection.validated(plan, plannedDives: store.plannedDives)
+                realCoordinator.retryPendingRecords()
                 autoLaunchAuthorization.refresh()
                 realCoordinator.receiveWaterState(water.latestState)
             }
             .onReceive(water.$latestState.removeDuplicates().dropFirst()) { nextState in
                 realCoordinator.receiveWaterState(nextState)
             }
+            .onChange(of: store.plannedDives) { _, plannedDives in
+                plan = HomePlanSelection.validated(plan, plannedDives: plannedDives)
+            }
             .onChange(of: scenePhase) { _, nextPhase in
                 if nextPhase == .active {
                     store.resumePendingDeletionsIfNeeded()
+                    realCoordinator.retryPendingRecords()
                 }
             }
         }
@@ -220,13 +253,7 @@ struct HomeView: View {
     }
 
     private func explicitStartPlan(for diveMode: DiveMode) -> PreDivePlan {
-        var next = plan
-        let preservesSelectedPlan = plan.sourcePlanLocalId == nil || plan.diveMode == diveMode
-        next.diveMode = diveMode
-        if diveMode == .scuba {
-            next.gasLabel = next.gasLabel.isEmpty ? "Air" : next.gasLabel
-        }
-        return preservesSelectedPlan ? next : next.withoutPlannedDiveLink
+        HomePlanSelection.startPlan(plan, mode: diveMode, plannedDives: store.plannedDives)
     }
 
     private func applyPreferredDiveMode() {
@@ -296,7 +323,7 @@ struct DivePlansView: View {
                 }
 
                 Text(isSelectionEnabled
-                    ? String(localized: "Tap a plan to use it for the next dive. Tap it again to clear.")
+                    ? HomePlanSelection.instructions
                     : String(localized: "Plans start real dives on a supported Apple Watch."))
                     .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText)

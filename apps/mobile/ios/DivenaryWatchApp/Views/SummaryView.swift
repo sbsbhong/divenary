@@ -51,6 +51,12 @@ struct SessionSummaryContent: View {
                             Spacer(minLength: 0)
                         }
 
+                        if let recoveryLabel = session.recoveryLabel {
+                            Text(recoveryLabel)
+                                .font(.system(size: 12))
+                                .foregroundStyle(DiveWatchTheme.secondary)
+                        }
+
                         HStack(alignment: .top, spacing: 10) {
                             SummaryHeadlineMetric(
                                 title: String(localized: "Max Depth"),
@@ -184,10 +190,10 @@ private struct SafetyStopSummarySection: View {
 
                 // The status appears once, as this row.
                 SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
-                SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.remainingSeconds))
-                SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.timeInZoneSeconds))
+                SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.reviewRemainingSeconds))
+                SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.reviewTimeInZoneSeconds))
                 SummaryRow(title: String(localized: "Recommendation"), value: String(localized: "Recommended reminder"))
-                SummaryRow(title: String(localized: "Completed"), value: localizedBoolean(safetyStop.completed))
+                SummaryRow(title: String(localized: "Completed"), value: safetyStop.status == .unknown ? "--" : localizedBoolean(safetyStop.completed))
 
                 Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
                     .font(.system(size: 10, weight: .semibold))

@@ -1,7 +1,332 @@
+import Combine
 import XCTest
 @testable import DivenaryWatchApp
 
 final class DiveSessionRecordMigrationTests: XCTestCase {
+    func testPlansDoNotInventDepthAndPreserveIndividualBuddyIDs() throws {
+        let plan = try JSONDecoder().decode(WatchPlannedDive.self, from: Data(
+            #"{"localId":"reef","buddyIds":["Buddy A","Buddy,B"],"tags":[]}"#.utf8
+        )).preDivePlan
+        XCTAssertNil(PreDivePlan().plannedMaxDepthMeters)
+        XCTAssertFalse(PreDivePlan().tags.contains { $0.hasPrefix("planned-") })
+        XCTAssertNil(plan.plannedMaxDepthMeters)
+        XCTAssertFalse(plan.tags.contains { $0.hasPrefix("planned-") })
+        XCTAssertEqual(plan.buddyIds, ["Buddy A", "Buddy,B"])
+        let restored = try JSONDecoder().decode(PreDivePlan.self, from: JSONEncoder().encode(plan))
+        XCTAssertEqual(restored.buddyIds, plan.buddyIds)
+        XCTAssertNil(restored.plannedMaxDepthMeters)
+        XCTAssertTrue(PreDivePlan(plannedMaxDepthMeters: 12).tags.contains("planned-12m"))
+    }
+
+    @MainActor
+    func testUnreadableHistoryCanRetryWithoutReportingAnEmptyLogbook() throws {
+        let defaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let source = Data("not-json".utf8)
+        defaults.set(source, forKey: "savedDiveSessionRecords")
+        let store = DiveSessionStore(userDefaults: defaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending), recordsStorageURL: storageURL)
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(defaults.data(forKey: "savedDiveSessionRecords"), source)
+
+        let record = Self.debugScubaRecord()
+        defaults.set(try JSONEncoder().encode([record]), forKey: "savedDiveSessionRecords")
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertEqual(store.sessions.map(\.id), [record.id])
+        XCTAssertNil(defaults.data(forKey: "savedDiveSessionRecords"))
+    }
+
+    @MainActor
+    func testEmptyHistoryAndCorruptManifestHaveDifferentStates() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending), recordsStorageURL: storageURL)
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertTrue(store.sessions.isEmpty)
+        let root = storageURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("not-json".utf8).write(to: root.appendingPathComponent("session-manifest.json"))
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .failed)
+    }
+
+    @MainActor
+    func testPartialMigrationRetainsSourceAndRetriesRemainingArtifacts() throws {
+        let defaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let records = [Self.debugScubaRecord(), Self.debugFreediveRecordWithNonFiniteDerivedValues().sanitizedForPersistence()]
+        let source = try JSONEncoder().encode(records)
+        defaults.set(source, forKey: "savedDiveSessionRecords")
+        let fileManager = FailSelectedArtifactDirectoryFileManager()
+        fileManager.blockedSessionID = records[1].id
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager)
+        let store = DiveSessionStore(userDefaults: defaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(defaults.data(forKey: "savedDiveSessionRecords"), source)
+        let firstArtifact = try XCTUnwrap(profileStore.loadEntries().first?.artifact)
+        XCTAssertEqual(firstArtifact.localSessionId, records[0].id)
+
+        fileManager.blockedSessionID = nil
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertEqual(Set(store.sessions.map(\.id)), Set(records.map(\.id)))
+        XCTAssertEqual(try profileStore.loadEntries().first { $0.id == records[0].id }?.artifact, firstArtifact)
+        XCTAssertNil(defaults.data(forKey: "savedDiveSessionRecords"))
+    }
+
+    @MainActor
+    func testHistoryRetryDoesNotRecoverAnOngoingRecording() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent())
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        let id = UUID()
+        try profileStore.beginRecording(ActiveDiveRecordingMetadata(localSessionId: id,
+            startedAt: EngineTestFixtures.start, captureMode: .real, plan: PreDivePlan()))
+        try profileStore.append(EngineTestFixtures.sample(1, depth: 3), to: id)
+        store.retryLoadingHistory()
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertEqual(try profileStore.loadActiveRecordings().map(\.metadata.localSessionId), [id])
+        let reopened = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending), recordsStorageURL: storageURL)
+        reopened.retryLoadingHistory()
+        XCTAssertTrue(reopened.sessions.isEmpty)
+        XCTAssertEqual(try profileStore.loadActiveRecordings().map(\.metadata.localSessionId), [id])
+    }
+
+    @MainActor
+    func testMigrationKeepsSourceWhenExistingArtifactHasConflictingContent() throws {
+        let defaults = makeIsolatedUserDefaults()
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent())
+        let record = Self.debugScubaRecord()
+        _ = try profileStore.finalize(record: record)
+        let conflicting = record.withSamples(record.samples + [EngineTestFixtures.sample(240, depth: 4)])
+        let source = try JSONEncoder().encode([conflicting])
+        defaults.set(source, forKey: "savedDiveSessionRecords")
+        let store = DiveSessionStore(userDefaults: defaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(defaults.data(forKey: "savedDiveSessionRecords"), source)
+    }
+
+    @MainActor
+    func testLegacyFileMigrationKeepsConflictingSourceUntilContentMatches() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent())
+        let record = Self.debugScubaRecord()
+        let original = try profileStore.finalize(record: record)
+        let conflict = record.withSamples(record.samples + [EngineTestFixtures.sample(240, depth: 4)])
+        let source = try JSONEncoder().encode([conflict])
+        try source.write(to: storageURL)
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(try Data(contentsOf: storageURL), source)
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(try Data(contentsOf: storageURL), source)
+        XCTAssertEqual(try profileStore.loadEntries().first?.artifact, original.artifact)
+
+        try JSONEncoder().encode([record]).write(to: storageURL)
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: storageURL.path))
+        XCTAssertEqual(try profileStore.loadEntries().first?.artifact, original.artifact)
+    }
+
+    @MainActor
+    func testLegacyFileMigrationReadsBackFinalManifestBeforeRemovingSource() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let source = try JSONEncoder().encode([Self.debugScubaRecord()])
+        try FileManager.default.createDirectory(at: storageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try source.write(to: storageURL)
+        let fileManager = FailSelectedArtifactDirectoryFileManager()
+        fileManager.corruptManifestOnNextStat = true
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager)
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(try Data(contentsOf: storageURL), source)
+    }
+
+    @MainActor
+    func testHistoryRetryRecoversInterruptedJournalAfterStorageBecomesAvailable() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let fileManager = FailSelectedArtifactDirectoryFileManager()
+        let profileStore = DiveProfileArtifactStore(rootURL: storageURL.deletingLastPathComponent(),
+            fileManager: fileManager)
+        let id = UUID()
+        try writeInterruptedRecording(root: storageURL.deletingLastPathComponent(),
+            metadata: ActiveDiveRecordingMetadata(localSessionId: id,
+                startedAt: EngineTestFixtures.start, captureMode: .real, plan: PreDivePlan()),
+            samples: [EngineTestFixtures.sample(1, depth: 3)])
+        fileManager.blockedSessionID = id
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertTrue(store.sessions.isEmpty)
+        fileManager.blockedSessionID = nil
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertEqual(store.sessions.map(\.id), [id])
+        XCTAssertEqual(store.sessions.first?.profile?.interrupted, true)
+        XCTAssertTrue(try profileStore.loadActiveRecordings().isEmpty)
+    }
+
+    @MainActor
+    func testHistoryRetryRepeatsDirectoryReadButExcludesNewRecordingFromAnotherStore() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let root = storageURL.deletingLastPathComponent()
+        let fileManager = FailSelectedArtifactDirectoryFileManager()
+        let profileStore = DiveProfileArtifactStore(rootURL: root, fileManager: fileManager)
+        let interruptedID = UUID()
+        try writeInterruptedRecording(root: root,
+            metadata: ActiveDiveRecordingMetadata(localSessionId: interruptedID,
+                startedAt: EngineTestFixtures.start, captureMode: .real, plan: PreDivePlan()),
+            samples: [EngineTestFixtures.sample(1, depth: 3)])
+        fileManager.failDirectoryRead = true
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: storageURL, profileStore: profileStore)
+        XCTAssertEqual(store.historyReadState, .failed)
+        let recordingStore = DiveProfileArtifactStore(rootURL: root)
+        let currentID = UUID()
+        try recordingStore.beginRecording(ActiveDiveRecordingMetadata(localSessionId: currentID,
+            startedAt: EngineTestFixtures.start, captureMode: .real, plan: PreDivePlan()))
+        try recordingStore.append(EngineTestFixtures.sample(1, depth: 7), to: currentID)
+        fileManager.failDirectoryRead = false
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .loaded)
+        XCTAssertEqual(store.sessions.map(\.id), [interruptedID])
+        XCTAssertEqual(try profileStore.loadActiveRecordings().map(\.metadata.localSessionId), [currentID])
+    }
+
+    @MainActor
+    func testOriginalLegacySessionSourceIsKeptOnDecodeFailure() {
+        let defaults = makeIsolatedUserDefaults()
+        let source = Data("not-json".utf8)
+        defaults.set(source, forKey: "savedDiveSessions")
+        let store = DiveSessionStore(userDefaults: defaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending),
+            recordsStorageURL: makeIsolatedRecordsStorageURL())
+        XCTAssertEqual(store.historyReadState, .failed)
+        XCTAssertEqual(defaults.data(forKey: "savedDiveSessions"), source)
+    }
+
+    @MainActor
+    func testRecorderCountsLeadingAndTrailingDepthGaps() throws {
+        for (first, last, end, expected) in [
+            (31.0, 32.0, 32.0, SafetyStopStatus.unknown),
+            (0.0, 1.0, 32.0, .unknown),
+            (30.0, 31.0, 61.0, .notRequired)
+        ] {
+            var clock = EngineTestFixtures.start
+            let provider = ManualDepthSensorProvider()
+            let recorder = DiveSessionRecorder(sensorProvider: provider,
+                profileStore: StubProfileRecordingStore(), now: { clock })
+            XCTAssertTrue(recorder.startSession())
+            provider.emit(EngineTestFixtures.sample(first, depth: 2))
+            provider.emit(EngineTestFixtures.sample(last, depth: 2))
+            clock = EngineTestFixtures.date(end)
+            let record = try XCTUnwrap(recorder.stopSession())
+            guard case .scuba(let session) = record.payload else { return XCTFail("Expected scuba") }
+            XCTAssertEqual(session.safetyStop.status, expected)
+            XCTAssertFalse(record.tags.contains { $0.hasPrefix("planned-") })
+        }
+    }
+
+    @MainActor
+    func testLiveTemperatureExpiresWithoutAnotherDepthCallback() {
+        var clock = EngineTestFixtures.start
+        let provider = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(sensorProvider: provider,
+            profileStore: StubProfileRecordingStore(), now: { clock })
+        XCTAssertTrue(recorder.startSession())
+        provider.emit(EngineTestFixtures.sample(0, depth: 2, temperature: 24))
+        clock = EngineTestFixtures.date(59.9)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
+        clock = EngineTestFixtures.date(60)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertNil(recorder.waterTemperatureCelsius)
+        provider.emit(EngineTestFixtures.sample(61, depth: 2, temperature: 23))
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 23)
+        recorder.cancelSession()
+        XCTAssertNil(recorder.waterTemperatureCelsius)
+    }
+
+    @MainActor
+    func testRealProviderTemperatureKeepsOriginalMeasurementTimeAcrossDepthCallbacks() {
+        var clock = EngineTestFixtures.start
+        let coordinator = WaterSubmersionCoordinator(managerFactory: { nil })
+        let provider = RealDepthSensorProvider(coordinator: coordinator)
+        let recorder = DiveSessionRecorder(sensorProvider: provider,
+            profileStore: StubProfileRecordingStore(), now: { clock })
+        XCTAssertTrue(recorder.startSession())
+        coordinator.receiveTemperature(celsius: 24, at: clock)
+        coordinator.receiveMeasurement(timestamp: clock, depthMeters: 2,
+            pressureKPa: 120, depthState: .submergedShallow)
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
+        clock = EngineTestFixtures.date(59)
+        coordinator.receiveMeasurement(timestamp: clock, depthMeters: 3,
+            pressureKPa: 130, depthState: .submergedShallow)
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
+        clock = EngineTestFixtures.date(60)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertNil(recorder.waterTemperatureCelsius)
+        XCTAssertEqual(recorder.currentDepth, 3)
+        // A temperature event after depth delivery must also update without another depth event.
+        coordinator.receiveTemperature(celsius: 23, at: clock)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertEqual(recorder.waterTemperatureCelsius, 23)
+        coordinator.receiveEvent(state: .notSubmerged, at: clock)
+        recorder.refreshLiveDepthSignal()
+        XCTAssertNil(recorder.waterTemperatureCelsius)
+        recorder.cancelSession()
+    }
+
+    @MainActor
+    func testMissingFreediveDepthShowsMovingRecordingTimeAndKeepsObservedSegment() throws {
+        var clock = EngineTestFixtures.start
+        let provider = ManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(sensorProvider: provider,
+            profileStore: StubProfileRecordingStore(), now: { clock })
+        XCTAssertTrue(recorder.startSession(plan: PreDivePlan(diveMode: .freedive)))
+        for (second, depth) in [0.2, 1.3, 1.6, 2.1, 2.8].enumerated() {
+            clock = EngineTestFixtures.date(Double(second))
+            provider.emit(EngineTestFixtures.sample(Double(second), depth: depth))
+        }
+        let snapshot = try XCTUnwrap(recorder.freeSnapshot)
+        XCTAssertEqual(snapshot.state, .diveActive)
+        XCTAssertEqual(recorder.freeDivePrimaryTime, snapshot.activeSegment?.durationSeconds)
+        let sampleCount = recorder.samples.count
+        clock = EngineTestFixtures.date(40)
+        recorder.updateElapsedTime()
+        XCTAssertEqual(recorder.liveDepthSignal, .stale)
+        XCTAssertEqual(recorder.freeDivePrimaryTime, 40)
+        XCTAssertEqual(DiveFormatters.freeDiveTimeCaption(depthMeters: nil), String(localized: "Session time"))
+        clock = EngineTestFixtures.date(45)
+        recorder.updateElapsedTime()
+        XCTAssertEqual(recorder.freeDivePrimaryTime, 45)
+        XCTAssertEqual(recorder.freeSnapshot, snapshot)
+        XCTAssertEqual(recorder.samples.count, sampleCount)
+        XCTAssertNil(DiveFormatters.observedSurfaceInterval(90, depthMeters: nil))
+        recorder.cancelSession()
+    }
+
     @MainActor
     func testFreediveRecorderLiveMaxUsesRawSamplesBeforeSegmentStarts() async {
         let sensorProvider = ManualDepthSensorProvider()
@@ -88,7 +413,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
-    func testScubaRecorderKeepsLastMeasuredTemperatureWhenNextSampleHasNone() async throws {
+    func testScubaRecorderClearsTemperatureWhenProviderNoLongerHasFreshReading() async throws {
         let sensorProvider = ManualDepthSensorProvider()
         let recorder = DiveSessionRecorder(
             sensorProvider: sensorProvider,
@@ -104,7 +429,7 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
 
         let record = try XCTUnwrap(recorder.stopSession())
 
-        XCTAssertEqual(recorder.waterTemperatureCelsius, 24)
+        XCTAssertNil(recorder.waterTemperatureCelsius)
         XCTAssertEqual(record.samples.count, 2)
         XCTAssertNil(record.samples.last?.waterTemperatureCelsius)
     }
@@ -182,9 +507,9 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             captureMode: .real,
             plan: PreDivePlan(diveMode: .scuba)
         )
-        try profileStore.beginRecording(validMetadata)
-        try profileStore.append(EngineTestFixtures.sample(0.8, depth: 4), to: validSessionID)
-        try profileStore.beginRecording(corruptMetadata)
+        try writeInterruptedRecording(root: rootURL, metadata: validMetadata,
+            samples: [EngineTestFixtures.sample(0.8, depth: 4)])
+        try writeInterruptedRecording(root: rootURL, metadata: corruptMetadata, samples: [])
         let corruptMetadataURL = rootURL
             .appendingPathComponent("Sessions", isDirectory: true)
             .appendingPathComponent(corruptSessionID.uuidString, isDirectory: true)
@@ -198,9 +523,18 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             profileStore: profileStore
         )
 
+        XCTAssertEqual(store.historyReadState, .failed)
+        store.retryLoadingHistory()
+        XCTAssertEqual(store.historyReadState, .failed)
         XCTAssertEqual(store.sessions.map(\.id), [validSessionID])
         XCTAssertEqual(store.sessions.first?.samples.first?.depthMeters, 4)
         XCTAssertEqual(store.sessions.first?.profile?.interrupted, true)
+        XCTAssertEqual(store.sessions.first?.recoveryLabel, String(localized: "Recovered after interruption"))
+        let reloaded = DiveSessionStore(userDefaults: userDefaults,
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .pending), recordsStorageURL: storageURL)
+        XCTAssertEqual(reloaded.historyReadState, .failed)
+        XCTAssertEqual(reloaded.sessions.first?.recoveryLabel, store.sessions.first?.recoveryLabel)
+        XCTAssertNil(Self.debugScubaRecord().recoveryLabel)
     }
 
     @MainActor
@@ -670,6 +1004,66 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
     }
 
     @MainActor
+    func testRepeatedFailedResendsPublishFreshFeedbackAndClearItOnSuccess() throws {
+        let transport = StubWatchSyncTransport(enqueueStatuses: [.failed, .failed, .failed, .pending])
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(), syncTransport: transport,
+            recordsStorageURL: makeIsolatedRecordsStorageURL())
+        let record = Self.debugScubaRecord()
+        XCTAssertTrue(store.save(record))
+        store.retrySync(sessionID: record.id)
+        let first = try XCTUnwrap(store.syncRetryFeedback[record.id])
+        store.retrySync(sessionID: record.id)
+        let second = try XCTUnwrap(store.syncRetryFeedback[record.id])
+        XCTAssertNotEqual(first, second)
+        XCTAssertEqual(store.sessions.first?.syncStatus, .failed)
+        store.retrySync(sessionID: record.id)
+        XCTAssertNil(store.syncRetryFeedback[record.id])
+        XCTAssertEqual(store.sessions.first?.syncStatus, .pending)
+    }
+
+    @MainActor
+    func testResendManifestReadFailurePublishesFeedbackOnEveryAttempt() throws {
+        let storageURL = makeIsolatedRecordsStorageURL()
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(),
+            syncTransport: StubWatchSyncTransport(enqueueStatus: .failed), recordsStorageURL: storageURL)
+        let record = Self.debugScubaRecord()
+        XCTAssertTrue(store.save(record))
+        try Data("not-json".utf8).write(to: storageURL.deletingLastPathComponent()
+            .appendingPathComponent("session-manifest.json"), options: .atomic)
+        store.retrySync(sessionID: record.id)
+        let first = try XCTUnwrap(store.syncRetryFeedback[record.id])
+        store.retrySync(sessionID: record.id)
+        XCTAssertNotEqual(first, try XCTUnwrap(store.syncRetryFeedback[record.id]))
+    }
+
+    @MainActor
+    func testResendAsynchronousFailurePublishesFeedbackForEachAttempt() async throws {
+        let transport = StubWatchSyncTransport(enqueueStatuses: [.failed, .pending, .pending])
+        let store = DiveSessionStore(userDefaults: makeIsolatedUserDefaults(), syncTransport: transport,
+            recordsStorageURL: makeIsolatedRecordsStorageURL())
+        let record = Self.debugScubaRecord()
+        XCTAssertTrue(store.save(record))
+        let artifact = try XCTUnwrap(transport.enqueuedArtifacts.first)
+        store.retrySync(sessionID: record.id)
+        let firstFailure = expectation(description: "first resend failure")
+        let firstObservation = store.$syncRetryFeedback.compactMap { $0[record.id] }.first()
+            .sink { _ in firstFailure.fulfill() }
+        transport.onTransferStatusChanged?(artifact, .failed)
+        await fulfillment(of: [firstFailure], timeout: 1)
+        firstObservation.cancel()
+        let first = try XCTUnwrap(store.syncRetryFeedback[record.id])
+        store.retrySync(sessionID: record.id)
+        XCTAssertNil(store.syncRetryFeedback[record.id])
+        let secondFailure = expectation(description: "second resend failure")
+        let secondObservation = store.$syncRetryFeedback.compactMap { $0[record.id] }.first()
+            .sink { _ in secondFailure.fulfill() }
+        transport.onTransferStatusChanged?(artifact, .failed)
+        await fulfillment(of: [secondFailure], timeout: 1)
+        secondObservation.cancel()
+        XCTAssertNotEqual(first, try XCTUnwrap(store.syncRetryFeedback[record.id]))
+    }
+
+    @MainActor
     func testSaveRetriesDeletionRecoveryThatFailedAtLaunch() throws {
         let storageURL = makeIsolatedRecordsStorageURL()
         let ledgerURL = try corruptDeletionLedger(besides: storageURL)
@@ -1082,6 +1476,19 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
         return ledgerURL
     }
 
+    private func writeInterruptedRecording(root: URL, metadata: ActiveDiveRecordingMetadata,
+                                           samples: [DepthSample]) throws {
+        let directory = root.appendingPathComponent("Sessions").appendingPathComponent(metadata.localSessionId.uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(metadata).write(to: directory.appendingPathComponent("active-recording.json"))
+        var journal = Data()
+        for sample in samples {
+            journal.append(try JSONEncoder().encode(sample))
+            journal.append(0x0A)
+        }
+        try journal.write(to: directory.appendingPathComponent("recording.ndjson"))
+    }
+
     private func makeIsolatedRecordsStorageURL() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("DivenaryWatchAppTests-\(UUID().uuidString)", isDirectory: true)
@@ -1380,6 +1787,36 @@ private final class ManualDepthSensorProvider: DepthSensorProvider {
 
     func emit(_ sample: DepthSample) {
         onSample?(sample)
+    }
+}
+
+private final class FailSelectedArtifactDirectoryFileManager: FileManager {
+    var blockedSessionID: UUID?
+    var failDirectoryRead = false
+    var corruptManifestOnNextStat = false
+
+    override func attributesOfItem(atPath path: String) throws -> [FileAttributeKey: Any] {
+        if corruptManifestOnNextStat, path.hasSuffix("session-manifest.json") {
+            corruptManifestOnNextStat = false
+            try Data("not-json".utf8).write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+        return try super.attributesOfItem(atPath: path)
+    }
+
+    override func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                                      options mask: FileManager.DirectoryEnumerationOptions = []) throws -> [URL] {
+        if failDirectoryRead, url.lastPathComponent == "Sessions" {
+            throw CocoaError(.fileReadNoPermission)
+        }
+        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
+
+    override func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                                  attributes: [FileAttributeKey: Any]? = nil) throws {
+        if url.lastPathComponent == blockedSessionID?.uuidString {
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+        try super.createDirectory(at: url, withIntermediateDirectories: createIntermediates, attributes: attributes)
     }
 }
 
