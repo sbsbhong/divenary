@@ -72,7 +72,6 @@ enum DiveFormatters {
 
 enum DiveWatchTheme {
     static let background = Color(red: 0.0, green: 0.0, blue: 0.0)
-    static let surface = Color(red: 0.153, green: 0.153, blue: 0.161)
     static let surfaceContainer = Color(red: 0.165, green: 0.165, blue: 0.173)
     static let surfaceRaised = Color(red: 0.145, green: 0.145, blue: 0.153)
     static let primary = Color(red: 0.161, green: 0.592, blue: 1.0)
@@ -323,56 +322,6 @@ struct DivePressStyle: ButtonStyle {
                 .opacity(isEnabled ? 1 : 0.45)
                 .scaleEffect(configuration.isPressed ? 0.95 : 1)
         }
-    }
-}
-
-struct SafetyStopRing: View {
-    let remainingSeconds: TimeInterval
-    let progress: Double
-    let active: Bool
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(DiveWatchTheme.surfaceRaised, lineWidth: 7)
-
-            Circle()
-                .trim(from: 0, to: clampedProgress)
-                .stroke(
-                    active ? DiveWatchTheme.primary : DiveWatchTheme.primary.opacity(0.55),
-                    style: StrokeStyle(lineWidth: 7, lineCap: .round)
-                )
-                .rotationEffect(.degrees(-90))
-
-            VStack(spacing: 1) {
-                Text(ringValue)
-                    .font(DiveWatchTheme.metricFont(size: 20, weight: .semibold))
-                    .foregroundStyle(active ? DiveWatchTheme.primary : DiveWatchTheme.text)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.55)
-
-                Text(ringLabel)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-            }
-        }
-        .frame(width: 74, height: 74)
-        .accessibilityLabel(Text("Safety stop planning reminder"))
-    }
-
-    private var clampedProgress: Double {
-        min(1, max(0, progress))
-    }
-
-    private var ringValue: String {
-        if remainingSeconds <= 0 { return String(localized: "DONE") }
-        return DiveFormatters.duration(remainingSeconds)
-    }
-
-    private var ringLabel: String {
-        active ? String(localized: "STOP") : String(localized: "ASSIST")
     }
 }
 

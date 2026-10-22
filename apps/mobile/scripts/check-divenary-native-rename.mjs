@@ -124,7 +124,7 @@ if (exists('ios/Divenary/Info.plist')) {
   expectIncludes(info, '<string>Divenary</string>', 'ios/Divenary/Info.plist');
   expectIncludes(
     info,
-    '<string>Divenary uses your current location to show local weather, air temperature, and water temperature context.</string>',
+    '<string>Divenary uses your location to show local weather and water temperature.</string>',
     'ios/Divenary/Info.plist',
   );
   expectExcludes(info, 'DiveMobile', 'ios/Divenary/Info.plist');

@@ -1,0 +1,24 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSLocationWhenInUseUsageDescription" : {
+      "comment" : "Permission prompt for location (local weather and water temperature on Home).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary uses your location to show local weather and water temperature."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary가 현재 지역의 날씨와 수온을 보여 주는 데 위치를 사용합니다."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

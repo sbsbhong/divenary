@@ -58,6 +58,7 @@
 		C70000000000000000000006 /* RecordingHintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000005 /* RecordingHintTests.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		C80000000000000000000002 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000001 /* InfoPlist.xcstrings */; };
+		C80000000000000000000004 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000003 /* InfoPlist.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
 		D60000000000000000000001 /* DiveAppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002 /* DiveAppServices.swift */; };
 		D60000000000000000000003 /* DivenaryWatchApplicationDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */; };
@@ -133,6 +134,7 @@
 		50C59F3D6EC1FF987ADE3827 /* DepthSensorProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DepthSensorProvider.swift; sourceTree = "<group>"; };
 		541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		C80000000000000000000001 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; path = InfoPlist.xcstrings; sourceTree = "<group>"; };
+		C80000000000000000000003 /* InfoPlist.xcstrings */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.json.xcstrings; name = InfoPlist.xcstrings; path = Divenary/InfoPlist.xcstrings; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-Divenary.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Divenary.release.xcconfig"; path = "Target Support Files/Pods-Divenary/Pods-Divenary.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-Divenary.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Divenary.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		6359F0F795514043D38F67FB /* DivenaryWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DivenaryWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -239,6 +241,7 @@
 				E10000000000000000000001 /* ReverseGeocoderModule.swift */,
 				E10000000000000000000002 /* ReverseGeocoderModuleBridge.m */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
+				C80000000000000000000003 /* InfoPlist.xcstrings */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
 				13B07FC11A68108700A75B9A /* GoogleSans-Medium.ttf */,
@@ -543,6 +546,7 @@
 				81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				13B07FC01A68108700A75B9A /* GoogleSans-Medium.ttf in Resources */,
+				C80000000000000000000004 /* InfoPlist.xcstrings in Resources */,
 				EBED6AA379F2E387A08A6066 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

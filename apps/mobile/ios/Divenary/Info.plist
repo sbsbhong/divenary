@@ -45,7 +45,7 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>Divenary uses your current location to show local weather, air temperature, and water temperature context.</string>
+	<string>Divenary uses your location to show local weather and water temperature.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

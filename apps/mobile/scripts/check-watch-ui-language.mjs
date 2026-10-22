@@ -94,10 +94,22 @@ const koreanCatalogValues = stringCatalogEntries
 const activeCatalogEntries = stringCatalogEntries.filter(entry => entry.extractionState !== 'stale');
 const activeCatalogValues = language =>
   activeCatalogEntries.map(entry => entry.localizations?.[language]?.stringUnit?.value ?? '');
-// One diver term per concept (동작 버튼, 수중 잠금, Digital Crown, 기록), and no internal words.
-const koreanGlossaryLeaks = ['Action', '방수 잠금', '디지털 크라운', '세션', '샘플', '캡처', 'Home'].filter(term =>
+// One diver term per concept (동작 버튼, 수중 잠금, 디지털 크라운, 기록), and no internal words.
+const koreanGlossaryLeaks = ['Action', 'Crown', '방수 잠금', '세션', '샘플', '캡처', 'Home'].filter(term =>
   activeCatalogValues('ko').some(value => value.includes(term)),
 );
+// 디지털 크라운 in sentences; the bare 크라운 only in the short page chips ("크라운 ▸ 상세 1/2").
+const koreanCrownSpellingLeaks = activeCatalogValues('ko').filter(value =>
+  value.replaceAll('디지털 크라운', '').replaceAll('크라운 ▸', '').includes('크라운'),
+);
+// The recommended stop is never a mandatory "safety stop", in shown or stale copy.
+const englishCatalogValues = stringCatalogEntries
+  .map(entry => entry.localizations?.en?.stringUnit?.value ?? '')
+  .join('\n');
+const safetyStopWordingLeaks = [
+  ...(koreanCatalogValues.includes('세이프티') ? ['세이프티'] : []),
+  ...(/safety stop/i.test(englishCatalogValues) ? ['safety stop'] : []),
+];
 const englishInternalWordLeaks = ['session', 'sample', 'capture'].filter(term =>
   activeCatalogValues('en').some(value => value.toLowerCase().includes(term)),
 );
@@ -225,6 +237,14 @@ const checks = [
   {
     name: 'Korean recommended stop copy uses 권장 스탑',
     failed: koreanCatalogValues.includes('스톱') || !koreanCatalogValues.includes('권장 스탑'),
+  },
+  {
+    name: `recommended stop copy never says safety stop${safetyStopWordingLeaks.length > 0 ? `: ${safetyStopWordingLeaks.join(', ')}` : ''}`,
+    failed: safetyStopWordingLeaks.length > 0,
+  },
+  {
+    name: `Korean crown copy uses 디지털 크라운 (크라운 ▸ in chips)${koreanCrownSpellingLeaks.length > 0 ? `: ${koreanCrownSpellingLeaks.join(' | ')}` : ''}`,
+    failed: koreanCrownSpellingLeaks.length > 0,
   },
   {
     name: `Korean watch copy keeps the diver glossary${koreanGlossaryLeaks.length > 0 ? `: ${koreanGlossaryLeaks.join(', ')}` : ''}`,
