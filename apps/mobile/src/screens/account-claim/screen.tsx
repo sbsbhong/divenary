@@ -3,14 +3,13 @@ import React from 'react';
 import { AccessibilityInfo } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import { Box } from '../../components/ui/box';
 import { Button, ButtonText } from '../../components/ui/button';
-import { ArrowUpIcon, Icon } from '../../components/ui/icon';
+import { InstrumentButton } from '../../components/ui/instrument';
 import { SafeAreaView } from '../../components/ui/safe-area-view';
 import { Text } from '../../components/ui/text';
-import { HStack } from '../../components/ui/hstack';
 import { Spinner } from '../../components/ui/spinner';
 import { VStack } from '../../components/ui/vstack';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import { useAccountData } from '../../states/account-data';
 import { DepthTraceProgress } from './depth-trace-progress';
 import type {GuestClaimRetainedItem} from '../../claim/guest-claim-types';
@@ -339,19 +338,16 @@ function RetainedResultContent({
       ) : null}
 
       <VStack space="sm">
-        <Button
+        {isOnline ? null : <OfflineNote />}
+        <InstrumentButton
           testID="account-claim-done"
           accessibilityLabel={t('accountClaim.doneAction')}
-          accessibilityRole="button"
-          accessibilityState={{disabled}}
-          className="min-h-12 w-full rounded-lg"
+          className="w-full"
           disabled={disabled}
+          label={t('accountClaim.doneAction')}
           onPress={onDone}
-          size="lg">
-          <ButtonText className="text-base font-semibold">
-            {t('accountClaim.doneAction')}
-          </ButtonText>
-        </Button>
+          variant="primary"
+        />
         <Button
           testID="account-claim-recheck"
           accessibilityLabel={t('accountClaim.recheckAction')}
@@ -394,53 +390,58 @@ function ChoiceContent({
 
   return (
     <>
-      <VStack space="md" className="items-center">
-        <Box className="h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-          <Icon as={ArrowUpIcon} size="xl" className="text-primary" />
-        </Box>
+      <VStack space="sm">
         <Text
           testID="account-claim-title"
           accessibilityRole="header"
           maxFontSizeMultiplier={1.5}
-          className="text-center text-2xl font-semibold leading-8 text-foreground"
+          className="text-xl font-semibold leading-7 text-foreground"
         >
           {t('accountClaim.choiceTitle')}
         </Text>
+        <Text
+          testID="account-claim-import-explanation"
+          size="sm"
+          className="leading-5 text-muted-foreground">
+          {t('accountClaim.importExplanation')}
+        </Text>
+        <Text
+          testID="account-claim-keep-explanation"
+          size="sm"
+          className="leading-5 text-muted-foreground">
+          {t('accountClaim.keepExplanation')}
+        </Text>
       </VStack>
 
-      <HStack className="items-center">
+      <VStack space="xs" className="rounded-2xl bg-card px-4 py-3">
         <Text
           testID="account-claim-log-count"
           maxFontSizeMultiplier={1.5}
-          className="flex-1 text-center text-base font-semibold text-foreground"
+          className="text-base text-card-foreground"
         >
-          {String(logCount)} {t('accountClaim.logCount')}
+          {t('accountClaim.logCountValue', {count: logCount})}
         </Text>
-        <Box className="h-5 w-px bg-border" />
         <Text
           testID="account-claim-plan-count"
           maxFontSizeMultiplier={1.5}
-          className="flex-1 text-center text-base font-semibold text-foreground"
+          className="text-base text-card-foreground"
         >
-          {String(planCount)} {t('accountClaim.planCount')}
+          {t('accountClaim.planCountValue', {count: planCount})}
         </Text>
-      </HStack>
+      </VStack>
 
       <VStack space="sm">
-        <Button
+        {isOnline ? null : <OfflineNote />}
+        <InstrumentButton
           testID="account-claim-import"
           accessibilityLabel={t('accountClaim.importAction')}
-          accessibilityRole="button"
-          accessibilityState={{disabled: importDisabled, busy: busyAction === 'start'}}
-          className="min-h-12 w-full rounded-lg"
+          className="w-full"
           disabled={importDisabled}
+          label={t('accountClaim.importAction')}
           onPress={onImport}
-          size="lg"
-        >
-          <ButtonText className="text-base font-semibold">
-            {t('accountClaim.importAction')}
-          </ButtonText>
-        </Button>
+          pending={busyAction === 'start' || busyAction === 'retry'}
+          variant="primary"
+        />
         <Button
           testID="account-claim-keep"
           accessibilityLabel={t('accountClaim.keepAction')}
@@ -470,15 +471,14 @@ function PreparingContent({
   return (
     <VStack
       testID="account-claim-preparing"
+      accessibilityState={{busy: true}}
       space="lg"
       className="items-center py-8">
-      <Spinner size="large" className="text-primary" />
+      <DelayedSpinner label={t('accountClaim.preparingTitle')} />
       <VStack space="xs" className="items-center">
         <Text
           accessibilityRole="header"
-          size="xl"
-          bold
-          className="text-center text-foreground">
+          className="text-center text-xl font-semibold leading-7 text-foreground">
           {t('accountClaim.preparingTitle')}
         </Text>
         <Text size="sm" className="text-center text-muted-foreground">
@@ -507,24 +507,21 @@ function RefreshFailedContent({
       <VStack space="xs" className="items-center">
         <Text
           accessibilityRole="header"
-          size="xl"
-          bold
-          className="text-center text-foreground">
+          className="text-center text-xl font-semibold leading-7 text-foreground">
           {t('accountClaim.refreshFailedTitle')}
         </Text>
         <Text size="sm" className="text-center text-muted-foreground">
           {t('accountClaim.refreshFailedDescription')}
         </Text>
       </VStack>
-      <Button
+      <InstrumentButton
         testID="account-claim-refresh-retry"
-        accessibilityRole="button"
-        className="min-h-11 w-full"
-        onPress={onRetry}>
-        <ButtonText className="text-base font-semibold">
-          {t('common.retry')}
-        </ButtonText>
-      </Button>
+        accessibilityLabel={t('common.retry')}
+        className="w-full"
+        label={t('common.retry')}
+        onPress={onRetry}
+        variant="primary"
+      />
       <CloseButton onPress={onClose} />
     </VStack>
   );
@@ -595,11 +592,13 @@ function CleanupContent({
   const {t} = useTranslation();
 
   return (
-    <VStack space="lg" className="items-center py-8">
-      <Spinner
+    <VStack
+      accessibilityState={{busy: true}}
+      space="lg"
+      className="items-center py-8">
+      <DelayedSpinner
         testID="account-claim-cleanup-spinner"
-        size="large"
-        className="text-primary"
+        label={t('accountClaim.cleanupTitle')}
       />
       <VStack space="xs" className="items-center">
         <Text
@@ -618,6 +617,41 @@ function CleanupContent({
       </VStack>
       <CloseButton onPress={onClose} />
     </VStack>
+  );
+}
+
+/** A large spinner whose slot is reserved at once and drawn only after the shared 1 s delay. */
+function DelayedSpinner({
+  label,
+  testID,
+}: {
+  label: string;
+  testID?: string;
+}): React.JSX.Element {
+  const {showIndicator} = useLoadingFeedback(true);
+
+  return (
+    <Spinner
+      testID={testID}
+      aria-label={label}
+      size="large"
+      className="text-muted-foreground"
+      style={{opacity: showIndicator ? 1 : 0}}
+    />
+  );
+}
+
+/** Why import or recheck is unavailable: the account cannot reach the cloud right now. */
+function OfflineNote(): React.JSX.Element {
+  const {t} = useTranslation();
+
+  return (
+    <Text
+      testID="account-claim-offline-note"
+      size="sm"
+      className="text-center leading-5 text-muted-foreground">
+      {t('accountClaim.offlineNote')}
+    </Text>
   );
 }
 
@@ -686,20 +720,16 @@ function FailureContent({
           : t('accountClaim.failureDescription')}
       </Text>
       <VStack space="sm">
-        <Button
+        <InstrumentButton
           testID="account-claim-retry"
           accessibilityLabel={t('accountClaim.retryAction')}
-          accessibilityRole="button"
-          accessibilityState={{ disabled, busy: busyAction === 'retry' }}
-          className="min-h-12 w-full rounded-lg"
+          className="w-full"
           disabled={disabled}
+          label={t('accountClaim.retryAction')}
           onPress={onRetry}
-          size="lg"
-        >
-          <ButtonText className="text-base font-semibold">
-            {t('accountClaim.retryAction')}
-          </ButtonText>
-        </Button>
+          pending={busyAction === 'retry'}
+          variant="primary"
+        />
         <Button
           testID="account-claim-keep"
           accessibilityLabel={t('accountClaim.keepAction')}

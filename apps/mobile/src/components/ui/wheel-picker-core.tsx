@@ -212,7 +212,8 @@ export function WheelSelectionOverlay(props: {
   testID?: string;
 }): React.JSX.Element {
   const shadeClassName = props.disabled ? 'bg-muted/80' : 'bg-card/80';
-  const frameClassName = props.disabled ? 'border-y border-border bg-muted/40' : 'border-y border-border bg-muted/30';
+  // A tinted band marks the selected row; no lines, so the wheel reads by background alone.
+  const frameClassName = props.disabled ? 'bg-foreground/5' : 'bg-foreground/10';
 
   return (
     <>

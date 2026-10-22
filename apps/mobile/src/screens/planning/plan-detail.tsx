@@ -1,198 +1,568 @@
 import React from 'react';
+import { AccessibilityInfo, Alert } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
-import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
+import type { PlannedWatchDivesUpdateStatus } from '../../companion/watch-link';
+import { Row, Section } from '../../components/ui/grouped-list';
 import { HStack } from '../../components/ui/hstack';
+import { CheckCircleIcon, CircleIcon, Icon } from '../../components/ui/icon';
+import { InstrumentButton, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
+import { Pressable } from '../../components/ui/pressable';
+import { ScreenHeader } from '../../components/ui/screen-header';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
-import type { DivePlan } from '../../types/dive-plan';
+import type { DivePlan, DivePlanChecklistItem } from '../../types/dive-plan';
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
-import { formatDate, formatDepth, formatPressure } from '../../utils/dive-formatters';
 import { getUnsupportedDepthForPlan } from '../../utils/unsupported-depth';
+import { formatDateTimeParts } from '../common/form/date-time-field';
+import { RowSeparator } from '../common/form/field-row';
+import {
+  checklistItemLabel,
+  formatPlanDepth,
+  getMissingPlanFields,
+  getPlanWatchState,
+  isPlanDatePassed,
+  planStatusTone,
+  planTitle,
+  type PlanRequiredField,
+} from './plan-status';
 
 type PlanDetailProps = {
   plan: DivePlan;
   onBack: () => void;
   onEdit: (plan: DivePlan) => void;
-  onPromote?: (plan: DivePlan) => Promise<void>;
-  onComplete: (plan: DivePlan) => Promise<void>;
+  /** Saves the draft as planned. The detail checks the required fields first. */
+  onPromote?: (plan: DivePlan) => Promise<unknown>;
+  /** Saves the plan as completed and resolves with the saved plan. */
+  onComplete: (plan: DivePlan) => Promise<DivePlan | void>;
   onDelete?: (localId: string) => Promise<void>;
   onCreateLogFromPlan: (plan: DivePlan) => void;
   hasExistingConvertedLog?: boolean;
+  onOpenConvertedLog?: (localId: string) => void;
+  /** Saves a toggled checklist right away. Without it the checklist is read-only. */
+  onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>;
+  /** The last planned-dive handoff to the watch, if one has run. */
+  watchSyncStatus?: PlannedWatchDivesUpdateStatus;
   onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
+type StatusAction = 'promote' | 'complete';
+
+const REQUIRED_FIELD_LABEL_KEYS: Record<PlanRequiredField, string> = {
+  plannedAt: 'planning.plannedAt',
+  diveMode: 'planning.diveMode',
+  siteName: 'planning.siteName',
+  plannedMaxDepth: 'planning.plannedMaxDepth',
+  plannedDuration: 'planning.plannedDuration',
+};
+
+/**
+ * A plan as grouped sections. Planned values are labelled as plans, never as measurements, and
+ * the one status action sits under them; delete is a separate destructive row at the bottom.
+ */
 export function PlanDetail(props: PlanDetailProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const title = props.plan.title ?? props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
-  const canPromote = props.plan.status === 'draft' && props.onPromote !== undefined;
-  const canComplete = props.plan.status === 'planned';
-  const canCreateLog = props.plan.status === 'completed' && !props.hasExistingConvertedLog;
+  const { plan } = props;
+  const [statusAction, setStatusAction] = React.useState<StatusAction>();
+  const [actionError, setActionError] = React.useState<string>();
+  const [missingFields, setMissingFields] = React.useState<PlanRequiredField[]>([]);
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [deleteFailed, setDeleteFailed] = React.useState(false);
+  const datePassed = isPlanDatePassed(plan);
+
+  React.useEffect(() => {
+    if (actionError) {
+      AccessibilityInfo.announceForAccessibility(actionError);
+    }
+  }, [actionError]);
+
+  // A fixed draft no longer needs the missing-field note.
+  React.useEffect(() => {
+    setMissingFields(current => (current.length ? getMissingPlanFields(plan) : current));
+  }, [plan]);
+
+  const runStatusAction = async (action: StatusAction, work: () => Promise<void>) => {
+    setStatusAction(action);
+    setActionError(undefined);
+    try {
+      await work();
+    } catch {
+      setActionError(t('planning.actionError'));
+    } finally {
+      setStatusAction(undefined);
+    }
+  };
+
+  const promote = () => {
+    const missing = getMissingPlanFields(plan);
+    setMissingFields(missing);
+    if (missing.length || !props.onPromote) {
+      return;
+    }
+
+    runStatusAction('promote', async () => {
+      await props.onPromote?.(plan);
+    });
+  };
+
+  const complete = () =>
+    runStatusAction('complete', async () => {
+      const savedPlan = (await props.onComplete(plan)) ?? { ...plan, status: 'completed' as const };
+      // Completing never writes a log by itself; the diver chooses whether to start a draft now.
+      Alert.alert(t('planning.completedPrompt.title'), t('planning.completedPrompt.message'), [
+        { text: t('planning.completedPrompt.later'), style: 'cancel' },
+        { text: t('planning.completedPrompt.create'), onPress: () => props.onCreateLogFromPlan(savedPlan) },
+      ]);
+    });
+
+  const confirmDelete = () =>
+    confirmDestructiveAction({
+      title: t('planning.deleteConfirm.title'),
+      message: t(plan.ownerUserId === undefined ? 'planning.deleteConfirm.message' : 'planning.deleteConfirm.accountMessage'),
+      cancelLabel: t('common.cancel'),
+      confirmLabel: t('planning.deleteConfirm.confirm'),
+      onConfirm: () => {
+        const deletePlan = props.onDelete;
+        if (!deletePlan) {
+          return;
+        }
+
+        setIsDeleting(true);
+        setDeleteFailed(false);
+        deletePlan(plan.localId)
+          .catch(() => setDeleteFailed(true))
+          .finally(() => setIsDeleting(false));
+      },
+    });
 
   return (
-    <DiveSummaryCard accent="primary">
-      <ScreenBackButton
-        testID="planning-detail-back"
-        accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
-        onPress={props.onBack}
-      />
-      <DiveSummaryCard.Header
-        eyebrow={t('planning.detailEyebrow', { defaultValue: 'Plan detail' })}
-        title={title}
-        right={<StatusPill label={t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status })} tone="secondary" />}
-      />
-      <DiveSummaryCard.Body>
-        {props.plan.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
-          <SyncConflictBanner onResolve={props.onResolveConflict} />
-        ) : null}
-        <Text className="text-sm leading-5 text-muted-foreground">
-          {formatDate(props.plan.plannedAt, locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
-        </Text>
-        <HStack space="md">
-          <PlanFact
-            label={t('logbook.diveMode', { defaultValue: 'Dive mode' })}
-            value={props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet')}
-          />
-          <PlanFact
-            label={t('planning.entryStyle', { defaultValue: 'Entry style' })}
-            value={props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none')}
-          />
+    <VStack space="lg">
+      <HStack className="items-center justify-between">
+        <ScreenBackButton testID="planning-detail-back" accessibilityLabel={t('common.back')} onPress={props.onBack} />
+        <Pressable
+          testID="planning-detail-edit"
+          accessibilityRole="button"
+          onPress={() => props.onEdit(plan)}
+          className="min-h-11 min-w-11 items-center justify-center px-2"
+          style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+          <Text className="text-base font-semibold text-primary">{t('planning.editPlan')}</Text>
+        </Pressable>
+      </HStack>
+
+      <VStack space="sm">
+        <ScreenHeader title={planTitle(plan, t)} titleTestID="planning-detail-title" />
+        <HStack space="xs" className="flex-wrap">
+          <StatusPill testID="planning-detail-status" label={t(`planning.status.${plan.status}`)} tone={planStatusTone(plan.status)} />
+          {datePassed ? <StatusPill testID="planning-detail-date-passed" label={t('planning.datePassed')} tone="muted" /> : null}
         </HStack>
-        <ModeFacts plan={props.plan} />
-        <VStack space="xs" className="rounded-2xl bg-muted px-4 py-4">
-          <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('planning.checklist', { defaultValue: 'Checklist' })}</Text>
-          {props.plan.checklistItems.length ? (
-            props.plan.checklistItems.map(item => (
-              <HStack key={item.id} className="items-center justify-between">
-                <Text className="text-sm text-card-foreground">{item.label}</Text>
-                <StatusPill
-                  label={item.completed ? t('planning.ready', { defaultValue: 'Ready' }) : t('planning.plan', { defaultValue: 'Plan' })}
-                  tone={item.completed ? 'primary' : 'secondary'}
-                />
-              </HStack>
-            ))
-          ) : (
-            <Text className="text-sm text-muted-foreground">{t('planning.noChecklist', { defaultValue: 'No checklist items' })}</Text>
-          )}
-        </VStack>
-      </DiveSummaryCard.Body>
-      <DiveSummaryCard.Footer>
-        <VStack space="sm">
-          <Text className="text-sm leading-5 text-card-foreground">
-            {props.plan.notes ?? props.plan.objective ?? t('planning.noNotes', { defaultValue: 'No planning notes yet.' })}
+      </VStack>
+
+      {plan.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+        <SyncConflictBanner onResolve={props.onResolveConflict} />
+      ) : null}
+
+      <WhenWhereSection plan={plan} locale={locale} watchSyncStatus={props.watchSyncStatus} />
+      <DiveSection plan={plan} />
+      <PressureMemoSection plan={plan} />
+      <ExpectedConditionsSection plan={plan} />
+      <PeopleGearSection plan={plan} />
+      <NotesSection plan={plan} />
+      <ChecklistSection plan={plan} onSaveChecklist={props.onSaveChecklist} />
+
+      <VStack space="sm">
+        {plan.status === 'draft' && props.onPromote ? (
+          <InstrumentButton
+            testID="planning-detail-promote"
+            label={t('planning.setPlanned')}
+            variant="primary"
+            pending={statusAction === 'promote'}
+            onPress={promote}
+          />
+        ) : null}
+        {plan.status === 'planned' ? (
+          <InstrumentButton
+            testID="planning-detail-complete"
+            label={t('planning.markCompleted')}
+            variant="primary"
+            pending={statusAction === 'complete'}
+            onPress={complete}
+          />
+        ) : null}
+        {plan.status === 'completed' && !props.hasExistingConvertedLog ? (
+          <InstrumentButton
+            testID="planning-detail-create-log"
+            label={t('planning.createLogFromPlan')}
+            variant="primary"
+            onPress={() => props.onCreateLogFromPlan(plan)}
+          />
+        ) : null}
+        {plan.status === 'completed' && props.hasExistingConvertedLog && plan.convertedLogLocalId && props.onOpenConvertedLog ? (
+          <InstrumentButton
+            testID="planning-detail-open-log"
+            label={t('planning.openLog')}
+            variant="primary"
+            onPress={() => props.onOpenConvertedLog?.(plan.convertedLogLocalId!)}
+          />
+        ) : null}
+        {missingFields.length ? (
+          <Text testID="planning-detail-promote-missing" className="px-1 text-sm leading-5 text-destructive">
+            {t('planning.promoteMissing', {
+              fields: missingFields.map(field => t(REQUIRED_FIELD_LABEL_KEYS[field])).join(', '),
+            })}
           </Text>
-          {canCreateLog ? (
-            <InstrumentButton
-              testID="planning-detail-create-log"
-              label={t('planning.createLogFromPlan', { defaultValue: 'Create log from plan' })}
-              variant="primary"
-              onPress={() => props.onCreateLogFromPlan(props.plan)}
+        ) : null}
+        {actionError ? (
+          <Text testID="planning-detail-action-error" className="px-1 text-sm leading-5 text-destructive">
+            {actionError}
+          </Text>
+        ) : null}
+      </VStack>
+
+      {props.onDelete ? (
+        <VStack space="sm">
+          <Section>
+            <Row
+              testID="planning-detail-delete"
+              label={t('planning.deletePlan')}
+              destructive
+              accessory={{ kind: 'none' }}
+              disabled={isDeleting}
+              separated={false}
+              onPress={confirmDelete}
             />
-          ) : null}
-          {props.plan.status === 'completed' && props.hasExistingConvertedLog ? (
-            <Text testID="planning-detail-log-created" className="text-sm font-semibold text-muted-foreground">
-              {t('planning.logAlreadyCreated', { defaultValue: 'Log already created from this plan.' })}
+          </Section>
+          {deleteFailed ? (
+            <Text testID="planning-detail-delete-error" className="px-1 text-sm leading-5 text-destructive">
+              {t('planning.deleteError')}
             </Text>
           ) : null}
-          {canPromote ? (
-            <InstrumentButton
-              testID="planning-detail-promote"
-              label={t('planning.promoteToPlan', { defaultValue: 'Promote to plan' })}
-              variant="primary"
-              onPress={() => props.onPromote?.(props.plan)}
-            />
-          ) : null}
-          {canComplete ? (
-            <InstrumentButton
-              testID="planning-detail-complete"
-              label={t('planning.markCompleted', { defaultValue: 'Mark completed' })}
-              variant="primary"
-              onPress={() => props.onComplete(props.plan)}
-            />
-          ) : null}
-          <InstrumentButton testID="planning-detail-edit" label={t('planning.editPlan', { defaultValue: 'Edit plan' })} onPress={() => props.onEdit(props.plan)} />
-          {props.onDelete ? (
-            <InstrumentButton
-              testID="planning-detail-delete"
-              label={t('planning.deletePlan', { defaultValue: 'Delete plan' })}
-              variant="danger"
-              onPress={() =>
-                confirmDestructiveAction({
-                  title: t('planning.deleteConfirm.title'),
-                  message: t(
-                    props.plan.ownerUserId === undefined
-                      ? 'planning.deleteConfirm.message'
-                      : 'planning.deleteConfirm.accountMessage',
-                  ),
-                  cancelLabel: t('common.cancel'),
-                  confirmLabel: t('planning.deleteConfirm.confirm'),
-                  onConfirm: () => {
-                    void props.onDelete?.(props.plan.localId);
-                  },
-                })
-              }
-            />
-          ) : null}
         </VStack>
-      </DiveSummaryCard.Footer>
-    </DiveSummaryCard>
-  );
-}
-
-function ModeFacts(props: { plan: DivePlan }): React.JSX.Element {
-  const { t } = useTranslation();
-  const values = props.plan.plannedValues;
-  const pressureValue = formatPressure(values.plannedPressure);
-  const unsupportedDepth = getUnsupportedDepthForPlan(props.plan);
-  const facts = [
-    { id: 'planned-max', label: t('planning.plannedMax', { defaultValue: 'Planned max' }), value: formatDepth(values.plannedMaxDepthMeters) },
-    values.plannedDurationMinutes !== undefined
-      ? {
-          id: 'duration',
-          label: t('planning.plannedDurationMinutes', { defaultValue: 'Planned duration (min)' }),
-          value: `${values.plannedDurationMinutes} ${t('units.minutesShort')}`,
-        }
-      : undefined,
-    props.plan.diveMode === 'scuba'
-      ? { id: 'gas', label: t('planning.gasLabel', { defaultValue: 'Gas label' }), value: t('logbook.airGas', { defaultValue: 'Air' }) }
-      : undefined,
-    pressureValue ? { id: 'pressure', label: t('planning.pressure', { defaultValue: 'Pressure' }), value: pressureValue } : undefined,
-    values.trainingFocus ? { id: 'training-focus', label: t('planning.trainingFocus', { defaultValue: 'Training focus' }), value: values.trainingFocus } : undefined,
-  ].filter((fact): fact is { id: string; label: string; value: string } => Boolean(fact));
-
-  return (
-    <VStack space="xs" className="rounded-2xl bg-muted px-4 py-4">
-      <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('planning.plannedValues', { defaultValue: 'Planned values' })}</Text>
-      {facts.map(fact => (
-        <HStack key={fact.id} className="items-center justify-between">
-          <Text className="text-sm text-muted-foreground">{fact.label}</Text>
-          <Text testID={`planning-detail-planned-value-${fact.id}-${toTestIdValue(fact.value)}`} className="text-sm font-semibold text-card-foreground">
-            {fact.value}
-          </Text>
-        </HStack>
-      ))}
-      {unsupportedDepth ? (
-        <Text
-          testID="planning-detail-unsupported-depth-warning"
-          className="rounded-xl bg-card px-3 py-2 text-xs font-semibold leading-4 text-muted-foreground">
-          {t('planning.unsupportedDepthWarning')}
-        </Text>
       ) : null}
     </VStack>
   );
 }
 
-function toTestIdValue(value: string): string {
-  return value.replace(/\s+/g, '');
+function WhenWhereSection(props: {
+  plan: DivePlan;
+  locale: string;
+  watchSyncStatus?: PlannedWatchDivesUpdateStatus;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const parts =
+    props.plan.plannedAt === undefined ? undefined : formatDateTimeParts(new Date(props.plan.plannedAt * 1000), props.locale);
+  const watchState = getPlanWatchState(props.plan, props.watchSyncStatus);
+
+  return (
+    <Section title={t('planning.sections.whenWhere')}>
+      <Row
+        testID="planning-detail-row-planned-at"
+        valueTestID="planning-detail-row-planned-at-value"
+        label={t('planning.plannedAt')}
+        value={parts ? `${parts.date} ${parts.time}` : '--'}
+        separated={false}
+      />
+      <Row
+        testID="planning-detail-row-site"
+        valueTestID="planning-detail-row-site-value"
+        label={t('planning.siteName')}
+        value={props.plan.site.name ?? '--'}
+      />
+      {watchState ? (
+        <Row
+          testID="planning-detail-watch-status"
+          valueTestID="planning-detail-watch-status-value"
+          label={t('planning.watch.label')}
+          value={t(`planning.watch.${watchState}`)}
+        />
+      ) : null}
+    </Section>
+  );
 }
 
-function PlanFact(props: { label: string; value: string }): React.JSX.Element {
+function DiveSection(props: { plan: DivePlan }): React.JSX.Element {
+  const { t } = useTranslation();
+  const values = props.plan.plannedValues;
+  const unsupportedDepth = getUnsupportedDepthForPlan(props.plan);
+
   return (
-    <VStack space="xs" className="flex-1 rounded-2xl bg-muted px-4 py-4">
-      <Text className="text-xs font-semibold uppercase text-muted-foreground">{props.label}</Text>
-      <Text className="text-sm font-semibold text-card-foreground">{props.value}</Text>
+    <Section title={t('planning.sections.dive')} footer={t('planning.plannedValuesFooter')}>
+      <Row
+        testID="planning-detail-row-mode"
+        valueTestID="planning-detail-row-mode-value"
+        label={t('planning.diveMode')}
+        value={props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : '--'}
+        separated={false}
+      />
+      {props.plan.entryStyle ? (
+        <Row
+          testID="planning-detail-row-entry-style"
+          valueTestID="planning-detail-row-entry-style-value"
+          label={t('planning.entryStyle')}
+          value={t(`entryStyles.${props.plan.entryStyle}`)}
+        />
+      ) : null}
+      <Row
+        testID="planning-detail-row-planned-max"
+        valueTestID="planning-detail-row-planned-max-value"
+        label={t('planning.plannedMaxDepth')}
+        value={values.plannedMaxDepthMeters === undefined ? '-- m' : formatPlanDepth(values.plannedMaxDepthMeters)}
+      />
+      {unsupportedDepth ? (
+        <Text testID="planning-detail-unsupported-depth-warning" className="px-4 pb-3 text-sm leading-5 text-muted-foreground">
+          {t('planning.unsupportedDepthWarning')}
+        </Text>
+      ) : null}
+      <Row
+        testID="planning-detail-row-planned-duration"
+        valueTestID="planning-detail-row-planned-duration-value"
+        label={t('planning.plannedDuration')}
+        value={
+          values.plannedDurationMinutes === undefined
+            ? `-- ${t('units.minutesShort')}`
+            : t('form.durationMinutes', { minutes: values.plannedDurationMinutes })
+        }
+      />
+      {props.plan.diveMode === 'scuba' ? (
+        <Row
+          testID="planning-detail-row-gas"
+          valueTestID="planning-detail-row-gas-value"
+          label={t('planning.gasLabel')}
+          value={t('planning.air')}
+        />
+      ) : null}
+      {props.plan.diveMode === 'freedive' && values.repetitionTarget !== undefined ? (
+        <Row
+          testID="planning-detail-row-repetition-target"
+          valueTestID="planning-detail-row-repetition-target-value"
+          label={t('planning.repetitionTarget')}
+          value={t('planning.repetitionCount', { count: values.repetitionTarget })}
+        />
+      ) : null}
+    </Section>
+  );
+}
+
+/** Expected pressures are preparation notes; the footer says they are not a reserve rule. */
+function PressureMemoSection(props: { plan: DivePlan }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const pressure = props.plan.plannedValues.plannedPressure;
+
+  if (props.plan.diveMode !== 'scuba' || !pressure || (pressure.start === undefined && pressure.end === undefined)) {
+    return null;
+  }
+
+  const unit = pressure.unit ?? 'bar';
+
+  return (
+    <Section title={t('planning.sections.pressureMemo')} footer={t('planning.pressureMemoNote')}>
+      {pressure.start !== undefined ? (
+        <Row
+          testID="planning-detail-row-pressure-start"
+          valueTestID="planning-detail-row-pressure-start-value"
+          label={t('planning.expectedStartPressure')}
+          value={`${pressure.start} ${unit}`}
+          separated={false}
+        />
+      ) : null}
+      {pressure.end !== undefined ? (
+        <Row
+          testID="planning-detail-row-pressure-end"
+          valueTestID="planning-detail-row-pressure-end-value"
+          label={t('planning.expectedEndPressure')}
+          value={`${pressure.end} ${unit}`}
+          separated={pressure.start !== undefined}
+        />
+      ) : null}
+    </Section>
+  );
+}
+
+function ExpectedConditionsSection(props: { plan: DivePlan }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const values = props.plan.plannedValues;
+  const rows = [
+    values.waterCondition
+      ? { id: 'water-condition', label: t('planning.expectedWaterCondition'), value: t(`waterConditions.${values.waterCondition}`) }
+      : undefined,
+    values.visibilityExpectation !== undefined
+      ? { id: 'visibility', label: t('planning.visibilityExpectation'), rating: values.visibilityExpectation }
+      : undefined,
+    values.perceivedDifficulty !== undefined
+      ? { id: 'difficulty', label: t('planning.perceivedDifficulty'), rating: values.perceivedDifficulty }
+      : undefined,
+  ].filter(row => row !== undefined);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <Section title={t('planning.sections.expectedConditions')}>
+      {rows.map((row, index) => {
+        const value = 'rating' in row ? `${row.rating}/5` : row.value;
+
+        return (
+          <Row
+            key={row.id}
+            testID={`planning-detail-row-${row.id}`}
+            valueTestID={`planning-detail-row-${row.id}-value`}
+            label={row.label}
+            value={value}
+            accessibilityLabel={
+              'rating' in row ? `${row.label}, ${t('form.ratingStar', { value: row.rating, total: 5 })}` : undefined
+            }
+            separated={index > 0}
+          />
+        );
+      })}
+    </Section>
+  );
+}
+
+function PeopleGearSection(props: { plan: DivePlan }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const rows = [
+    { id: 'buddies', label: t('planning.buddies'), values: props.plan.buddyIds },
+    { id: 'gear', label: t('planning.gear'), values: props.plan.gearIds },
+    { id: 'tags', label: t('planning.tags'), values: props.plan.tags },
+  ].filter(row => row.values.length > 0);
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <Section title={t('planning.sections.peopleGear')}>
+      {rows.map((row, index) => (
+        <Row
+          key={row.id}
+          testID={`planning-detail-row-${row.id}`}
+          valueTestID={`planning-detail-row-${row.id}-value`}
+          label={row.label}
+          value={row.values.join(', ')}
+          separated={index > 0}
+        />
+      ))}
+    </Section>
+  );
+}
+
+function NotesSection(props: { plan: DivePlan }): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const rows = [
+    { id: 'objective', label: t('planning.objective'), text: props.plan.objective },
+    { id: 'training-focus', label: t('planning.trainingFocus'), text: props.plan.plannedValues.trainingFocus },
+    { id: 'notes', label: t('planning.notes'), text: props.plan.notes },
+  ].filter((row): row is { id: string; label: string; text: string } => Boolean(row.text));
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <Section title={t('planning.sections.notes')}>
+      {rows.map((row, index) => (
+        <VStack key={row.id} testID={`planning-detail-row-${row.id}`} accessible accessibilityLabel={`${row.label}, ${row.text}`}>
+          {index > 0 ? <RowSeparator /> : null}
+          <VStack space="xs" className="px-4 py-3">
+            <Text className="text-sm text-muted-foreground">{row.label}</Text>
+            <Text testID={`planning-detail-row-${row.id}-value`} className="text-base leading-6 text-card-foreground">
+              {row.text}
+            </Text>
+          </VStack>
+        </VStack>
+      ))}
+    </Section>
+  );
+}
+
+/**
+ * Preparation reminders the diver ticks off. A tap saves at once; while saves are in flight the
+ * rows show the latest taps, and a failed save puts the stored state back with a short note.
+ */
+function ChecklistSection(props: {
+  plan: DivePlan;
+  onSaveChecklist?: (items: DivePlanChecklistItem[]) => Promise<unknown>;
+}): React.JSX.Element | null {
+  const { t } = useTranslation();
+  const [pendingItems, setPendingItems] = React.useState<DivePlanChecklistItem[]>();
+  const [saveFailed, setSaveFailed] = React.useState(false);
+  const inFlightRef = React.useRef(0);
+  const items = pendingItems ?? props.plan.checklistItems;
+  const doneCount = items.filter(item => item.completed).length;
+  const { onSaveChecklist } = props;
+
+  if (!items.length) {
+    return null;
+  }
+
+  const toggle = (id: string) => {
+    if (!onSaveChecklist) {
+      return;
+    }
+
+    const nextItems = items.map(item => (item.id === id ? { ...item, completed: !item.completed } : item));
+    setPendingItems(nextItems);
+    setSaveFailed(false);
+    inFlightRef.current += 1;
+    onSaveChecklist(nextItems)
+      .catch(() => setSaveFailed(true))
+      .finally(() => {
+        inFlightRef.current -= 1;
+        if (inFlightRef.current === 0) {
+          setPendingItems(undefined);
+        }
+      });
+  };
+
+  return (
+    <VStack space="sm">
+      <HStack className="items-center justify-between px-1">
+        <Text accessibilityRole="header" className="text-xs font-semibold uppercase text-muted-foreground">
+          {t('planning.sections.checklist')}
+        </Text>
+        <Text
+          testID="planning-detail-checklist-progress"
+          accessibilityLabel={t('planning.checklistProgressLabel', { done: doneCount, total: items.length })}
+          className="text-xs text-muted-foreground">
+          {`${doneCount}/${items.length}`}
+        </Text>
+      </HStack>
+      <Section>
+        {items.map((item, index) => {
+          const label = checklistItemLabel(item, t);
+
+          return (
+            <VStack key={item.id}>
+              {index > 0 ? <RowSeparator /> : null}
+              <Pressable
+                testID={`planning-detail-checklist-${item.id}`}
+                accessibilityRole="checkbox"
+                accessibilityLabel={label}
+                accessibilityState={{ checked: item.completed, disabled: !onSaveChecklist }}
+                disabled={!onSaveChecklist}
+                onPress={() => toggle(item.id)}
+                className="active:bg-muted">
+                <HStack space="md" className="min-h-12 items-center px-4 py-3">
+                  <Icon
+                    as={item.completed ? CheckCircleIcon : CircleIcon}
+                    className={item.completed ? 'text-primary' : 'text-muted-foreground'}
+                  />
+                  <Text className={item.completed ? 'flex-1 text-base text-muted-foreground' : 'flex-1 text-base text-card-foreground'}>
+                    {label}
+                  </Text>
+                </HStack>
+              </Pressable>
+            </VStack>
+          );
+        })}
+      </Section>
+      {saveFailed ? (
+        <Text testID="planning-detail-checklist-error" className="px-1 text-sm leading-5 text-destructive">
+          {t('planning.checklistError')}
+        </Text>
+      ) : null}
     </VStack>
   );
 }

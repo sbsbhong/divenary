@@ -49,6 +49,7 @@ import { createBlankDivePlan } from '../../utils/create-dive-plan';
 import { divePlanToDiveLogEntryDraft } from '../../utils/dive-plan-to-log-entry';
 import { useAppFeedbackBottomInset } from '../feedback/app-feedback';
 import { Box } from '../ui/box';
+import { DetailSkeleton } from '../ui/detail-skeleton';
 import { HStack } from '../ui/hstack';
 import { BookIcon, CalendarDaysIcon, HomeIcon, Icon, SettingsIcon } from '../ui/icon';
 import { InstrumentButton } from '../ui/instrument';
@@ -63,10 +64,11 @@ import AccountClaimScreen from '../../screens/account-claim/screen';
 import HomeScreen from '../../screens/home/screen';
 import { LogEntryDetail } from '../../screens/logbook/log-entry-detail';
 import { LogEntryEditor } from '../../screens/logbook/log-entry-editor';
+import { getLogEntrySuggestions } from '../../screens/logbook/log-entry-suggestions';
 import LogbookScreen from '../../screens/logbook/screen';
 import { PlanDetail } from '../../screens/planning/plan-detail';
 import { PlanEditor } from '../../screens/planning/plan-editor';
-import PlanningScreen, { isPlanReadyForPromotion } from '../../screens/planning/screen';
+import PlanningScreen from '../../screens/planning/screen';
 import SettingsScreen, { type SettingsRoute } from '../../screens/settings/screen';
 
 export type RootStackParamList = {
@@ -190,13 +192,14 @@ export function createAccountClaimSheetOptions(
 
 export default function RootNavigation(): React.JSX.Element {
   const { t } = useTranslation();
-  const { state } = useAuth();
+  const { state, isConfigured, availableProviders, isDevelopmentSignInAvailable } = useAuth();
+  // Login entries appear only in builds where Auth is set up and at least one way to sign in works.
+  const canSignIn = isConfigured && (availableProviders.length > 0 || isDevelopmentSignInAvailable);
   const accountData = useAccountData();
   const authStatusRef = React.useRef(state.status);
   authStatusRef.current = state.status;
   const [autoImportToast, setAutoImportToast] = React.useState<AutoImportToast | undefined>();
   const [pendingLogDraft, setPendingLogDraft] = React.useState<PendingLogDraft | undefined>();
-  const [completedPromptPlan, setCompletedPromptPlan] = React.useState<DivePlan | undefined>();
   const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
   useAppFeedbackBottomInset(visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0);
@@ -353,10 +356,6 @@ export default function RootNavigation(): React.JSX.Element {
 
   const openLogbook = React.useCallback(() => {
     openTab('logbook');
-  }, [openTab]);
-
-  const openPlanning = React.useCallback(() => {
-    openTab('planning');
   }, [openTab]);
 
   const openLogEntryCreate = React.useCallback(() => {
@@ -588,14 +587,6 @@ export default function RootNavigation(): React.JSX.Element {
     }));
   }, []);
 
-  const onPlanCompleted = React.useCallback(
-    (plan: DivePlan) => {
-      setCompletedPromptPlan(plan);
-      openTab('planning');
-    },
-    [openTab],
-  );
-
   return (
     <WatchSyncProvider
       preferencesHydrated={isHydrated}
@@ -630,13 +621,16 @@ export default function RootNavigation(): React.JSX.Element {
                         sessions={logbook.sessions}
                         latestEntry={logbook.entries[0]}
                         onOpenLog={openLogEntryDetail}
-                        onOpenLogbook={openLogbook}
-                        onOpenPlanning={openPlanning}
+                        plans={planning.plans}
+                        onOpenPlan={openPlanDetail}
+                        onCreateLog={openLogEntryCreate}
+                        onCreatePlan={openPlanCreate}
                         onOpenLogin={openAuthLogin}
-                        showLogin={state.status === 'guest'}
+                        showLogin={state.status === 'guest' && canSignIn}
                         onRefresh={logbook.refresh}
                         isLoading={logbook.isLoading}
                         isRefreshing={logbook.isRefreshing}
+                        loadError={logbook.listError}
                         reselectToken={reselectTokens.home}
                         recovery={homeRecovery}
                       />
@@ -655,10 +649,6 @@ export default function RootNavigation(): React.JSX.Element {
                         isLoading={logbook.isLoading}
                         isCloudLoading={logbook.isCloudLoading}
                         reselectToken={reselectTokens.logbook}
-                        onSaveEntry={logbook.saveEntry}
-                        onDeleteEntry={logbook.deleteEntry}
-                        saveError={logbook.saveError}
-                        isSaving={logbook.isSaving}
                         onOpenEntry={openLogEntryDetail}
                         onCreateEntry={openLogEntryCreate}
                         isAuthenticated={state.status === 'authenticated' || state.status === 'authenticatedOffline'}
@@ -668,29 +658,16 @@ export default function RootNavigation(): React.JSX.Element {
                   <AppTabs.Screen name="planning">
                     {() => (
                       <PlanningScreen
-                        sessions={logbook.sessions}
                         plans={planning.plans}
                         loadError={planning.listError}
                         onRefresh={planning.refresh}
                         isLoading={planning.isLoading}
                         isRefreshing={planning.isRefreshing}
                         reselectToken={reselectTokens.planning}
-                        onSavePlan={planning.savePlan}
-                        onDeletePlan={planning.deletePlan}
-                        saveError={planning.saveError}
-                        isSaving={planning.isSaving}
                         onCreatePlan={openPlanCreate}
                         onOpenPlan={openPlanDetail}
-                        onCreateLogFromPlan={createLogFromPlan}
-                        logEntryIds={logbook.entries.map(entry => entry.localId)}
                         onOpenLogbook={openLogbook}
                         isAuthenticated={state.status === 'authenticated' || state.status === 'authenticatedOffline'}
-                        completedPromptPlan={completedPromptPlan}
-                        onCompletedPromptLater={() => setCompletedPromptPlan(undefined)}
-                        onCreateLogFromCompletedPlan={plan => {
-                          setCompletedPromptPlan(undefined);
-                          createLogFromPlan(plan);
-                        }}
                       />
                     )}
                   </AppTabs.Screen>
@@ -751,13 +728,25 @@ export default function RootNavigation(): React.JSX.Element {
                   logbook={logbook}
                   planning={planning}
                   onCreateLogFromPlan={createLogFromPlan}
-                  onPlanCompleted={onPlanCompleted}
                 />
               )}
             </Stack.Screen>
             <Stack.Screen name="planningEdit">{props => <PlanningEditRoute {...props} planning={planning} />}</Stack.Screen>
             <Stack.Screen name="settingsDetail">
-              {props => <SettingsScreen route={props.route.params.route} onBack={() => props.navigation.goBack()} />}
+              {props => (
+                <SettingsScreen
+                  route={props.route.params.route}
+                  onBack={() => props.navigation.goBack()}
+                  accountClaim={{
+                    isOnline: accountData.isOnline,
+                    eligible: accountData.claim.eligible,
+                    state: accountData.claim.state,
+                  }}
+                  onOpenAccountClaim={openAccountClaim}
+                  loadPendingChangeCount={async () => (await accountData.outbox?.list())?.length ?? 0}
+                  isCloudRefreshing={accountData.isCloudRefreshing}
+                />
+              )}
             </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
@@ -772,14 +761,15 @@ export default function RootNavigation(): React.JSX.Element {
               right: insets.right,
               top: insets.top,
             }}>
+            {/* Unlike app feedback this carries an action, so it stays until the diver closes it. */}
             <Pressable
               testID="watch-auto-import-toast"
               onPress={openImportedLogToast}
-              className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3 shadow-sm"
+              className="absolute left-4 right-4 rounded-2xl bg-card px-4 py-3"
               style={({ pressed }) => [
                 {
                   bottom: AUTO_IMPORT_TOAST_EDGE_GAP + (visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0),
-                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                  transform: [{ scale: pressed ? 0.95 : 1 }],
                 },
               ]}>
               <VStack space="sm">
@@ -917,30 +907,15 @@ function LogbookCreateRoute(
   });
 
   return (
-    <RoutedEditorScreen navigation={props.navigation}>
-      {controls => (
-        <LogEntryEditor
-          entry={entry}
-          mode="create"
-          isSaving={props.logbook.isSaving}
-          saveError={props.logbook.saveError}
-          onCancel={controls.onCancel}
-          onFieldLayout={controls.onFieldLayout}
-          onInvalidSubmit={controls.onInvalidSubmit}
-          onDirtyChange={controls.onDirtyChange}
-          onSave={async nextEntry => {
-            const savedEntry = await props.logbook.saveEntry(nextEntry);
-            await props.onPendingDraftSaved(savedEntry, props.route.params?.sourcePlanLocalId);
-            controls.leaveAfterSave(() =>
-              props.navigation.replace('logbookDetail', {
-                localId: savedEntry.localId,
-              }),
-            );
-            return savedEntry;
-          }}
-        />
-      )}
-    </RoutedEditorScreen>
+    <RoutedLogEditor
+      navigation={props.navigation}
+      entry={entry}
+      mode="create"
+      logbook={props.logbook}
+      afterSave={savedEntry => props.onPendingDraftSaved(savedEntry, props.route.params?.sourcePlanLocalId)}
+      // A new log opens its detail in place of the editor.
+      onSaved={savedEntry => props.navigation.replace('logbookDetail', { localId: savedEntry.localId })}
+    />
   );
 }
 
@@ -949,32 +924,45 @@ function LogbookDetailRoute(
     logbook: ReturnType<typeof useDiveLogbook>;
   },
 ): React.JSX.Element {
-  const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
-  const [profileSamples, setProfileSamples] = React.useState(entry?.watchCapture?.samples ?? []);
+  const listEntry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
+  // A deleted log leaves the list before the screen finishes leaving; keep showing it until then.
+  const [deletingEntry, setDeletingEntry] = React.useState<DiveLogEntry>();
+  const entry = listEntry ?? deletingEntry;
+  const [profile, setProfile] = React.useState(() => ({
+    samples: listEntry?.watchCapture?.samples ?? [],
+    isLoading: true,
+  }));
   const { loadWatchProfile } = props.logbook;
   const accountData = useOptionalAccountData();
 
   React.useEffect(() => {
     let mounted = true;
-    loadWatchProfile(props.route.params.localId).then(samples => {
-      if (mounted) {
-        setProfileSamples(samples);
-      }
-    });
+    loadWatchProfile(props.route.params.localId)
+      .then(samples => {
+        if (mounted) {
+          setProfile({ samples, isLoading: false });
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setProfile(current => ({ ...current, isLoading: false }));
+        }
+      });
     return () => {
       mounted = false;
     };
   }, [loadWatchProfile, props.route.params.localId]);
 
   if (!entry) {
-    return <MissingRouteScreen navigation={props.navigation} />;
+    return <MissingRouteScreen navigation={props.navigation} listLoading={props.logbook.isLoading} />;
   }
 
   return (
     <RoutedScrollScreen>
       <LogEntryDetail
         entry={entry}
-        profileSamples={profileSamples}
+        profileSamples={profile.samples}
+        isProfileLoading={profile.isLoading}
         onBack={() => props.navigation.goBack()}
         onEdit={nextEntry =>
           props.navigation.navigate('logbookEdit', {
@@ -982,7 +970,13 @@ function LogbookDetailRoute(
           })
         }
         onDelete={async localId => {
-          await props.logbook.deleteEntry(localId);
+          setDeletingEntry(entry);
+          try {
+            await props.logbook.deleteEntry(localId);
+          } catch (error) {
+            setDeletingEntry(undefined);
+            throw error;
+          }
           props.navigation.goBack();
         }}
         onResolveConflict={
@@ -1003,33 +997,73 @@ function LogbookEditRoute(
   const entry = props.logbook.entries.find(nextEntry => nextEntry.localId === props.route.params.localId);
 
   if (!entry) {
-    return <MissingRouteScreen navigation={props.navigation} />;
+    return <MissingRouteScreen navigation={props.navigation} listLoading={props.logbook.isLoading} />;
   }
 
   return (
-    <RoutedEditorScreen navigation={props.navigation}>
-      {controls => (
-        <LogEntryEditor
-          entry={entry}
-          mode="edit"
-          isSaving={props.logbook.isSaving}
-          saveError={props.logbook.saveError}
-          onCancel={controls.onCancel}
-          onFieldLayout={controls.onFieldLayout}
-          onInvalidSubmit={controls.onInvalidSubmit}
-          onDirtyChange={controls.onDirtyChange}
-          onSave={async nextEntry => {
-            const savedEntry = await props.logbook.saveEntry(nextEntry);
-            controls.leaveAfterSave(() =>
-              props.navigation.replace('logbookDetail', {
-                localId: savedEntry.localId,
-              }),
-            );
-            return savedEntry;
-          }}
-        />
-      )}
-    </RoutedEditorScreen>
+    <RoutedLogEditor
+      navigation={props.navigation}
+      entry={entry}
+      mode="edit"
+      logbook={props.logbook}
+      // The detail this editor came from is still below it and shows the saved log.
+      onSaved={() => props.navigation.goBack()}
+    />
+  );
+}
+
+/**
+ * The log editor as a full-screen route: its sticky save bar stays at the bottom of the screen,
+ * and leaving with unsaved edits asks first.
+ */
+function RoutedLogEditor(props: {
+  navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'goBack' | 'dispatch'>;
+  entry: DiveLogEntry;
+  mode: 'create' | 'edit';
+  logbook: ReturnType<typeof useDiveLogbook>;
+  /** Runs after the log is saved and before the editor leaves, for example to link the source plan. */
+  afterSave?: (entry: DiveLogEntry) => Promise<void>;
+  onSaved: (entry: DiveLogEntry) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { navigation } = props;
+  const leavingAfterSaveRef = React.useRef(false);
+  const [isDirty, setIsDirty] = React.useState(false);
+  const suggestions = React.useMemo(
+    () => getLogEntrySuggestions(props.logbook.entries, props.entry.localId),
+    [props.entry.localId, props.logbook.entries],
+  );
+
+  usePreventRemove(isDirty, ({ data }) => {
+    if (leavingAfterSaveRef.current) {
+      navigation.dispatch(data.action);
+      return;
+    }
+
+    confirmDestructiveAction({
+      title: t('common.discardChanges.title'),
+      message: t('common.discardChanges.message'),
+      cancelLabel: t('common.discardChanges.keepEditing'),
+      confirmLabel: t('common.discardChanges.discard'),
+      onConfirm: () => navigation.dispatch(data.action),
+    });
+  });
+
+  return (
+    <LogEntryEditor
+      entry={props.entry}
+      mode={props.mode}
+      suggestions={suggestions}
+      onCancel={() => navigation.goBack()}
+      onDirtyChange={setIsDirty}
+      onSave={async nextEntry => {
+        const savedEntry = await props.logbook.saveEntry(nextEntry);
+        await props.afterSave?.(savedEntry);
+        leavingAfterSaveRef.current = true;
+        props.onSaved(savedEntry);
+        return savedEntry;
+      }}
+    />
   );
 }
 
@@ -1041,29 +1075,14 @@ function PlanningCreateRoute(
   const [plan] = React.useState(() => createBlankDivePlan());
 
   return (
-    <RoutedEditorScreen navigation={props.navigation}>
-      {controls => (
-        <PlanEditor
-          plan={plan}
-          mode="create"
-          isSaving={props.planning.isSaving}
-          saveError={props.planning.saveError}
-          onCancel={controls.onCancel}
-          onFieldLayout={controls.onFieldLayout}
-          onInvalidSubmit={controls.onInvalidSubmit}
-          onDirtyChange={controls.onDirtyChange}
-          onSave={async nextPlan => {
-            const savedPlan = await props.planning.savePlan(nextPlan);
-            controls.leaveAfterSave(() =>
-              props.navigation.replace('planningDetail', {
-                localId: savedPlan.localId,
-              }),
-            );
-            return savedPlan;
-          }}
-        />
-      )}
-    </RoutedEditorScreen>
+    <RoutedPlanEditor
+      navigation={props.navigation}
+      plan={plan}
+      mode="create"
+      planning={props.planning}
+      // A new plan opens its detail in place of the editor.
+      onSaved={savedPlan => props.navigation.replace('planningDetail', { localId: savedPlan.localId })}
+    />
   );
 }
 
@@ -1072,7 +1091,6 @@ function PlanningDetailRoute(
     logbook: ReturnType<typeof useDiveLogbook>;
     planning: ReturnType<typeof useDivePlans>;
     onCreateLogFromPlan: (plan: DivePlan) => void;
-    onPlanCompleted: (plan: DivePlan) => void;
   },
 ): React.JSX.Element {
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
@@ -1082,7 +1100,7 @@ function PlanningDetailRoute(
   );
 
   if (!plan) {
-    return <MissingRouteScreen navigation={props.navigation} />;
+    return <MissingRouteScreen navigation={props.navigation} listLoading={props.planning.isLoading} />;
   }
 
   return (
@@ -1095,32 +1113,22 @@ function PlanningDetailRoute(
             localId: nextPlan.localId,
           })
         }
-        onPromote={async nextPlan => {
-          if (!isPlanReadyForPromotion(nextPlan)) {
-            props.navigation.navigate('planningEdit', {
-              localId: nextPlan.localId,
-            });
-            return;
-          }
-
-          const savedPlan = await props.planning.savePlan({
+        // The detail checks the required fields before it calls this.
+        onPromote={nextPlan =>
+          props.planning.savePlan({
             ...nextPlan,
             status: 'planned',
             updatedAt: Date.now() / 1000,
-          });
-          props.navigation.replace('planningDetail', {
-            localId: savedPlan.localId,
-          });
-        }}
-        onComplete={async nextPlan => {
+          })
+        }
+        onComplete={nextPlan => {
           const timestamp = Date.now() / 1000;
-          const savedPlan = await props.planning.savePlan({
+          return props.planning.savePlan({
             ...nextPlan,
             status: 'completed',
             completedAt: timestamp,
             updatedAt: timestamp,
           });
-          props.onPlanCompleted(savedPlan);
         }}
         onDelete={async localId => {
           await props.planning.deletePlan(localId);
@@ -1128,6 +1136,15 @@ function PlanningDetailRoute(
         }}
         onCreateLogFromPlan={props.onCreateLogFromPlan}
         hasExistingConvertedLog={hasExistingConvertedLog}
+        onOpenConvertedLog={localId => props.navigation.navigate('logbookDetail', { localId })}
+        onSaveChecklist={checklistItems =>
+          props.planning.savePlan({
+            ...plan,
+            checklistItems,
+            updatedAt: Date.now() / 1000,
+          })
+        }
+        watchSyncStatus={props.planning.plannedWatchSyncStatus}
         onResolveConflict={
           accountData?.resolveConflict
             ? choice => accountData.resolveConflict!('plan', plan.localId, choice)
@@ -1146,33 +1163,66 @@ function PlanningEditRoute(
   const plan = props.planning.plans.find(nextPlan => nextPlan.localId === props.route.params.localId);
 
   if (!plan) {
-    return <MissingRouteScreen navigation={props.navigation} />;
+    return <MissingRouteScreen navigation={props.navigation} listLoading={props.planning.isLoading} />;
   }
 
   return (
-    <RoutedEditorScreen navigation={props.navigation}>
-      {controls => (
-        <PlanEditor
-          plan={plan}
-          mode="edit"
-          isSaving={props.planning.isSaving}
-          saveError={props.planning.saveError}
-          onCancel={controls.onCancel}
-          onFieldLayout={controls.onFieldLayout}
-          onInvalidSubmit={controls.onInvalidSubmit}
-          onDirtyChange={controls.onDirtyChange}
-          onSave={async nextPlan => {
-            const savedPlan = await props.planning.savePlan(nextPlan);
-            controls.leaveAfterSave(() =>
-              props.navigation.replace('planningDetail', {
-                localId: savedPlan.localId,
-              }),
-            );
-            return savedPlan;
-          }}
-        />
-      )}
-    </RoutedEditorScreen>
+    <RoutedPlanEditor
+      navigation={props.navigation}
+      plan={plan}
+      mode="edit"
+      planning={props.planning}
+      // The detail this editor came from is still below it and shows the saved plan.
+      onSaved={() => props.navigation.goBack()}
+    />
+  );
+}
+
+/**
+ * The plan editor as a full-screen route: its sticky save bar stays at the bottom of the screen,
+ * and leaving with unsaved edits asks first.
+ */
+function RoutedPlanEditor(props: {
+  navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'goBack' | 'dispatch'>;
+  plan: DivePlan;
+  mode: 'create' | 'edit';
+  planning: ReturnType<typeof useDivePlans>;
+  onSaved: (plan: DivePlan) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { navigation } = props;
+  const leavingAfterSaveRef = React.useRef(false);
+  const [isDirty, setIsDirty] = React.useState(false);
+
+  usePreventRemove(isDirty, ({ data }) => {
+    if (leavingAfterSaveRef.current) {
+      navigation.dispatch(data.action);
+      return;
+    }
+
+    confirmDestructiveAction({
+      title: t('common.discardChanges.title'),
+      message: t('common.discardChanges.message'),
+      cancelLabel: t('common.discardChanges.keepEditing'),
+      confirmLabel: t('common.discardChanges.discard'),
+      onConfirm: () => navigation.dispatch(data.action),
+    });
+  });
+
+  return (
+    <PlanEditor
+      plan={props.plan}
+      mode={props.mode}
+      isSaving={props.planning.isSaving}
+      onCancel={() => navigation.goBack()}
+      onDirtyChange={setIsDirty}
+      onSave={async nextPlan => {
+        const savedPlan = await props.planning.savePlan(nextPlan);
+        leavingAfterSaveRef.current = true;
+        props.onSaved(savedPlan);
+        return savedPlan;
+      }}
+    />
   );
 }
 
@@ -1193,84 +1243,20 @@ function RoutedScrollScreen(props: {
   );
 }
 
-type RoutedEditorControls = {
-  onCancel: () => void;
-  onFieldLayout: (fieldName: string, y: number) => void;
-  onInvalidSubmit: (fieldName: string) => void;
-  onDirtyChange: (isDirty: boolean) => void;
-  leaveAfterSave: (navigate: () => void) => void;
-};
-
-function RoutedEditorScreen(props: {
-  navigation: Pick<NativeStackNavigationProp<RootStackParamList>, 'goBack' | 'dispatch'>;
-  children: (controls: RoutedEditorControls) => React.ReactNode;
+function MissingRouteScreen(props: {
+  navigation: NativeStackNavigationProp<RootStackParamList>;
+  /** While the list is still on its first load the item may just not be there yet. */
+  listLoading?: boolean;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const { navigation } = props;
-  const scrollViewRef = React.useRef<ScrollViewHandle>(null);
-  const editorOffsetRef = React.useRef(0);
-  const fieldOffsetsRef = React.useRef<Record<string, number>>({});
-  const leavingAfterSaveRef = React.useRef(false);
-  const [isDirty, setIsDirty] = React.useState(false);
-  const [lastScrollTarget, setLastScrollTarget] = React.useState<number>();
 
-  usePreventRemove(isDirty, ({ data }) => {
-    if (leavingAfterSaveRef.current) {
-      navigation.dispatch(data.action);
-      return;
-    }
-
-    confirmDestructiveAction({
-      title: t('common.discardChanges.title'),
-      message: t('common.discardChanges.message'),
-      cancelLabel: t('common.discardChanges.keepEditing'),
-      confirmLabel: t('common.discardChanges.discard'),
-      onConfirm: () => navigation.dispatch(data.action),
-    });
-  });
-
-  const controls = React.useMemo<RoutedEditorControls>(
-    () => ({
-      onCancel: () => navigation.goBack(),
-      onFieldLayout: (fieldName, y) => {
-        fieldOffsetsRef.current[fieldName] = y;
-      },
-      onInvalidSubmit: fieldName => {
-        const fieldOffset = fieldOffsetsRef.current[fieldName];
-        if (fieldOffset === undefined) {
-          return;
-        }
-        const nextOffset = Math.max(0, editorOffsetRef.current + fieldOffset - 16);
-        setLastScrollTarget(nextOffset);
-        scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
-      },
-      onDirtyChange: setIsDirty,
-      leaveAfterSave: navigate => {
-        leavingAfterSaveRef.current = true;
-        navigate();
-      },
-    }),
-    [navigation],
-  );
-
-  return (
-    <RoutedScrollScreen scrollViewRef={scrollViewRef}>
-      {lastScrollTarget === undefined ? null : (
-        <Text testID="routed-editor-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
-      )}
-      <Box
-        testID="routed-editor-anchor"
-        onLayout={event => {
-          editorOffsetRef.current = event.nativeEvent.layout.y;
-        }}>
-        {props.children(controls)}
-      </Box>
-    </RoutedScrollScreen>
-  );
-}
-
-function MissingRouteScreen(props: { navigation: NativeStackNavigationProp<RootStackParamList> }): React.JSX.Element {
-  const { t } = useTranslation();
+  if (props.listLoading) {
+    return (
+      <RoutedScrollScreen>
+        <DetailSkeleton testID="navigation-route-loading" onBack={() => props.navigation.goBack()} />
+      </RoutedScrollScreen>
+    );
+  }
 
   return (
     <RoutedScrollScreen>

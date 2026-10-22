@@ -1,7 +1,9 @@
+import { AuthRepositoryError } from '@repo/supabase';
 import React from 'react';
+import { AccessibilityInfo } from 'react-native';
 import { useTranslation } from 'react-i18next';
 
-import type { SocialProvider } from '../../auth/native-social-auth';
+import { NativeSocialAuthError, type SocialProvider } from '../../auth/native-social-auth';
 import { BrandLogo } from '../../components/brand/brand-logo';
 import { Box } from '../../components/ui/box';
 import {
@@ -14,6 +16,8 @@ import { CloseIcon } from '../../components/ui/icon';
 import { SafeAreaView } from '../../components/ui/safe-area-view';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
+import { useAppPreferences } from '../../states/app-preferences';
 import { useAuth } from '../../states/auth';
 import { SocialLoginButton } from './social-login-button';
 
@@ -21,19 +25,46 @@ type LoginScreenProps = {
   onClose?: () => void;
 };
 
+/** What the user can do about a failed sign-in. The raw error never reaches the screen. */
+type SignInErrorKind = 'offline' | 'provider' | 'server' | 'unknown';
+
+const signInErrorKeys: Record<SignInErrorKind, string> = {
+  offline: 'auth.login.errorOffline',
+  provider: 'auth.login.errorProvider',
+  server: 'auth.login.errorServer',
+  unknown: 'auth.login.error',
+};
+
 export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.Element {
   const { t } = useTranslation();
   const auth = useAuth();
+  const { resolvedTheme } = useAppPreferences();
   const [busyProvider, setBusyProvider] = React.useState<
     SocialProvider | 'development'
   >();
-  const [hasError, setHasError] = React.useState(false);
+  const [errorKind, setErrorKind] = React.useState<SignInErrorKind>();
   const actionInFlight = React.useRef(false);
   const providers = auth.isConfigured ? auth.availableProviders : [];
   const orderedProviders = orderProviders(providers, auth.recentProvider);
   const isBusy = busyProvider !== undefined;
   const hasLoginActions =
     orderedProviders.length > 0 || auth.isDevelopmentSignInAvailable;
+  const developmentFeedback = useLoadingFeedback(busyProvider === 'development');
+  // The sheet stays locked while Auth exchanges the token, so a slow exchange gets a short line.
+  const exchangeFeedback = useLoadingFeedback(auth.state.status === 'authenticating');
+  const progressMessage = exchangeFeedback.isLongRunning
+    ? t('auth.login.longRunning')
+    : exchangeFeedback.showExtendedFeedback
+      ? t('auth.login.checking')
+      : undefined;
+  const errorMessage = errorKind ? t(signInErrorKeys[errorKind]) : undefined;
+
+  React.useEffect(() => {
+    // iOS does not announce an alert-role Text by itself.
+    if (errorMessage) {
+      AccessibilityInfo.announceForAccessibility(errorMessage);
+    }
+  }, [errorMessage]);
 
   const signIn = React.useCallback(
     async (provider: SocialProvider | 'development') => {
@@ -43,7 +74,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
 
       actionInFlight.current = true;
       setBusyProvider(provider);
-      setHasError(false);
+      setErrorKind(undefined);
 
       try {
         if (provider === 'development') {
@@ -51,8 +82,8 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
         } else {
           await auth.signIn(provider);
         }
-      } catch {
-        setHasError(true);
+      } catch (error) {
+        setErrorKind(classifySignInError(error));
       } finally {
         actionInFlight.current = false;
         setBusyProvider(undefined);
@@ -85,15 +116,29 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
           ) : null}
         </Box>
 
-        <Text
-          accessibilityRole="header"
-          adjustsFontSizeToFit
-          maxFontSizeMultiplier={1.5}
-          minimumFontScale={0.85}
-          numberOfLines={2}
-          className="text-center text-2xl font-semibold leading-8 text-foreground">
-          {t('auth.login.title')}
-        </Text>
+        <VStack space="xs">
+          <Text
+            accessibilityRole="header"
+            adjustsFontSizeToFit
+            maxFontSizeMultiplier={1.5}
+            minimumFontScale={0.85}
+            numberOfLines={2}
+            className="text-center text-2xl font-semibold leading-8 text-foreground">
+            {t('auth.login.title')}
+          </Text>
+          <Text
+            testID="auth-login-benefit"
+            maxFontSizeMultiplier={1.5}
+            className="text-center text-sm leading-5 text-muted-foreground">
+            {t('auth.login.benefit')}
+          </Text>
+          <Text
+            testID="auth-login-device-records"
+            maxFontSizeMultiplier={1.5}
+            className="text-center text-sm leading-5 text-muted-foreground">
+            {t('auth.login.deviceRecordsKept')}
+          </Text>
+        </VStack>
 
         {hasLoginActions ? (
           <VStack space="sm">
@@ -112,6 +157,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                 <SocialLoginButton
                   key={provider}
                   provider={provider}
+                  theme={resolvedTheme}
                   label={provider === 'google' ? t('auth.login.google') : t('auth.login.apple')}
                   accessibilityLabel={getProviderAccessibilityLabel(
                     provider === 'google'
@@ -140,7 +186,7 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
                 disabled={isBusy}
                 onPress={() => signIn('development')}
                 variant="outline">
-                {busyProvider === 'development' ? (
+                {developmentFeedback.showIndicator ? (
                   <ButtonSpinner
                     testID="auth-login-spinner-development"
                     aria-label={t('auth.login.signingIn')}
@@ -151,25 +197,51 @@ export default function LoginScreen({ onClose }: LoginScreenProps): React.JSX.El
             ) : null}
           </VStack>
         ) : (
-          <Box className="rounded-lg bg-muted px-4 py-4">
-            <Text className="text-center text-base font-semibold text-foreground">{t('auth.login.unavailableTitle')}</Text>
-          </Box>
+          <VStack testID="auth-login-unavailable" space="xs" className="rounded-2xl bg-card px-4 py-4">
+            <Text className="text-center text-base font-semibold text-card-foreground">{t('auth.login.unavailableTitle')}</Text>
+            <Text className="text-center text-sm leading-5 text-muted-foreground">
+              {t('auth.login.unavailableDescription')}
+            </Text>
+          </VStack>
         )}
 
-        {hasError ? (
+        {progressMessage ? (
+          <Text
+            testID="auth-login-progress"
+            accessibilityLiveRegion="polite"
+            maxFontSizeMultiplier={1.5}
+            className="text-center text-sm leading-5 text-muted-foreground">
+            {progressMessage}
+          </Text>
+        ) : null}
+
+        {errorMessage ? (
           <Box testID="auth-login-status-row" className="justify-center py-1">
             <Text
               testID="auth-login-error"
               accessibilityRole="alert"
               maxFontSizeMultiplier={1.5}
               className="text-center text-sm leading-5 text-destructive">
-              {t('auth.login.error')}
+              {errorMessage}
             </Text>
           </Box>
         ) : null}
       </VStack>
     </SafeAreaView>
   );
+}
+
+function classifySignInError(error: unknown): SignInErrorKind {
+  if (error instanceof AuthRepositoryError) {
+    return error.kind === 'network' ? 'offline' : 'server';
+  }
+
+  // The provider sheet failed or returned no usable credential; another provider may still work.
+  if (error instanceof NativeSocialAuthError) {
+    return 'provider';
+  }
+
+  return 'unknown';
 }
 
 function orderProviders(providers: SocialProvider[], recentProvider?: SocialProvider): SocialProvider[] {

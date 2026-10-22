@@ -1,455 +1,210 @@
+import type { TFunction } from 'i18next';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
-import { ListStateCard } from '../../components/ui/list-state-card';
-import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
 import { Box } from '../../components/ui/box';
+import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
+import { Row, Section } from '../../components/ui/grouped-list';
 import { HStack } from '../../components/ui/hstack';
-import { ArrowRightIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../components/ui/icon';
-import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
+import { AddIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../components/ui/icon';
+import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
+import { ListStateCard } from '../../components/ui/list-state-card';
 import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
-import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
+import { ScreenHeader } from '../../components/ui/screen-header';
+import { ScrollView } from '../../components/ui/scroll-view';
+import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
-import type { InstrumentTone } from '../../components/ui/theme';
 import type { DivePlan, DivePlanStatus } from '../../types/dive-plan';
-import type { MobileDiveSession } from '../../types/dive-session';
-import { createBlankDivePlan } from '../../utils/create-dive-plan';
-import { formatDate, formatDepth } from '../../utils/dive-formatters';
-import { PlanDetail } from './plan-detail';
-import { PlanEditor } from './plan-editor';
+import { formatDateTimeParts } from '../common/form/date-time-field';
+import { isPlanDatePassed, planTitle, selectNextPlan } from './plan-status';
 
 type PlanningScreenProps = {
-  sessions: MobileDiveSession[];
   plans?: DivePlan[];
   loadError?: Error | null;
   onRefresh: () => void | Promise<void>;
   isLoading?: boolean;
   isRefreshing?: boolean;
   reselectToken?: number;
-  onSavePlan?: (plan: DivePlan) => Promise<DivePlan>;
-  onDeletePlan?: (localId: string) => Promise<void>;
-  onCreatePlan?: () => void;
-  onOpenPlan?: (plan: DivePlan) => void;
-  onCreateLogFromPlan?: (plan: DivePlan) => void;
-  logEntryIds?: string[];
+  onCreatePlan: () => void;
+  onOpenPlan: (plan: DivePlan) => void;
   onOpenLogbook: () => void;
-  completedPromptPlan?: DivePlan;
-  onCompletedPromptLater?: () => void;
-  onCreateLogFromCompletedPlan?: (plan: DivePlan) => void;
-  saveError?: Error | null;
-  isSaving?: boolean;
   isAuthenticated?: boolean;
 };
 
-type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
 type PlanFilter = 'all' | DivePlanStatus;
 
+const PLAN_FILTERS: PlanFilter[] = ['all', 'draft', 'planned', 'completed'];
+
+/**
+ * The planbook list. Create, detail and edit are root stack routes; this screen only lists plans,
+ * with a 다음 다이브 summary while an upcoming planned dive exists.
+ */
 export default function PlanningScreen(props: PlanningScreenProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const palette = useGluestackColors();
   const locale = i18n.resolvedLanguage ?? i18n.language;
   const plans = React.useMemo(() => props.plans ?? [], [props.plans]);
-  const [route, setRoute] = React.useState<LocalRoute>('list');
   const [filter, setFilter] = React.useState<PlanFilter>('all');
-  const [selectedId, setSelectedId] = React.useState(plans[0]?.localId);
-  const [draftPlan, setDraftPlan] = React.useState<DivePlan | undefined>();
-  const [localCompletedPromptPlan, setLocalCompletedPromptPlan] = React.useState<DivePlan | undefined>();
-  const scrollViewRef = React.useRef<React.ComponentRef<typeof KeyboardAwareScrollView>>(null);
-  const editorOffsetRef = React.useRef(0);
-  const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
+  const scrollViewRef = React.useRef<React.ComponentRef<typeof ScrollView>>(null);
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
-  const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
+  const { onRefresh, reselectToken } = props;
   const visiblePlans = React.useMemo(() => (filter === 'all' ? plans : plans.filter(plan => plan.status === filter)), [filter, plans]);
-  const selectedPlan = plans.find(plan => plan.localId === selectedId);
-  const activePlan = React.useMemo(() => selectActivePlan(plans), [plans]);
-  const completedPromptPlan = props.completedPromptPlan ?? localCompletedPromptPlan;
-  const existingLogIds = React.useMemo(() => new Set(props.logEntryIds ?? []), [props.logEntryIds]);
-  const hasExistingConvertedLog = React.useCallback(
-    (plan: DivePlan) => Boolean(plan.convertedLogLocalId && existingLogIds.has(plan.convertedLogLocalId)),
-    [existingLogIds],
-  );
+  const nextPlan = React.useMemo(() => selectNextPlan(plans, Date.now() / 1000), [plans]);
+
+  // First load, first-load failure, empty and filtered-out are separate states. A failed refetch
+  // keeps the plans already on screen.
+  const hasPlans = plans.length > 0;
+  const isFirstLoad = Boolean(props.isLoading) && !hasPlans;
+  const hasFirstLoadError = !isFirstLoad && !hasPlans && Boolean(props.loadError);
+  const showSkeleton = useContentLoading(isFirstLoad);
 
   React.useEffect(() => {
-    if (selectedPlan) {
+    const token = reselectToken ?? 0;
+
+    if (token === previousReselectToken.current) {
       return;
     }
 
-    if (visiblePlans[0]) {
-      setSelectedId(visiblePlans[0].localId);
-    }
-
-    if (route === 'detail') {
-      setRoute('list');
-    }
-  }, [route, selectedPlan, visiblePlans]);
-
-  React.useEffect(() => {
-    const reselectToken = props.reselectToken ?? 0;
-
-    if (reselectToken === previousReselectToken.current) {
-      return;
-    }
-
-    previousReselectToken.current = reselectToken;
+    previousReselectToken.current = token;
     scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    void props.onRefresh();
-  }, [props]);
-
-  const openCreate = React.useCallback(() => {
-    if (props.onCreatePlan) {
-      props.onCreatePlan();
-      return;
-    }
-
-    editorFieldOffsetsRef.current = {};
-    setLastScrollTarget(undefined);
-    setDraftPlan(createBlankDivePlan());
-    setRoute('create');
-  }, [props]);
-
-  const openDetail = React.useCallback((plan: DivePlan) => {
-    setSelectedId(plan.localId);
-
-    if (props.onOpenPlan) {
-      props.onOpenPlan(plan);
-      return;
-    }
-
-    setRoute('detail');
-  }, [props]);
-
-  const openEdit = React.useCallback((plan: DivePlan) => {
-    editorFieldOffsetsRef.current = {};
-    setLastScrollTarget(undefined);
-    setDraftPlan(plan);
-    setSelectedId(plan.localId);
-    setRoute('edit');
-  }, []);
-
-  const savePlan = React.useCallback(
-    async (plan: DivePlan) => {
-      const savedPlan = props.onSavePlan ? await props.onSavePlan(plan) : plan;
-      setSelectedId(savedPlan.localId);
-      setDraftPlan(undefined);
-      setRoute('list');
-      return savedPlan;
-    },
-    [props],
-  );
-
-  const deletePlan = React.useCallback(
-    async (localId: string) => {
-      await props.onDeletePlan?.(localId);
-      setRoute('list');
-    },
-    [props],
-  );
-
-  const completePlan = React.useCallback(
-    async (plan: DivePlan) => {
-      const timestamp = Date.now() / 1000;
-      const savedPlan = await savePlan({
-        ...plan,
-        status: 'completed',
-        completedAt: timestamp,
-        updatedAt: timestamp,
-      });
-      setRoute('detail');
-      setSelectedId(savedPlan.localId);
-      setLocalCompletedPromptPlan(savedPlan);
-    },
-    [savePlan],
-  );
-
-  const promotePlan = React.useCallback(
-    async (plan: DivePlan) => {
-      if (!isPlanReadyForPromotion(plan)) {
-        openEdit(plan);
-        return;
-      }
-
-      const savedPlan = await savePlan({
-        ...plan,
-        status: 'planned',
-        updatedAt: Date.now() / 1000,
-      });
-      setRoute('detail');
-      setSelectedId(savedPlan.localId);
-    },
-    [openEdit, savePlan],
-  );
-
-  const createLogFromPlan = React.useCallback(
-    (plan: DivePlan) => {
-      props.onCreateLogFromPlan?.(plan);
-    },
-    [props],
-  );
-
-  const registerEditorOffset = React.useCallback((event: { nativeEvent: { layout: { y: number } } }) => {
-    editorOffsetRef.current = event.nativeEvent.layout.y;
-  }, []);
-
-  const registerEditorFieldOffset = React.useCallback((fieldName: string, y: number) => {
-    editorFieldOffsetsRef.current = {
-      ...editorFieldOffsetsRef.current,
-      [fieldName]: y,
-    };
-  }, []);
-
-  const scrollToEditorError = React.useCallback((fieldName: string) => {
-    const measuredFieldOffset = editorFieldOffsetsRef.current[fieldName];
-    const fallbackOffset = getPlanEditorFieldOffset(fieldName);
-    const nextOffset = Math.max(0, measuredFieldOffset === undefined ? fallbackOffset : editorOffsetRef.current + measuredFieldOffset - 16);
-    setLastScrollTarget(nextOffset);
-    scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
-  }, []);
+    onRefresh();
+  }, [onRefresh, reselectToken]);
 
   return (
-    <KeyboardAwareScrollView
+    <ScrollView
       ref={scrollViewRef}
       className="flex-1 bg-background"
       contentContainerClassName="px-5 pt-4 pb-6"
-      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={props.onRefresh} tintColor={palette.primary} />}
+      refreshControl={<RefreshControl refreshing={Boolean(props.isRefreshing)} onRefresh={onRefresh} tintColor={palette.primary} />}
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
-        <VStack space="sm">
-          <Text className="text-3xl font-semibold text-foreground">{t('planning.title')}</Text>
-          {lastScrollTarget === undefined ? null : (
-            <Text testID="planning-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
+        <VStack className="pt-2">
+          <ScreenHeader
+            title={t('planning.title')}
+            titleTestID="planning-title"
+            trailing={
+              <InstrumentButton
+                testID="planning-create-action"
+                label={t('planning.newPlan')}
+                icon={AddIcon}
+                variant="primary"
+                onPress={props.onCreatePlan}
+                className="min-h-11 px-4 py-2"
+              />
+            }
+          />
+        </VStack>
+
+        {nextPlan ? (
+          <Section title={t('planning.nextDive')}>
+            <Row
+              testID="planning-next-plan-row"
+              label={planTitle(nextPlan, t)}
+              detail={describePlan(nextPlan, locale)}
+              separated={false}
+              onPress={() => props.onOpenPlan(nextPlan)}
+            />
+          </Section>
+        ) : null}
+
+        <VStack space="md">
+          <HStack space="xs" className="rounded-full bg-muted p-1">
+            {PLAN_FILTERS.map(nextFilter => (
+              <SelectorPill
+                key={nextFilter}
+                testID={`planning-filter-${nextFilter}`}
+                className="flex-1"
+                label={t(`planning.filters.${nextFilter}`)}
+                selected={filter === nextFilter}
+                onPress={() => setFilter(nextFilter)}
+              />
+            ))}
+          </HStack>
+
+          {hasPlans && props.loadError ? (
+            <Text testID="planning-refresh-error" className="px-1 text-sm leading-5 text-muted-foreground">
+              {t('planning.refreshFailed')}
+            </Text>
+          ) : null}
+
+          {isFirstLoad ? (
+            <PlanListSkeleton visible={showSkeleton} />
+          ) : hasFirstLoadError ? (
+            <ListStateCard
+              testID="planning-error-state"
+              title={t('planning.loadFailed')}
+              message={t('planning.loadFailedMessage')}
+              actionLabel={t('common.retry')}
+              onAction={() => {
+                onRefresh();
+              }}
+            />
+          ) : !hasPlans ? (
+            <ListStateCard testID="planning-empty-state" title={t('planning.noPlans')} message={t('planning.noPlansMessage')} />
+          ) : !visiblePlans.length ? (
+            <ListStateCard
+              testID="planning-filter-empty-state"
+              title={t('planning.noFilteredPlans')}
+              actionLabel={t('planning.showAllPlans')}
+              onAction={() => setFilter('all')}
+            />
+          ) : (
+            <VStack space="sm">
+              {visiblePlans.map(plan => (
+                <PlanRow
+                  key={plan.localId}
+                  plan={plan}
+                  locale={locale}
+                  showsDeviceOnlyBadge={Boolean(props.isAuthenticated && plan.ownerUserId === undefined)}
+                  onPress={() => props.onOpenPlan(plan)}
+                />
+              ))}
+            </VStack>
           )}
         </VStack>
 
-        {completedPromptPlan ? (
-          <CompletionPrompt
-            plan={completedPromptPlan}
-            onLater={() => {
-              if (props.onCompletedPromptLater) {
-                props.onCompletedPromptLater();
-                return;
-              }
-
-              setLocalCompletedPromptPlan(undefined);
-            }}
-            onCreateLog={() => {
-              if (props.onCreateLogFromCompletedPlan) {
-                props.onCreateLogFromCompletedPlan(completedPromptPlan);
-                return;
-              }
-
-              createLogFromPlan(completedPromptPlan);
-              setLocalCompletedPromptPlan(undefined);
-            }}
-          />
-        ) : null}
-
-        {(route === 'create' || route === 'edit') && draftPlan ? (
-          <Box testID="planning-editor-card-anchor" onLayout={registerEditorOffset}>
-            <PlanEditor
-              plan={draftPlan}
-              mode={route === 'edit' ? 'edit' : 'create'}
-              isSaving={props.isSaving}
-              saveError={props.saveError}
-              onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
-              onSave={savePlan}
-              onFieldLayout={registerEditorFieldOffset}
-              onInvalidSubmit={scrollToEditorError}
-            />
-          </Box>
-        ) : null}
-
-        {route === 'detail' && selectedPlan ? (
-          <PlanDetail
-            plan={selectedPlan}
-            onBack={() => setRoute('list')}
-            onEdit={openEdit}
-            onPromote={promotePlan}
-            onComplete={completePlan}
-            onDelete={props.onDeletePlan ? deletePlan : undefined}
-            onCreateLogFromPlan={createLogFromPlan}
-            hasExistingConvertedLog={hasExistingConvertedLog(selectedPlan)}
-          />
-        ) : null}
-
-        {route === 'list' ? (
-          <VStack space="lg">
-            <ActivePlanPanel
-              plan={activePlan}
-              locale={locale}
-              showsDeviceOnlyBadge={Boolean(props.isAuthenticated && activePlan?.ownerUserId === undefined)}
-              onOpenPlan={openDetail}
-            />
-            <VStack space="md">
-              <HStack className="items-center justify-between">
-                <Text className="text-xl font-semibold text-foreground">{t('planning.planbook', { defaultValue: 'Planbook' })}</Text>
-                <InstrumentButton
-                  testID="planning-create-action"
-                  label={t('planning.newPlan', { defaultValue: 'New plan' })}
-                  icon={CalendarDaysIcon}
-                  variant="primary"
-                  onPress={openCreate}
-                  className="min-h-11 px-4 py-2"
-                />
-              </HStack>
-              <HStack space="xs" className="rounded-full bg-muted p-1">
-                {(['all', 'draft', 'planned', 'completed'] as PlanFilter[]).map(nextFilter => (
-                  <SelectorPill
-                    key={nextFilter}
-                    className="flex-1"
-                    label={t(`planning.filters.${nextFilter}`, { defaultValue: nextFilter })}
-                    selected={filter === nextFilter}
-                    onPress={() => setFilter(nextFilter)}
-                  />
-                ))}
-              </HStack>
-              {props.isLoading ? (
-                <PlanningLoadingState />
-              ) : !plans.length && props.loadError ? (
-                <ListStateCard
-                  testID="planning-error-state"
-                  title={t('planning.loadFailed')}
-                  message={t('planning.loadFailedMessage')}
-                  actionLabel={t('common.retry')}
-                  onAction={() => void props.onRefresh()}
-                />
-              ) : !visiblePlans.length && plans.length ? (
-                <ListStateCard
-                  testID="planning-filter-empty-state"
-                  title={t('planning.noFilteredPlans')}
-                  actionLabel={t('planning.showAllPlans')}
-                  onAction={() => setFilter('all')}
-                />
-              ) : visiblePlans.length ? (
-                <VStack space="md">
-                  {visiblePlans.map(plan => (
-                    <PlanRow
-                      key={plan.localId}
-                      plan={plan}
-                      locale={locale}
-                      showsDeviceOnlyBadge={Boolean(props.isAuthenticated && plan.ownerUserId === undefined)}
-                      onPress={() => openDetail(plan)}
-                    />
-                  ))}
-                </VStack>
-              ) : (
-                <EmptyPlanbook />
-              )}
-            </VStack>
-          </VStack>
-        ) : null}
-
-        <InstrumentButton
-          testID="planning-open-logbook-action"
-          label={t('planning.openLogbook')}
-          icon={ArrowRightIcon}
-          iconPlacement="trailing"
-          onPress={props.onOpenLogbook}
-        />
-        <SafetyText>{t('planning.safetyText')}</SafetyText>
+        <VStack space="md" className="items-center">
+          <Pressable
+            testID="planning-open-logbook-action"
+            accessibilityRole="button"
+            onPress={props.onOpenLogbook}
+            className="min-h-11 justify-center px-3"
+            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+            <Text className="text-sm font-semibold text-primary">{t('planning.openLogbook')}</Text>
+          </Pressable>
+          <SafetyText>{t('planning.safetyText')}</SafetyText>
+        </VStack>
       </VStack>
-    </KeyboardAwareScrollView>
+    </ScrollView>
   );
 }
 
-function getPlanEditorFieldOffset(fieldName: string): number {
-  const offsets: Record<string, number> = {
-    title: 180,
-    plannedAt: 260,
-    diveMode: 360,
-    siteName: 500,
-    buddies: 600,
-    gearIds: 600,
-    tags: 700,
-    objective: 780,
-    plannedMaxDepthMeters: 900,
-    plannedDurationMinutes: 900,
-    plannedPressure: 1080,
-    waterCondition: 1200,
-    visibilityExpectation: 1280,
-    perceivedDifficulty: 1360,
-    trainingFocus: 1440,
-    repetitionTarget: 1080,
-    notes: 1520,
-  };
+function describePlan(plan: DivePlan, locale: string): string {
+  const date = describePlanDate(plan, locale);
+  const siteName = plan.site.name?.trim();
 
-  return offsets[fieldName] ?? 260;
+  // The site is the row title when the plan has no title, so it is not repeated here.
+  return plan.title && siteName ? `${date} · ${siteName}` : date;
 }
 
-function ActivePlanPanel(props: {
-  plan: DivePlan | undefined;
-  locale: string;
-  showsDeviceOnlyBadge: boolean;
-  onOpenPlan: (plan: DivePlan) => void;
-}): React.JSX.Element {
-  const { t } = useTranslation();
-
-  if (!props.plan) {
-    return (
-      <DiveSummaryCard accent="secondary">
-        <DiveSummaryCard.Header title={t('planning.noActivePlan', { defaultValue: 'No active plan' })} />
-      </DiveSummaryCard>
-    );
+function describePlanDate(plan: DivePlan, locale: string): string {
+  if (plan.plannedAt === undefined) {
+    return '--';
   }
 
-  const title = getPlanTitle(props.plan, t('planning.untitledPlan', { defaultValue: 'Untitled plan' }));
-  const activePlanEyebrow = t('planning.activePlan', { defaultValue: 'Active plan' });
-  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
-  const accessibilityLabel = [
-    activePlanEyebrow,
-    title,
-    statusLabel,
-    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
-  ].join(', ');
+  const parts = formatDateTimeParts(new Date(plan.plannedAt * 1000), locale);
+  return `${parts.date} ${parts.time}`;
+}
 
-  return (
-    <DiveSummaryCard accent="secondary">
-      <Box
-        testID="planning-active-summary-accessibility"
-        accessible={props.showsDeviceOnlyBadge ? true : undefined}
-        accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}>
-        <DiveSummaryCard.Header
-          eyebrow={activePlanEyebrow}
-          title={title}
-          right={<StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />}
-        />
-      </Box>
-      <DiveSummaryCard.Body>
-        {props.showsDeviceOnlyBadge ? (
-          <ListStatusBadge
-            kind="device"
-            label={t('accountClaim.deviceBadge')}
-            testID="planning-active-device-badge"
-          />
-        ) : null}
-        <DiveSummaryCard.Metric
-          label={t('planning.site', { defaultValue: 'Site' })}
-          value={props.plan.site.name ?? t('planning.chooseSite', { defaultValue: 'Choose site' })}
-        />
-        <DiveSummaryCard.Metric
-          label={t('planning.plannedAt', { defaultValue: 'Planned date/time' })}
-          value={formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }))}
-        />
-        <DiveSummaryCard.Metric
-          label={t('planning.plannedMax', { defaultValue: 'Planned max' })}
-          value={formatDepth(props.plan.plannedValues.plannedMaxDepthMeters)}
-        />
-      </DiveSummaryCard.Body>
-      <DiveSummaryCard.Footer>
-        <InstrumentButton
-          testID="planning-active-open-action"
-          label={t('planning.openPlan', { defaultValue: 'Open plan' })}
-          icon={ChevronRightIcon}
-          iconPlacement="trailing"
-          variant="primary"
-          onPress={() => props.onOpenPlan(props.plan!)}
-        />
-      </DiveSummaryCard.Footer>
-    </DiveSummaryCard>
-  );
+/** Draft and completed say so; a planned dive whose day is over says 날짜 지남. Upcoming plans need no chip. */
+function planRowChip(plan: DivePlan, t: TFunction): string | undefined {
+  if (plan.status !== 'planned') {
+    return t(`planning.status.${plan.status}`);
+  }
+
+  return isPlanDatePassed(plan) ? t('planning.datePassed') : undefined;
 }
 
 function PlanRow(props: {
@@ -459,142 +214,81 @@ function PlanRow(props: {
   onPress: () => void;
 }): React.JSX.Element {
   const { t } = useTranslation();
-  const siteName = props.plan.site.name ?? t('planning.untitledPlan', { defaultValue: 'Untitled plan' });
-  const title = props.plan.title ?? siteName;
-  const dateLabel = formatDate(props.plan.plannedAt, props.locale, t('formatters.unknownDate', { defaultValue: 'Unknown date' }));
-  const statusLabel = t(`planning.status.${props.plan.status}`, { defaultValue: props.plan.status });
-  const diveModeLabel = props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : t('diveModes.notSet');
-  const entryStyleLabel = props.plan.entryStyle ? t(`entryStyles.${props.plan.entryStyle}`, { defaultValue: props.plan.entryStyle }) : t('logbook.none');
+  const title = planTitle(props.plan, t);
+  const subtitle = describePlan(props.plan, props.locale);
+  const chip = planRowChip(props.plan, t);
+  const modeLabel = props.plan.diveMode ? t(`diveModes.${props.plan.diveMode}`) : undefined;
   const accessibilityLabel = [
     title,
-    siteName,
-    dateLabel,
-    ...(props.showsDeviceOnlyBadge ? [t('accountClaim.deviceBadge')] : []),
-    statusLabel,
-    diveModeLabel,
-    entryStyleLabel,
-  ].join(', ');
+    subtitle,
+    props.showsDeviceOnlyBadge ? t('accountClaim.deviceBadge') : undefined,
+    chip,
+    modeLabel,
+  ]
+    .filter(Boolean)
+    .join(', ');
 
   return (
     <Pressable
-      testID={`planning-plan-row-${siteName}`}
+      testID={`planning-plan-row-${props.plan.localId}`}
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={props.onPress}
-      accessible={props.showsDeviceOnlyBadge ? true : undefined}
-      accessibilityLabel={props.showsDeviceOnlyBadge ? accessibilityLabel : undefined}
-      className="rounded-2xl bg-card px-4 py-4"
+      className="rounded-2xl bg-card px-4 py-3"
       style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-      <VStack space="sm">
-        <HStack className="items-center justify-between">
-          <HStack space="md" className="flex-1 items-center pr-2.5">
-            <Box
-              testID={`planning-plan-row-${siteName}-icon`}
-              className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-              <Icon as={CalendarDaysIcon} size="md" className="text-primary" />
-            </Box>
-            <VStack space="xs" className="flex-1">
-              <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <HStack space="xs" className="flex-wrap items-center">
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  {siteName} · {dateLabel}
-                </Text>
-                {props.showsDeviceOnlyBadge ? (
-                  <ListStatusBadge
-                    testID={`planning-device-badge-${siteName}`}
-                    kind="device"
-                    label={t('accountClaim.deviceBadge')}
-                  />
-                ) : null}
-              </HStack>
-            </VStack>
-          </HStack>
-          <StatusPill label={statusLabel} tone={statusTone(props.plan.status)} />
-        </HStack>
-        <Text className="pl-5 text-sm leading-5 text-muted-foreground">
-          {diveModeLabel} · {entryStyleLabel}
-        </Text>
-      </VStack>
+      <HStack space="md" className="min-h-12 items-center">
+        <Box className="h-9 w-9 items-center justify-center rounded-full bg-muted">
+          <Icon as={CalendarDaysIcon} className="text-muted-foreground" />
+        </Box>
+        <VStack space="xs" className="flex-1">
+          <Text className="text-base font-semibold text-card-foreground" numberOfLines={1}>
+            {title}
+          </Text>
+          <Text className="text-sm leading-5 text-muted-foreground" numberOfLines={1}>
+            {subtitle}
+          </Text>
+          {props.showsDeviceOnlyBadge ? (
+            <ListStatusBadge
+              testID={`planning-device-badge-${props.plan.localId}`}
+              kind="device"
+              label={t('accountClaim.deviceBadge')}
+            />
+          ) : null}
+        </VStack>
+        {chip ? <StatusPill testID={`planning-plan-row-${props.plan.localId}-chip`} label={chip} tone="muted" /> : null}
+        <Icon as={ChevronRightIcon} className="text-muted-foreground" />
+      </HStack>
     </Pressable>
   );
 }
 
-function CompletionPrompt(props: { plan: DivePlan; onLater: () => void; onCreateLog: () => void }): React.JSX.Element {
+/** Three rows shaped like `PlanRow`, reserved at their final size and shown only after the shared delay. */
+function PlanListSkeleton(props: { visible: boolean }): React.JSX.Element {
   const { t } = useTranslation();
+  const surface = props.visible ? 'rounded-2xl bg-card px-4 py-3' : 'rounded-2xl px-4 py-3';
 
   return (
-    <DiveSummaryCard variant="parchment">
-      <VStack testID="planning-complete-dialog" space="md">
-        <DiveSummaryCard.Header
-          eyebrow={t('planning.completedPromptEyebrow', { defaultValue: 'Plan completed' })}
-          title={t('planning.completedPromptTitle', { defaultValue: 'Create a log draft now?' })}
-        />
-        <HStack space="sm">
-          <InstrumentButton
-            testID="planning-complete-later"
-            className="flex-1 min-h-11 px-4 py-2"
-            label={t('planning.later', { defaultValue: 'Later' })}
-            onPress={props.onLater}
-          />
-          <InstrumentButton
-            testID="planning-complete-create-log"
-            className="flex-1 min-h-11 px-4 py-2"
-            label={t('planning.createLogFromPlan', { defaultValue: 'Create log from plan' })}
-            variant="primary"
-            onPress={props.onCreateLog}
-          />
-        </HStack>
-      </VStack>
-    </DiveSummaryCard>
-  );
-}
-
-function EmptyPlanbook(): React.JSX.Element {
-  const { t } = useTranslation();
-
-  return <ListStateCard testID="planning-empty-state" title={t('planning.noPlans', { defaultValue: 'No plans yet' })} />;
-}
-
-function PlanningLoadingState(): React.JSX.Element {
-  return (
-    <VStack testID="planning-loading-state" space="md">
+    <VStack
+      testID="planning-loading-state"
+      space="sm"
+      accessible={props.visible}
+      accessibilityLabel={props.visible ? t('planning.loadingPlans') : undefined}
+      accessibilityState={{ busy: true }}>
       {[0, 1, 2].map(index => (
-        <DiveSummaryCard key={index}>
-          <VStack space="sm">
-            <Skeleton className="h-5 w-44 rounded-full" />
-            <SkeletonText _lines={2} className="h-4 rounded-full" />
+        <HStack key={index} space="md" className={`min-h-12 items-center ${surface}`}>
+          <Box className="h-9 w-9">
+            <SkeletonBlock visible={props.visible} className="h-9 rounded-full" />
+          </Box>
+          <VStack space="xs" className="flex-1">
+            <Box className="w-1/2">
+              <SkeletonBlock visible={props.visible} className="h-5" />
+            </Box>
+            <Box className="w-2/3">
+              <SkeletonBlock visible={props.visible} />
+            </Box>
           </VStack>
-        </DiveSummaryCard>
+        </HStack>
       ))}
     </VStack>
   );
 }
-
-export function isPlanReadyForPromotion(plan: DivePlan): boolean {
-  return Boolean(
-    plan.plannedAt !== undefined &&
-    plan.diveMode &&
-    plan.site.name?.trim() &&
-    plan.plannedValues.plannedMaxDepthMeters !== undefined &&
-    plan.plannedValues.plannedDurationMinutes !== undefined,
-  );
-}
-
-function selectActivePlan(plans: DivePlan[]): DivePlan | undefined {
-  return plans.find(plan => plan.status === 'planned') ?? plans.find(plan => plan.status === 'draft') ?? plans[0];
-}
-
-function getPlanTitle(plan: DivePlan, fallback: string): string {
-  return plan.title ?? plan.site.name ?? fallback;
-}
-
-const statusTone = (status: DivePlanStatus): InstrumentTone => {
-  if (status === 'completed') {
-    return 'primary';
-  }
-
-  if (status === 'planned') {
-    return 'secondary';
-  }
-
-  return 'muted';
-};

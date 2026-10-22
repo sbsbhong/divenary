@@ -1,15 +1,17 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
-import { KeyboardAvoidingView, RefreshControl, ScrollView } from 'react-native';
+import { RefreshControl, ScrollView } from 'react-native';
 import ReactTestRenderer from 'react-test-renderer';
 import { ButtonIcon } from '../src/components/ui/button';
+import { AddIcon } from '../src/components/ui/icon';
 import i18n from '../src/i18n';
-import { AddIcon, CalendarDaysIcon } from '../src/components/ui/icon';
-import { LocalDivePlanRepository } from '../src/repositories/local-dive-plan-repository';
-import { PlanEditor } from '../src/screens/planning/plan-editor';
 import PlanningScreen from '../src/screens/planning/screen';
-import { useDivePlans } from '../src/states/use-dive-plans';
 import type { DivePlan } from '../src/types/dive-plan';
+
+type Renderer = ReactTestRenderer.ReactTestRenderer;
+
+// 2026-06-13 12:00 local time.
+const NOW = new Date(2026, 5, 13, 12, 0).getTime();
+const at = (month: number, day: number, hour = 9) => new Date(2026, month - 1, day, hour, 0).getTime() / 1000;
 
 const plan = (overrides: Partial<DivePlan>): DivePlan => ({
   localId: 'plan-base',
@@ -25,798 +27,259 @@ const plan = (overrides: Partial<DivePlan>): DivePlan => ({
   ...overrides,
 });
 
-type HarnessProps = {
-  repository: LocalDivePlanRepository;
-  isAuthenticated?: boolean;
-  onCreatePlan?: () => void;
-  onOpenPlan?: (plan: DivePlan) => void;
-  onCreateLogFromPlan?: (plan: DivePlan) => void;
-  logEntryIds?: string[];
-};
+const renderers: Renderer[] = [];
 
-const queryClients: QueryClient[] = [];
-const renderers: ReactTestRenderer.ReactTestRenderer[] = [];
+type ScreenProps = Partial<React.ComponentProps<typeof PlanningScreen>>;
 
-function Harness({ repository, isAuthenticated, onCreateLogFromPlan = jest.fn(), onCreatePlan, onOpenPlan, logEntryIds }: HarnessProps): React.JSX.Element {
-  const plans = useDivePlans({ repository, queryScope: 'planning-screen-test' });
+const screenProps = (props: ScreenProps = {}): React.ComponentProps<typeof PlanningScreen> => ({
+  plans: [],
+  onRefresh: jest.fn(),
+  onCreatePlan: jest.fn(),
+  onOpenPlan: jest.fn(),
+  onOpenLogbook: jest.fn(),
+  ...props,
+});
 
-  return (
-    <PlanningScreen
-      sessions={[]}
-      plans={plans.plans}
-      onRefresh={plans.refresh}
-      isRefreshing={plans.isRefreshing}
-      onSavePlan={plans.savePlan}
-      onDeletePlan={plans.deletePlan}
-      saveError={plans.saveError}
-      isSaving={plans.isSaving}
-      onCreatePlan={onCreatePlan}
-      onOpenPlan={onOpenPlan}
-      onCreateLogFromPlan={onCreateLogFromPlan}
-      logEntryIds={logEntryIds}
-      onOpenLogbook={jest.fn()}
-      isAuthenticated={isAuthenticated}
-    />
-  );
-}
-
-const renderPlanning = async (
-  repository: LocalDivePlanRepository,
-  options:
-    | ((plan: DivePlan) => void)
-    | {
-        onCreateLogFromPlan?: (plan: DivePlan) => void;
-        onCreatePlan?: () => void;
-        onOpenPlan?: (plan: DivePlan) => void;
-        logEntryIds?: string[];
-        isAuthenticated?: boolean;
-      } = {},
-) => {
-  const props = typeof options === 'function' ? { onCreateLogFromPlan: options } : options;
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { gcTime: Infinity, retry: false },
-      mutations: { gcTime: Infinity, retry: false },
-    },
-  });
-  queryClients.push(queryClient);
-  let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
-
+async function render(props: ScreenProps = {}): Promise<Renderer> {
+  let renderer: Renderer | undefined;
   await ReactTestRenderer.act(async () => {
-    await i18n.changeLanguage('en');
-    renderer = ReactTestRenderer.create(
-      <QueryClientProvider client={queryClient}>
-        <Harness
-          repository={repository}
-          onCreateLogFromPlan={props.onCreateLogFromPlan}
-          onCreatePlan={props.onCreatePlan}
-          onOpenPlan={props.onOpenPlan}
-          logEntryIds={props.logEntryIds}
-          isAuthenticated={props.isAuthenticated}
-        />
-      </QueryClientProvider>,
-    );
+    renderer = ReactTestRenderer.create(<PlanningScreen {...screenProps(props)} />);
   });
-
   renderers.push(renderer!);
   return renderer!;
-};
+}
 
-const press = async (root: ReactTestRenderer.ReactTestInstance, testID: string) => {
-  await ReactTestRenderer.act(async () => {
-    await root.findByProps({ testID }).props.onPress();
-    await new Promise<void>(resolve => setTimeout(resolve, 0));
-  });
-};
+/** The host node with this test ID (the native element, not a wrapper component). */
+function host(renderer: Renderer, testID: string): ReactTestRenderer.ReactTestInstance | undefined {
+  return renderer.root.findAll(node => node.props.testID === testID && typeof node.type === 'string')[0];
+}
 
-const layout = async (root: ReactTestRenderer.ReactTestInstance, testID: string, y: number) => {
-  await ReactTestRenderer.act(async () => {
-    root.findByProps({ testID }).props.onLayout({ nativeEvent: { layout: { y } } });
-  });
-};
+function exists(renderer: Renderer, testID: string): boolean {
+  return host(renderer, testID) !== undefined;
+}
 
-const changeText = async (root: ReactTestRenderer.ReactTestInstance, testID: string, value: string) => {
-  await ReactTestRenderer.act(async () => {
-    const field = findInputLike(root, testID);
-    if (typeof field.props.onChangeText === 'function') {
-      field.props.onChangeText(value);
-      return;
-    }
-    if (typeof field.props.onChange === 'function') {
-      field.props.onChange(value);
-      return;
-    }
-    field.props.onValueChange(value);
-  });
-};
-
-const changeDateTime = async (root: ReactTestRenderer.ReactTestInstance, testID: string, value: Date) => {
-  const trigger = root.findAllByProps({ testID: `${testID}-trigger` })[0];
-  if (trigger) {
-    await ReactTestRenderer.act(async () => {
-      trigger.props.onPress();
-    });
-    await ReactTestRenderer.act(async () => {
-      const picker = root.findByProps({ testID: `${testID}-picker` });
-      if (typeof picker.props.onValueChange === 'function') {
-        picker.props.onValueChange({ nativeEvent: { timestamp: value.getTime(), utcOffset: 0 } }, value);
-        return;
-      }
-
-      picker.props.onChange({ type: 'set' }, value);
-    });
-    return;
+async function press(renderer: Renderer, testID: string): Promise<void> {
+  const target = renderer.root.findAll(node => node.props.testID === testID && typeof node.props.onPress === 'function')[0];
+  if (!target) {
+    throw new Error(`No pressable element with testID ${testID}`);
   }
-
   await ReactTestRenderer.act(async () => {
-    const field = findInputLike(root, testID);
-    field.props.onChange(value);
+    await target.props.onPress();
   });
-};
+}
 
-const changeNumber = async (root: ReactTestRenderer.ReactTestInstance, testID: string, value: number) => {
-  await ReactTestRenderer.act(async () => {
-    root.findByProps({ testID: `${testID}-input-trigger` }).props.onPress();
+function textNodes(renderer: Renderer, text: string): ReactTestRenderer.ReactTestInstance[] {
+  return renderer.root.findAll(node => typeof node.type === 'string' && node.props.children === text);
+}
+
+describe('Planning list', () => {
+  beforeEach(async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(NOW);
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+    });
   });
 
-  await ReactTestRenderer.act(async () => {
-    const input = root.findAllByProps({ testID: `${testID}-input` }).find(match => typeof match.props.onChangeText === 'function');
-    input!.props.onChangeText(`${value}`);
-  });
-
-  await ReactTestRenderer.act(async () => {
-    const input = root.findAllByProps({ testID: `${testID}-input` }).find(match => typeof match.props.onSubmitEditing === 'function');
-    input!.props.onSubmitEditing();
-  });
-};
-
-const findInputLike = (root: ReactTestRenderer.ReactTestInstance, testID: string): ReactTestRenderer.ReactTestInstance => {
-  const matches = root.findAllByProps({ testID });
-  return (
-    matches.find(match => typeof match.props.onChangeText === 'function') ??
-    matches.find(match => typeof match.props.onChange === 'function') ??
-    matches.find(match => typeof match.props.onValueChange === 'function') ??
-    root.findByProps({ testID })
-  );
-};
-
-describe('Planning screen planbook flow', () => {
   afterEach(async () => {
     await ReactTestRenderer.act(async () => {
       for (const renderer of renderers.splice(0)) {
         renderer.unmount();
       }
     });
-
-    for (const queryClient of queryClients.splice(0)) {
-      queryClient.clear();
-    }
+    jest.restoreAllMocks();
+    jest.useRealTimers();
   });
 
-  it('creates a planned scuba boat plan with mode-specific fields', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
+  afterAll(async () => {
+    await i18n.changeLanguage('ko');
+  });
 
-    await press(root, 'planning-create-action');
-    expect(root.findByProps({ testID: 'planning-editor-title' }).props.children).toBe('New dive plan');
-    await changeText(root, 'planning-editor-plan-title', 'Blue Wall morning');
-    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
-    await changeText(root, 'planning-editor-site-name', 'Blue Wall');
-    await press(root, 'planning-editor-mode-scuba');
-    await press(root, 'planning-editor-entry-style-boat');
-    expect(root.findByProps({ testID: 'planning-editor-gas-label-air' })).toBeTruthy();
-    await changeNumber(root, 'planning-editor-planned-max-depth', 24);
-    await changeNumber(root, 'planning-editor-planned-duration', 45);
-    await changeText(root, 'planning-editor-gear-input', 'bcd-1, computer-1,');
-    await press(root, 'planning-editor-pressure-unit-psi');
-    await changeNumber(root, 'planning-editor-pressure-start', 3000);
-    await changeNumber(root, 'planning-editor-pressure-end', 900);
-    await press(root, 'planning-editor-save-planned');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan).toMatchObject({
-      status: 'planned',
-      title: 'Blue Wall morning',
-      plannedAt: new Date('2026-06-20T09:30:00').getTime() / 1000,
-      site: { name: 'Blue Wall' },
-      diveMode: 'scuba',
-      entryStyle: 'boat',
-      gearIds: ['bcd-1', 'computer-1'],
-      plannedValues: {
-        plannedMaxDepthMeters: 24,
-        plannedDurationMinutes: 45,
-        gasLabel: 'Air',
-        plannedPressure: { unit: 'psi', start: 3000, end: 900 },
-      },
+  test('has one primary New plan action and opens the routed editor and detail', async () => {
+    const onCreatePlan = jest.fn();
+    const onOpenPlan = jest.fn();
+    const renderer = await render({
+      plans: [plan({ localId: 'plan-1', status: 'planned', title: 'Route plan', site: { name: 'Route Reef' }, plannedAt: at(6, 20) })],
+      onCreatePlan,
+      onOpenPlan,
     });
-    expect(root.findByProps({ testID: 'planning-plan-row-Blue Wall' })).toBeTruthy();
-    await press(root, 'planning-plan-row-Blue Wall');
-    expect(root.findByProps({ testID: 'planning-detail-planned-value-gas-Air' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-detail-planned-value-pressure-3000psi->900psi' })).toBeTruthy();
+
+    expect(host(renderer, 'planning-title')!.props.children).toBe('Plans');
+    expect(renderer.root.findAll(node => node.props.label === 'New plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
+    expect(renderer.root.findByProps({ testID: 'planning-create-action-icon' }).findByType(ButtonIcon).props.as).toBe(AddIcon);
+
+    await press(renderer, 'planning-create-action');
+    expect(onCreatePlan).toHaveBeenCalledTimes(1);
+
+    await press(renderer, 'planning-plan-row-plan-1');
+    expect(onOpenPlan).toHaveBeenCalledWith(expect.objectContaining({ localId: 'plan-1' }));
+    // No in-screen editor or detail: those are root stack routes.
+    expect(exists(renderer, 'planning-editor-title')).toBe(false);
+    expect(exists(renderer, 'planning-detail-edit')).toBe(false);
   });
 
-  it('allows planned depths above 40m while showing watch support warnings', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
+  test('shows the next dive summary only while an upcoming planned dive exists', async () => {
+    const onOpenPlan = jest.fn();
+    const upcoming = plan({ localId: 'upcoming', status: 'planned', title: 'Blue Wall morning', site: { name: 'Blue Wall' }, plannedAt: at(6, 20) });
+    const later = plan({ localId: 'later', status: 'planned', title: 'Later dive', plannedAt: at(7, 2) });
+    const renderer = await render({ plans: [later, upcoming], onOpenPlan });
 
-    await press(root, 'planning-create-action');
-    await changeText(root, 'planning-editor-plan-title', 'Deep Review Plan');
-    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
-    await changeText(root, 'planning-editor-site-name', 'Forty Two Plan Reef');
-    await press(root, 'planning-editor-mode-scuba');
-    await changeNumber(root, 'planning-editor-planned-max-depth', 42);
-    await changeNumber(root, 'planning-editor-planned-duration', 45);
+    const nextRow = renderer.root.findByProps({ testID: 'planning-next-plan-row' });
+    expect(nextRow.props.label).toBe('Blue Wall morning');
+    expect(nextRow.props.detail).toContain('Blue Wall');
+    await press(renderer, 'planning-next-plan-row');
+    expect(onOpenPlan).toHaveBeenCalledWith(expect.objectContaining({ localId: 'upcoming' }));
 
-    expect(root.findByProps({ testID: 'planning-editor-unsupported-depth-warning' }).props.children).toContain(
-      'Outside Apple Watch v1 supported depth',
-    );
-    await press(root, 'planning-editor-save-planned');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.plannedValues.plannedMaxDepthMeters).toBe(42);
-    await press(root, 'planning-plan-row-Forty Two Plan Reef');
-    expect(root.findByProps({ testID: 'planning-detail-unsupported-depth-warning' }).props.children).toContain(
-      'Outside Apple Watch v1 supported depth',
-    );
+    const withoutUpcoming = await render({
+      plans: [
+        plan({ localId: 'draft', status: 'draft', title: 'Draft', plannedAt: at(6, 20) }),
+        plan({ localId: 'past', status: 'planned', title: 'Past', plannedAt: at(6, 1) }),
+        plan({ localId: 'done', status: 'completed', title: 'Done', plannedAt: at(6, 25) }),
+      ],
+    });
+    expect(withoutUpcoming.root.findAllByProps({ testID: 'planning-next-plan-row' })).toHaveLength(0);
+    expect(textNodes(withoutUpcoming, 'No active plan')).toHaveLength(0);
   });
 
-  it('blocks saving a planned dive until required fields are valid', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
+  test('marks drafts, completed plans and past-dated planned dives with a quiet chip', async () => {
+    const renderer = await render({
+      plans: [
+        plan({ localId: 'upcoming', status: 'planned', title: 'Upcoming', plannedAt: at(6, 20) }),
+        plan({ localId: 'today', status: 'planned', title: 'This morning', plannedAt: at(6, 13, 8) }),
+        plan({ localId: 'past', status: 'planned', title: 'Past', plannedAt: at(6, 1) }),
+        plan({ localId: 'draft', status: 'draft', title: 'Draft' }),
+        plan({ localId: 'done', status: 'completed', title: 'Done', plannedAt: at(6, 2) }),
+      ],
+    });
 
-    await press(root, 'planning-create-action');
-    await press(root, 'planning-editor-save-planned');
-
-    expect(root.findByProps({ testID: 'planning-editor-planned-at-error' }).props.children).toBe('Choose a planned date and time.');
-    expect(root.findByProps({ testID: 'planning-editor-site-name-error' }).props.children).toBe('Enter a site name.');
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-error' }).props.children).toBe('Planned duration (min) is required.');
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-error' }).props.children).toBe('Planned max depth (m) is required.');
-    expect(await repository.list()).toEqual([]);
+    expect(exists(renderer, 'planning-plan-row-upcoming-chip')).toBe(false);
+    // Today's dive is not past yet, even after its start time.
+    expect(exists(renderer, 'planning-plan-row-today-chip')).toBe(false);
+    const pastChip = renderer.root.findByProps({ testID: 'planning-plan-row-past-chip' });
+    expect(pastChip.props.label).toBe('Date passed');
+    expect(pastChip.props.tone).toBe('muted');
+    expect(renderer.root.findByProps({ testID: 'planning-plan-row-draft-chip' }).props.label).toBe('Draft');
+    expect(renderer.root.findByProps({ testID: 'planning-plan-row-done-chip' }).props.label).toBe('Completed');
+    expect(renderer.root.findByProps({ testID: 'planning-plan-row-done-chip' }).props.tone).toBe('muted');
   });
 
-  it('plan editor reports the first invalid field so the screen can scroll to it', async () => {
-    const onInvalidSubmit = jest.fn();
-    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+  test('keys rows by plan id so plans at the same site stay apart', async () => {
+    const renderer = await render({
+      plans: [
+        plan({ localId: 'reef-a', status: 'planned', title: 'Morning', site: { name: 'House Reef' }, plannedAt: at(6, 20) }),
+        plan({ localId: 'reef-b', status: 'planned', title: 'Afternoon', site: { name: 'House Reef' }, plannedAt: at(6, 21) }),
+      ],
+    });
+
+    expect(exists(renderer, 'planning-plan-row-reef-a')).toBe(true);
+    expect(exists(renderer, 'planning-plan-row-reef-b')).toBe(true);
+  });
+
+  test('labels only retained guest plans for an authenticated account', async () => {
+    const renderer = await render({
+      isAuthenticated: true,
+      plans: [
+        plan({ localId: 'account-plan', ownerUserId: 'user-1', site: { name: 'Account Plan Reef' } }),
+        plan({
+          localId: 'device-plan',
+          status: 'planned',
+          title: 'Device Plan Morning',
+          plannedAt: at(6, 20),
+          site: { name: 'Device Plan Reef' },
+          diveMode: 'scuba',
+        }),
+      ],
+    });
+
+    expect(renderer.root.findByProps({ testID: 'planning-device-badge-device-plan' }).props.label).toBe('Only on this device');
+    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-account-plan' })).toHaveLength(0);
+    const label = renderer.root.findByProps({ testID: 'planning-plan-row-device-plan' }).props.accessibilityLabel as string;
+    expect(label.startsWith('Device Plan Morning, ')).toBe(true);
+    expect(label).toContain('Device Plan Reef');
+    expect(label).toContain('Only on this device');
+    expect(label.endsWith(', Scuba')).toBe(true);
+  });
+
+  test('does not label guest plans before authentication', async () => {
+    const renderer = await render({ plans: [plan({ localId: 'guest-plan', site: { name: 'Guest Plan Reef' } })] });
+
+    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-guest-plan' })).toHaveLength(0);
+  });
+
+  test('reserves skeleton rows on the first load and shows them only after the delay', async () => {
+    jest.useFakeTimers();
+    const renderer = await render({ isLoading: true });
+    const loading = host(renderer, 'planning-loading-state')!;
+
+    expect(loading.props.accessibilityState).toEqual({ busy: true });
+    expect(loading.props.accessible).toBe(false);
+    expect(exists(renderer, 'planning-empty-state')).toBe(false);
+    expect(exists(renderer, 'planning-next-plan-row')).toBe(false);
 
     await ReactTestRenderer.act(async () => {
-      await i18n.changeLanguage('en');
-      renderer = ReactTestRenderer.create(
-        <PlanEditor
-          onCancel={jest.fn()}
-          onSave={jest.fn()}
-          onInvalidSubmit={onInvalidSubmit}
-        />,
+      jest.advanceTimersByTime(999);
+    });
+    expect(host(renderer, 'planning-loading-state')!.props.accessible).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(host(renderer, 'planning-loading-state')!.props.accessible).toBe(true);
+    expect(host(renderer, 'planning-loading-state')!.props.accessibilityLabel).toBe('Loading plans');
+  });
+
+  test('replaces the skeleton with the plans as soon as they arrive', async () => {
+    const renderer = await render({ isLoading: true });
+
+    await ReactTestRenderer.act(async () => {
+      renderer.update(
+        <PlanningScreen {...screenProps({ plans: [plan({ localId: 'arrived', title: 'Arrived' })], isLoading: false })} />,
       );
     });
-    renderers.push(renderer!);
 
-    await press(renderer!.root, 'planning-editor-save-planned');
-
-    expect(onInvalidSubmit).toHaveBeenCalledWith('plannedAt');
+    expect(exists(renderer, 'planning-loading-state')).toBe(false);
+    expect(exists(renderer, 'planning-plan-row-arrived')).toBe(true);
   });
 
-  it('plan editor scrolls to the first invalid field on failed set planned', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
+  test('keeps the plans on screen with a short note when a refresh fails', async () => {
+    const renderer = await render({
+      plans: [plan({ localId: 'kept', title: 'Kept plan' })],
+      loadError: new Error('offline'),
+    });
 
-    await press(root, 'planning-create-action');
-    await layout(root, 'planning-editor-card-anchor', 160);
-    await layout(root, 'planning-editor-body', 94);
-    await layout(root, 'planning-editor-planned-at-anchor', 80);
-    await press(root, 'planning-editor-save-planned');
-
-    expect(root.findByProps({ testID: 'planning-scroll-target' }).props.children).toBe('318');
+    expect(exists(renderer, 'planning-plan-row-kept')).toBe(true);
+    expect(exists(renderer, 'planning-error-state')).toBe(false);
+    expect(host(renderer, 'planning-refresh-error')!.props.children).toBe('Couldn’t refresh. Showing what was last loaded.');
   });
 
-  it('renders date time as a row trigger and numeric values as wheel pickers', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
+  test('keeps one new-plan button on the empty planning screen', async () => {
+    const renderer = await render();
 
-    await press(root, 'planning-create-action');
-
-    expect(root.findByProps({ testID: 'planning-editor-planned-at-trigger' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-at-date' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-at-time' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-wheel' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-wheel-list' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-label' }).props.children).toBe('Duration (min)');
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-wheel' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-column-meters-wheel-list' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-column-tenths-wheel-list' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-unit-fixed' }).props.children).toBe('m');
-    expect(root.findAllByProps({ testID: 'planning-editor-planned-at' }).filter(match => typeof match.props.onChangeText === 'function')).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-planned-duration-slider' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-planned-duration-decrement' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-planned-duration-increment' })).toHaveLength(0);
-    expect(root.findAllByProps({ children: 'OPTIONAL' })).toHaveLength(0);
+    expect(renderer.root.findAll(node => node.props.label === 'New plan' && typeof node.props.onPress === 'function')).toHaveLength(1);
+    expect(exists(renderer, 'planning-empty-state')).toBe(true);
+    expect(renderer.root.findAllByProps({ testID: 'planning-empty-state-action' })).toHaveLength(0);
   });
 
-  it('keeps planned duration single-column while planned depth uses split meter columns', async () => {
-    const renderer = await renderPlanning(
-      new LocalDivePlanRepository([
-        plan({
-          localId: 'plan-depth-split',
-          status: 'draft',
-          site: { name: 'Split Depth Reef' },
-          plannedValues: {
-            plannedMaxDepthMeters: 19.6,
-            plannedDurationMinutes: 45,
-          },
-        }),
-      ]),
-    );
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Split Depth Reef');
-    await press(root, 'planning-detail-edit');
-
-    expect(root.findByProps({ testID: 'planning-editor-planned-duration-value' }).props.children).toBe('45');
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-meters-value' }).props.children).toBe('19');
-    expect(root.findByProps({ testID: 'planning-editor-planned-max-depth-tenths-value' }).props.children).toBe('.6');
-  });
-
-  it('commits plan lists as badges and removes them before saving', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
-    await changeText(root, 'planning-editor-site-name', 'Badge Reef');
-    await changeNumber(root, 'planning-editor-planned-max-depth', 24);
-    await changeNumber(root, 'planning-editor-planned-duration', 45);
-    await changeText(root, 'planning-editor-buddies-input', 'Mina, Alex,');
-    await changeText(root, 'planning-editor-tags-input', 'reef, training,');
-    expect(root.findByProps({ testID: 'planning-editor-tags-badge-reef' }).props.className).toEqual(
-      expect.stringContaining('bg-primary/10'),
-    );
-    await press(root, 'planning-editor-buddies-remove-Mina');
-    await press(root, 'planning-editor-save-planned');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.buddyIds).toEqual(['Alex']);
-    expect(savedPlan.tags).toEqual(['reef', 'training']);
-  });
-
-  it('commits the final plan badge token before saving', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
-    await changeText(root, 'planning-editor-site-name', 'Plan Badge Reef');
-    await changeNumber(root, 'planning-editor-planned-max-depth', 20);
-    await changeNumber(root, 'planning-editor-planned-duration', 40);
-    await changeText(root, 'planning-editor-tags-input', 'reef, line');
-    await press(root, 'planning-editor-save-planned');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.tags).toEqual(['reef', 'line']);
-  });
-
-  it('saves plan visibility and difficulty as star ratings', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-    await changeDateTime(root, 'planning-editor-planned-at', new Date('2026-06-20T09:30:00'));
-    await changeText(root, 'planning-editor-site-name', 'Star Reef');
-    await changeNumber(root, 'planning-editor-planned-max-depth', 18);
-    await changeNumber(root, 'planning-editor-planned-duration', 40);
-    await press(root, 'planning-editor-visibility-expectation-star-4');
-    await press(root, 'planning-editor-perceived-difficulty-star-3');
-    await press(root, 'planning-editor-save-planned');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.plannedValues.visibilityExpectation).toBe(4);
-    expect(savedPlan.plannedValues.perceivedDifficulty).toBe(3);
-  });
-
-  it('shows a back icon on the local plan editor', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-
-    expect(root.findByProps({ testID: 'planning-editor-back-icon' })).toBeTruthy();
-    await press(root, 'planning-editor-back');
-
-    expect(root.findAllByProps({ testID: 'planning-editor-title' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'planning-create-action' })).toBeTruthy();
-  });
-
-  it('plan editor exposes only scuba and freedive modes', async () => {
-    const repository = new LocalDivePlanRepository([], { now: () => 1781354000 });
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-
-    expect(root.findByProps({ testID: 'planning-editor-mode-scuba' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-editor-mode-freedive' })).toBeTruthy();
-    expect(root.findAllByProps({ testID: 'planning-editor-mode-snorkel' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-mode-pool' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-pool-length' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-editor-lap-target' })).toHaveLength(0);
-  });
-
-  it('keeps planning inputs in a keyboard-aware scroll container', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
-
-    expect(root.findByType(KeyboardAvoidingView).props.behavior).toBe('padding');
-    expect(root.findByType(ScrollView).props.keyboardShouldPersistTaps).toBe('handled');
-  });
-
-  it('uses native pull-to-refresh on the planning scroll view', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
+  test('uses native pull-to-refresh and refreshes when the tab is selected again', async () => {
+    const onRefresh = jest.fn();
+    const renderer = await render({ onRefresh, reselectToken: 0 });
     const refreshControl = renderer.root.findByType(ScrollView).props.refreshControl;
 
     expect(refreshControl.type).toBe(RefreshControl);
     expect(refreshControl.props.refreshing).toBe(false);
-  });
-
-  it('refreshes when the active planning tab is selected again', async () => {
-    const onRefresh = jest.fn();
-
-    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
-    await ReactTestRenderer.act(async () => {
-      await i18n.changeLanguage('en');
-      renderer = ReactTestRenderer.create(
-        <PlanningScreen
-          sessions={[]}
-          plans={[]}
-          onRefresh={onRefresh}
-          onSavePlan={jest.fn()}
-          onOpenLogbook={jest.fn()}
-          reselectToken={0}
-        />,
-      );
-    });
 
     await ReactTestRenderer.act(async () => {
-      renderer!.update(
-        <PlanningScreen
-          sessions={[]}
-          plans={[]}
-          onRefresh={onRefresh}
-          onSavePlan={jest.fn()}
-          onOpenLogbook={jest.fn()}
-          reselectToken={1}
-        />,
-      );
+      renderer.update(<PlanningScreen {...screenProps({ onRefresh, reselectToken: 1 })} />);
     });
 
     expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
-  it('edits an existing plan without creating a duplicate', async () => {
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-1',
-        status: 'planned',
-        title: 'Original plan',
-        plannedAt: 1781355000,
-        site: { name: 'Original Reef' },
-        diveMode: 'freedive',
-        entryStyle: 'shore',
-        plannedValues: {
-          plannedMaxDepthMeters: 16,
-          plannedDurationMinutes: 30,
-        },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
+  test('opens the logbook from the quiet link at the bottom', async () => {
+    const onOpenLogbook = jest.fn();
+    const renderer = await render({ onOpenLogbook });
 
-    await press(root, 'planning-plan-row-Original Reef');
-    await press(root, 'planning-detail-edit');
-    await changeText(root, 'planning-editor-site-name', 'Edited Reef');
-    await changeText(root, 'planning-editor-objective', 'Line practice');
-    await press(root, 'planning-editor-save-draft');
+    await press(renderer, 'planning-open-logbook-action');
 
-    const entries = await repository.list();
-    expect(entries).toHaveLength(1);
-    expect(entries[0]).toMatchObject({
-      localId: 'plan-1',
-      status: 'draft',
-      site: { name: 'Edited Reef' },
-      objective: 'Line practice',
-    });
-    expect(root.findByProps({ testID: 'planning-plan-row-Edited Reef' })).toBeTruthy();
+    expect(onOpenLogbook).toHaveBeenCalledTimes(1);
   });
-
-  it('shows a back icon on the local plan detail', async () => {
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-1',
-        status: 'planned',
-        title: 'Route plan',
-        site: { name: 'Route Reef' },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Route Reef');
-
-    expect(root.findByProps({ testID: 'planning-detail-back-icon' })).toBeTruthy();
-    await press(root, 'planning-detail-back');
-
-    expect(root.findAllByProps({ testID: 'planning-detail-edit' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'planning-plan-row-Route Reef' })).toBeTruthy();
-  });
-
-  it('delegates plan detail and creation to the app route when provided', async () => {
-    const onCreatePlan = jest.fn();
-    const onOpenPlan = jest.fn();
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-1',
-        status: 'planned',
-        title: 'Route plan',
-        site: { name: 'Route Reef' },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository, { onCreatePlan, onOpenPlan });
-    const root = renderer.root;
-
-    expect(root.findAllByProps({ testID: 'planning-title-icon' })).toHaveLength(0);
-    const createActionIcon = root.findByProps({ testID: 'planning-create-action-icon' });
-    expect(createActionIcon.findByType(ButtonIcon).props.as).toBe(CalendarDaysIcon);
-    expect(createActionIcon.findByType(ButtonIcon).props.as).not.toBe(AddIcon);
-    expect(root.findByProps({ testID: 'planning-active-open-action-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-plan-row-Route Reef-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'planning-open-logbook-action-icon' })).toBeTruthy();
-
-    await press(root, 'planning-create-action');
-    expect(onCreatePlan).toHaveBeenCalledTimes(1);
-    expect(root.findAllByProps({ testID: 'planning-editor-title' })).toHaveLength(0);
-
-    await press(root, 'planning-plan-row-Route Reef');
-    expect(onOpenPlan).toHaveBeenCalledWith(expect.objectContaining({ localId: 'plan-1' }));
-    expect(root.findAllByProps({ testID: 'planning-detail-edit' })).toHaveLength(0);
-  });
-
-  it('keeps one new-plan button on the empty planning screen', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
-
-    expect(root.findAll(node => node.props.label === 'New plan')).toHaveLength(1);
-    expect(root.findByProps({ testID: 'planning-create-action' })).toBeTruthy();
-    expect(root.findAllByProps({ testID: 'planning-active-create-action' })).toHaveLength(0);
-    expect(root.findAllByProps({ testID: 'planning-empty-create-action' })).toHaveLength(0);
-  });
-
-  it('labels only retained guest plans for an authenticated account', async () => {
-    const renderer = await renderPlanning(
-      new LocalDivePlanRepository([
-        plan({ localId: 'account-plan', ownerUserId: 'user-1', site: { name: 'Account Plan Reef' } }),
-        plan({
-          localId: 'device-plan',
-          ownerUserId: undefined,
-          status: 'planned',
-          title: 'Device Plan Morning',
-          plannedAt: 1781352000,
-          site: { name: 'Device Plan Reef' },
-          diveMode: 'scuba',
-          entryStyle: 'boat',
-        }),
-      ]),
-      { isAuthenticated: true },
-    );
-
-    expect(renderer.root.findByProps({ testID: 'planning-device-badge-Device Plan Reef' }).props.label).toBe('Only on this device');
-    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Account Plan Reef' })).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'planning-active-device-badge' }).props.label).toBe('Only on this device');
-    expect(renderer.root.findByProps({ testID: 'planning-plan-row-Device Plan Reef' }).props.accessibilityLabel).toBe(
-      'Device Plan Morning, Device Plan Reef, Jun 13, 09:00 PM, Only on this device, Planned, Scuba, Boat',
-    );
-    expect(renderer.root.findByProps({ testID: 'planning-active-summary-accessibility' }).props.accessibilityLabel).toBe(
-      'Active plan, Device Plan Morning, Planned, Only on this device',
-    );
-    expect(
-      renderer.root.findAllByProps({ testID: 'planning-active-device-badge' }).find(node => node.props.accessible === false),
-    ).toBeTruthy();
-  });
-
-  it('keeps account active plans free of a device-only badge', async () => {
-    const renderer = await renderPlanning(
-      new LocalDivePlanRepository([
-        plan({ localId: 'account-active-plan', ownerUserId: 'user-1', status: 'planned', site: { name: 'Account Active Reef' } }),
-      ]),
-      { isAuthenticated: true },
-    );
-
-    expect(renderer.root.findAllByProps({ testID: 'planning-active-device-badge' })).toHaveLength(0);
-  });
-
-  it('does not label guest plans before authentication', async () => {
-    const renderer = await renderPlanning(
-      new LocalDivePlanRepository([plan({ localId: 'guest-plan', site: { name: 'Guest Plan Reef' } })]),
-    );
-
-    expect(renderer.root.findAllByProps({ testID: 'planning-device-badge-Guest Plan Reef' })).toHaveLength(0);
-  });
-
-  it('states the empty active-plan condition once', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
-
-    expect(root.findAll(node => node.props.children === 'No active plan').length).toBeGreaterThan(0);
-    expect(root.findAll(node => node.props.children === 'Active plan')).toHaveLength(0);
-  });
-
-  it('shows skeleton rows while plans are loading', async () => {
-    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
-
-    await ReactTestRenderer.act(async () => {
-      await i18n.changeLanguage('en');
-      renderer = ReactTestRenderer.create(
-        <PlanningScreen
-          sessions={[]}
-          plans={[]}
-          isLoading
-          onRefresh={jest.fn()}
-          onSavePlan={jest.fn()}
-          onOpenLogbook={jest.fn()}
-        />,
-      );
-    });
-    renderers.push(renderer!);
-
-    expect(renderer!.root.findByProps({ testID: 'planning-loading-state' })).toBeTruthy();
-    expect(renderer!.root.findAllByProps({ testID: 'planning-empty-state' })).toHaveLength(0);
-  });
-
-  it('promotes a draft plan to planned from detail', async () => {
-    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1781357000 * 1000);
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'draft-ready',
-        status: 'draft',
-        plannedAt: 1781355000,
-        site: { name: 'Draft Ready Reef' },
-        diveMode: 'scuba',
-        plannedValues: {
-          plannedMaxDepthMeters: 18,
-          plannedDurationMinutes: 45,
-        },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Draft Ready Reef');
-    await press(root, 'planning-detail-promote');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.status).toBe('planned');
-    expect(savedPlan.updatedAt).toBe(1781357000);
-
-    dateNow.mockRestore();
-  });
-
-  it('hides completed-plan log creation while the connected log exists', async () => {
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-with-log',
-        status: 'completed',
-        completedAt: 1781356000,
-        convertedLogLocalId: 'log-existing',
-        site: { name: 'Linked Log Reef' },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository, { logEntryIds: ['log-existing'] });
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Linked Log Reef');
-
-    expect(root.findAllByProps({ testID: 'planning-detail-create-log' })).toHaveLength(0);
-    expect(root.findByProps({ testID: 'planning-detail-log-created' })).toBeTruthy();
-  });
-
-  it('shows completed-plan log creation again when the connected log is missing', async () => {
-    const onCreateLogFromPlan = jest.fn();
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-missing-log',
-        status: 'completed',
-        completedAt: 1781356000,
-        convertedLogLocalId: 'log-deleted',
-        site: { name: 'Deleted Log Reef' },
-      }),
-    ]);
-    const renderer = await renderPlanning(repository, { onCreateLogFromPlan, logEntryIds: [] });
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Deleted Log Reef');
-    await press(root, 'planning-detail-create-log');
-
-    expect(onCreateLogFromPlan).toHaveBeenCalledTimes(1);
-  });
-
-  it('labels plan water condition as expected water condition', async () => {
-    const renderer = await renderPlanning(new LocalDivePlanRepository([]));
-    const root = renderer.root;
-
-    await press(root, 'planning-create-action');
-
-    expect(root.findByProps({ testID: 'planning-editor-water-condition-label' }).props.children).toBe('Expected water condition');
-  });
-
-  it('completes a plan and lets the user choose Later', async () => {
-    const dateNow = jest.spyOn(Date, 'now').mockReturnValue(1781356000 * 1000);
-    const repository = new LocalDivePlanRepository(
-      [
-        plan({
-          localId: 'plan-1',
-          status: 'planned',
-          plannedAt: 1781355000,
-          site: { name: 'Complete Reef' },
-        }),
-      ],
-      { now: () => 1781356000 },
-    );
-    const renderer = await renderPlanning(repository);
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Complete Reef');
-    await press(root, 'planning-detail-complete');
-    expect(root.findByProps({ testID: 'planning-complete-dialog' })).toBeTruthy();
-
-    const laterButton = root.findByProps({
-      testID: 'planning-complete-later',
-    });
-    const createLogButton = root.findByProps({
-      testID: 'planning-complete-create-log',
-    });
-
-    for (const button of [laterButton, createLogButton]) {
-      expect(button.props.className).toEqual(
-        expect.stringContaining('flex-1 min-h-11 px-4 py-2'),
-      );
-    }
-
-    await press(root, 'planning-complete-later');
-
-    const [savedPlan] = await repository.list();
-    expect(savedPlan.status).toBe('completed');
-    expect(savedPlan.completedAt).toBe(1781356000);
-    expect(() => root.findByProps({ testID: 'planning-complete-dialog' })).toThrow();
-
-    dateNow.mockRestore();
-  });
-
-  it('creates a log draft from a completed plan through the callback', async () => {
-    const onCreateLogFromPlan = jest.fn();
-    const repository = new LocalDivePlanRepository([
-      plan({
-        localId: 'plan-1',
-        status: 'completed',
-        completedAt: 1781356000,
-        site: { name: 'Log Reef' },
-        diveMode: 'scuba',
-        entryStyle: 'boat',
-      }),
-    ]);
-    const renderer = await renderPlanning(repository, onCreateLogFromPlan);
-    const root = renderer.root;
-
-    await press(root, 'planning-plan-row-Log Reef');
-    await press(root, 'planning-detail-create-log');
-
-    expect(onCreateLogFromPlan).toHaveBeenCalledTimes(1);
-    expect(onCreateLogFromPlan.mock.calls[0][0]).toMatchObject({
-      localId: 'plan-1',
-      status: 'completed',
-      site: { name: 'Log Reef' },
-    });
-  });
-
 });

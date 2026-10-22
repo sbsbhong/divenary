@@ -119,7 +119,7 @@ function NumberWheelPickerPreset(props: NumberWheelPickerProps): React.JSX.Eleme
     <NumberWheelPickerRoot {...props}>
       <Box
         testID={`${props.testID ?? 'number-wheel-picker'}-wheel`}
-        className={props.disabled ? 'overflow-hidden rounded-xl border border-border bg-muted' : 'overflow-hidden rounded-xl border border-border bg-card'}
+        className={props.disabled ? 'overflow-hidden rounded-xl bg-muted' : 'overflow-hidden rounded-xl bg-card'}
         style={[styles.wheel, { height: getWheelLayout(props.height).wheelHeight }]}
       >
         <NumberWheelPickerWheel />

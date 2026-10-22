@@ -14,6 +14,7 @@ jest.mock('../src/states/auth', () => {
   return {
     AuthProvider: ({ children }: { children?: React.ReactNode }) =>
       ReactModule.createElement(ReactModule.Fragment, null, children),
+    useAuth: () => ({ state: { status: 'guest' } }),
   };
 });
 
@@ -64,6 +65,41 @@ const readSource = (...segments: string[]) => {
 
   return fs.readFileSync(`${cwd}/${segments.join('/')}`, 'utf8');
 };
+
+// Files the DESIGN.md guard reads. Screens first, then the shared parts that screens compose.
+const DESIGN_GUARDED_SCREENS: ReadonlyArray<readonly string[]> = [
+  ['src', 'screens', 'auth', 'login-screen.tsx'],
+  ['src', 'screens', 'auth', 'onboarding-screen.tsx'],
+  ['src', 'screens', 'home', 'screen.tsx'],
+  ['src', 'screens', 'logbook', 'screen.tsx'],
+  ['src', 'screens', 'logbook', 'log-entry-editor.tsx'],
+  ['src', 'screens', 'logbook', 'log-entry-mode-fields.tsx'],
+  ['src', 'screens', 'logbook', 'log-entry-watch-fields.tsx'],
+  ['src', 'screens', 'logbook', 'log-entry-detail.tsx'],
+  ['src', 'screens', 'logbook', 'log-entry-profile.tsx'],
+  ['src', 'screens', 'planning', 'screen.tsx'],
+  ['src', 'screens', 'planning', 'plan-detail.tsx'],
+  ['src', 'screens', 'planning', 'plan-editor.tsx'],
+  ['src', 'screens', 'planning', 'plan-editor-sections.tsx'],
+  ['src', 'screens', 'memory', 'screen.tsx'],
+  ['src', 'screens', 'settings', 'screen.tsx'],
+  ['src', 'screens', 'recovery', 'screen.tsx'],
+  ['src', 'components', 'navigation', 'index.tsx'],
+  // Editor files join here as they move onto the shared parts, for example
+  // ['src', 'screens', 'logbook', 'log-entry-editor.tsx'] and ['src', 'screens', 'planning', 'plan-editor.tsx'].
+];
+
+const DESIGN_GUARDED_SHARED_PARTS: ReadonlyArray<readonly string[]> = [
+  ['src', 'components', 'ui', 'dive-summary-card.tsx'],
+  ['src', 'components', 'ui', 'instrument.tsx'],
+  ['src', 'components', 'ui', 'session-profile.tsx'],
+  ['src', 'components', 'ui', 'screen-header.tsx'],
+  ['src', 'components', 'ui', 'grouped-list.tsx'],
+  ['src', 'components', 'ui', 'sticky-action-bar.tsx'],
+  ['src', 'components', 'ui', 'skeleton-block.tsx'],
+  ['src', 'components', 'ui', 'detail-skeleton.tsx'],
+  ['src', 'components', 'feedback', 'app-feedback.tsx'],
+];
 
 function ThemeToggle(): React.JSX.Element {
   const { setThemePreference } = useAppPreferences();
@@ -135,25 +171,19 @@ describe('Apple design system mapping', () => {
   });
 
   test('keeps mobile screens within the Apple-style UI rules from DESIGN.md', () => {
-    const source = [
-      readSource('src', 'screens', 'auth', 'login-screen.tsx'),
-      readSource('src', 'screens', 'auth', 'onboarding-screen.tsx'),
-      readSource('src', 'screens', 'home', 'screen.tsx'),
-      readSource('src', 'screens', 'logbook', 'screen.tsx'),
-      readSource('src', 'screens', 'planning', 'screen.tsx'),
-      readSource('src', 'screens', 'memory', 'screen.tsx'),
-      readSource('src', 'screens', 'settings', 'screen.tsx'),
-      readSource('src', 'components', 'navigation', 'index.tsx'),
-      readSource('src', 'components', 'ui', 'dive-summary-card.tsx'),
-      readSource('src', 'components', 'ui', 'instrument.tsx'),
-      readSource('src', 'components', 'ui', 'session-profile.tsx'),
-    ].join('\n');
+    const source = [...DESIGN_GUARDED_SCREENS, ...DESIGN_GUARDED_SHARED_PARTS]
+      .map(segments => readSource(...segments))
+      .join('\n');
 
     expect(source).not.toMatch(/font-(mono|black|extrabold)/);
     expect(source).not.toMatch(/border-8/);
     expect(source).not.toMatch(/border border|border-t border|border-transparent/);
     expect(source).not.toMatch(/accent="(success|warning)"/);
     expect(source).not.toMatch(/tone="(success|warning)"/);
+    // The weight ladder is 300/400/600/700; 500 is not part of it.
+    expect(source).not.toMatch(/font-medium/);
+    // No shadows. `shadow-none` only removes a vendored component's default shadow.
+    expect(source).not.toMatch(/shadow-(?!none)/);
   });
 
   test('keeps status pills low-chroma instead of primary filled button styling', () => {

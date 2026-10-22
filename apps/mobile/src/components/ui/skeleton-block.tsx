@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, type ViewProps } from 'react-native';
+import { cn } from '@gluestack-ui/utils/nativewind-utils';
 import { CONTENT_LOADING_FEEDBACK } from '../../constants/async-feedback';
 import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 
@@ -23,7 +24,9 @@ export function SkeletonBlock({ visible = true, className, style, ...props }: Sk
   return (
     <View
       {...props}
-      className={`h-4 w-full rounded bg-skeleton ${visible ? 'opacity-100' : 'opacity-0'} ${className ?? ''}`}
+      // cn lets a caller's size and radius replace the defaults; plain concatenation would leave both
+      // `w-full` and `w-9`, and the stylesheet order, not the class order, would pick one.
+      className={cn('h-4 w-full rounded bg-skeleton', visible ? 'opacity-100' : 'opacity-0', className)}
       style={style}
       pointerEvents="none"
       accessibilityElementsHidden

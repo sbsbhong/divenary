@@ -359,7 +359,8 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityRole).toBe('tab');
     expect(root.findByProps({ testID: 'nav-tab-home' }).props.accessibilityState).toEqual({ selected: true });
     expect(root.findByProps({ testID: 'nav-tab-logbook' }).props.accessibilityState).toEqual({ selected: false });
-    expect(root.findByProps({ testID: 'home-login-action' })).toBeTruthy();
+    // Auth is not configured in this build, so Home offers no login entry.
+    expect(root.findAllByProps({ testID: 'home-login-action' })).toHaveLength(0);
     expect(root.findAllByProps({ testID: 'language-menu-trigger' })).toHaveLength(0);
 
     await ReactTestRenderer.act(async () => {
@@ -427,7 +428,8 @@ describe('App navigation', () => {
 
   test('moves a configured guest through login and required consent, then returns an explicit cancellation to the same local tabs', async () => {
     mockAuthConfigured = true;
-    mockAuthProviders = [];
+    // Settings offers sign-in only when a provider is usable, like Home.
+    mockAuthProviders = ['apple'];
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -587,7 +589,7 @@ describe('App navigation', () => {
     expect(findRenderedNodesByTestID(renderer!.toJSON(), 'navigation-missing-route')).toHaveLength(0);
   });
 
-  test('home and planning actions preserve the requested tab when returning to tabs', async () => {
+  test('planning actions preserve the requested tab when returning to tabs', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -597,8 +599,11 @@ describe('App navigation', () => {
 
     const root = renderer!.root;
 
+    // Home no longer repeats the tab bar with a large planning button.
+    expect(root.findAllByProps({ testID: 'home-open-planning-action' })).toHaveLength(0);
+
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'home-open-planning-action' }).props.onPress();
+      root.findByProps({ testID: 'nav-tab-planning' }).props.onPress();
     });
 
     expect(root.findByProps({ testID: 'planning-create-action' })).toBeTruthy();
@@ -610,15 +615,84 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'logbook-create-action' })).toBeTruthy();
   });
 
+  const openRoutedPlanCreate = async (root: ReactTestRenderer.ReactTestInstance) => {
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'nav-tab-planning' }).props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'planning-create-action' }).props.onPress();
+    });
+    await waitForTestID(root, 'planning-editor-plan-title');
+  };
+
+  const typePlanTitle = async (root: ReactTestRenderer.ReactTestInstance, title: string) => {
+    await ReactTestRenderer.act(async () => {
+      root
+        .findAll(node => node.props.testID === 'planning-editor-plan-title' && typeof node.props.onChangeText === 'function')[0]
+        .props.onChangeText(title);
+    });
+  };
+
+  test('saves a draft from the full-screen plan editor and opens its detail in its place', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    await openRoutedPlanCreate(root);
+    // The sticky save bar belongs to the editor screen, not to a scroll view around it.
+    expect(root.findAllByProps({ testID: 'routed-editor-anchor' })).toHaveLength(0);
+    await typePlanTitle(root, '주말 리프');
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'planning-editor-save-draft' }).props.onPress();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+    await waitForTestID(root, 'planning-detail-title');
+
+    expect(
+      root.findAll(node => node.props.testID === 'planning-detail-title' && typeof node.type === 'string')[0].props.children,
+    ).toBe('주말 리프');
+    expect(root.findAllByProps({ testID: 'planning-editor-plan-title' })).toHaveLength(0);
+  });
+
+  test('asks before discarding unsaved edits in the routed plan editor', async () => {
+    const alertCalls: Array<{ title: string; buttons: AlertButton[] }> = [];
+    jest.spyOn(Alert, 'alert').mockImplementation((title, _message, buttons) => {
+      alertCalls.push({ title, buttons: buttons ?? [] });
+    });
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    const root = renderer!.root;
+    await openRoutedPlanCreate(root);
+    await typePlanTitle(root, '버릴 계획');
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'planning-editor-back' }).props.onPress();
+    });
+
+    expect(alertCalls).toHaveLength(1);
+    expect(alertCalls[0].title).toBe('변경 사항을 버릴까요?');
+
+    await ReactTestRenderer.act(async () => {
+      alertCalls[0].buttons.find(button => button.style === 'destructive')?.onPress?.();
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(root.findAllByProps({ testID: 'planning-editor-plan-title' })).toHaveLength(0);
+    jest.restoreAllMocks();
+  });
+
   const openRoutedLogCreate = async (root: ReactTestRenderer.ReactTestInstance) => {
+    // A fresh app has no logs, so Home offers its empty-state write action.
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'home-open-planning-action' }).props.onPress();
-    });
-    await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'planning-open-logbook-action' }).props.onPress();
-    });
-    await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'logbook-create-action' }).props.onPress();
+      root.findByProps({ testID: 'home-latest-empty-create-action' }).props.onPress();
     });
     await waitForTestID(root, 'log-entry-editor-site-name');
   };
@@ -696,20 +770,24 @@ describe('App navigation', () => {
     const root = renderer!.root;
     await openRoutedLogCreate(root);
 
+    // The editor is the whole screen: it scrolls its own body to the measured section anchor.
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'routed-editor-anchor' }).props.onLayout({ nativeEvent: { layout: { y: 24 } } });
-      root.findByProps({ testID: 'log-entry-editor-body' }).props.onLayout({ nativeEvent: { layout: { y: 96 } } });
-      root.findByProps({ testID: 'log-entry-editor-site-name-anchor' }).props.onLayout({ nativeEvent: { layout: { y: 210 } } });
+      root.findByProps({ testID: 'log-entry-editor-body' }).props.onLayout({ nativeEvent: { layout: { y: 16 } } });
+      root.findByProps({ testID: 'log-entry-editor-essentials-anchor' }).props.onLayout({ nativeEvent: { layout: { y: 210 } } });
     });
     await ReactTestRenderer.act(async () => {
       await root.findByProps({ testID: 'log-entry-editor-save' }).props.onPress();
       await new Promise<void>(resolve => setTimeout(resolve, 0));
     });
 
-    expect(root.findByProps({ testID: 'routed-editor-scroll-target' }).props.children).toBe('314');
+    // body y + anchor y - 16 pt above the section.
+    expect(root.findByProps({ testID: 'log-entry-editor-scroll-target' }).props.children).toBe('210');
+    expect(root.findByProps({ testID: 'log-entry-editor-actions' }).findAllByProps({ testID: 'log-entry-editor-save' }).length).toBeGreaterThan(0);
   });
 
   test('opens login from Home while the user is a guest', async () => {
+    mockAuthConfigured = true;
+    mockAuthProviders = ['apple'];
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -739,6 +817,8 @@ describe('App navigation', () => {
 
   test.each(nonGuestHomeStateFixtures)('hides the Home login action for $status membership', async authState => {
     mockAuthState = authState;
+    mockAuthConfigured = true;
+    mockAuthProviders = ['apple'];
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
@@ -747,6 +827,63 @@ describe('App navigation', () => {
     });
 
     expect(renderer!.root.findAllByProps({ testID: 'home-login-action' })).toHaveLength(0);
+  });
+
+  test('hides the Home login action when Auth has no usable sign-in method', async () => {
+    mockAuthConfigured = true;
+    mockAuthProviders = [];
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+
+    expect(renderer!.root.findByProps({ testID: 'nav-tab-home' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'home-login-action' })).toHaveLength(0);
+  });
+
+  test('keeps the start shell instead of guest tabs while Auth restores a session', async () => {
+    mockAuthState = { status: 'bootstrapping' };
+    mockAuthConfigured = true;
+    mockAuthProviders = ['apple'];
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(renderer!.root.findByProps({ testID: 'account-data-loading-screen' })).toBeTruthy();
+    expect(renderer!.root.findAllByProps({ testID: 'nav-tab-home' })).toHaveLength(0);
+  });
+
+  test('shows the missing-item screen, not the loading skeleton, once the logbook has loaded', async () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+      await new Promise<void>(resolve => setTimeout(resolve, 0));
+    });
+    await ReactTestRenderer.act(async () => {
+      mockNotificationForegroundHandler?.({
+        type: 1,
+        detail: {
+          notification: {
+            data: {
+              source: 'watch-sync-import',
+              entryLocalId: 'missing-loaded-entry',
+            },
+          },
+        },
+      });
+    });
+    await waitForRenderedTestID(renderer!, 'navigation-missing-route');
+
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'navigation-missing-route')).toHaveLength(1);
+    expect(findRenderedNodesByTestID(renderer!.toJSON(), 'navigation-route-loading')).toHaveLength(0);
   });
 
   test('shows a tappable toast for automatic watch imports and opens the imported log', async () => {

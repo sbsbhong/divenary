@@ -13,17 +13,27 @@ type CompoundFieldBaseProps = {
   pickerHeight?: number;
 };
 
-export type DurationWheelFieldProps = CompoundFieldBaseProps & {
+type CompoundPickerBaseProps = {
+  testID: string;
+  disabled?: boolean;
+  pickerHeight?: number;
+};
+
+export type DurationWheelPickerProps = CompoundPickerBaseProps & {
   valueSeconds?: number;
   maxSeconds: number;
   onChange: (value: number | undefined) => void;
 };
 
-export type DepthWheelFieldProps = CompoundFieldBaseProps & {
+export type DepthWheelPickerProps = CompoundPickerBaseProps & {
   valueMeters?: number;
   maxMeters: number;
   onChange: (value: number | undefined) => void;
 };
+
+export type DurationWheelFieldProps = CompoundFieldBaseProps & DurationWheelPickerProps;
+
+export type DepthWheelFieldProps = CompoundFieldBaseProps & DepthWheelPickerProps;
 
 export function splitDurationSeconds(valueSeconds: number | undefined, maxSeconds: number): { minutes: number; seconds: number } {
   const normalized = clampInteger(valueSeconds ?? 0, 0, maxSeconds);
@@ -108,6 +118,28 @@ export function normalizeDepthDraft(value: string): string {
 }
 
 export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.Element {
+  return (
+    <EditorField
+      label={props.label}
+      required={props.required}
+      error={props.error}
+      errorTestID={`${props.testID}-error`}
+      className={props.className}
+    >
+      <DurationWheelPicker
+        valueSeconds={props.valueSeconds}
+        maxSeconds={props.maxSeconds}
+        onChange={props.onChange}
+        disabled={props.disabled}
+        pickerHeight={props.pickerHeight}
+        testID={props.testID}
+      />
+    </EditorField>
+  );
+}
+
+/** The minutes/seconds wheel alone, for a picker sheet or a field wrapper. */
+export function DurationWheelPicker(props: DurationWheelPickerProps): React.JSX.Element {
   const { t } = useTranslation();
   const { minutes, seconds } = splitDurationSeconds(props.valueSeconds, props.maxSeconds);
   const maxMinutes = Math.floor(props.maxSeconds / 60);
@@ -127,6 +159,44 @@ export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.El
   );
 
   return (
+    <MultiColumnNumberWheelPicker
+      columns={[
+        { id: 'minutes', value: minutes, min: 0, max: maxMinutes, step: 1, unitLabel: t('units.minutesShort') },
+        {
+          id: 'seconds',
+          value: Math.min(seconds, maxSecondsForMinute),
+          min: 0,
+          max: maxSecondsForMinute,
+          step: 1,
+          unitLabel: t('units.secondsShort'),
+          padStart: 2,
+        },
+      ]}
+      onColumnChange={(columnId, value) => {
+        if (columnId === 'minutes') {
+          const nextMaxSeconds = value >= maxMinutes ? props.maxSeconds % 60 : 59;
+          props.onChange(mergeDurationParts(value, Math.min(seconds, nextMaxSeconds), props.maxSeconds));
+          return;
+        }
+
+        props.onChange(mergeDurationParts(minutes, value, props.maxSeconds));
+      }}
+      directInput={{
+        value: formatDurationDraft(props.valueSeconds, props.maxSeconds),
+        normalize: normalizeDurationDraft,
+        onCommit: commit,
+        keyboardType: 'numbers-and-punctuation',
+        accessibilityLabel: t('wheelPicker.enterDuration'),
+      }}
+      height={props.pickerHeight}
+      disabled={props.disabled}
+      testID={props.testID}
+    />
+  );
+}
+
+export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element {
+  return (
     <EditorField
       label={props.label}
       required={props.required}
@@ -134,44 +204,20 @@ export function DurationWheelField(props: DurationWheelFieldProps): React.JSX.El
       errorTestID={`${props.testID}-error`}
       className={props.className}
     >
-      <MultiColumnNumberWheelPicker
-        columns={[
-          { id: 'minutes', value: minutes, min: 0, max: maxMinutes, step: 1, unitLabel: t('units.minutesShort') },
-          {
-            id: 'seconds',
-            value: Math.min(seconds, maxSecondsForMinute),
-            min: 0,
-            max: maxSecondsForMinute,
-            step: 1,
-            unitLabel: t('units.secondsShort'),
-            padStart: 2,
-          },
-        ]}
-        onColumnChange={(columnId, value) => {
-          if (columnId === 'minutes') {
-            const nextMaxSeconds = value >= maxMinutes ? props.maxSeconds % 60 : 59;
-            props.onChange(mergeDurationParts(value, Math.min(seconds, nextMaxSeconds), props.maxSeconds));
-            return;
-          }
-
-          props.onChange(mergeDurationParts(minutes, value, props.maxSeconds));
-        }}
-        directInput={{
-          value: formatDurationDraft(props.valueSeconds, props.maxSeconds),
-          normalize: normalizeDurationDraft,
-          onCommit: commit,
-          keyboardType: 'numbers-and-punctuation',
-          accessibilityLabel: t('wheelPicker.enterDuration'),
-        }}
-        height={props.pickerHeight}
+      <DepthWheelPicker
+        valueMeters={props.valueMeters}
+        maxMeters={props.maxMeters}
+        onChange={props.onChange}
         disabled={props.disabled}
+        pickerHeight={props.pickerHeight}
         testID={props.testID}
       />
     </EditorField>
   );
 }
 
-export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element {
+/** The meters/tenths wheel alone, for a picker sheet or a field wrapper. */
+export function DepthWheelPicker(props: DepthWheelPickerProps): React.JSX.Element {
   const { t } = useTranslation();
   const { meters, tenths } = splitDepthMeters(props.valueMeters, props.maxMeters);
   const maxMetersInteger = Math.floor(props.maxMeters);
@@ -191,48 +237,40 @@ export function DepthWheelField(props: DepthWheelFieldProps): React.JSX.Element 
   );
 
   return (
-    <EditorField
-      label={props.label}
-      required={props.required}
-      error={props.error}
-      errorTestID={`${props.testID}-error`}
-      className={props.className}
-    >
-      <MultiColumnNumberWheelPicker
-        columns={[
-          { id: 'meters', value: meters, min: 0, max: maxMetersInteger, step: 1, width: 54 },
-          {
-            id: 'tenths',
-            value: Math.min(tenths, maxTenthsForMeter),
-            min: 0,
-            max: maxTenthsForMeter,
-            step: 1,
-            width: 44,
-            formatValue: value => `.${value}`,
-          },
-          { id: 'unit', fixedLabel: 'm', width: 22 },
-        ]}
-        onColumnChange={(columnId, value) => {
-          if (columnId === 'meters') {
-            const nextMaxTenths = value >= maxMetersInteger ? Math.round((props.maxMeters - maxMetersInteger) * 10) : 9;
-            props.onChange(mergeDepthParts(value, Math.min(tenths, nextMaxTenths), props.maxMeters));
-            return;
-          }
+    <MultiColumnNumberWheelPicker
+      columns={[
+        { id: 'meters', value: meters, min: 0, max: maxMetersInteger, step: 1, width: 54 },
+        {
+          id: 'tenths',
+          value: Math.min(tenths, maxTenthsForMeter),
+          min: 0,
+          max: maxTenthsForMeter,
+          step: 1,
+          width: 44,
+          formatValue: value => `.${value}`,
+        },
+        { id: 'unit', fixedLabel: 'm', width: 22 },
+      ]}
+      onColumnChange={(columnId, value) => {
+        if (columnId === 'meters') {
+          const nextMaxTenths = value >= maxMetersInteger ? Math.round((props.maxMeters - maxMetersInteger) * 10) : 9;
+          props.onChange(mergeDepthParts(value, Math.min(tenths, nextMaxTenths), props.maxMeters));
+          return;
+        }
 
-          props.onChange(mergeDepthParts(meters, value, props.maxMeters));
-        }}
-        directInput={{
-          value: props.valueMeters === undefined ? '0.0' : props.valueMeters.toFixed(1),
-          normalize: normalizeDepthDraft,
-          onCommit: commit,
-          keyboardType: 'decimal-pad',
-          accessibilityLabel: t('wheelPicker.enterDepth'),
-        }}
-        height={props.pickerHeight}
-        disabled={props.disabled}
-        testID={props.testID}
-      />
-    </EditorField>
+        props.onChange(mergeDepthParts(meters, value, props.maxMeters));
+      }}
+      directInput={{
+        value: props.valueMeters === undefined ? '0.0' : props.valueMeters.toFixed(1),
+        normalize: normalizeDepthDraft,
+        onCommit: commit,
+        keyboardType: 'decimal-pad',
+        accessibilityLabel: t('wheelPicker.enterDepth'),
+      }}
+      height={props.pickerHeight}
+      disabled={props.disabled}
+      testID={props.testID}
+    />
   );
 }
 

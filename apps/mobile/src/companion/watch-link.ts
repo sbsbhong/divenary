@@ -182,8 +182,9 @@ export function toWatchPlannedDivePayloads(plans: readonly DivePlan[]): WatchPla
   }));
 }
 
-function isWatchVisiblePlan(plan: DivePlan): boolean {
-  return plan.status !== 'completed' && !plan.convertedLogLocalId;
+/** Only a `planned` dive that has not become a log yet reaches the watch; drafts stay on the iPhone. */
+export function isWatchVisiblePlan(plan: DivePlan): boolean {
+  return plan.status === 'planned' && !plan.convertedLogLocalId;
 }
 
 export function parseWatchSessionDeletionCommand(value: unknown): WatchSessionDeletionCommand {

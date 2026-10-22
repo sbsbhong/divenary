@@ -12,8 +12,13 @@ type UseHomeConditionsOptions = {
 
 export type HomeConditionsController = {
   snapshot: HomeConditionsSnapshot;
+  /** A request is running while the last ready values stay on screen. */
   isRefreshing: boolean;
+  /** The latest request failed, so the ready values on screen are the last ones that loaded. */
+  refreshFailed: boolean;
   retry: () => void;
+  /** Same as `retry`, but resolves when the request settles (pull-to-refresh waits on it). */
+  refresh: () => Promise<void>;
   openSettings: () => Promise<void>;
 };
 
@@ -46,6 +51,7 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     () => getFreshReadyConditions(options.locale) ?? { status: 'loading' },
   );
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [refreshFailed, setRefreshFailed] = React.useState(false);
   const snapshotRef = React.useRef(snapshot);
   const isMounted = React.useRef(true);
   const requestId = React.useRef(0);
@@ -64,6 +70,12 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     }
   }, []);
 
+  const updateRefreshFailed = React.useCallback((nextRefreshFailed: boolean) => {
+    if (isMounted.current) {
+      setRefreshFailed(nextRefreshFailed);
+    }
+  }, []);
+
   const loadConditions = React.useCallback(async (mode: 'initial' | 'refresh' = 'initial') => {
     const currentRequestId = requestId.current + 1;
     requestId.current = currentRequestId;
@@ -75,13 +87,15 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     if (cachedSnapshot) {
       updateSnapshot(cachedSnapshot);
       updateRefreshing(false);
+      updateRefreshFailed(false);
       return;
     }
 
-    const shouldKeepReadySnapshot = snapshotRef.current.status === 'ready'
-      && (mode === 'refresh' || hasInFlightRequest);
+    // Ready values on screen stay through every later request (manual refresh, foreground,
+    // expired cache); only the refresh control shows the work. Without them, show loading.
+    const keepsReadySnapshot = snapshotRef.current.status === 'ready';
 
-    if (shouldKeepReadySnapshot) {
+    if (keepsReadySnapshot) {
       updateRefreshing(true);
     } else {
       updateSnapshot({ status: 'loading' });
@@ -98,14 +112,26 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
         return;
       }
 
+      // A failed request keeps the last values and only adds a note. A denied permission still
+      // replaces them, because it needs the user to act.
+      if (keepsReadySnapshot && isFailedConditionsSnapshot(nextSnapshot)) {
+        updateRefreshFailed(true);
+        return;
+      }
+
+      updateRefreshFailed(false);
       updateSnapshot(nextSnapshot);
     } catch (error) {
       if (isMounted.current && requestId.current === currentRequestId) {
-        updateSnapshot({
-          status: 'error',
-          source: 'openMeteo',
-          errorMessage: error instanceof Error ? error.message : undefined,
-        });
+        if (keepsReadySnapshot) {
+          updateRefreshFailed(true);
+        } else {
+          updateSnapshot({
+            status: 'error',
+            source: 'openMeteo',
+            errorMessage: error instanceof Error ? error.message : undefined,
+          });
+        }
       }
     } finally {
       if (isMounted.current && requestId.current === currentRequestId) {
@@ -116,6 +142,7 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     locationService,
     options.conditionsProvider,
     options.locale,
+    updateRefreshFailed,
     updateRefreshing,
     updateSnapshot,
   ]);
@@ -151,14 +178,18 @@ export function useHomeConditions(options: UseHomeConditionsOptions): HomeCondit
     };
   }, [loadConditions]);
 
+  const refresh = React.useCallback(() => loadConditions('refresh'), [loadConditions]);
+
   const retry = React.useCallback(() => {
-    void loadConditions('refresh');
-  }, [loadConditions]);
+    void refresh();
+  }, [refresh]);
 
   return {
     snapshot,
     isRefreshing,
+    refreshFailed,
     retry,
+    refresh,
     openSettings,
   };
 }
@@ -204,6 +235,10 @@ function getOrCreateConditionsRequest(request: HomeConditionsRequest): Promise<H
 
   inFlightConditionsByLocale.set(request.locale, nextRequest);
   return nextRequest;
+}
+
+function isFailedConditionsSnapshot(snapshot: HomeConditionsSnapshot): boolean {
+  return snapshot.status === 'error' || snapshot.status === 'unavailable';
 }
 
 function isReadyHomeConditionsSnapshot(

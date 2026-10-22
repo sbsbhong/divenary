@@ -1,6 +1,7 @@
 import React from 'react';
 import type { FlatList as RNFlatList } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import { useAppFeedback } from '../../components/feedback/app-feedback';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { ListStateCard } from '../../components/ui/list-state-card';
 import { Box } from '../../components/ui/box';
@@ -10,23 +11,27 @@ import { HStack } from '../../components/ui/hstack';
 import { FlatList } from '../../components/ui/flat-list';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
-import { KeyboardAwareScrollView } from '../../components/ui/keyboard-aware-scroll-view';
 import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { Pressable } from '../../components/ui/pressable';
 import { RefreshControl } from '../../components/ui/refresh-control';
-import { Skeleton, SkeletonText } from '../../components/ui/skeleton';
-import { Spinner } from '../../components/ui/spinner';
+import { ScreenHeader } from '../../components/ui/screen-header';
+import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DiveSessionFilter } from '../../types/dive-session';
 import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
-import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
-import { formatDate, formatDepth, formatDuration } from '../../utils/dive-formatters';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
 import { diveLogEntryToMobileSession } from '../../states/use-dive-logbook';
-import { LogEntryDetail } from './log-entry-detail';
-import { LogEntryEditor } from './log-entry-editor';
+import {
+  formatLogDate,
+  formatLogDepth,
+  formatLogMinutes,
+  getLogDisplayTitle,
+  getLogMeasuredValue,
+  getLogStartedAt,
+  toTestIdValue,
+} from './log-formatters';
 
 type LogbookScreenProps = {
   /** Entries after the search filter. */
@@ -42,38 +47,24 @@ type LogbookScreenProps = {
   /** True while account logs are still arriving from the cloud. */
   isCloudLoading?: boolean;
   reselectToken?: number;
-  onSaveEntry: (entry: DiveLogEntry) => Promise<DiveLogEntry>;
-  onDeleteEntry: (localId: string) => Promise<void>;
-  onOpenEntry?: (entry: DiveLogEntry) => void;
-  onCreateEntry?: () => void;
-  pendingDraft?: {
-    entry: DiveLogEntry;
-    sourcePlanLocalId?: string;
-  };
-  onPendingDraftSave?: (entry: DiveLogEntry, sourcePlanLocalId?: string) => void;
-  saveError?: Error | null;
-  isSaving?: boolean;
+  /** Opens the routed log detail. */
+  onOpenEntry: (entry: DiveLogEntry) => void;
+  /** Opens the routed log editor. */
+  onCreateEntry: () => void;
   isAuthenticated?: boolean;
 };
 
-type LocalRoute = 'list' | 'create' | 'detail' | 'edit';
-
 /** Rows added each time the list scrolls near its end. */
 const LOGBOOK_PAGE_SIZE = 20;
+const LOADING_ROW_COUNT = 3;
+const TAIL_ROW_COUNT = 2;
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
   const palette = useGluestackColors();
-  const [route, setRoute] = React.useState<LocalRoute>('list');
-  const [draftEntry, setDraftEntry] = React.useState<DiveLogEntry | undefined>();
-  const [syncToast, setSyncToast] = React.useState<{ message: string; tone: 'success' | 'attention' } | undefined>();
+  const { notify } = useAppFeedback();
   const [isSyncingWatch, setIsSyncingWatch] = React.useState(false);
-  const consumedPendingDraftKey = React.useRef<string | undefined>(undefined);
-  const scrollViewRef = React.useRef<React.ComponentRef<typeof KeyboardAwareScrollView>>(null);
-  const editorOffsetRef = React.useRef(0);
-  const editorFieldOffsetsRef = React.useRef<Record<string, number>>({});
   const previousReselectToken = React.useRef(props.reselectToken ?? 0);
-  const [lastScrollTarget, setLastScrollTarget] = React.useState<number | undefined>();
   const listRef = React.useRef<RNFlatList<DiveLogEntry>>(null);
   const visibleEntries = props.entries;
   const totalEntryCount = props.totalEntryCount ?? visibleEntries.length;
@@ -84,6 +75,11 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const shownCount = page.filterKey === filterKey ? page.count : LOGBOOK_PAGE_SIZE;
   const pagedEntries = React.useMemo(() => visibleEntries.slice(0, shownCount), [shownCount, visibleEntries]);
   const hasMorePages = shownCount < visibleEntries.length;
+  // Pages cut from memory appear at once and show nothing. Only cloud pages that are still
+  // arriving are real waiting, and they get a delayed tail skeleton at the true end of the list.
+  const isWaitingForCloudTail = Boolean(props.isCloudLoading) && pagedEntries.length > 0 && !hasMorePages;
+  const showLoadingSkeleton = useContentLoading(Boolean(props.isLoading), 'logbook-list');
+  const showTailSkeleton = useContentLoading(isWaitingForCloudTail, 'logbook-tail');
   const showNextPage = React.useCallback(() => {
     if (!hasMorePages) {
       return;
@@ -105,38 +101,6 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       setIsPullRefreshing(false);
     }
   }, [onRefresh]);
-  const [selectedId, setSelectedId] = React.useState(visibleEntries[0]?.localId);
-  const selectedEntry = visibleEntries.find(entry => entry.localId === selectedId);
-
-  React.useEffect(() => {
-    if (selectedEntry) {
-      return;
-    }
-
-    if (visibleEntries[0]) {
-      setSelectedId(visibleEntries[0].localId);
-    }
-
-    if (route === 'detail') {
-      setRoute('list');
-    }
-  }, [route, selectedEntry, visibleEntries]);
-
-  React.useEffect(() => {
-    if (!props.pendingDraft) {
-      return;
-    }
-
-    const pendingDraftKey = `${props.pendingDraft.entry.localId}:${props.pendingDraft.sourcePlanLocalId ?? ''}`;
-
-    if (consumedPendingDraftKey.current === pendingDraftKey) {
-      return;
-    }
-
-    consumedPendingDraftKey.current = pendingDraftKey;
-    setDraftEntry(props.pendingDraft.entry);
-    setRoute('create');
-  }, [props.pendingDraft]);
 
   React.useEffect(() => {
     const reselectToken = props.reselectToken ?? 0;
@@ -147,217 +111,89 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
 
     previousReselectToken.current = reselectToken;
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
-    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    void props.onRefresh();
-  }, [props]);
+    void onRefresh();
+  }, [onRefresh, props.reselectToken]);
 
-  const openCreate = React.useCallback(() => {
-    if (props.onCreateEntry) {
-      props.onCreateEntry();
-      return;
-    }
-
-    editorFieldOffsetsRef.current = {};
-    setLastScrollTarget(undefined);
-    setDraftEntry(createBlankDiveLogEntry());
-    setRoute('create');
-  }, [props]);
-
-  const openEdit = React.useCallback((entry: DiveLogEntry) => {
-    editorFieldOffsetsRef.current = {};
-    setLastScrollTarget(undefined);
-    setDraftEntry(entry);
-    setRoute('edit');
-  }, []);
-
-  const { onOpenEntry } = props;
-  const openDetail = React.useCallback(
-    (entry: DiveLogEntry) => {
-      setSelectedId(entry.localId);
-
-      if (onOpenEntry) {
-        onOpenEntry(entry);
-        return;
-      }
-
-      setRoute('detail');
-    },
-    [onOpenEntry],
-  );
-
-  const saveDraft = React.useCallback(
-    async (entry: DiveLogEntry) => {
-      const savedEntry = await props.onSaveEntry(entry);
-      setSelectedId(savedEntry.localId);
-      setDraftEntry(undefined);
-      setRoute('list');
-      if (props.pendingDraft?.entry.localId === entry.localId) {
-        props.onPendingDraftSave?.(savedEntry, props.pendingDraft.sourcePlanLocalId);
-      }
-      return savedEntry;
-    },
-    [props],
-  );
-
-  const deleteEntry = React.useCallback(
-    async (localId: string) => {
-      await props.onDeleteEntry(localId);
-      setRoute('list');
-    },
-    [props],
-  );
-
-  const registerEditorOffset = React.useCallback((event: { nativeEvent: { layout: { y: number } } }) => {
-    editorOffsetRef.current = event.nativeEvent.layout.y;
-  }, []);
-
-  const registerEditorFieldOffset = React.useCallback((fieldName: string, y: number) => {
-    editorFieldOffsetsRef.current = {
-      ...editorFieldOffsetsRef.current,
-      [fieldName]: y,
-    };
-  }, []);
-
-  const scrollToEditorError = React.useCallback((fieldName: string) => {
-    const measuredFieldOffset = editorFieldOffsetsRef.current[fieldName];
-    const fallbackOffset = getLogEntryEditorFieldOffset(fieldName);
-    const nextOffset = Math.max(0, measuredFieldOffset === undefined ? fallbackOffset : editorOffsetRef.current + measuredFieldOffset - 16);
-    setLastScrollTarget(nextOffset);
-    scrollViewRef.current?.scrollTo({ y: nextOffset, animated: true });
-  }, []);
-
+  const { onSyncWatch } = props;
   const syncWatch = React.useCallback(async () => {
     setIsSyncingWatch(true);
-    setSyncToast(undefined);
 
     try {
-      const result = await props.onSyncWatch();
+      const result = await onSyncWatch();
 
       if (result.importedCount > 0 && result.failedCount > 0) {
-        setSyncToast({
-          message: t('logbook.syncWatchPartial', { count: result.importedCount, failed: result.failedCount }),
-          tone: 'attention',
-        });
+        notify(t('logbook.syncWatchPartial', { count: result.importedCount, failed: result.failedCount }), 'attention');
       } else if (result.importedCount > 0) {
-        setSyncToast({ message: t('logbook.syncWatchImported', { count: result.importedCount }), tone: 'success' });
+        notify(t('logbook.syncWatchImported', { count: result.importedCount }), 'success');
       } else if (result.failedCount > 0) {
-        setSyncToast({ message: t('logbook.syncWatchFailed'), tone: 'attention' });
+        notify(t('logbook.syncWatchFailed'), 'attention');
       } else if (result.unavailable) {
-        setSyncToast({ message: t('logbook.syncWatchUnavailable'), tone: 'attention' });
+        notify(t('logbook.syncWatchUnavailable'), 'attention');
       } else {
-        setSyncToast({ message: t('logbook.syncWatchNone'), tone: 'success' });
+        notify(t('logbook.syncWatchNone'), 'success');
       }
     } catch {
-      setSyncToast({ message: t('logbook.syncWatchFailed'), tone: 'attention' });
+      notify(t('logbook.syncWatchFailed'), 'attention');
     } finally {
       setIsSyncingWatch(false);
     }
-  }, [props, t]);
+  }, [notify, onSyncWatch, t]);
 
   const header = (
     <VStack space="md" className="px-5 pt-4 pb-3">
-      <HStack className="items-center justify-between">
-        <Text className="flex-1 text-3xl font-semibold leading-9 text-foreground">{t('logbook.title')}</Text>
-        <HStack space="sm">
-          <InstrumentButton
-            testID="logbook-create-action"
-            label={t('logbook.createManual')}
-            icon={EditIcon}
-            variant="primary"
-            onPress={openCreate}
-            className="min-h-11 px-4 py-2"
-          />
-          <InstrumentButton
-            testID="logbook-import-action"
-            label={isSyncingWatch ? t('logbook.syncWatchLoading') : t('logbook.syncWatch')}
-            onPress={syncWatch}
-            disabled={isSyncingWatch}
-            className="min-h-11 px-4 py-2"
-          />
-        </HStack>
-      </HStack>
-      {syncToast ? (
-        <Text
-          testID="logbook-sync-toast"
-          accessibilityLiveRegion="polite"
-          accessibilityRole={syncToast.tone === 'attention' ? 'alert' : undefined}
-          className={
-            syncToast.tone === 'attention'
-              ? 'rounded-2xl bg-warning/10 px-4 py-3 text-sm font-semibold text-warning'
-              : 'rounded-2xl bg-primary/10 px-4 py-3 text-sm font-semibold text-primary'
-          }>
-          {syncToast.message}
-        </Text>
-      ) : null}
-      {lastScrollTarget === undefined ? null : (
-        <Text testID="logbook-scroll-target" className="hidden">{`${lastScrollTarget}`}</Text>
-      )}
-      <VStack space="md" className="rounded-2xl bg-card px-4 py-4">
-        <Input className="h-11 rounded-full border-0 bg-muted px-5 shadow-none">
-          <InputSlot testID="logbook-search-icon">
-            <InputIcon as={SearchIcon} className="text-muted-foreground" />
-          </InputSlot>
-          <InputField
-            testID="logbook-search-input"
-            placeholder={t('logbook.searchPlaceholder')}
-            value={props.filter.query}
-            onChangeText={query => props.onFilterChange({ ...props.filter, query })}
-            className="px-0 py-0 text-base font-normal"
-          />
-        </Input>
-      </VStack>
-      {route === 'list' && !props.isLoading ? (
-        <HStack space="sm" className="items-center">
+      <ScreenHeader
+        title={t('logbook.title')}
+        trailing={
+          <>
+            <InstrumentButton
+              testID="logbook-create-action"
+              label={t('logbook.createManual')}
+              icon={EditIcon}
+              variant="primary"
+              onPress={props.onCreateEntry}
+              className="min-h-11 px-4 py-2"
+            />
+            <InstrumentButton
+              testID="logbook-import-action"
+              label={t('logbook.syncWatch')}
+              onPress={syncWatch}
+              pending={isSyncingWatch}
+              className="min-h-11 px-4 py-2"
+            />
+          </>
+        }
+      />
+      <Input className="h-11 rounded-full border-0 bg-card px-5 shadow-none">
+        <InputSlot testID="logbook-search-icon">
+          <InputIcon as={SearchIcon} className="text-muted-foreground" />
+        </InputSlot>
+        <InputField
+          testID="logbook-search-input"
+          placeholder={t('logbook.searchPlaceholder')}
+          value={props.filter.query}
+          onChangeText={query => props.onFilterChange({ ...props.filter, query })}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
+          className="px-0 py-0 text-base font-normal"
+        />
+      </Input>
+      {/* The count line keeps its place while the first load runs, so the list does not move. */}
+      <HStack className="min-h-5 items-center">
+        {props.isLoading ? (
+          <Box className="w-24">
+            <SkeletonBlock visible={showLoadingSkeleton} />
+          </Box>
+        ) : (
           <Text testID="logbook-total-count" className="text-sm font-semibold text-muted-foreground">
             {isFiltering
               ? t('logbook.filteredCount', { count: visibleEntries.length, total: totalEntryCount })
               : t('logbook.totalCount', { count: totalEntryCount })}
           </Text>
-          {props.isCloudLoading ? (
-            <Text testID="logbook-cloud-loading" className="text-sm text-muted-foreground">
-              {t('logbook.cloudLoading')}
-            </Text>
-          ) : null}
-        </HStack>
-      ) : null}
+        )}
+      </HStack>
     </VStack>
   );
-
-  if (route !== 'list') {
-    return (
-      <VStack className="flex-1 bg-background">
-        {header}
-        <KeyboardAwareScrollView
-          ref={scrollViewRef}
-          className="flex-1"
-          contentContainerClassName="px-5 pb-6"
-          contentInsetAdjustmentBehavior="automatic">
-          <VStack space="lg">
-            {(route === 'create' || route === 'edit') && draftEntry ? (
-              <Box testID="log-entry-editor-card-anchor" onLayout={registerEditorOffset}>
-                <LogEntryEditor
-                  entry={draftEntry}
-                  mode={route === 'edit' ? 'edit' : 'create'}
-                  isSaving={props.isSaving}
-                  saveError={props.saveError}
-                  onCancel={() => setRoute(route === 'edit' ? 'detail' : 'list')}
-                  onSave={saveDraft}
-                  onFieldLayout={registerEditorFieldOffset}
-                  onInvalidSubmit={scrollToEditorError}
-                />
-              </Box>
-            ) : null}
-
-            {route === 'detail' && selectedEntry ? (
-              <LogEntryDetail entry={selectedEntry} onBack={() => setRoute('list')} onEdit={openEdit} onDelete={deleteEntry} />
-            ) : null}
-
-            <SafetyText>{t('logbook.safetyText')}</SafetyText>
-          </VStack>
-        </KeyboardAwareScrollView>
-      </VStack>
-    );
-  }
 
   return (
     <VStack className="flex-1 bg-background">
@@ -373,7 +209,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
           <SessionListItem
             entry={item}
             showsDeviceOnlyBadge={Boolean(props.isAuthenticated && item.ownerUserId === undefined)}
-            onOpen={openDetail}
+            onOpen={props.onOpenEntry}
           />
         )}
         ItemSeparatorComponent={ListItemSeparator}
@@ -385,7 +221,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
         refreshControl={<RefreshControl refreshing={isPullRefreshing} onRefresh={pullToRefresh} tintColor={palette.primary} />}
         ListEmptyComponent={
           props.isLoading ? (
-            <LogbookLoadingState />
+            <LogRowsSkeleton testID="logbook-loading-state" count={LOADING_ROW_COUNT} visible={showLoadingSkeleton} label={t('logbook.loadingList')} />
           ) : props.loadError ? (
             <ListStateCard
               testID="logbook-error-state"
@@ -403,18 +239,13 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               onAction={() => props.onFilterChange({ ...props.filter, query: '' })}
             />
           ) : (
-            <EmptyLogbook />
+            <EmptyLogbook onCreate={props.onCreateEntry} onSyncWatch={syncWatch} isSyncingWatch={isSyncingWatch} />
           )
         }
         ListFooterComponent={
-          <VStack space="md" className="pt-4">
-            {hasMorePages || (props.isCloudLoading && pagedEntries.length > 0) ? (
-              <HStack testID="logbook-loading-more" space="sm" className="items-center justify-center py-2">
-                <Spinner color={palette.primary} />
-                <Text className="text-sm text-muted-foreground">
-                  {hasMorePages ? t('logbook.loadingMore') : t('logbook.cloudLoading')}
-                </Text>
-              </HStack>
+          <VStack space="md" className="pt-3">
+            {isWaitingForCloudTail ? (
+              <LogRowsSkeleton testID="logbook-loading-more" count={TAIL_ROW_COUNT} visible={showTailSkeleton} label={t('logbook.cloudLoading')} />
             ) : null}
             <SafetyText>{t('logbook.safetyText')}</SafetyText>
           </VStack>
@@ -428,46 +259,77 @@ function ListItemSeparator(): React.JSX.Element {
   return <Box className="h-3" />;
 }
 
-function getLogEntryEditorFieldOffset(fieldName: string): number {
-  const offsets: Record<string, number> = {
-    startedAt: 220,
-    diveMode: 300,
-    siteName: 430,
-    durationSeconds: 520,
-    maxDepthMeters: 520,
-    gearIds: 680,
-    waterCondition: 760,
-    visibilityRating: 840,
-    perceivedExertion: 920,
-    pressure: 1000,
-    repetitionCount: 700,
-    trainingFocus: 780,
-    buddies: 1120,
-    tags: 1200,
-    observedMarineLife: 1280,
-    notes: 1360,
-    rating: 1460,
-  };
-
-  return offsets[fieldName] ?? 220;
-}
-
-function EmptyLogbook(): React.JSX.Element {
+/** A first logbook: one short line covering both ways in, and both actions. */
+function EmptyLogbook(props: { onCreate: () => void; onSyncWatch: () => void; isSyncingWatch: boolean }): React.JSX.Element {
   const { t } = useTranslation();
 
-  return <ListStateCard testID="logbook-empty-state" title={t('logbook.noImportedDives')} />;
+  return (
+    <DiveSummaryCard>
+      <VStack testID="logbook-empty-state" space="md">
+        <VStack space="xs">
+          <Text accessibilityRole="header" className="text-xl font-semibold leading-7 text-card-foreground">
+            {t('logbook.emptyTitle')}
+          </Text>
+          <Text className="text-sm leading-5 text-muted-foreground">{t('logbook.emptyMessage')}</Text>
+        </VStack>
+        <HStack space="sm">
+          <InstrumentButton
+            testID="logbook-empty-create-action"
+            label={t('logbook.createManual')}
+            icon={EditIcon}
+            onPress={props.onCreate}
+            className="flex-1"
+          />
+          <InstrumentButton
+            testID="logbook-empty-sync-action"
+            label={t('logbook.syncWatch')}
+            onPress={props.onSyncWatch}
+            pending={props.isSyncingWatch}
+            className="flex-1"
+          />
+        </HStack>
+      </VStack>
+    </DiveSummaryCard>
+  );
 }
 
-function LogbookLoadingState(): React.JSX.Element {
+/**
+ * Row-shaped placeholders: the same container, icon circle, two text lines, right value and
+ * second line as a real row. They hold their place invisibly until the shared delay has passed,
+ * and the card surface appears only with them.
+ */
+function LogRowsSkeleton(props: { testID: string; count: number; visible: boolean; label: string }): React.JSX.Element {
   return (
-    <VStack testID="logbook-loading-state" space="md">
-      {[0, 1, 2].map(index => (
-        <DiveSummaryCard key={index}>
-          <VStack space="sm">
-            <Skeleton className="h-5 w-40 rounded-full" />
-            <SkeletonText _lines={2} className="h-4 rounded-full" />
-          </VStack>
-        </DiveSummaryCard>
+    <VStack
+      testID={props.testID}
+      space="md"
+      accessible={props.visible}
+      accessibilityLabel={props.visible ? props.label : undefined}
+      accessibilityState={{ busy: true }}>
+      {Array.from({ length: props.count }, (_, index) => (
+        <VStack key={index} space="sm" className={props.visible ? 'rounded-2xl bg-card px-4 py-4' : 'rounded-2xl px-4 py-4'}>
+          <HStack className="items-center justify-between">
+            <HStack space="md" className="flex-1 items-center pr-2.5">
+              <Box className="h-9 w-9">
+                <SkeletonBlock visible={props.visible} className="h-9 rounded-full" />
+              </Box>
+              <VStack space="xs" className="flex-1">
+                <Box className="h-7 w-3/5 justify-center">
+                  <SkeletonBlock visible={props.visible} className="h-5" />
+                </Box>
+                <Box className="h-5 w-2/5 justify-center">
+                  <SkeletonBlock visible={props.visible} />
+                </Box>
+              </VStack>
+            </HStack>
+            <Box className="h-7 w-14 justify-center">
+              <SkeletonBlock visible={props.visible} className="h-5" />
+            </Box>
+          </HStack>
+          <Box className="h-5 w-1/2 justify-center pl-14">
+            <SkeletonBlock visible={props.visible} />
+          </Box>
+        </VStack>
       ))}
     </VStack>
   );
@@ -481,26 +343,22 @@ const SessionListItem = React.memo(function SessionListItem(props: {
 }): React.JSX.Element {
   const { entry, onOpen } = props;
   const openEntry = React.useCallback(() => onOpen(entry), [entry, onOpen]);
-  const session = diveLogEntryToMobileSession(props.entry);
-  const listMetrics = getListMetrics(props.entry);
+  const session = diveLogEntryToMobileSession(entry);
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const tags = session.tags?.length ? session.tags.join(', ') : t('logbook.noTags');
+  const tags = session.tags?.length ? session.tags.join(', ') : undefined;
+  // The test ID keeps the stored site name; the visible title may be a localized fallback.
   const siteName = session.siteName ?? t('logbook.untitledDive');
-  const title = props.entry.manual.title ?? siteName;
-  const maxDepthLabel = formatDepth(listMetrics.maxDepthMeters);
-  const durationLabel = formatListDuration(listMetrics.durationSeconds);
-  const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
-  const dateLabel = formatDate(session.startedAt, locale, t('formatters.unknownDate'));
+  const title = getLogDisplayTitle(entry, t, locale);
+  const maxDepthLabel = formatLogDepth(getLogMeasuredValue(entry, 'maxDepthMeters').value);
+  const durationLabel = formatLogMinutes(getLogMeasuredValue(entry, 'durationSeconds').value, t);
+  const unsupportedDepth = getUnsupportedDepthForLogEntry(entry);
+  const dateLabel = formatLogDate(getLogStartedAt(entry), locale, t('formatters.unknownDate'));
   const diveModeLabel = session.diveMode ? t(`diveModes.${session.diveMode}`) : t('diveModes.notSet');
   const unsupportedDepthLabel = unsupportedDepth ? t('logbook.unsupportedDepthMarker') : undefined;
   const badges = [
-    ...(props.entry.watchCapture?.session.captureMode === 'demo'
-      ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }]
-      : []),
-    ...(props.showsDeviceOnlyBadge
-      ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }]
-      : []),
+    ...(entry.watchCapture?.session.captureMode === 'demo' ? [{ kind: 'demo' as const, label: t('logbook.demoCapture') }] : []),
+    ...(props.showsDeviceOnlyBadge ? [{ kind: 'device' as const, label: t('accountClaim.deviceBadge') }] : []),
   ];
   const accessibilityLabel = [
     title,
@@ -511,7 +369,9 @@ const SessionListItem = React.memo(function SessionListItem(props: {
     diveModeLabel,
     durationLabel,
     tags,
-  ].filter((label): label is string => label !== undefined).join(', ');
+  ]
+    .filter((label): label is string => label !== undefined)
+    .join(', ');
 
   return (
     <Pressable
@@ -527,14 +387,14 @@ const SessionListItem = React.memo(function SessionListItem(props: {
           <HStack space="md" className="flex-1 items-center pr-2.5">
             <Box
               testID={`logbook-list-source-icon-${siteName}`}
-              className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-              <Icon as={props.entry.source === 'watch' ? WatchIcon : EditIcon} size="md" className="text-primary" />
+              className="h-9 w-9 items-center justify-center rounded-full bg-muted">
+              <Icon as={entry.source === 'watch' ? WatchIcon : EditIcon} size="md" className="text-muted-foreground" />
             </Box>
             <VStack space="xs" className="flex-1">
-              <Text className="text-lg font-semibold text-card-foreground">{title}</Text>
-              <Text className="text-sm leading-5 text-muted-foreground">
-                {dateLabel}
+              <Text className="text-lg font-semibold text-card-foreground" numberOfLines={2}>
+                {title}
               </Text>
+              <Text className="text-sm leading-5 text-muted-foreground">{dateLabel}</Text>
               {badges.length ? (
                 <HStack testID={`logbook-list-badges-${siteName}`} space="xs" className="flex-wrap items-center">
                   {badges.map(badge => (
@@ -551,44 +411,20 @@ const SessionListItem = React.memo(function SessionListItem(props: {
           </HStack>
           <VStack space="xs" className="items-end">
             {unsupportedDepth ? (
-              <StatusPill
-                testID={`logbook-list-unsupported-depth-${siteName}`}
-                label={t('logbook.unsupportedDepthMarker')}
-                tone="muted"
-              />
+              <StatusPill testID={`logbook-list-unsupported-depth-${siteName}`} label={t('logbook.unsupportedDepthMarker')} tone="muted" />
             ) : null}
-            <Text testID={`logbook-list-max-depth-${siteName}-${toTestIdValue(maxDepthLabel)}`} className="text-lg font-semibold text-card-foreground">
+            <Text
+              testID={`logbook-list-max-depth-${siteName}-${toTestIdValue(maxDepthLabel)}`}
+              className="text-lg font-semibold text-card-foreground">
               {maxDepthLabel}
             </Text>
           </VStack>
         </HStack>
-        <Text className="pl-14 text-sm leading-5 text-muted-foreground">
-          {diveModeLabel} ·{' '}
-          <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text> · {tags}
+        <Text className="pl-14 text-sm leading-5 text-muted-foreground" numberOfLines={2}>
+          {diveModeLabel} · <Text testID={`logbook-list-duration-${siteName}-${toTestIdValue(durationLabel)}`}>{durationLabel}</Text>
+          {tags ? ` · ${tags}` : null}
         </Text>
       </VStack>
     </Pressable>
   );
 });
-
-function getListMetrics(entry: DiveLogEntry): { durationSeconds?: number; maxDepthMeters?: number } {
-  if (entry.watchCapture) {
-    return {
-      durationSeconds: entry.watchCapture.measuredValues.durationSeconds,
-      maxDepthMeters: entry.watchCapture.measuredValues.maxDepthMeters,
-    };
-  }
-
-  return {
-    durationSeconds: entry.manual.measuredValues.durationSeconds,
-    maxDepthMeters: entry.manual.measuredValues.maxDepthMeters,
-  };
-}
-
-function formatListDuration(seconds: number | undefined): string {
-  return seconds === undefined ? '--:--' : formatDuration(seconds);
-}
-
-function toTestIdValue(value: string): string {
-  return value.replace(/\s+/g, '');
-}

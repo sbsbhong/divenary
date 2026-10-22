@@ -1,25 +1,35 @@
 import React from 'react';
+import { AccessibilityInfo } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
+import { Section, Row } from '../../components/ui/grouped-list';
 import { HStack } from '../../components/ui/hstack';
+import { InstrumentButton, SafetyText, ScreenBackButton, StatusPill } from '../../components/ui/instrument';
+import { Pressable } from '../../components/ui/pressable';
+import { ScreenHeader } from '../../components/ui/screen-header';
+import { Spinner } from '../../components/ui/spinner';
+import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
-import { SessionProfile } from '../../components/ui/session-profile';
-import { SyncConflictBanner, type SyncConflictChoice } from '../../components/ui/sync-conflict-banner';
-import type { DiveFieldSource, DiveLogEntry, DiveLogManualMeasuredValues, DiveLogWatchMeasuredValues } from '../../types/dive-log-entry';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
+import type { DiveFieldSource, DiveLogEntry } from '../../types/dive-log-entry';
 import type { WatchSession, WatchSessionCommon } from '../../types/dive-session';
-import {
-  formatDate,
-  formatDepth,
-  formatDuration,
-  formatPressure,
-  formatRating,
-  formatTemperature,
-} from '../../utils/dive-formatters';
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { firstNonBlankText } from '../../utils/notes';
 import { getUnsupportedDepthForLogEntry } from '../../utils/unsupported-depth';
+import { RowSeparator } from '../common/form/field-row';
+import {
+  formatLogDate,
+  formatLogDepth,
+  formatLogDuration,
+  formatLogPressure,
+  formatLogScale,
+  formatLogTemperature,
+  getLogDisplayTitle,
+  getLogMeasuredValue,
+  getLogStartedAt,
+  toTestIdValue,
+} from './log-formatters';
+import { LogEntryProfile, LogEntryProfileSkeleton } from './log-entry-profile';
 
 function deleteLogMessageKey(entry: DiveLogEntry): string {
   const removesWatchOriginal = entry.watchCapture !== undefined;
@@ -40,406 +50,419 @@ function deleteLogMessageKey(entry: DiveLogEntry): string {
 type LogEntryDetailProps = {
   entry: DiveLogEntry;
   profileSamples?: WatchSession['samples'];
+  /** True while the full watch profile is still being read; the profile slot shows a skeleton. */
+  isProfileLoading?: boolean;
   onBack?: () => void;
   onEdit?: (entry: DiveLogEntry) => void;
   onDelete?: (localId: string) => Promise<void>;
   onResolveConflict?: (choice: SyncConflictChoice) => Promise<void>;
 };
 
+type TranslateFn = ReturnType<typeof useTranslation>['t'];
+
+/**
+ * One log: title with its source, a summary group (2-3 facts and one depth profile), the watch
+ * record, grouped label/value rows that hide when empty, and delete in its own group at the end.
+ */
 export function LogEntryDetail(props: LogEntryDetailProps): React.JSX.Element {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const startedAt = props.entry.watchCapture?.measuredValues.startedAt ?? props.entry.manual.measuredValues.startedAt ?? props.entry.createdAt;
-  const maxDepth = getMeasuredValue(props.entry, 'maxDepthMeters');
-  const averageDepth = getMeasuredValue(props.entry, 'averageDepthMeters');
-  const waterTemperature = getMeasuredValue(props.entry, 'waterTemperatureCelsius');
-  const duration = getMeasuredValue(props.entry, 'durationSeconds');
-  const watchSamples = props.profileSamples ?? props.entry.watchCapture?.samples ?? [];
-  const hasTemperatureSamples = watchSamples.some(sample => sample.waterTemperatureCelsius !== undefined);
-  const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
-  const tags = props.entry.manual.tags.length ? props.entry.manual.tags.join(', ') : t('logbook.none');
-  const buddies = props.entry.manual.buddyIds.length ? props.entry.manual.buddyIds.join(', ') : t('logbook.none');
-  const marineLife = props.entry.manual.observedMarineLife.length ? props.entry.manual.observedMarineLife.join(', ') : t('logbook.none');
-  const sourceLabel = props.entry.source === 'watch' ? t('logbook.watchCaptured') : t('logbook.manualValue');
-  const isDemoCapture = props.entry.watchCapture?.session.captureMode === 'demo';
-  const isDebugTestCapture = props.entry.watchCapture?.session.tags?.includes('debug-test-capture') ?? false;
-  const note = firstNonBlankText(props.entry.manual.notes, props.entry.watchCapture?.session.notes) ?? t('logbook.noNotes');
-  const headerPills = (
-    <HStack space="xs" className="items-center justify-end">
-      <StatusPill
-        testID="log-entry-detail-source"
-        label={props.entry.source === 'watch' ? t('logbook.watchSource') : t('logbook.manualSource')}
-        tone="secondary"
-      />
-      {isDemoCapture ? (
-        <StatusPill
-          testID={isDebugTestCapture ? 'log-entry-detail-test-capture' : 'log-entry-detail-demo-capture'}
-          label={isDebugTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
-          tone="muted"
-        />
-      ) : null}
-    </HStack>
-  );
+  const { entry } = props;
+  const isDemoCapture = entry.watchCapture?.session.captureMode === 'demo';
+  const isDebugTestCapture = entry.watchCapture?.session.tags?.includes('debug-test-capture') ?? false;
+  const note = firstNonBlankText(entry.manual.notes, entry.watchCapture?.session.notes);
+  const rows = getDetailRows(entry, t);
 
   return (
-    <DiveSummaryCard accent="primary">
-      {props.onBack ? (
-        <ScreenBackButton
-          testID="log-entry-detail-back"
-          accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
-          onPress={props.onBack}
-        />
-      ) : null}
-      <DiveSummaryCard.Header
-        eyebrow={sourceLabel}
-        title={props.entry.manual.title ?? props.entry.manual.site.name ?? t('logbook.detailTitle')}
-        right={headerPills}
-      />
-      <DiveSummaryCard.Body>
-        {props.entry.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
-          <SyncConflictBanner onResolve={props.onResolveConflict} />
-        ) : null}
-        <Text className="text-sm leading-5 text-muted-foreground">
-          {formatDate(startedAt, locale, t('formatters.unknownDate'))}
-        </Text>
-        <HStack space="md">
-          <DetailMetric
-            label={t('logbook.maxDepth')}
-            value={formatDepth(maxDepth.value)}
-            source={maxDepth.source}
-            testID="log-entry-detail-provenance-max-depth"
-            valueTestID="log-entry-detail-max-depth-value"
-          />
-          <DetailMetric
-            label={t('logbook.avgDepth')}
-            value={formatDepth(averageDepth.value)}
-            source={averageDepth.source}
-          />
-        </HStack>
-        <HStack space="md">
-          {waterTemperature.value !== undefined ? (
-            <DetailMetric
-              label={t('logbook.waterTemp')}
-              value={formatTemperature(waterTemperature.value)}
-              source={waterTemperature.source}
-            />
-          ) : null}
-          <DetailMetric
-            label={t('logbook.duration')}
-            value={formatDetailDuration(duration.value)}
-            source={duration.source}
-            valueTestID="log-entry-detail-duration-value"
-          />
-        </HStack>
-        {unsupportedDepth ? (
-          <Text
-            testID="log-entry-detail-unsupported-depth-warning"
-            className="rounded-xl bg-muted px-4 py-3 text-sm font-semibold leading-5 text-muted-foreground">
-            {t('logbook.unsupportedDepthWarning')}
-          </Text>
-        ) : null}
-        {watchSamples.length ? (
-          <>
-            <SessionProfile
-              testID="log-entry-detail-depth-profile"
-              samples={watchSamples}
-              kind="depth"
-              title={t('logbook.depthProfile')}
-            />
-            {hasTemperatureSamples ? (
-              <SessionProfile
-                testID="log-entry-detail-temperature-profile"
-                samples={watchSamples}
-                kind="temperature"
-                title={t('logbook.temperatureProfile')}
-              />
-            ) : null}
-          </>
-        ) : null}
-      </DiveSummaryCard.Body>
-      <DiveSummaryCard.Footer>
-        <VStack space="sm">
-          <Text testID="log-entry-detail-note" className="text-sm leading-5 text-card-foreground">{note}</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {t('logbook.buddyNames')}: {buddies}
-          </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {t('logbook.tags')}: {tags}
-          </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">
-            {t('logbook.observedMarineLife')}: {marineLife}
-          </Text>
-          <Text
-            accessibilityLabel={`${t('logbook.rating')}: ${
-              props.entry.manual.rating
-                ? t('form.ratingStar', { value: props.entry.manual.rating, total: 5 })
-                : t('formatters.notRated')
-            }`}
-            className="text-sm leading-5 text-muted-foreground">
-            {t('logbook.rating')}: {formatRating(props.entry.manual.rating, t('formatters.notRated'))}
-          </Text>
-          <ModeSpecificMetadata entry={props.entry} />
-          <WatchModeMetadata entry={props.entry} />
+    <VStack testID="log-entry-detail" space="lg">
+      {props.onBack || props.onEdit ? (
+        <HStack className="items-center justify-between">
+          {props.onBack ? (
+            <ScreenBackButton testID="log-entry-detail-back" accessibilityLabel={t('common.back')} onPress={props.onBack} />
+          ) : (
+            <VStack />
+          )}
           {props.onEdit ? (
-            <InstrumentButton testID="log-entry-detail-edit" label={t('logbook.editLog')} variant="primary" onPress={() => props.onEdit?.(props.entry)} />
-          ) : null}
-          {props.onDelete ? (
             <InstrumentButton
-              testID="log-entry-detail-delete"
-              label={t('logbook.deleteLog')}
-              variant="danger"
-              onPress={() =>
-                confirmDestructiveAction({
-                  title: t('logbook.deleteConfirm.title'),
-                  message: t(deleteLogMessageKey(props.entry)),
-                  cancelLabel: t('common.cancel'),
-                  confirmLabel: t('logbook.deleteConfirm.confirm'),
-                  onConfirm: () => {
-                    void props.onDelete?.(props.entry.localId);
-                  },
-                })
-              }
+              testID="log-entry-detail-edit"
+              label={t('logbook.editLog')}
+              onPress={() => props.onEdit?.(entry)}
+              className="min-h-11 px-4 py-2"
             />
           ) : null}
-        </VStack>
-      </DiveSummaryCard.Footer>
-    </DiveSummaryCard>
+        </HStack>
+      ) : null}
+      <VStack space="sm">
+        <ScreenHeader title={getLogDisplayTitle(entry, t, locale)} titleTestID="log-entry-detail-title" />
+        <HStack space="sm" className="flex-wrap items-center">
+          <StatusPill
+            testID="log-entry-detail-source"
+            label={entry.source === 'watch' ? t('logbook.watchSource') : t('logbook.manualSource')}
+            tone="muted"
+          />
+          {isDemoCapture ? (
+            <StatusPill
+              testID={isDebugTestCapture ? 'log-entry-detail-test-capture' : 'log-entry-detail-demo-capture'}
+              label={isDebugTestCapture ? t('logbook.testCapture') : t('logbook.demoCapture')}
+              tone="muted"
+            />
+          ) : null}
+          <Text testID="log-entry-detail-date" className="text-sm leading-5 text-muted-foreground">
+            {formatLogDate(getLogStartedAt(entry), locale, t('formatters.unknownDate'))}
+          </Text>
+        </HStack>
+      </VStack>
+      {entry.cloudSyncStatus === 'conflict' && props.onResolveConflict ? (
+        <SyncConflictBanner onResolve={props.onResolveConflict} />
+      ) : null}
+      <SummaryGroup entry={entry} profileSamples={props.profileSamples} isProfileLoading={props.isProfileLoading} />
+      <WatchRecordGroup entry={entry} profileSamples={props.profileSamples} />
+      {rows.length ? (
+        <Section title={t('logbook.detailsSection')}>
+          {rows.map((row, index) => (
+            <Row
+              key={row.id}
+              label={row.label}
+              value={row.value}
+              accessibilityLabel={`${row.label}, ${row.spokenValue ?? row.value}`}
+              valueTestID={`log-entry-detail-mode-value-${row.id}-${toTestIdValue(row.value)}`}
+              separated={index > 0}
+            />
+          ))}
+        </Section>
+      ) : null}
+      {note ? (
+        <Section title={t('logbook.notes')}>
+          <Text testID="log-entry-detail-note" className="px-4 py-3 text-base leading-6 text-card-foreground">
+            {note}
+          </Text>
+        </Section>
+      ) : null}
+      {props.onDelete ? <DeleteGroup entry={entry} onDelete={props.onDelete} /> : null}
+      <SafetyText>{t('logbook.safetyText')}</SafetyText>
+    </VStack>
   );
 }
 
-function WatchModeMetadata(props: { entry: DiveLogEntry }): React.JSX.Element | null {
+/** Max depth, dive time and water temperature when known, and one depth profile. */
+function SummaryGroup(props: {
+  entry: DiveLogEntry;
+  profileSamples?: WatchSession['samples'];
+  isProfileLoading?: boolean;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const maxDepth = getLogMeasuredValue(props.entry, 'maxDepthMeters');
+  const duration = getLogMeasuredValue(props.entry, 'durationSeconds');
+  const waterTemperature = getLogMeasuredValue(props.entry, 'waterTemperatureCelsius');
+  const samples = props.profileSamples ?? props.entry.watchCapture?.samples ?? [];
+  const unsupportedDepth = getUnsupportedDepthForLogEntry(props.entry);
+  const isWatchEntry = props.entry.watchCapture !== undefined;
+
+  return (
+    <VStack testID="log-entry-detail-summary" space="lg" className="rounded-2xl bg-card px-4 py-4">
+      <HStack space="md">
+        <SummaryFact
+          label={t('logbook.maxDepth')}
+          value={formatLogDepth(maxDepth.value)}
+          source={maxDepth.source}
+          showsOverride={isWatchEntry}
+          testID="log-entry-detail-provenance-max-depth"
+          valueTestID="log-entry-detail-max-depth-value"
+        />
+        <SummaryFact
+          label={t('logbook.duration')}
+          value={formatLogDuration(duration.value, t)}
+          source={duration.source}
+          showsOverride={isWatchEntry}
+          valueTestID="log-entry-detail-duration-value"
+        />
+        {waterTemperature.value !== undefined ? (
+          <SummaryFact
+            label={t('logbook.waterTemp')}
+            value={formatLogTemperature(waterTemperature.value)}
+            source={waterTemperature.source}
+            showsOverride={isWatchEntry}
+          />
+        ) : null}
+      </HStack>
+      {unsupportedDepth ? (
+        <Text
+          testID="log-entry-detail-unsupported-depth-warning"
+          className="rounded-xl bg-muted px-3 py-2 text-sm leading-5 text-muted-foreground">
+          {t('logbook.unsupportedDepthWarning')}
+        </Text>
+      ) : null}
+      {samples.length ? (
+        <LogEntryProfile samples={samples} kind="depth" title={t('logbook.depthProfile')} testID="log-entry-detail-depth-profile" />
+      ) : props.isProfileLoading && isWatchEntry ? (
+        <LogEntryProfileSkeleton scope={props.entry.localId} title={t('logbook.depthProfile')} />
+      ) : null}
+    </VStack>
+  );
+}
+
+function SummaryFact(props: {
+  label: string;
+  value: string;
+  source: DiveFieldSource;
+  /** On a watch log, a value the user changed carries a quiet marker. Manual logs need none. */
+  showsOverride: boolean;
+  testID?: string;
+  valueTestID?: string;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const isOverride = props.showsOverride && props.source === 'manual';
+
+  return (
+    <VStack
+      testID={props.testID ? `${props.testID}-${props.source}` : undefined}
+      space="xs"
+      className="flex-1"
+      accessible
+      accessibilityLabel={[props.label, props.value, isOverride ? t('logbook.manualOverride') : undefined].filter(Boolean).join(', ')}>
+      <Text className="text-xs font-semibold uppercase text-muted-foreground">{props.label}</Text>
+      <Text
+        testID={props.valueTestID ? `${props.valueTestID}-${toTestIdValue(props.value)}` : undefined}
+        className="text-xl font-semibold leading-7 text-card-foreground">
+        {props.value}
+      </Text>
+      {isOverride ? <Text className="text-xs text-muted-foreground">{t('logbook.manualOverride')}</Text> : null}
+    </VStack>
+  );
+}
+
+/** What only the watch recorded: the recommended-stop review, freedive session facts, temperature. */
+function WatchRecordGroup(props: { entry: DiveLogEntry; profileSamples?: WatchSession['samples'] }): React.JSX.Element | null {
+  const { t } = useTranslation();
   const session = props.entry.watchCapture?.session;
 
   if (!session) {
     return null;
   }
 
-  if (session.diveMode === 'freedive' && session.freedive) {
-    return <WatchFreediveMetadata session={session} />;
-  }
+  const samples = props.profileSamples ?? props.entry.watchCapture?.samples ?? [];
+  const hasTemperatureSamples = samples.some(sample => sample.waterTemperatureCelsius !== undefined);
+  const scuba = session.diveMode === 'scuba' && session.scuba ? <WatchScubaRows session={session} /> : null;
+  const freedive = session.diveMode === 'freedive' && session.freedive ? <WatchFreediveRows session={session} /> : null;
 
-  if (session.diveMode === 'scuba' && session.scuba) {
-    return <WatchScubaMetadata session={session} />;
-  }
-
-  return null;
-}
-
-function WatchFreediveMetadata(props: { session: WatchSessionCommon }): React.JSX.Element {
-  const { t } = useTranslation();
-  const freedive = props.session.freedive!;
-  const recentSegments = [...freedive.segments]
-    .sort((left, right) => left.index - right.index)
-    .slice(-3);
-  const surfaceIntervalSeconds = getRecentSurfaceIntervalSeconds(freedive.segments);
-  const facts = compactFacts([
-    { id: 'dive-count', label: t('logbook.watchFreedive.diveCount'), value: `${freedive.diveCount}` },
-    { id: 'longest-dive', label: t('logbook.watchFreedive.longestDive'), value: formatDetailDuration(freedive.longestDiveDurationSeconds) },
-    surfaceIntervalSeconds === undefined
-      ? undefined
-      : { id: 'surface-interval', label: t('logbook.watchFreedive.surfaceInterval'), value: formatDuration(surfaceIntervalSeconds) },
-  ]);
-
-  return (
-    <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
-      <HStack className="items-center justify-between">
-        <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
-        <StatusPill label={t('logbook.watchFreedive.session')} tone="secondary" />
-      </HStack>
-      <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
-      {recentSegments.length > 0 ? (
-        <VStack space="xs">
-          {recentSegments.map(segment => (
-            <HStack key={segment.segmentId} className="items-center justify-between">
-              <Text className="text-sm leading-5 text-muted-foreground">
-                {t('logbook.watchFreedive.segmentLabel', { index: String(segment.index).padStart(2, '0') })}
-              </Text>
-              <Text className="text-sm font-semibold text-card-foreground">
-                {formatDetailDuration(segment.durationSeconds)} · {formatDepth(segment.maxDepthMeters)}
-              </Text>
-            </HStack>
-          ))}
-        </VStack>
-      ) : null}
-    </VStack>
-  );
-}
-
-function WatchScubaMetadata(props: { session: WatchSessionCommon }): React.JSX.Element {
-  const { t } = useTranslation();
-  const safetyStop = props.session.scuba!.safetyStop;
-  const facts = compactFacts([
-    {
-      id: 'status',
-      label: t('logbook.watchScuba.safetyStopStatus'),
-      value: getSafetyStopStatusLabel(safetyStop.status, t),
-    },
-    safetyStop.remainingSeconds > 0
-      ? {
-          id: 'remaining',
-          label: t('logbook.watchScuba.remaining'),
-          value: formatDuration(safetyStop.remainingSeconds),
-        }
-      : undefined,
-    safetyStop.timeInZoneSeconds > 0
-      ? {
-          id: 'time-in-zone',
-          label: t('logbook.watchScuba.timeInZone'),
-          value: formatDuration(safetyStop.timeInZoneSeconds),
-        }
-      : undefined,
-  ]);
-
-  return (
-    <VStack testID="log-entry-detail-watch-mode-metadata" space="sm" className="rounded-2xl bg-muted px-4 py-4">
-      <HStack className="items-center justify-between">
-        <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.watchModeDetails')}</Text>
-        <StatusPill
-          testID="log-entry-detail-safety-stop-pill"
-          label={t('logbook.watchScuba.safetyStopRecommended')}
-          tone={getSafetyStopTone(safetyStop.status)}
-        />
-      </HStack>
-      <FactRows facts={facts} testIDPrefix="log-entry-detail-watch-mode-value" />
-    </VStack>
-  );
-}
-
-function ModeSpecificMetadata(props: { entry: DiveLogEntry }): React.JSX.Element | null {
-  const { t } = useTranslation();
-  const facts = getModeFacts(props.entry, t);
-
-  if (facts.length === 0) {
+  if (!scuba && !freedive && !hasTemperatureSamples) {
     return null;
   }
 
   return (
-    <VStack space="xs" className="rounded-2xl bg-muted px-4 py-4">
-      <Text className="text-xs font-semibold uppercase text-muted-foreground">{t('logbook.modeDetails')}</Text>
-      <FactRows facts={facts} testIDPrefix="log-entry-detail-mode-value" />
-    </VStack>
+    <Section testID="log-entry-detail-watch-mode-metadata" title={t('logbook.watchRecordSection')}>
+      {scuba}
+      {freedive}
+      {hasTemperatureSamples ? (
+        <VStack>
+          {scuba || freedive ? <RowSeparator /> : null}
+          <VStack className="px-4 py-3">
+            <LogEntryProfile
+              samples={samples}
+              kind="temperature"
+              title={t('logbook.temperatureProfile')}
+              testID="log-entry-detail-temperature-profile"
+            />
+          </VStack>
+        </VStack>
+      ) : null}
+    </Section>
   );
 }
 
-type ModeFact = {
-  id: string;
-  label: string;
-  value: string;
-};
+type SafetyStopStatus = NonNullable<WatchSession['scuba']>['safetyStop']['status'];
+type StatusPillTone = React.ComponentProps<typeof StatusPill>['tone'];
 
-function getModeFacts(entry: DiveLogEntry, t: ReturnType<typeof useTranslation>['t']): ModeFact[] {
-  const measuredValues = entry.manual.measuredValues;
-  const entryStyleFact = entry.manual.entryStyle
-    ? {
-        id: 'entry-style',
-        label: t('logbook.entryStyle', { defaultValue: 'Entry style' }),
-        value: t(`entryStyles.${entry.manual.entryStyle}`, { defaultValue: entry.manual.entryStyle }),
-      }
-    : undefined;
+/** Statuses that mean a recommended stop was armed during the dive, so the review pill applies. */
+const ARMED_SAFETY_STOP_STATUSES: SafetyStopStatus[] = ['armed', 'active', 'pausedTooDeep', 'pausedTooShallow', 'completed', 'skippedOrIncomplete'];
 
-  if (measuredValues.diveMode === 'scuba') {
-    return compactFacts([
-      entryStyleFact,
-      { id: 'gas-label', label: t('logbook.gasLabel'), value: measuredValues.gasLabel ?? t('logbook.airGas', { defaultValue: 'Air' }) },
-      { id: 'gear', label: t('logbook.gear'), value: entry.manual.gearIds.length ? entry.manual.gearIds.join(', ') : undefined },
-      {
-        id: 'water-condition',
-        label: t('logbook.waterCondition'),
-        value: measuredValues.waterCondition ? t(`waterConditions.${measuredValues.waterCondition}`) : undefined,
-      },
-      { id: 'visibility-rating', label: t('logbook.visibilityRating'), value: numberToText(measuredValues.visibilityRating) },
-      { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: numberToText(measuredValues.perceivedExertion) },
-      { id: 'pressure', label: t('logbook.pressure', { defaultValue: 'Pressure' }), value: formatPressure(measuredValues.pressure) },
-    ]);
-  }
+function WatchScubaRows(props: { session: WatchSessionCommon }): React.JSX.Element {
+  const { t } = useTranslation();
+  const safetyStop = props.session.scuba!.safetyStop;
+  const statusLabel = t(`logbook.watchScuba.safetyStopStatuses.${safetyStop.status}`, { defaultValue: safetyStop.status });
+  const wasArmed = ARMED_SAFETY_STOP_STATUSES.includes(safetyStop.status);
 
-  if (measuredValues.diveMode === 'freedive') {
-    return compactFacts([
-      entryStyleFact,
-      { id: 'repetition-count', label: t('logbook.repetitionCount'), value: numberToText(measuredValues.repetitionCount) },
-      { id: 'training-focus', label: t('logbook.trainingFocus'), value: measuredValues.trainingFocus },
-      { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: numberToText(measuredValues.perceivedExertion) },
-    ]);
-  }
-
-  return [];
-}
-
-function compactFacts(facts: Array<{ id: string; label: string; value: string | undefined } | undefined>): ModeFact[] {
-  return facts.filter((fact): fact is ModeFact => Boolean(fact?.value));
-}
-
-function FactRows(props: { facts: ModeFact[]; testIDPrefix: string }): React.JSX.Element {
   return (
     <>
-      {props.facts.map(fact => (
-        <HStack key={fact.id} className="items-center justify-between">
-          <Text className="text-sm leading-5 text-muted-foreground">{fact.label}</Text>
-          <Text
-            testID={`${props.testIDPrefix}-${fact.id}-${toTestIdValue(fact.value)}`}
-            className="text-sm font-semibold text-card-foreground">
-            {fact.value}
-          </Text>
-        </HStack>
+      {/* Post-dive review of a non-certified reminder: amber for an unfinished stop, never red. */}
+      <HStack
+        space="md"
+        className="min-h-12 items-center px-4 py-3"
+        accessible
+        accessibilityLabel={`${t('logbook.watchScuba.safetyStopRecommended')}, ${statusLabel}`}>
+        <Text className="flex-1 text-base text-card-foreground">{t('logbook.watchScuba.safetyStopRecommended')}</Text>
+        {wasArmed ? (
+          <StatusPill testID="log-entry-detail-safety-stop-pill" label={statusLabel} tone={getSafetyStopTone(safetyStop.status)} />
+        ) : (
+          <Text className="text-base text-muted-foreground">{statusLabel}</Text>
+        )}
+      </HStack>
+      {wasArmed && safetyStop.remainingSeconds > 0 ? (
+        <Row
+          label={t('logbook.watchScuba.remaining')}
+          value={formatLogDuration(safetyStop.remainingSeconds, t)}
+          valueTestID={`log-entry-detail-watch-mode-value-remaining-${safetyStop.remainingSeconds}`}
+        />
+      ) : null}
+      {safetyStop.timeInZoneSeconds > 0 ? (
+        <Row
+          label={t('logbook.watchScuba.timeInZone')}
+          value={formatLogDuration(safetyStop.timeInZoneSeconds, t)}
+          valueTestID={`log-entry-detail-watch-mode-value-time-in-zone-${safetyStop.timeInZoneSeconds}`}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function WatchFreediveRows(props: { session: WatchSessionCommon }): React.JSX.Element {
+  const { t } = useTranslation();
+  const freedive = props.session.freedive!;
+  const recentSegments = [...freedive.segments].sort((left, right) => left.index - right.index).slice(-3);
+  const surfaceIntervalSeconds = getRecentSurfaceIntervalSeconds(freedive.segments);
+
+  return (
+    <>
+      <Row
+        label={t('logbook.watchFreedive.diveCount')}
+        value={`${freedive.diveCount}`}
+        valueTestID={`log-entry-detail-watch-mode-value-dive-count-${freedive.diveCount}`}
+        separated={false}
+      />
+      <Row label={t('logbook.watchFreedive.longestDive')} value={formatLogDuration(freedive.longestDiveDurationSeconds, t)} />
+      {surfaceIntervalSeconds === undefined ? null : (
+        <Row label={t('logbook.watchFreedive.surfaceInterval')} value={formatLogDuration(surfaceIntervalSeconds, t)} />
+      )}
+      {recentSegments.map(segment => (
+        <Row
+          key={segment.segmentId}
+          label={t('logbook.watchFreedive.segmentLabel', { index: String(segment.index).padStart(2, '0') })}
+          value={`${formatLogDuration(segment.durationSeconds, t)} · ${formatLogDepth(segment.maxDepthMeters)}`}
+        />
       ))}
     </>
   );
 }
 
-function DetailMetric(props: {
+type DetailRow = {
+  id: string;
   label: string;
   value: string;
-  source: DiveFieldSource;
-  testID?: string;
-  valueTestID?: string;
-}): React.JSX.Element {
+  spokenValue?: string;
+};
+
+/** Grouped rows for what the diver recorded. A row with no value is left out. */
+function getDetailRows(entry: DiveLogEntry, t: TranslateFn): DetailRow[] {
+  const measuredValues = entry.manual.measuredValues;
+  const diveMode = measuredValues.diveMode ?? entry.watchCapture?.session.diveMode;
+  const rating = entry.manual.rating;
+  const isScuba = diveMode === 'scuba';
+  const isFreedive = diveMode === 'freedive';
+  const listText = (values: string[]) => (values.length ? values.join(', ') : undefined);
+
+  return compactRows([
+    { id: 'dive-mode', label: t('logbook.diveMode'), value: diveMode ? t(`diveModes.${diveMode}`) : undefined },
+    rating
+      ? {
+          id: 'rating',
+          label: t('logbook.rating'),
+          value: t('form.ratingStar', { value: rating, total: 5 }),
+        }
+      : undefined,
+    {
+      id: 'entry-style',
+      label: t('logbook.entryStyle'),
+      value: entry.manual.entryStyle ? t(`entryStyles.${entry.manual.entryStyle}`) : undefined,
+    },
+    isScuba ? { id: 'gas-label', label: t('logbook.gasLabel'), value: measuredValues.gasLabel ?? t('logbook.airGas') } : undefined,
+    isScuba ? { id: 'gear', label: t('logbook.gear'), value: listText(entry.manual.gearIds) } : undefined,
+    isScuba
+      ? {
+          id: 'water-condition',
+          label: t('logbook.waterCondition'),
+          value:
+            measuredValues.waterCondition && measuredValues.waterCondition !== 'unknown'
+              ? t(`waterConditions.${measuredValues.waterCondition}`)
+              : undefined,
+        }
+      : undefined,
+    isScuba ? { id: 'visibility-rating', label: t('logbook.visibilityRating'), value: formatLogScale(measuredValues.visibilityRating) } : undefined,
+    { id: 'perceived-exertion', label: t('logbook.perceivedExertion'), value: formatLogScale(measuredValues.perceivedExertion) },
+    isScuba ? { id: 'pressure', label: t('logbook.pressure'), value: formatLogPressure(measuredValues.pressure) } : undefined,
+    isFreedive
+      ? {
+          id: 'repetition-count',
+          label: t('logbook.repetitionCount'),
+          value: measuredValues.repetitionCount === undefined ? undefined : `${measuredValues.repetitionCount}`,
+        }
+      : undefined,
+    isFreedive ? { id: 'training-focus', label: t('logbook.trainingFocus'), value: measuredValues.trainingFocus } : undefined,
+    { id: 'buddies', label: t('logbook.buddyNames'), value: listText(entry.manual.buddyIds) },
+    { id: 'tags', label: t('logbook.tags'), value: listText(entry.manual.tags) },
+    { id: 'marine-life', label: t('logbook.observedMarineLife'), value: listText(entry.manual.observedMarineLife) },
+  ]);
+}
+
+function compactRows(rows: Array<{ id: string; label: string; value: string | undefined; spokenValue?: string } | undefined>): DetailRow[] {
+  return rows.filter((row): row is DetailRow => Boolean(row?.value));
+}
+
+/** Delete sits apart from everything else. It shows progress while running and says when it failed. */
+function DeleteGroup(props: { entry: DiveLogEntry; onDelete: (localId: string) => Promise<void> }): React.JSX.Element {
   const { t } = useTranslation();
-  const sourceLabel = props.source === 'watch' ? t('logbook.watchCaptured') : t('logbook.manualValue');
-  const testID = props.testID ? `${props.testID}-${props.source}` : undefined;
-  const valueTestID = props.valueTestID ? `${props.valueTestID}-${toTestIdValue(props.value)}` : undefined;
+  const [isDeleting, setIsDeleting] = React.useState(false);
+  const [deleteFailed, setDeleteFailed] = React.useState(false);
+  const { showIndicator } = useLoadingFeedback(isDeleting);
+  const { entry, onDelete } = props;
+
+  const runDelete = React.useCallback(async () => {
+    setIsDeleting(true);
+    setDeleteFailed(false);
+    try {
+      await onDelete(entry.localId);
+      // On success the screen is leaving, so the row stays pending until it is gone.
+    } catch {
+      setIsDeleting(false);
+      setDeleteFailed(true);
+      AccessibilityInfo.announceForAccessibility(t('logbook.deleteError'));
+    }
+  }, [entry.localId, onDelete, t]);
+
+  const confirmDelete = React.useCallback(() => {
+    confirmDestructiveAction({
+      title: t('logbook.deleteConfirm.title'),
+      message: t(deleteLogMessageKey(entry)),
+      cancelLabel: t('common.cancel'),
+      confirmLabel: t('logbook.deleteConfirm.confirm'),
+      onConfirm: () => {
+        void runDelete();
+      },
+    });
+  }, [entry, runDelete, t]);
 
   return (
-    <VStack testID={testID} space="xs" className="flex-1 rounded-2xl bg-muted px-4 py-4">
-      <Text className="text-xs font-semibold uppercase text-muted-foreground">{props.label}</Text>
-      <Text testID={valueTestID} className="text-lg font-semibold text-foreground">
-        {props.value}
-      </Text>
-      <ProvenanceLabel provenanceLabel={sourceLabel} />
+    <VStack space="sm">
+      <VStack className="overflow-hidden rounded-2xl bg-card">
+        <Pressable
+          testID="log-entry-detail-delete"
+          accessibilityRole="button"
+          accessibilityState={{ busy: isDeleting, disabled: isDeleting }}
+          disabled={isDeleting}
+          onPress={confirmDelete}
+          className="active:bg-muted">
+          <HStack space="md" className="min-h-12 items-center px-4 py-3">
+            <Text className="flex-1 text-base text-destructive">{t('logbook.deleteLog')}</Text>
+            {showIndicator ? <Spinner testID="log-entry-detail-delete-spinner" className="text-destructive" /> : null}
+          </HStack>
+        </Pressable>
+      </VStack>
+      {deleteFailed ? (
+        <Text testID="log-entry-detail-delete-error" className="px-1 text-sm leading-5 text-destructive">
+          {t('logbook.deleteError')}
+        </Text>
+      ) : null}
     </VStack>
   );
-}
-
-function ProvenanceLabel(props: { provenanceLabel: string }): React.JSX.Element {
-  return (
-    <Text accessibilityLabel={props.provenanceLabel} className="text-xs font-semibold uppercase text-muted-foreground">
-      {props.provenanceLabel}
-    </Text>
-  );
-}
-
-type MeasuredField = 'durationSeconds' | 'maxDepthMeters' | 'averageDepthMeters' | 'waterTemperatureCelsius';
-
-function getMeasuredValue(entry: DiveLogEntry, field: MeasuredField): { value: number | undefined; source: DiveFieldSource } {
-  const manualValue = entry.manual.measuredValues[field as keyof DiveLogManualMeasuredValues] as number | undefined;
-  const watchValue = entry.watchCapture?.measuredValues[field as keyof DiveLogWatchMeasuredValues] as number | undefined;
-
-  if (entry.provenance[field] === 'manual' && manualValue !== undefined) {
-    return { value: manualValue, source: 'manual' };
-  }
-
-  if (watchValue !== undefined) {
-    return { value: watchValue, source: 'watch' };
-  }
-
-  if (manualValue !== undefined) {
-    return { value: manualValue, source: 'manual' };
-  }
-
-  return { value: undefined, source: entry.provenance[field] ?? (entry.watchCapture ? 'watch' : 'manual') };
-}
-
-function formatDetailDuration(seconds: number | undefined): string {
-  return seconds === undefined ? '--:--' : formatDuration(seconds);
 }
 
 function getRecentSurfaceIntervalSeconds(segments: NonNullable<WatchSession['freedive']>['segments']): number | undefined {
@@ -453,13 +476,6 @@ function getRecentSurfaceIntervalSeconds(segments: NonNullable<WatchSession['fre
   const latestSegment = sortedSegments[sortedSegments.length - 1];
 
   return Math.max(0, latestSegment.startedAt - previousSegment.endedAt);
-}
-
-type SafetyStopStatus = NonNullable<WatchSession['scuba']>['safetyStop']['status'];
-type StatusPillTone = React.ComponentProps<typeof StatusPill>['tone'];
-
-function getSafetyStopStatusLabel(status: SafetyStopStatus, t: ReturnType<typeof useTranslation>['t']): string {
-  return t(`logbook.watchScuba.safetyStopStatuses.${status}`, { defaultValue: status });
 }
 
 /** A recommended stop that did not finish is a caution, never the danger tone reserved for errors. */
@@ -479,12 +495,4 @@ function getSafetyStopTone(status: SafetyStopStatus): StatusPillTone {
   }
 
   return 'muted';
-}
-
-function numberToText(value: number | undefined): string | undefined {
-  return value === undefined ? undefined : `${value}`;
-}
-
-function toTestIdValue(value: string): string {
-  return value.replace(/\s+/g, '');
 }

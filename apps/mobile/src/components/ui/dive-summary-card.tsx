@@ -8,7 +8,12 @@ import type { InstrumentTone } from './theme';
 
 type DiveSummaryCardProps = {
   children?: React.ReactNode;
+  /**
+   * @deprecated Has no visual effect: cards are neutral, and primary colour is kept for actions
+   * and selection. Drop it at the call site.
+   */
   accent?: InstrumentTone;
+  /** `parchment` is a deprecated alias of `card` and draws the same surface. */
   variant?: 'card' | 'parchment' | 'dark';
   className?: string;
   style?: StyleProp<ViewStyle>;
@@ -27,13 +32,13 @@ type DiveSummaryCardMetricProps = {
   unit?: string;
 };
 
+// Borderless, shadowless cards: surfaces are told apart by background and spacing only.
 const cardStyles = tva({
-  base: 'relative overflow-hidden',
+  base: 'relative overflow-hidden rounded-2xl',
   variants: {
     variant: {
-      card: 'rounded-2xl bg-card px-5 py-5',
-      parchment: 'rounded-2xl bg-card px-5 py-5',
-      dark: 'rounded-2xl bg-popover px-5 py-6',
+      card: 'bg-card px-5 py-5',
+      dark: 'bg-popover px-5 py-6',
     },
   },
   defaultVariants: {
@@ -42,8 +47,9 @@ const cardStyles = tva({
 });
 
 function DiveSummaryCardRoot(props: DiveSummaryCardProps): React.JSX.Element {
+  const variant = props.variant === 'parchment' ? 'card' : props.variant;
   return (
-    <VStack space="lg" className={cardStyles({ variant: props.variant, class: props.className })} style={props.style}>
+    <VStack space="lg" className={cardStyles({ variant, class: props.className })} style={props.style}>
       {props.children}
     </VStack>
   );

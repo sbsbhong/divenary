@@ -115,40 +115,130 @@ describe('SocialLoginButton', () => {
     expect(appleLabel.props).toMatchObject({ adjustsFontSizeToFit: true, maxFontSizeMultiplier: 1.5, numberOfLines: 1 });
   });
 
-  test('uses the fixed status slot for the busy state', async () => {
-    const onPress = jest.fn();
-    const renderer = await render(
-      <SocialLoginButton
-        provider="google"
-        label="Google로 계속"
-        accessibilityLabel="Google로 계속하기, 최근 사용"
-        busyLabel="로그인 중"
-        busy={false}
-        disabled={false}
-        onPress={onPress}
-      />,
-    );
-
-    await ReactTestRenderer.act(async () => {
-      renderer.root.findByProps({ testID: 'auth-login-google' }).props.onPress();
-    });
-    expect(onPress).toHaveBeenCalledTimes(1);
-
-    await ReactTestRenderer.act(async () => {
-      renderer.update(
+  test('is busy at once and shows the status-slot spinner only after 1 s', async () => {
+    jest.useFakeTimers();
+    try {
+      const onPress = jest.fn();
+      const renderer = await render(
         <SocialLoginButton
           provider="google"
           label="Google로 계속"
           accessibilityLabel="Google로 계속하기, 최근 사용"
           busyLabel="로그인 중"
-          busy
-          disabled
+          busy={false}
+          disabled={false}
           onPress={onPress}
         />,
       );
-    });
 
-    expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' }).props['aria-label']).toBe('로그인 중');
+      await ReactTestRenderer.act(async () => {
+        renderer.root.findByProps({ testID: 'auth-login-google' }).props.onPress();
+      });
+      expect(onPress).toHaveBeenCalledTimes(1);
+
+      await ReactTestRenderer.act(async () => {
+        renderer.update(
+          <SocialLoginButton
+            provider="google"
+            label="Google로 계속"
+            accessibilityLabel="Google로 계속하기, 최근 사용"
+            busyLabel="로그인 중"
+            busy
+            disabled
+            onPress={onPress}
+          />,
+        );
+      });
+
+      const button = renderer.root.findByProps({ testID: 'auth-login-google' });
+      expect(button.props.accessibilityState).toEqual({ busy: true, disabled: true });
+      expect(button.props.disabled).toBe(true);
+      // The picked provider stays solid; only the other one dims.
+      expect(StyleSheet.flatten(button.props.style)).toMatchObject({ opacity: 1 });
+      expect(renderer.root.findAllByProps({ testID: 'auth-login-spinner-google' })).toHaveLength(0);
+
+      await ReactTestRenderer.act(async () => {
+        jest.advanceTimersByTime(999);
+      });
+      expect(renderer.root.findAllByProps({ testID: 'auth-login-spinner-google' })).toHaveLength(0);
+
+      await ReactTestRenderer.act(async () => {
+        jest.advanceTimersByTime(1);
+      });
+      expect(renderer.root.findByProps({ testID: 'auth-login-spinner-google' }).props['aria-label']).toBe('로그인 중');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('dims a provider that is disabled while another one signs in', async () => {
+    const renderer = await render(
+      <SocialLoginButton
+        provider="apple"
+        label="Continue with Apple"
+        accessibilityLabel="Continue with Apple"
+        busyLabel="Signing in"
+        busy={false}
+        disabled
+        onPress={jest.fn()}
+      />,
+    );
+
+    expect(StyleSheet.flatten(renderer.root.findByProps({ testID: 'auth-login-apple' }).props.style)).toMatchObject({
+      opacity: 0.5,
+    });
+  });
+
+  test.each([
+    ['apple', 'light', { backgroundColor: '#000000', borderWidth: 0 }, '#FFFFFF'],
+    ['apple', 'dark', { backgroundColor: '#FFFFFF', borderWidth: 0 }, '#000000'],
+    ['google', 'light', { backgroundColor: '#FFFFFF', borderColor: '#747775', borderWidth: 1 }, '#1F1F1F'],
+    ['google', 'dark', { backgroundColor: '#131314', borderColor: '#8E918F', borderWidth: 1 }, '#E3E3E3'],
+  ] as const)('follows the %s brand colours in the %s theme', async (provider, theme, buttonStyle, labelColor) => {
+    const renderer = await render(
+      <SocialLoginButton
+        provider={provider}
+        theme={theme}
+        label={`Continue with ${provider}`}
+        accessibilityLabel={`Continue with ${provider}`}
+        busyLabel="Signing in"
+        busy={false}
+        disabled={false}
+        onPress={jest.fn()}
+      />,
+    );
+
+    expect(StyleSheet.flatten(renderer.root.findByProps({ testID: `auth-login-${provider}` }).props.style)).toMatchObject(
+      buttonStyle,
+    );
+    expect(StyleSheet.flatten(renderer.root.findByProps({ testID: `auth-login-${provider}-label` }).props.style)).toMatchObject({
+      color: labelColor,
+    });
+  });
+
+  test('pairs each Apple button colour with logo artwork of the same background', async () => {
+    const sources: unknown[] = [];
+    for (const theme of ['light', 'dark'] as const) {
+      const renderer = await render(
+        <SocialLoginButton
+          provider="apple"
+          theme={theme}
+          label="Continue with Apple"
+          accessibilityLabel="Continue with Apple"
+          busyLabel="Signing in"
+          busy={false}
+          disabled={false}
+          onPress={jest.fn()}
+        />,
+      );
+      sources.push(
+        renderer.root.findAllByType(NativeImage).find(node => node.props.testID === 'auth-login-apple-logo')?.props.source,
+      );
+    }
+
+    expect(sources[0]).toBeDefined();
+    expect(sources[1]).toBeDefined();
+    expect(sources[0]).not.toEqual(sources[1]);
   });
 
   test.each([

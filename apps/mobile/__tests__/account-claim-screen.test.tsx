@@ -1,9 +1,10 @@
 let mockClaim: import('../src/states/account-data').AccountClaimController;
+let mockIsOnline = true;
 const mockGoBack = jest.fn();
 const mockPreventRemove = jest.fn();
 
 jest.mock('../src/states/account-data', () => ({
-  useAccountData: () => ({ claim: mockClaim }),
+  useAccountData: () => ({ claim: mockClaim, isOnline: mockIsOnline }),
 }));
 
 jest.mock('@react-navigation/native', () => {
@@ -66,6 +67,7 @@ async function renderScreen() {
 describe('AccountClaimScreen', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockIsOnline = true;
     jest
       .spyOn(AccessibilityInfo, 'isReduceMotionEnabled')
       .mockResolvedValue(false);
@@ -101,11 +103,11 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findByProps({ testID: 'account-claim-log-count' }).props
         .children,
-    ).toEqual(['24', ' ', '다이빙 로그']);
+    ).toBe('다이빙 로그 24개');
     expect(
       renderer.root.findByProps({ testID: 'account-claim-plan-count' }).props
         .children,
-    ).toEqual(['8', ' ', '다이빙 계획']);
+    ).toBe('다이빙 계획 8개');
 
     await ReactTestRenderer.act(async () => {
       await renderer.root
@@ -126,6 +128,92 @@ describe('AccountClaimScreen', () => {
     expect(mockClaim.keepOnDevice).toHaveBeenCalledTimes(1);
   });
 
+  test('explains what import and keep-on-device each do', async () => {
+    mockClaim = claimFixture({status: 'choice', logCount: 24, planCount: 8});
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-import-explanation'})
+        .props.children,
+    ).toBe('가져오기: 기록을 계정으로 옮겨 다른 기기와 동기화합니다.');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-keep-explanation'})
+        .props.children,
+    ).toBe('기기에 유지: 이 기기에만 남기고, 나중에 설정에서 가져올 수 있습니다.');
+    expect(
+      renderer.root.findAllByProps({testID: 'account-claim-offline-note'}),
+    ).toHaveLength(0);
+  });
+
+  test('says why import is unavailable while the account is offline', async () => {
+    mockIsOnline = false;
+    mockClaim = claimFixture({status: 'choice', logCount: 24, planCount: 8});
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-offline-note'}).props
+        .children,
+    ).toBe('인터넷에 연결되면 계속할 수 있습니다.');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-import'}).props
+        .disabled,
+    ).toBe(true);
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-keep'}).props.disabled,
+    ).toBe(false);
+  });
+
+  test('uses singular and plural English counts', async () => {
+    await ReactTestRenderer.act(async () => {
+      await i18n.changeLanguage('en');
+    });
+    mockClaim = claimFixture(
+      {status: 'choice', logCount: 1, planCount: 2},
+      {logCount: 1, planCount: 2},
+    );
+    const renderer = await renderScreen();
+
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-log-count'}).props
+        .children,
+    ).toBe('1 dive log');
+    expect(
+      renderer.root.findByProps({testID: 'account-claim-plan-count'}).props
+        .children,
+    ).toBe('2 dive plans');
+  });
+
+  test('draws the preparing spinner only after the shared 1 s delay', async () => {
+    jest.useFakeTimers();
+    try {
+      const pendingRefresh = deferred<void>();
+      mockClaim = claimFixture({status: 'hidden'});
+      mockClaim.refresh = jest.fn(() => pendingRefresh.promise);
+      const renderer = await renderScreen();
+      const preparing = renderer.root.findByProps({
+        testID: 'account-claim-preparing',
+      });
+      const spinner = () =>
+        preparing.findAll(
+          node => node.props['aria-label'] === '가져올 데이터를 확인하는 중',
+        )[0];
+
+      expect(preparing.props.accessibilityState).toEqual({busy: true});
+      expect(StyleSheet.flatten(spinner()?.props.style)).toMatchObject({
+        opacity: 0,
+      });
+
+      await ReactTestRenderer.act(async () => {
+        jest.advanceTimersByTime(1000);
+      });
+      expect(StyleSheet.flatten(spinner()?.props.style)).toMatchObject({
+        opacity: 1,
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test('renders deferred choice content and retries its existing snapshot', async () => {
     mockClaim = claimFixture({
       status: 'deferred',
@@ -140,7 +228,7 @@ describe('AccountClaimScreen', () => {
     expect(
       renderer.root.findByProps({testID: 'account-claim-log-count'}).props
         .children,
-    ).toEqual(['24', ' ', '다이빙 로그']);
+    ).toBe('다이빙 로그 24개');
 
     await ReactTestRenderer.act(async () => {
       await renderer.root.findByProps({testID: 'account-claim-import'}).props

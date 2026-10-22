@@ -1,9 +1,10 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { AppFeedbackProvider } from '../src/components/feedback/app-feedback';
 import i18n from '../src/i18n';
 import LogbookScreen from '../src/screens/logbook/screen';
 import PlanningScreen from '../src/screens/planning/screen';
-import type { DiveLogEntry } from '../src/types/dive-log-entry';
 import { createBlankDivePlan } from '../src/utils/create-dive-plan';
 
 jest.mock('../src/companion/default-watch-link', () => ({
@@ -46,8 +47,8 @@ function logbookProps(overrides: Partial<React.ComponentProps<typeof LogbookScre
     onFilterChange: jest.fn(),
     onSyncWatch: jest.fn(async () => ({ receivedCount: 0, importedCount: 0, failedCount: 0, unavailable: false })),
     onRefresh: jest.fn(),
-    onSaveEntry: jest.fn(async (entry: DiveLogEntry) => entry),
-    onDeleteEntry: jest.fn(async () => undefined),
+    onOpenEntry: jest.fn(),
+    onCreateEntry: jest.fn(),
     ...overrides,
   };
 }
@@ -69,11 +70,27 @@ describe('list and sync feedback states', () => {
 
   test('reports watch recordings that were not imported alongside the imported count', async () => {
     const onSyncWatch = jest.fn(async () => ({ receivedCount: 3, importedCount: 2, failedCount: 1, unavailable: false }));
-    const renderer = await render(<LogbookScreen {...logbookProps({ onSyncWatch })} />);
+    // The result is a toast from the app-wide feedback host, which reads the safe area.
+    const renderer = await render(
+      <SafeAreaProvider initialMetrics={{ frame: { x: 0, y: 0, width: 390, height: 844 }, insets: { top: 47, left: 0, right: 0, bottom: 34 } }}>
+        <AppFeedbackProvider>
+          <LogbookScreen {...logbookProps({ onSyncWatch })} />
+        </AppFeedbackProvider>
+      </SafeAreaProvider>,
+    );
 
     await press(renderer, 'logbook-import-action');
 
-    expect(textOf(renderer, 'logbook-sync-toast')).toBe('워치 기록 2개를 가져왔고 1개는 아직 가져오지 못했습니다.');
+    expect(textOf(renderer, 'app-feedback-message')).toBe('워치 기록 2개를 가져왔고 1개는 아직 가져오지 못했습니다.');
+  });
+
+  test('keeps the empty logbook apart from loading and offers both ways to start', async () => {
+    const renderer = await render(<LogbookScreen {...logbookProps()} />);
+
+    expect(renderer.root.findAllByProps({ testID: 'logbook-empty-state' }).length).toBeGreaterThan(0);
+    expect(renderer.root.findAllByProps({ testID: 'logbook-loading-state' })).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'logbook-empty-create-action' }).props.label).toBe('작성하기');
+    expect(renderer.root.findByProps({ testID: 'logbook-empty-sync-action' }).props.label).toBe('워치 동기화');
   });
 
   test('distinguishes a search with no matches from an empty logbook', async () => {
@@ -102,7 +119,9 @@ describe('list and sync feedback states', () => {
 
   test('explains an empty plan filter and offers every plan again', async () => {
     const plan = { ...createBlankDivePlan({ now: 1781353000 }), status: 'draft' as const };
-    const renderer = await render(<PlanningScreen sessions={[]} plans={[plan]} onRefresh={jest.fn()} onOpenLogbook={jest.fn()} />);
+    const renderer = await render(
+      <PlanningScreen plans={[plan]} onRefresh={jest.fn()} onCreatePlan={jest.fn()} onOpenPlan={jest.fn()} onOpenLogbook={jest.fn()} />,
+    );
     const completedFilter = renderer.root
       .findAll(node => node.props.label === '완료됨' && typeof node.props.onPress === 'function')[0];
 
@@ -121,7 +140,14 @@ describe('list and sync feedback states', () => {
   test('shows a retryable error when plans cannot be read', async () => {
     const onRefresh = jest.fn();
     const renderer = await render(
-      <PlanningScreen sessions={[]} plans={[]} loadError={new Error('storage')} onRefresh={onRefresh} onOpenLogbook={jest.fn()} />,
+      <PlanningScreen
+        plans={[]}
+        loadError={new Error('storage')}
+        onRefresh={onRefresh}
+        onCreatePlan={jest.fn()}
+        onOpenPlan={jest.fn()}
+        onOpenLogbook={jest.fn()}
+      />,
     );
 
     await press(renderer, 'planning-error-state-action');

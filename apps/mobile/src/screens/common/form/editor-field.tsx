@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   FormControl,
   FormControlError,
@@ -25,6 +26,8 @@ type EditorFieldProps = {
 };
 
 export function EditorField(props: EditorFieldProps): React.JSX.Element {
+  const { t } = useTranslation();
+
   return (
     <FormControl testID={props.testID} onLayout={props.onLayout} isInvalid={Boolean(props.error)} className={props.className}>
       <VStack space="xs">
@@ -34,13 +37,13 @@ export function EditorField(props: EditorFieldProps): React.JSX.Element {
               {props.label}
             </FormControlLabelText>
             {props.required ? (
-              <Text className="text-xs font-semibold text-destructive">*</Text>
+              <Text className="text-xs text-muted-foreground">{t('form.required')}</Text>
             ) : null}
           </HStack>
         </FormControlLabel>
         {props.children}
         {props.error ? (
-          <FormControlError className="rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2">
+          <FormControlError className="rounded-xl bg-destructive/10 px-3 py-2">
             <FormControlErrorIcon as={AlertCircleIcon} />
             <FormControlErrorText testID={props.errorTestID} className="flex-1 font-semibold leading-4">
               {props.error}

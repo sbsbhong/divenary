@@ -191,7 +191,7 @@ export function MultiColumnNumberWheelPicker({
     <Box testID={testID} accessibilityRole="adjustable" accessibilityState={{ disabled }}>
       <Box
         testID={`${testID}-wheel`}
-        className={disabled ? 'overflow-hidden rounded-xl border border-border bg-muted' : 'overflow-hidden rounded-xl border border-border bg-card'}
+        className={disabled ? 'overflow-hidden rounded-xl bg-muted' : 'overflow-hidden rounded-xl bg-card'}
         style={[styles.wheel, { height: layout.wheelHeight }]}
       >
         <HStack className="h-full w-full items-stretch justify-center">

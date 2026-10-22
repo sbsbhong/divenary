@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import i18n from '../../i18n';
 import {
   numberValidationMessages,
   validationText,
@@ -43,6 +44,13 @@ const requiredNumber = (messages: () => NumberValidationMessages, max: number) =
     addNumberIssues(value, context, messages(), max);
   });
 
+const optionalNumber = (messages: () => NumberValidationMessages, max: number) =>
+  z.union([z.number(), z.undefined()]).superRefine((value, context) => {
+    if (value !== undefined) {
+      addNumberIssues(value, context, messages(), max);
+    }
+  });
+
 const optionalInteger = (messages: () => NumberValidationMessages, max: number) =>
   z.union([z.number(), z.undefined()]).superRefine((value, context) => {
     if (value === undefined) {
@@ -84,23 +92,16 @@ const pressureSchema = z
     }
   });
 
-export const planFormSchema = z.object({
+// Fields both checks share. Only what `계획으로 정하기` needs differs between them.
+const planFieldShape = {
   title: z.string().optional(),
-  plannedAt: z.union([z.date(), z.undefined()]).superRefine((value, context) => {
-    if (value === undefined) {
-      context.addIssue({ code: 'custom', message: validationText('plannedDateTimeRequired') });
-    }
-  }),
   diveMode: z.enum(['scuba', 'freedive']),
   entryStyle: z.enum(['shore', 'boat', 'pool']).optional(),
-  siteName: z.string().trim().min(1, { error: () => validationText('siteNameRequired') }),
   buddies: z.array(z.string()),
   gearIds: z.array(z.string()),
   tags: z.array(z.string()),
   objective: z.string().optional(),
   notes: z.string().optional(),
-  plannedMaxDepthMeters: requiredNumber(() => makeNumberMessages('plannedMaxDepth', 'select'), 60),
-  plannedDurationMinutes: requiredNumber(() => makeNumberMessages('plannedDuration', 'select'), 240),
   gasLabel: z.literal('Air').optional(),
   waterCondition: z.enum(waterConditions).optional(),
   visibilityExpectation: optionalRating,
@@ -108,7 +109,38 @@ export const planFormSchema = z.object({
   trainingFocus: z.string().optional(),
   repetitionTarget: optionalInteger(() => makeNumberMessages('repetitionTarget', 'select'), 200),
   plannedPressure: pressureSchema,
+};
+
+/** `계획으로 정하기`: a date, a site, a planned max depth and a planned duration are required. */
+export const planFormSchema = z.object({
+  ...planFieldShape,
+  plannedAt: z.union([z.date(), z.undefined()]).superRefine((value, context) => {
+    if (value === undefined) {
+      context.addIssue({ code: 'custom', message: validationText('plannedDateTimeRequired') });
+    }
+  }),
+  siteName: z.string().trim().min(1, { error: () => validationText('siteNameRequired') }),
+  plannedMaxDepthMeters: requiredNumber(() => makeNumberMessages('plannedMaxDepth', 'select'), 60),
+  plannedDurationMinutes: requiredNumber(() => makeNumberMessages('plannedDuration', 'select'), 240),
 });
+
+/**
+ * A draft may be partial: it needs only a title or a site to be findable again. Values that are
+ * filled in still have to be in range.
+ */
+export const planDraftSchema = z
+  .object({
+    ...planFieldShape,
+    plannedAt: z.union([z.date(), z.undefined()]),
+    siteName: z.string(),
+    plannedMaxDepthMeters: optionalNumber(() => makeNumberMessages('plannedMaxDepth', 'select'), 60),
+    plannedDurationMinutes: optionalNumber(() => makeNumberMessages('plannedDuration', 'select'), 240),
+  })
+  .superRefine((values, context) => {
+    if (!values.title?.trim() && !values.siteName.trim()) {
+      context.addIssue({ code: 'custom', path: ['siteName'], message: String(i18n.t('planning.titleOrSiteRequired')) });
+    }
+  });
 
 export function planToPlanFormValues(plan: DivePlan): PlanFormValues {
   const diveMode = plan.diveMode ?? 'scuba';

@@ -8,6 +8,7 @@ import { AuthProvider } from './states/auth';
 import { AccountDataProvider } from './states/account-data';
 import { AppErrorBoundary } from './components/app-error-boundary';
 import { AppFeedbackProvider } from './components/feedback/app-feedback';
+import { SignInFeedback } from './components/feedback/sign-in-feedback';
 
 type ProvidersProps = {
   children?: React.ReactNode;
@@ -35,7 +36,9 @@ export default function Providers(props: ProvidersProps): React.JSX.Element {
           <ThemedProviders>
             <AppErrorBoundary>
               <AuthProvider>
+                {/* Above the account-data gate: a data-owner switch replaces everything below it. */}
                 <AppFeedbackProvider>
+                  <SignInFeedback />
                   <AccountDataProvider queryClient={queryClient}>{props.children}</AccountDataProvider>
                 </AppFeedbackProvider>
               </AuthProvider>

@@ -1,9 +1,9 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { Alert, AppState, type AppStateStatus } from 'react-native';
+import { Alert, AppState, type AlertButton, type AppStateStatus } from 'react-native';
 import i18n from '../src/i18n';
-import { HStack } from '../src/components/ui/hstack';
-import { Icon } from '../src/components/ui/icon';
+import { CheckIcon } from '../src/components/ui/icon';
+import { Switch } from '../src/components/ui/switch';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/screen';
 import type { LinkedWatchInfo } from '../src/companion/watch-link';
@@ -35,6 +35,9 @@ const createAuthContext = (overrides?: Partial<AuthContextValue>): AuthContextVa
   ...overrides,
 });
 
+const signedIn = (overrides?: Partial<AuthContextValue>) =>
+  createAuthContext({ isConfigured: true, state: { status: 'authenticated', userId: 'user-id' }, ...overrides });
+
 const linkedWatchInfo: LinkedWatchInfo = {
   isSupported: true,
   isPaired: true,
@@ -43,7 +46,7 @@ const linkedWatchInfo: LinkedWatchInfo = {
   name: 'Seongbin Apple Watch',
 };
 
-const renderSettings = async (options?: {
+type RenderOptions = {
   loadLinkedWatchInfo?: () => Promise<LinkedWatchInfo>;
   onBack?: () => void;
   onOpenLogin?: () => void;
@@ -59,7 +62,12 @@ const renderSettings = async (options?: {
   };
   onOpenAccountClaim?: () => void;
   rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
-}) => {
+  loadPendingChangeCount?: () => Promise<number>;
+  isCloudRefreshing?: boolean;
+  appVersion?: string;
+};
+
+const renderSettings = async (options?: RenderOptions) => {
   let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
   await ReactTestRenderer.act(async () => {
@@ -80,6 +88,9 @@ const renderSettings = async (options?: {
           onOpenRoute={options?.onOpenRoute}
           accountClaim={options?.accountClaim}
           onOpenAccountClaim={options?.onOpenAccountClaim}
+          loadPendingChangeCount={options?.loadPendingChangeCount}
+          isCloudRefreshing={options?.isCloudRefreshing}
+          appVersion={options?.appVersion}
         />
       </AppPreferencesProvider>,
     );
@@ -87,6 +98,40 @@ const renderSettings = async (options?: {
 
   return renderer!;
 };
+
+/** All visible copy under a node, joined, for "this row says X" checks. */
+function renderedText(node: ReactTestRenderer.ReactTestInstance): string {
+  return node
+    .findAll(child => (child.type as string) === 'Text')
+    .map(child =>
+      [child.props.children]
+        .flat()
+        .filter(part => typeof part === 'string' || typeof part === 'number')
+        .join(''),
+    )
+    .join(' | ');
+}
+
+/** The pressable element behind a grouped row (it carries the accessibility state). */
+function findControl(root: ReactTestRenderer.ReactTestInstance, testID: string) {
+  const control = root.findAll(node => node.props.testID === testID && node.props.accessibilityState !== undefined)[0];
+  if (!control) {
+    throw new Error(`No control with testID ${testID}`);
+  }
+  return control;
+}
+
+function notificationSwitch(root: ReactTestRenderer.ReactTestInstance) {
+  return root.findByProps({ testID: 'settings-row-notifications' }).findByType(Switch);
+}
+
+async function flush() {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await ReactTestRenderer.act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
 
 describe('SettingsScreen', () => {
   beforeEach(async () => {
@@ -103,110 +148,201 @@ describe('SettingsScreen', () => {
     });
   });
 
-  test('renders grouped Settings rows with current values', async () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    jest.useRealTimers();
+  });
+
+  test('renders grouped Settings rows with current values and neutral icons', async () => {
     const renderer = await renderSettings();
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-screen-title' }).props.children).toBe('설정');
+    expect(root.findByProps({ testID: 'settings-screen-title' }).props.accessibilityRole).toBe('header');
     expect(root.findByProps({ testID: 'settings-current-theme' }).props.children).toBe('시스템 기본값');
     expect(root.findByProps({ testID: 'settings-current-language' }).props.children).toBe('한국어');
-    expect(root.findByProps({ testID: 'settings-current-watch-sync-notifications' }).props.children).toBe('꺼짐');
-    expect(root.findByProps({ testID: 'settings-row-theme-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'settings-row-language-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'settings-row-notifications-icon' })).toBeTruthy();
-    const rowIconClassName = root.findByProps({
-      testID: 'settings-row-theme-icon',
-    }).props.className;
-    const linkedWatchIcon = root.findByProps({
-      testID: 'settings-linked-watch-icon',
-    });
-    expect(linkedWatchIcon.props.className).toBe(rowIconClassName);
-    expect(linkedWatchIcon.findByType(Icon).props.size).toBe('sm');
-    expect(root.findByProps({ testID: 'settings-row-theme-disclosure' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'settings-row-devices-disclosure' })).toBeTruthy();
+    expect(notificationSwitch(root).props.value).toBe(false);
+    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
+
+    const themeRow = findControl(root, 'settings-row-theme');
+    expect(themeRow.props.accessibilityRole).toBe('button');
+    const iconBubbles = themeRow.findAll(
+      node => typeof node.props.className === 'string' && node.props.className.includes('rounded-full'),
+    );
+    expect(iconBubbles.length).toBeGreaterThan(0);
+    expect(iconBubbles[0].props.className).toContain('bg-muted');
+    expect(iconBubbles[0].props.className).not.toContain('bg-primary');
   });
 
-  test('keeps local Settings usable when social sign-in is not configured', async () => {
+  test('shows only that records are saved on this device when Auth is not configured', async () => {
     const onOpenLogin = jest.fn();
     const renderer = await renderSettings({ onOpenLogin });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-section-account' }).props.children).toBe('계정');
-    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('로그인 설정 필요');
-    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('로컬 기록');
+    expect(renderedText(root.findByProps({ testID: 'settings-section-account' }))).toContain('계정');
+    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에 저장 중');
+    expect(root.findByProps({ testID: 'settings-account-status' }).props.onPress).toBeUndefined();
     expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
+    expect(JSON.stringify(renderer.toJSON())).not.toContain('로그인');
     expect(onOpenLogin).not.toHaveBeenCalled();
     expect(root.findByProps({ testID: 'settings-row-theme' })).toBeTruthy();
   });
 
-  test('opens social login from a configured guest account row', async () => {
+  test('opens social login from a configured guest account row with a one-line benefit', async () => {
     const onOpenLogin = jest.fn();
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        availableProviders: ['google', 'apple'],
-      }),
-    );
+    mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, availableProviders: ['google', 'apple'] }));
     const renderer = await renderSettings({ onOpenLogin });
     const root = renderer.root;
+    const accountRow = root.findByProps({ testID: 'settings-account-action' });
 
-    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('게스트로 사용 중');
-    expect(root.findAllByProps({ testID: 'settings-account-description' })).toHaveLength(0);
+    expect(renderedText(accountRow)).toBe('로그인 | 기록을 백업하고 여러 기기에서 동기화합니다.');
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'settings-account-action' }).props.onPress();
+      accountRow.props.onPress();
     });
 
     expect(onOpenLogin).toHaveBeenCalledTimes(1);
+  });
+
+  test('treats a configured build without a usable sign-in method like a local-only build', async () => {
+    mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, availableProviders: [] }));
+    const renderer = await renderSettings({ onOpenLogin: jest.fn() });
+
+    expect(renderedText(renderer.root.findByProps({ testID: 'settings-account-status' }))).toBe('이 기기에 저장 중');
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
+
+    mockUseAuth.mockReturnValue(
+      createAuthContext({ isConfigured: true, availableProviders: [], isDevelopmentSignInAvailable: true }),
+    );
+    const development = await renderSettings({ onOpenLogin: jest.fn() });
+    expect(development.root.findByProps({ testID: 'settings-account-action' })).toBeTruthy();
   });
 
   test('shows required-consent account status without exposing account actions', async () => {
     mockUseAuth.mockReturnValue(
       createAuthContext({
         isConfigured: true,
-        state: {
-          status: 'pendingOnboarding',
-          userId: 'user-id',
-          documents: [],
-        },
+        state: { status: 'pendingOnboarding', userId: 'user-id', documents: [] },
       }),
     );
     const renderer = await renderSettings();
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('필수 동의 필요');
+    expect(renderedText(root.findByProps({ testID: 'settings-account-status' }))).toBe('필수 동의 필요');
     expect(root.findAllByProps({ testID: 'settings-account-action' })).toHaveLength(0);
+    expect(root.findAllByProps({ testID: 'settings-row-account' })).toHaveLength(0);
   });
 
-  test('signs out an authenticated account explicitly', async () => {
-    const signOut = jest.fn(async () => undefined);
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: { status: 'authenticated', userId: 'user-id' },
-        signOut,
-      }),
-    );
-    const renderer = await renderSettings();
-    const root = renderer.root;
+  test.each([
+    ['apple', 'Apple로 로그인됨'],
+    ['google', 'Google로 로그인됨'],
+    [undefined, '로그인됨'],
+  ] as const)('labels the signed-in account from the %s provider hint and opens account detail', async (recentProvider, label) => {
+    const onOpenRoute = jest.fn();
+    mockUseAuth.mockReturnValue(signedIn({ recentProvider }));
+    const renderer = await renderSettings({ onOpenRoute });
+    const accountRow = renderer.root.findByProps({ testID: 'settings-row-account' });
 
-    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('로그인됨');
-    expect(root.findAllByProps({ testID: 'settings-account-description' })).toHaveLength(0);
+    expect(renderedText(accountRow)).toBe(label);
     await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'settings-account-action' }).props.onPress();
+      accountRow.props.onPress();
+    });
+    expect(onOpenRoute).toHaveBeenCalledWith('account');
+  });
+
+  test('shows sync status in account detail and confirms sign-out with what stays and what is unsent', async () => {
+    const signOut = jest.fn(async () => undefined);
+    let alertButtons: AlertButton[] | undefined;
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      alertButtons = buttons;
+    });
+    mockUseAuth.mockReturnValue(signedIn({ recentProvider: 'apple', signOut }));
+    const renderer = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 2 });
+    const root = renderer.root;
+    await flush();
+
+    expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('계정');
+    expect(renderedText(root.findByProps({ testID: 'settings-account-identity' }))).toBe('Apple로 로그인됨');
+    expect(root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('보낼 변경 2개');
+
+    await ReactTestRenderer.act(async () => {
+      await root.findByProps({ testID: 'settings-account-sign-out' }).props.onPress();
     });
 
+    expect(signOut).not.toHaveBeenCalled();
+    expect(alert).toHaveBeenCalledTimes(1);
+    const [title, message] = alert.mock.calls[0];
+    expect(title).toBe('로그아웃할까요?');
+    expect(message).toContain('계정 기록은 클라우드에 남습니다.');
+    expect(message).toContain('이 기기에서는 게스트 기록만 보입니다.');
+    expect(message).toContain('아직 보내지 못한 변경 2개');
+    expect(alertButtons?.map(button => button.style)).toEqual(['cancel', 'destructive']);
+
+    await ReactTestRenderer.act(async () => {
+      alertButtons?.find(button => button.style === 'destructive')?.onPress?.();
+      await Promise.resolve();
+    });
     expect(signOut).toHaveBeenCalledTimes(1);
   });
 
-  test('shows the eligible device-data count and opens the claim sheet', async () => {
-    const onOpenAccountClaim = jest.fn();
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: { status: 'authenticated', userId: 'user-id' },
-      }),
+  test('leaves the unsent-changes sentence out when nothing is waiting', async () => {
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
+    await flush();
+
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('보낼 변경 없음');
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({ testID: 'settings-account-sign-out' }).props.onPress();
+    });
+
+    expect(alert.mock.calls[0][1]).not.toContain('보내지 못한');
+  });
+
+  test('keeps sign-out busy while it runs and shows its spinner only after 1 s', async () => {
+    jest.useFakeTimers();
+    let finishSignOut: (() => void) | undefined;
+    const signOut = jest.fn(
+      () =>
+        new Promise<void>(resolve => {
+          finishSignOut = resolve;
+        }),
     );
+    let alertButtons: AlertButton[] | undefined;
+    jest.spyOn(Alert, 'alert').mockImplementation((_title, _message, buttons) => {
+      alertButtons = buttons;
+    });
+    mockUseAuth.mockReturnValue(signedIn({ signOut }));
+    const renderer = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
+    const signOutRow = () => renderer.root.findByProps({ testID: 'settings-account-sign-out' });
+
+    await ReactTestRenderer.act(async () => {
+      await signOutRow().props.onPress();
+    });
+    await ReactTestRenderer.act(async () => {
+      alertButtons?.find(button => button.style === 'destructive')?.onPress?.();
+      await Promise.resolve();
+    });
+
+    expect(signOutRow().props.accessibilityState).toEqual({ busy: true, disabled: true });
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-sign-out-spinner' })).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-sign-out-spinner' }).length).toBeGreaterThan(0);
+
+    await ReactTestRenderer.act(async () => {
+      finishSignOut?.();
+      await Promise.resolve();
+    });
+    expect(signOutRow().props.accessibilityState).toEqual({ busy: false, disabled: false });
+  });
+
+  test('shows the eligible device-data count in account detail and opens the claim sheet', async () => {
+    const onOpenAccountClaim = jest.fn();
+    mockUseAuth.mockReturnValue(signedIn());
     const renderer = await renderSettings({
+      route: 'account',
       accountClaim: {
         isOnline: true,
         eligible: { logCount: 3, planCount: 2 },
@@ -215,9 +351,8 @@ describe('SettingsScreen', () => {
       onOpenAccountClaim,
     });
 
-    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim' })).toBeTruthy();
+    expect(renderedText(renderer.root.findByProps({ testID: 'settings-row-account-claim' }))).toContain('기기 데이터 가져오기');
     expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('5');
-    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim-icon' })).toBeTruthy();
     await ReactTestRenderer.act(async () => {
       renderer.root.findByProps({ testID: 'settings-row-account-claim' }).props.onPress();
     });
@@ -225,12 +360,7 @@ describe('SettingsScreen', () => {
   });
 
   test('uses the live device-data count after a partial import', async () => {
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: {status: 'authenticated', userId: 'user-id'},
-      }),
-    );
+    mockUseAuth.mockReturnValue(signedIn());
     const retainedItem = {
       entityKind: 'log' as const,
       clientRecordId: 'log-a',
@@ -239,39 +369,21 @@ describe('SettingsScreen', () => {
       reason: 'profile_missing' as const,
     };
     const renderer = await renderSettings({
+      route: 'account',
       accountClaim: {
         isOnline: true,
-        eligible: {logCount: 1, planCount: 0},
-        state: {
-          status: 'complete',
-          imported: 13,
-          retainedItems: [retainedItem],
-        },
+        eligible: { logCount: 1, planCount: 0 },
+        state: { status: 'complete', imported: 13, retainedItems: [retainedItem] },
       },
       onOpenAccountClaim: jest.fn(),
     });
 
-    expect(
-      renderer.root.findByProps({testID: 'settings-row-account-claim'}),
-    ).toBeTruthy();
-    expect(
-      renderer.root.findByProps({testID: 'settings-account-claim-count'}).props
-        .children,
-    ).toBe('1');
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('1');
   });
 
   const staleClaimStates: GuestClaimViewState[] = [
-    {
-      status: 'deferred',
-      logCount: 0,
-      planCount: 0,
-    },
-    {
-      status: 'failed',
-      completed: 0,
-      total: 15,
-      errorCode: 'claim_validation_failed',
-    },
+    { status: 'deferred', logCount: 0, planCount: 0 },
+    { status: 'failed', completed: 0, total: 15, errorCode: 'claim_validation_failed' },
     {
       status: 'retained',
       retainedItems: [
@@ -286,65 +398,46 @@ describe('SettingsScreen', () => {
   ];
 
   test.each(staleClaimStates)('hides stale $status claim state when live inventory is empty', async claimState => {
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: {status: 'authenticated', userId: 'user-id'},
-      }),
-    );
+    mockUseAuth.mockReturnValue(signedIn());
     const renderer = await renderSettings({
-      accountClaim: {
-        isOnline: true,
-        eligible: {logCount: 0, planCount: 0},
-        state: claimState,
-      },
-      onOpenAccountClaim: jest.fn(),
-    });
-
-    expect(
-      renderer.root.findAllByProps({testID: 'settings-row-account-claim'}),
-    ).toHaveLength(0);
-  });
-
-  test('does not replace a live count with a failed snapshot total', async () => {
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: {status: 'authenticated', userId: 'user-id'},
-      }),
-    );
-    const renderer = await renderSettings({
-      accountClaim: {
-        isOnline: true,
-        eligible: {logCount: 1, planCount: 0},
-        state: {
-          status: 'failed',
-          completed: 0,
-          total: 15,
-          errorCode: 'claim_validation_failed',
-        },
-      },
-      onOpenAccountClaim: jest.fn(),
-    });
-
-    expect(
-      renderer.root.findByProps({testID: 'settings-account-claim-count'}).props
-        .children,
-    ).toBe('1');
-  });
-
-  test.each([
-    ['guest', { status: 'guest' } as const, true, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
-    ['zero eligible rows', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
-    ['isolated foreign manifest', { status: 'authenticated', userId: 'user-id' } as const, true, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
-  ])('hides device-data import for %s', async (_label, authState, isOnline, eligible, claimState) => {
-    mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, state: authState }));
-    const renderer = await renderSettings({
-      accountClaim: { isOnline, eligible, state: claimState },
+      route: 'account',
+      accountClaim: { isOnline: true, eligible: { logCount: 0, planCount: 0 }, state: claimState },
       onOpenAccountClaim: jest.fn(),
     });
 
     expect(renderer.root.findAllByProps({ testID: 'settings-row-account-claim' })).toHaveLength(0);
+  });
+
+  test('does not replace a live count with a failed snapshot total', async () => {
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({
+      route: 'account',
+      accountClaim: {
+        isOnline: true,
+        eligible: { logCount: 1, planCount: 0 },
+        state: { status: 'failed', completed: 0, total: 15, errorCode: 'claim_validation_failed' },
+      },
+      onOpenAccountClaim: jest.fn(),
+    });
+
+    expect(renderer.root.findByProps({ testID: 'settings-account-claim-count' }).props.children).toBe('1');
+  });
+
+  test.each([
+    ['guest', { status: 'guest' } as const, { logCount: 1, planCount: 1 }, { status: 'choice', logCount: 1, planCount: 1 } as const],
+    ['zero eligible rows', { status: 'authenticated', userId: 'user-id' } as const, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
+    ['isolated foreign manifest', { status: 'authenticated', userId: 'user-id' } as const, { logCount: 0, planCount: 0 }, { status: 'hidden' } as const],
+  ])('hides device-data import for %s', async (_label, authState, eligible, claimState) => {
+    mockUseAuth.mockReturnValue(createAuthContext({ isConfigured: true, state: authState }));
+    for (const route of ['index', 'account'] as const) {
+      const renderer = await renderSettings({
+        route,
+        accountClaim: { isOnline: true, eligible, state: claimState },
+        onOpenAccountClaim: jest.fn(),
+      });
+
+      expect(renderer.root.findAllByProps({ testID: 'settings-row-account-claim' })).toHaveLength(0);
+    }
   });
 
   test.each([
@@ -353,10 +446,9 @@ describe('SettingsScreen', () => {
     { status: 'hidden' } as const,
     { status: 'deferred', logCount: 1, planCount: 0 } as const,
   ])('keeps device-data import available for an eligible non-running claim', async claimState => {
-    mockUseAuth.mockReturnValue(
-      createAuthContext({ isConfigured: true, state: { status: 'authenticated', userId: 'user-id' } }),
-    );
+    mockUseAuth.mockReturnValue(signedIn());
     const renderer = await renderSettings({
+      route: 'account',
       accountClaim: { isOnline: true, eligible: { logCount: 1, planCount: 0 }, state: claimState },
       onOpenAccountClaim: jest.fn(),
     });
@@ -365,52 +457,74 @@ describe('SettingsScreen', () => {
   });
 
   test('keeps account claim status visible while the account is offline', async () => {
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: {status: 'authenticatedOffline', userId: 'user-id'},
-      }),
-    );
+    mockUseAuth.mockReturnValue(signedIn({ state: { status: 'authenticatedOffline', userId: 'user-id' } }));
     const renderer = await renderSettings({
+      route: 'account',
       accountClaim: {
         isOnline: false,
-        eligible: {logCount: 1, planCount: 1},
-        state: {status: 'choice', logCount: 1, planCount: 1},
+        eligible: { logCount: 1, planCount: 1 },
+        state: { status: 'choice', logCount: 1, planCount: 1 },
       },
       onOpenAccountClaim: jest.fn(),
     });
 
-    expect(
-      renderer.root.findByProps({testID: 'settings-row-account-claim'}),
-    ).toBeTruthy();
+    expect(renderer.root.findByProps({ testID: 'settings-row-account-claim' })).toBeTruthy();
   });
 
-  test('labels offline membership as local-only and still allows logout', async () => {
-    const signOut = jest.fn(async () => undefined);
-    mockUseAuth.mockReturnValue(
-      createAuthContext({
-        isConfigured: true,
-        state: { status: 'authenticatedOffline', userId: 'user-id' },
-        signOut,
-      }),
-    );
+  test('labels offline membership as local-only and still allows sign-out', async () => {
+    mockUseAuth.mockReturnValue(signedIn({ state: { status: 'authenticatedOffline', userId: 'user-id' } }));
+    const index = await renderSettings();
+
+    expect(index.root.findByProps({ testID: 'settings-account-value' }).props.children).toBe('오프라인');
+
+    const detail = await renderSettings({ route: 'account', loadPendingChangeCount: async () => 0 });
+    const syncRow = detail.root.findByProps({ testID: 'settings-row-sync' });
+    expect(detail.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('오프라인');
+    expect(renderedText(syncRow)).toContain('로컬 데이터');
+    expect(renderedText(syncRow)).toContain('확인할 수 없습니다');
+    expect(detail.root.findByProps({ testID: 'settings-account-sign-out' })).toBeTruthy();
+  });
+
+  test('shows cloud downloading in the sync row', async () => {
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({ route: 'account', isCloudRefreshing: true, loadPendingChangeCount: async () => 0 });
+    await flush();
+
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('불러오는 중');
+  });
+
+  test('shows an unknown pending count as -- instead of zero', async () => {
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({
+      route: 'account',
+      loadPendingChangeCount: async () => {
+        throw new Error('storage unavailable');
+      },
+    });
+    await flush();
+
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('--');
+  });
+
+  test('shows the linked watch as a name, status and chevron row', async () => {
     const renderer = await renderSettings();
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-account-status' }).props.children).toBe('오프라인 계정');
-    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('로컬 데이터');
-    expect(root.findByProps({ testID: 'settings-account-description' }).props.children).toContain('확인할 수 없습니다');
-    expect(root.findByProps({ testID: 'settings-account-action' })).toBeTruthy();
-  });
-
-  test('shows linked watch in device management with icon and status', async () => {
-    const renderer = await renderSettings();
-    const root = renderer.root;
-
-    expect(root.findByProps({ testID: 'settings-section-devices' }).props.children).toBe('기기 관리');
-    expect(root.findByProps({ testID: 'settings-linked-watch-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'settings-linked-watch-name' }).props.children).toBe('Seongbin Apple Watch');
+    expect(renderedText(root.findByProps({ testID: 'settings-section-devices' }))).toContain('기기 관리');
+    expect(renderedText(root.findByProps({ testID: 'settings-row-devices' }))).toContain('Seongbin Apple Watch');
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
+    expect(findControl(root, 'settings-row-devices').props.accessibilityRole).toBe('button');
+  });
+
+  test('waits 1 s before saying the watch status is being checked', async () => {
+    jest.useFakeTimers();
+    const renderer = await renderSettings({ loadLinkedWatchInfo: () => new Promise<LinkedWatchInfo>(() => undefined) });
+
+    expect(renderer.root.findAllByProps({ testID: 'settings-linked-watch-status' })).toHaveLength(0);
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('확인 중');
   });
 
   test('delegates setting detail opening to the app route when provided', async () => {
@@ -424,74 +538,52 @@ describe('SettingsScreen', () => {
     await ReactTestRenderer.act(async () => {
       root.findByProps({ testID: 'settings-row-devices' }).props.onPress();
     });
-    await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'settings-row-notifications' }).props.onPress();
-    });
 
     expect(onOpenRoute).toHaveBeenNthCalledWith(1, 'theme');
     expect(onOpenRoute).toHaveBeenNthCalledWith(2, 'devices');
-    expect(onOpenRoute).toHaveBeenNthCalledWith(3, 'notifications');
     expect(root.findAllByProps({ testID: 'settings-detail-title' })).toHaveLength(0);
   });
 
-  test('opens notification detail and enables watch sync notifications after permission is granted', async () => {
+  test('turns watch sync notifications on from the inline switch after permission is granted', async () => {
+    const onOpenRoute = jest.fn();
     const requestWatchSyncNotificationPermission = jest.fn().mockResolvedValue(true);
     const renderer = await renderSettings({
+      onOpenRoute,
       requestWatchSyncNotificationPermission,
       hasWatchSyncNotificationPermission: jest.fn().mockResolvedValue(true),
     });
     const root = renderer.root;
 
+    expect(notificationSwitch(root).props.value).toBe(false);
     await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'settings-row-notifications' }).props.onPress();
+      notificationSwitch(root).props.onValueChange(true);
     });
-
-    expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('알림');
-    expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(false);
-
-    await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
-    });
+    await flush();
 
     expect(requestWatchSyncNotificationPermission).toHaveBeenCalledTimes(1);
-    expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(true);
-
-    await ReactTestRenderer.act(async () => {
-      root.findByProps({ testID: 'settings-back' }).props.onPress();
-    });
-
-    expect(root.findByProps({ testID: 'settings-current-watch-sync-notifications' }).props.children).toBe('켜짐');
+    expect(notificationSwitch(root).props.value).toBe(true);
+    expect(onOpenRoute).not.toHaveBeenCalled();
   });
 
-  test('renders detail back navigation as an accessible icon control', async () => {
-    const renderer = await renderSettings({ route: 'theme' });
-    const root = renderer.root;
-
-    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('뒤로');
-    expect(root.findByProps({ testID: 'settings-back-icon' })).toBeTruthy();
-  });
-
-  test('keeps watch sync notifications disabled when permission is denied', async () => {
+  test('keeps watch sync notifications off when permission is denied', async () => {
+    jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     const requestWatchSyncNotificationPermission = jest.fn().mockResolvedValue(false);
-    const renderer = await renderSettings({
-      requestWatchSyncNotificationPermission,
-      route: 'notifications',
-    });
+    const renderer = await renderSettings({ requestWatchSyncNotificationPermission });
     const root = renderer.root;
 
     await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
+      notificationSwitch(root).props.onValueChange(true);
     });
+    await flush();
 
     expect(requestWatchSyncNotificationPermission).toHaveBeenCalledTimes(1);
-    expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(false);
+    expect(notificationSwitch(root).props.value).toBe(false);
   });
 
   test('uses platform-neutral English copy when notification permission is denied', async () => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
     const renderer = await renderSettings({
       requestWatchSyncNotificationPermission: jest.fn().mockResolvedValue(false),
-      route: 'notifications',
     });
     const root = renderer.root;
 
@@ -499,8 +591,9 @@ describe('SettingsScreen', () => {
       await i18n.changeLanguage('en');
     });
     await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
+      notificationSwitch(root).props.onValueChange(true);
     });
+    await flush();
 
     expect(alert).toHaveBeenCalledWith(
       'Notification permission needed',
@@ -512,7 +605,7 @@ describe('SettingsScreen', () => {
     );
   });
 
-  test('enables the toggle after a physical-device permission change in iOS Settings', async () => {
+  test('enables the switch after a physical-device permission change in iOS Settings', async () => {
     let appStateListener: ((state: AppStateStatus) => void) | undefined;
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
       appStateListener = listener;
@@ -525,7 +618,6 @@ describe('SettingsScreen', () => {
     const openNotificationSettings = jest.fn().mockResolvedValue(undefined);
     const hasWatchSyncNotificationPermission = jest.fn().mockResolvedValue(true);
     const renderer = await renderSettings({
-      route: 'notifications',
       requestWatchSyncNotificationPermission: jest.fn().mockResolvedValue(false),
       hasWatchSyncNotificationPermission,
       openNotificationSettings,
@@ -533,7 +625,10 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     await ReactTestRenderer.act(async () => {
-      await root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.onPress();
+      notificationSwitch(root).props.onValueChange(true);
+    });
+    await flush();
+    await ReactTestRenderer.act(async () => {
       settingsAction?.();
       await Promise.resolve();
     });
@@ -543,9 +638,19 @@ describe('SettingsScreen', () => {
       appStateListener?.('active');
       await Promise.resolve();
     });
+    await flush();
 
     expect(hasWatchSyncNotificationPermission).toHaveBeenCalled();
-    expect(root.findByProps({ testID: 'settings-option-watch-sync-notifications' }).props.accessibilityState.selected).toBe(true);
+    expect(notificationSwitch(root).props.value).toBe(true);
+  });
+
+  test('renders detail back navigation as an accessible icon control', async () => {
+    const renderer = await renderSettings({ route: 'theme' });
+    const root = renderer.root;
+
+    expect(root.findByProps({ testID: 'settings-back' }).props.accessibilityLabel).toBe('뒤로');
+    expect(root.findByProps({ testID: 'settings-back-icon' })).toBeTruthy();
+    expect(root.findByProps({ testID: 'settings-detail-title' }).props.accessibilityRole).toBe('header');
   });
 
   test('renders device management as a detail screen', async () => {
@@ -553,8 +658,8 @@ describe('SettingsScreen', () => {
     const root = renderer.root;
 
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('기기 관리');
-    expect(root.findByProps({ testID: 'settings-linked-watch-icon' })).toBeTruthy();
-    expect(root.findByProps({ testID: 'settings-linked-watch-name' }).props.children).toBe('Seongbin Apple Watch');
+    expect(renderedText(root.findByProps({ testID: 'settings-linked-watch' }))).toContain('Seongbin Apple Watch');
+    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
   });
 
   test('lists watch recordings the phone set aside and lets the user clear them', async () => {
@@ -599,35 +704,51 @@ describe('SettingsScreen', () => {
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
   });
 
+  test('keeps the refresh button busy while the watch lookup runs', async () => {
+    let resolveLookup: ((info: LinkedWatchInfo) => void) | undefined;
+    const loadLinkedWatchInfo = jest
+      .fn<Promise<LinkedWatchInfo>, []>()
+      .mockResolvedValueOnce(linkedWatchInfo)
+      .mockImplementation(
+        () =>
+          new Promise<LinkedWatchInfo>(resolve => {
+            resolveLookup = resolve;
+          }),
+      );
+    const renderer = await renderSettings({ route: 'devices', loadLinkedWatchInfo });
+    const refresh = () => renderer.root.findByProps({ testID: 'settings-linked-watch-refresh' });
+
+    await ReactTestRenderer.act(async () => {
+      void refresh().props.onPress();
+      await Promise.resolve();
+    });
+    expect(refresh().props.pending).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      resolveLookup?.(linkedWatchInfo);
+      await Promise.resolve();
+    });
+    expect(refresh().props.pending).toBe(false);
+  });
+
   test('explains when no watch is paired', async () => {
     const renderer = await renderSettings({
       loadLinkedWatchInfo: () =>
-        Promise.resolve({
-          isSupported: true,
-          isPaired: false,
-          isWatchAppInstalled: false,
-          isReachable: false,
-        }),
+        Promise.resolve({ isSupported: true, isPaired: false, isWatchAppInstalled: false, isReachable: false }),
     });
     const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-linked-watch-name' }).props.children).toBe('Apple Watch');
+    expect(renderedText(root.findByProps({ testID: 'settings-row-devices' }))).toContain('Apple Watch');
     expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연동된 워치 없음');
   });
 
   test('shows a concise status when the companion watch app is missing', async () => {
     const renderer = await renderSettings({
       loadLinkedWatchInfo: () =>
-        Promise.resolve({
-          isSupported: true,
-          isPaired: true,
-          isWatchAppInstalled: false,
-          isReachable: false,
-        }),
+        Promise.resolve({ isSupported: true, isPaired: true, isWatchAppInstalled: false, isReachable: false }),
     });
-    const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('워치 앱 없음');
+    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('워치 앱 없음');
   });
 
   test('explains when the iOS native watch bridge is missing from the installed app', async () => {
@@ -641,28 +762,24 @@ describe('SettingsScreen', () => {
           isReachable: false,
         }),
     });
-    const root = renderer.root;
 
-    expect(root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe(
+    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe(
       '워치 연동을 사용하려면 앱을 업데이트하세요',
     );
   });
 
-  test('stretches index row content so labels and values sit at opposite edges', async () => {
-    const renderer = await renderSettings();
+  test('shows the app version and the non-certified safety note in About', async () => {
+    const renderer = await renderSettings({ appVersion: '9.8.7' });
     const root = renderer.root;
 
-    const indexRows = root
-      .findAllByType(HStack)
-      .filter(node => typeof node.props.className === 'string' && node.props.className.includes('justify-between'));
-
-    expect(indexRows).toHaveLength(3);
-    indexRows.forEach(row => {
-      expect(row.props.className).toEqual(expect.stringContaining('flex-1'));
-    });
+    expect(renderedText(root.findByProps({ testID: 'settings-section-about' }))).toContain('정보');
+    expect(root.findByProps({ testID: 'settings-app-version' }).props.children).toBe('9.8.7');
+    expect(renderedText(root.findByProps({ testID: 'settings-row-safety' }))).toContain(
+      '인증된 다이브 컴퓨터가 아닙니다.',
+    );
   });
 
-  test('opens theme detail and applies the selected theme in memory', async () => {
+  test('marks the selected theme with one checkmark and applies the choice in memory', async () => {
     const renderer = await renderSettings();
     const root = renderer.root;
 
@@ -671,13 +788,23 @@ describe('SettingsScreen', () => {
     });
 
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('테마');
-    expect(root.findByProps({ testID: 'settings-option-theme-system' }).props.accessibilityState.selected).toBe(true);
+    expect(findControl(root, 'settings-option-theme-system').props.accessibilityState.selected).toBe(true);
+    expect(root.findAllByType(CheckIcon)).toHaveLength(1);
+    expect(findControl(root, 'settings-option-theme-system').findAllByType(CheckIcon)).toHaveLength(1);
+    // Selection is the checkmark alone: no tinted row, no blue label, no radio.
+    for (const option of ['system', 'light', 'dark']) {
+      const row = findControl(root, `settings-option-theme-${option}`);
+      expect(row.props.className ?? '').not.toContain('bg-primary');
+      expect(row.findAll(node => String(node.props.className ?? '').includes('text-primary') && (node.type as string) === 'Text')).toHaveLength(0);
+    }
 
     await ReactTestRenderer.act(async () => {
       root.findByProps({ testID: 'settings-option-theme-dark' }).props.onPress();
     });
 
-    expect(root.findByProps({ testID: 'settings-option-theme-dark' }).props.accessibilityState.selected).toBe(true);
+    expect(findControl(root, 'settings-option-theme-dark').props.accessibilityState.selected).toBe(true);
+    expect(findControl(root, 'settings-option-theme-dark').findAllByType(CheckIcon)).toHaveLength(1);
+    expect(root.findAllByType(CheckIcon)).toHaveLength(1);
 
     await ReactTestRenderer.act(async () => {
       root.findByProps({ testID: 'settings-back' }).props.onPress();
@@ -695,7 +822,7 @@ describe('SettingsScreen', () => {
     });
 
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('언어');
-    expect(root.findByProps({ testID: 'settings-option-language-ko' }).props.accessibilityState.selected).toBe(true);
+    expect(findControl(root, 'settings-option-language-ko').props.accessibilityState.selected).toBe(true);
 
     await ReactTestRenderer.act(async () => {
       await root.findByProps({ testID: 'settings-option-language-en' }).props.onPress();
@@ -703,6 +830,6 @@ describe('SettingsScreen', () => {
 
     expect(i18n.language).toBe('en');
     expect(root.findByProps({ testID: 'settings-detail-title' }).props.children).toBe('Language');
-    expect(root.findByProps({ testID: 'settings-option-language-en' }).props.accessibilityState.selected).toBe(true);
+    expect(findControl(root, 'settings-option-language-en').props.accessibilityState.selected).toBe(true);
   });
 });

@@ -53,6 +53,9 @@ type RowProps = {
   disabled?: boolean;
   testID?: string;
   valueTestID?: string;
+  /** Spoken instead of label + value, e.g. when the value is "--:--" or a symbol. */
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
   /** False removes the hairline gap above this row (first row of a group). */
   separated?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -95,7 +98,12 @@ export function Row(props: RowProps): React.JSX.Element {
 
   if (!props.onPress || accessory.kind === 'switch') {
     return (
-      <VStack testID={props.testID} style={props.style}>
+      <VStack
+        testID={props.testID}
+        style={props.style}
+        accessible={props.accessibilityLabel !== undefined && accessory.kind !== 'switch'}
+        accessibilityLabel={accessory.kind === 'switch' ? undefined : props.accessibilityLabel}
+        accessibilityHint={props.accessibilityHint}>
         {separator}
         {content}
       </VStack>
@@ -108,6 +116,8 @@ export function Row(props: RowProps): React.JSX.Element {
       <Pressable
         testID={props.testID}
         accessibilityRole="button"
+        accessibilityLabel={props.accessibilityLabel}
+        accessibilityHint={props.accessibilityHint}
         accessibilityState={{
           disabled: props.disabled,
           ...(accessory.kind === 'check' ? { selected: accessory.checked } : {}),

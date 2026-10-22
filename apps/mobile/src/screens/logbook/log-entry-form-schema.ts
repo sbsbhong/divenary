@@ -282,7 +282,8 @@ function applyStartedAtValue(
   }
 
   if (isDirty(dirtyFields, 'startedAt')) {
-    if (parsedStartedAt !== undefined) {
+    // Picking the watch time again (for example "워치 값으로 되돌리기") returns to the watch value.
+    if (parsedStartedAt !== undefined && !isSameSecond(parsedStartedAt, entry.watchCapture.measuredValues.startedAt)) {
       measuredValues.startedAt = parsedStartedAt;
       provenance.startedAt = 'manual';
     } else {
@@ -324,7 +325,8 @@ function applyEditableNumberValue(
   }
 
   if (isDirty(options.dirtyFields, options.draftKey) || didEditableNumberChange(entry, options.field, options.value)) {
-    if (options.value !== undefined) {
+    // A value equal to the watch measurement is the watch value again, not a manual override.
+    if (options.value !== undefined && options.value !== entry.watchCapture.measuredValues[options.field]) {
       measuredValues[options.field] = options.value;
       provenance[options.field] = 'manual';
     } else {
@@ -454,6 +456,10 @@ function pressureToFormValue(value: DivePressureValues | undefined): DivePressur
 function emptyToUndefined(value: string): string | undefined {
   const trimmedValue = value.trim();
   return trimmedValue.length ? trimmedValue : undefined;
+}
+
+function isSameSecond(left: number, right: number | undefined): boolean {
+  return right !== undefined && Math.abs(left - right) < 0.001;
 }
 
 function isDirty(dirtyFields: LogEntryDirtyFields, key: keyof LogEntryFormValues): boolean {

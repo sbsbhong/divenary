@@ -7,6 +7,9 @@ import { Image } from '../../components/ui/image';
 import { Pressable } from '../../components/ui/pressable';
 import { Spinner } from '../../components/ui/spinner';
 import { Text } from '../../components/ui/text';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
+
+export type SocialLoginButtonTheme = 'light' | 'dark';
 
 export type SocialLoginButtonProps = {
   provider: SocialProvider;
@@ -16,22 +19,53 @@ export type SocialLoginButtonProps = {
   busy: boolean;
   disabled: boolean;
   onPress: () => void;
+  /** The resolved app theme; the provider buttons follow Apple and Google brand rules for it. */
+  theme?: SocialLoginButtonTheme;
 };
 
+type ButtonColors = {
+  background: string;
+  border?: string;
+  label: string;
+  spinner: string;
+};
+
+// Apple: a black button on light backgrounds and a white one on dark backgrounds.
+// Google: the light theme on light backgrounds and the #131314 dark theme on dark ones.
+const buttonColors: Record<SocialProvider, Record<SocialLoginButtonTheme, ButtonColors>> = {
+  apple: {
+    light: { background: '#000000', label: '#FFFFFF', spinner: '#FFFFFF' },
+    dark: { background: '#FFFFFF', label: '#000000', spinner: '#000000' },
+  },
+  google: {
+    light: { background: '#FFFFFF', border: '#747775', label: '#1F1F1F', spinner: '#5F6368' },
+    dark: { background: '#131314', border: '#8E918F', label: '#E3E3E3', spinner: '#E3E3E3' },
+  },
+};
+
+// The official Apple artwork has an opaque square behind the logo, so each button colour gets
+// the matching artwork: a black logo on white, and the same logo inverted for the black button.
 const providerLogo = {
   google: require('../../assets/auth/google-g-logo.png'),
-  apple: require('../../assets/auth/apple-sign-in-logo.png'),
+  apple: {
+    light: require('../../assets/auth/apple-sign-in-logo-black.png'),
+    dark: require('../../assets/auth/apple-sign-in-logo.png'),
+  },
 } as const;
 
 export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Element {
+  const theme = props.theme ?? 'light';
+  const colors = buttonColors[props.provider][theme];
   const slotWidth = Platform.OS === 'ios' ? 52 : 44;
   const isGoogle = props.provider === 'google';
+  // The button is disabled and busy at once; the spinner waits for the shared 1 s delay.
+  const { showIndicator } = useLoadingFeedback(props.busy);
   const logo = (
     <Image
       testID={`auth-login-${props.provider}-logo`}
       accessible={false}
       alt=""
-      source={providerLogo[props.provider]}
+      source={isGoogle ? providerLogo.google : providerLogo.apple[theme]}
       size="none"
       resizeMode="contain"
       style={
@@ -48,10 +82,18 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ busy: props.busy, disabled: props.disabled }}
-      className="w-full flex-row items-center border bg-white active:opacity-70"
+      className="w-full flex-row items-center active:scale-95"
       disabled={props.disabled}
       onPress={props.onPress}
-      style={{ height: 44, borderColor: '#747775', borderRadius: 8 }}>
+      style={{
+        backgroundColor: colors.background,
+        borderColor: colors.border,
+        borderRadius: 8,
+        borderWidth: colors.border ? 1 : 0,
+        height: 44,
+        // Only the provider the user did not pick dims; the picked one stays solid.
+        opacity: props.disabled && !props.busy ? 0.5 : 1,
+      }}>
       <Box testID={`auth-login-${props.provider}-icon-slot`} className="items-center justify-center" style={{ width: slotWidth }}>
         {isGoogle ? (
           logo
@@ -70,11 +112,11 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
         maxFontSizeMultiplier={1.5}
         minimumFontScale={0.8}
         numberOfLines={1}
-        className="flex-1 text-center text-black"
+        className="flex-1 text-center"
         style={
           isGoogle
-            ? { color: '#1f1f1f', fontFamily: 'GoogleSans-Medium', fontSize: 14, lineHeight: 20 }
-            : { color: '#000000', fontSize: 19, fontWeight: '500', lineHeight: 23 }
+            ? { color: colors.label, fontFamily: 'GoogleSans-Medium', fontSize: 14, lineHeight: 20 }
+            : { color: colors.label, fontSize: 19, fontWeight: '600', lineHeight: 23 }
         }>
         {props.label}
       </Text>
@@ -82,11 +124,11 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
         testID={`auth-login-${props.provider}-status-slot`}
         className="items-center justify-center"
         style={{ width: slotWidth }}>
-        {props.busy ? (
+        {showIndicator ? (
           <Spinner
             testID={`auth-login-spinner-${props.provider}`}
             aria-label={props.busyLabel}
-            color="#5f6368"
+            color={colors.spinner}
             size="small"
           />
         ) : null}

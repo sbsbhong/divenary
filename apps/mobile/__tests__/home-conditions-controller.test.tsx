@@ -472,6 +472,79 @@ describe('useHomeConditions', () => {
     });
   });
 
+  it('keeps the ready snapshot and flags the failure when a refresh throws, then clears it on success', async () => {
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn(async () => grantedLocation),
+    };
+    const provider: HomeConditionsProvider = {
+      getCurrentConditions: jest.fn()
+        .mockResolvedValueOnce(readySnapshot)
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockResolvedValueOnce({ ...readySnapshot, cityName: 'Busan' }),
+    };
+    const onController = jest.fn<void, [HomeConditionsController]>();
+    const latestController = () => onController.mock.calls[onController.mock.calls.length - 1][0];
+    const render = await renderHarness({ locationService, provider, onController });
+
+    await ReactTestRenderer.act(async () => {
+      await latestController().refresh();
+    });
+
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Seoul' });
+    expect(latestController().refreshFailed).toBe(true);
+    expect(latestController().isRefreshing).toBe(false);
+
+    await ReactTestRenderer.act(async () => {
+      await latestController().refresh();
+    });
+
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Busan' });
+    expect(latestController().refreshFailed).toBe(false);
+  });
+
+  it('keeps ready values through an expired-cache reload when the app returns to foreground', async () => {
+    let nowMs = 2_000_000;
+    jest.spyOn(Date, 'now').mockImplementation(() => nowMs);
+    const listeners: Array<(state: AppStateStatus) => void> = [];
+    jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
+      listeners.push(listener as (state: AppStateStatus) => void);
+      return { remove: jest.fn() };
+    });
+    const locationService: LocationService = {
+      getCurrentLocation: jest.fn(async () => grantedLocation),
+    };
+    const pendingReload = createDeferred<HomeConditionsSnapshot>();
+    const provider: HomeConditionsProvider = {
+      getCurrentConditions: jest.fn()
+        .mockResolvedValueOnce(readySnapshot)
+        .mockImplementationOnce(() => pendingReload.promise),
+    };
+    const onController = jest.fn<void, [HomeConditionsController]>();
+    const render = await renderHarness({ locationService, provider, onController });
+
+    const snapshotCallsBeforeReload = render.onSnapshot.mock.calls.length;
+    nowMs += (5 * 60 * 1000) + 1;
+    await ReactTestRenderer.act(async () => {
+      listeners[0]('background');
+      listeners[0]('active');
+      await flushPromises();
+    });
+
+    expect(provider.getCurrentConditions).toHaveBeenCalledTimes(2);
+    expect(
+      render.onSnapshot.mock.calls.slice(snapshotCallsBeforeReload).map(([snapshot]) => snapshot.status),
+    ).not.toContain('loading');
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Seoul' });
+    expect(onController.mock.calls[onController.mock.calls.length - 1][0].isRefreshing).toBe(true);
+
+    await ReactTestRenderer.act(async () => {
+      pendingReload.resolve({ ...readySnapshot, cityName: 'Busan' });
+      await flushPromises();
+    });
+
+    expect(render.latestSnapshot()).toMatchObject({ status: 'ready', cityName: 'Busan' });
+  });
+
   it('opens app settings through the injected settings action', async () => {
     const locationService: LocationService = {
       getCurrentLocation: jest.fn(async () => ({ status: 'permissionDenied' as const })),

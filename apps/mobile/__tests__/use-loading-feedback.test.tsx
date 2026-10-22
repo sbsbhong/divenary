@@ -6,6 +6,7 @@ import {
   type LoadingFeedback,
   type LoadingFeedbackOptions,
 } from '../src/hooks/use-loading-feedback';
+import { SkeletonBlock } from '../src/components/ui/skeleton-block';
 
 let latest: LoadingFeedback | undefined;
 
@@ -109,5 +110,22 @@ describe('useLoadingFeedback', () => {
     // The indicator, extended and long-running timers are all cleared.
     expect(clearTimeoutSpy.mock.calls.length).toBeGreaterThanOrEqual(3);
     clearTimeoutSpy.mockRestore();
+  });
+});
+
+describe('SkeletonBlock', () => {
+  it("lets the caller's size and radius replace the default line shape", () => {
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    ReactTestRenderer.act(() => {
+      renderer = ReactTestRenderer.create(<SkeletonBlock testID="slot" className="h-9 w-9 rounded-full" />);
+    });
+    // The innermost match is the View; the outer one is the SkeletonBlock element with the caller's props.
+    const matches = renderer!.root.findAll(node => node.props.testID === 'slot' && typeof node.props.className === 'string');
+    const slot = matches[matches.length - 1]!;
+    const classes = String(slot.props.className).split(/\s+/);
+
+    expect(classes).toEqual(expect.arrayContaining(['h-9', 'w-9', 'rounded-full', 'bg-skeleton']));
+    expect(classes).not.toEqual(expect.arrayContaining(['w-full']));
+    expect(classes).not.toEqual(expect.arrayContaining(['h-4']));
   });
 });

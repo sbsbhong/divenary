@@ -57,6 +57,14 @@ const collectText = (node: ReactTestRenderer.ReactTestRendererJSON | ReactTestRe
   return node.children?.flatMap(collectText) ?? [];
 };
 
+// Home keeps loading conditions (and its delayed loading feedback timers) until it unmounts.
+const mountedRenderers: ReactTestRenderer.ReactTestRenderer[] = [];
+const createRenderer = (element: React.ReactElement): ReactTestRenderer.ReactTestRenderer => {
+  const renderer = ReactTestRenderer.create(element);
+  mountedRenderers.push(renderer);
+  return renderer;
+};
+
 describe('preview metric placeholders', () => {
   beforeEach(async () => {
     await ReactTestRenderer.act(async () => {
@@ -64,16 +72,24 @@ describe('preview metric placeholders', () => {
     });
   });
 
+  afterEach(() => {
+    ReactTestRenderer.act(() => {
+      for (const renderer of mountedRenderers.splice(0)) {
+        renderer.unmount();
+      }
+    });
+  });
+
   test('Home preview keeps unknown manual duration and depth as placeholders', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(
+      renderer = createRenderer(
         <AppPreferencesProvider>
           <HomeScreen
             sessions={[blankManualSession]}
-            onOpenLogbook={jest.fn()}
-            onOpenPlanning={jest.fn()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
             onRefresh={jest.fn()}
           />
         </AppPreferencesProvider>,
@@ -92,12 +108,12 @@ describe('preview metric placeholders', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(
+      renderer = createRenderer(
         <AppPreferencesProvider>
           <HomeScreen
             sessions={[blankManualSession]}
-            onOpenLogbook={jest.fn()}
-            onOpenPlanning={jest.fn()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
             onRefresh={jest.fn()}
           />
         </AppPreferencesProvider>,
@@ -113,12 +129,12 @@ describe('preview metric placeholders', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(
+      renderer = createRenderer(
         <AppPreferencesProvider>
           <HomeScreen
             sessions={[blankManualSession]}
-            onOpenLogbook={jest.fn()}
-            onOpenPlanning={jest.fn()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
             onRefresh={jest.fn()}
           />
         </AppPreferencesProvider>,
@@ -137,12 +153,12 @@ describe('preview metric placeholders', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(
+      renderer = createRenderer(
         <AppPreferencesProvider>
           <HomeScreen
             sessions={[blankManualSession]}
-            onOpenLogbook={jest.fn()}
-            onOpenPlanning={jest.fn()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
             onRefresh={onRefresh}
             reselectToken={0}
           />
@@ -155,8 +171,8 @@ describe('preview metric placeholders', () => {
         <AppPreferencesProvider>
           <HomeScreen
             sessions={[blankManualSession]}
-            onOpenLogbook={jest.fn()}
-            onOpenPlanning={jest.fn()}
+            onCreateLog={jest.fn()}
+            onCreatePlan={jest.fn()}
             onRefresh={onRefresh}
             reselectToken={1}
           />
@@ -171,7 +187,7 @@ describe('preview metric placeholders', () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
     await ReactTestRenderer.act(async () => {
-      renderer = ReactTestRenderer.create(<MemoryScreen sessions={[blankManualSession]} onOpenLogbook={jest.fn()} />);
+      renderer = createRenderer(<MemoryScreen sessions={[blankManualSession]} onOpenLogbook={jest.fn()} />);
     });
 
     const text = collectText(renderer!.toJSON());

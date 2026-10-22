@@ -107,7 +107,7 @@ describe('watch link', () => {
     );
   });
 
-  it('sends only unexecuted draft and planned dives to the watch', async () => {
+  it('sends only unexecuted planned dives to the watch and keeps drafts on the iPhone', async () => {
     const updatePlannedDives = jest.fn().mockResolvedValue({
       nativeBridgeAvailable: true,
       isSupported: true,
@@ -115,7 +115,7 @@ describe('watch link', () => {
       isPaired: true,
       isWatchAppInstalled: true,
       isReachable: false,
-      payloadCount: 2,
+      payloadCount: 1,
       queuedCount: 1,
     });
     const link = createNativeWatchLink(nativeModule({ updatePlannedDives }));
@@ -128,8 +128,8 @@ describe('watch link', () => {
     ]);
 
     const payload = JSON.parse(updatePlannedDives.mock.calls[0][0]) as Array<{ localId: string }>;
-    expect(payload.map(plan => plan.localId)).toEqual(['draft-plan', 'planned-plan']);
-    expect(status).toMatchObject({ nativeBridgeAvailable: true, activationState: 'activated', payloadCount: 2 });
+    expect(payload.map(plan => plan.localId)).toEqual(['planned-plan']);
+    expect(status).toMatchObject({ nativeBridgeAvailable: true, activationState: 'activated', payloadCount: 1 });
   });
 
   it('falls back to a quiet unavailable link when the platform has no companion module', async () => {

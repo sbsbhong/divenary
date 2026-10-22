@@ -77,6 +77,19 @@ export const watchSessionToDiveLogEntry = (options: WatchSessionToDiveLogEntryOp
   };
 };
 
+/**
+ * Display only: true while a watch log still carries the import default site name, so screens can
+ * show a localized fallback title instead. The stored name stays as imported, because guest claim
+ * reuse compares `site_name` exactly.
+ */
+export const hasDefaultWatchSiteName = (entry: Pick<DiveLogEntry, 'source' | 'manual' | 'watchCapture'>): boolean => {
+  if (entry.source !== 'watch') {
+    return false;
+  }
+
+  return (entry.manual.site.name ?? entry.watchCapture?.session.siteName)?.trim() === DEFAULT_WATCH_LOG_SITE_NAME;
+};
+
 const getManualMeasuredValues = (session: WatchSession): DiveLogManualMeasuredValues => {
   return {
     diveMode: session.diveMode,

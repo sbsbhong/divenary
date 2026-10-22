@@ -96,6 +96,8 @@ export function useAppFeedbackBottomInset(offset: number): void {
   const setOffset = React.useContext(AppFeedbackInsetContext);
   React.useEffect(() => {
     setOffset?.(offset);
+    // The chrome goes away with its owner (for example the start shell replaces the tab bar).
+    return () => setOffset?.(0);
   }, [offset, setOffset]);
 }
 

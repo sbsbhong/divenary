@@ -39,6 +39,7 @@ import {
 } from '../deletion/watch-log-deletion-store';
 import { defaultWatchLink } from '../companion/default-watch-link';
 import type { WatchLink } from '../companion/watch-link';
+import { ASYNC_FEEDBACK_TIMING } from '../constants/async-feedback';
 import type {
   GuestClaimProgress,
   GuestClaimViewState,
@@ -302,9 +303,17 @@ export function AccountDataProviderCore({
     () => principalForScope(desiredScope),
     [desiredScope],
   );
+  // Until Auth has checked the stored session it is unknown whose data to open. Publishing the
+  // guest scope in the meantime would flash guest records for a signed-in diver, so the start
+  // shell stays up instead.
+  const isAuthBootstrapping = auth.state.status === 'bootstrapping';
   const isOnline = auth.state.status === 'authenticated';
   const [published, setPublished] = React.useState<PublishedAccountData>();
   const [bootstrapAttempt, setBootstrapAttempt] = React.useState(0);
+  // When the diver started waiting for data: at launch, when a data-owner switch hides the app
+  // again, and at each accepted retry. The start shell measures its delays from here, and retry
+  // uses the same clock, so the retry action appears exactly when a retry is accepted.
+  const [waitStartedAt, setWaitStartedAt] = React.useState(() => Date.now());
   const [bootstrapPresentation, setBootstrapPresentation] =
     React.useState<AccountBootstrapPresentation>({
       queryScope: desiredScope,
@@ -330,6 +339,9 @@ export function AccountDataProviderCore({
   const publishedRef = React.useRef<PublishedAccountData | undefined>(
     undefined,
   );
+  // Set while the local part of a bootstrap attempt runs: from the start of the bootstrap effect
+  // until this device's data is published or the attempt fails. Cloud work after that is excluded.
+  const localBootstrapRef = React.useRef<object | undefined>(undefined);
   const publicationsRef = React.useRef(new Map<string, PublishedAccountData>());
   const generationRef = React.useRef(0);
   const claimRefreshSequenceRef = React.useRef(0);
@@ -353,11 +365,21 @@ export function AccountDataProviderCore({
   }, []);
 
   React.useEffect(() => {
+    if (isAuthBootstrapping) {
+      return;
+    }
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     const publications = publicationsRef.current;
 
     const isCurrent = () => generationRef.current === generation;
+    const localBootstrap = {};
+    localBootstrapRef.current = localBootstrap;
+    const settleLocalBootstrap = () => {
+      if (localBootstrapRef.current === localBootstrap) {
+        localBootstrapRef.current = undefined;
+      }
+    };
     let localPublished = false;
     const publish = async () => {
       let migrationDegraded = false;
@@ -401,6 +423,10 @@ export function AccountDataProviderCore({
         );
         if (desiredPrincipal.kind === 'guest') {
           await verifyPrincipalRepositories(base);
+          // A superseded attempt (a retry replaced it) must not register a second repository set.
+          if (!isCurrent()) {
+            return;
+          }
           guestRepositoriesRef.current = base;
           nextPublication = { ...base, localRepositories: base };
         } else {
@@ -414,6 +440,9 @@ export function AccountDataProviderCore({
             verifyPrincipalRepositories(base),
             verifyPrincipalRepositories(guestRepositories),
           ]);
+          if (!isCurrent()) {
+            return;
+          }
           guestRepositoriesRef.current = guestRepositories;
           const outbox = new AccountOutbox({
             storage: dependencies.metadataStorage,
@@ -625,6 +654,7 @@ export function AccountDataProviderCore({
       publishedRef.current = nextPublication;
       setPublished(nextPublication);
       localPublished = true;
+      settleLocalBootstrap();
       setBootstrapPresentation({
         queryScope: desiredScope,
         state: migrationDegraded
@@ -826,6 +856,7 @@ export function AccountDataProviderCore({
             },
           });
         } else {
+          settleLocalBootstrap();
           publishedRef.current = undefined;
           setPublished(undefined);
           setBootstrapPresentation({
@@ -841,6 +872,7 @@ export function AccountDataProviderCore({
     });
 
     return () => {
+      settleLocalBootstrap();
       if (generationRef.current === generation) {
         generationRef.current += 1;
         const publication = publications.get(desiredScope);
@@ -860,6 +892,7 @@ export function AccountDataProviderCore({
     desiredPrincipal,
     desiredScope,
     endCloudRefresh,
+    isAuthBootstrapping,
     isOnline,
     notifyGuestInventoryChanged,
     queryClient,
@@ -1234,12 +1267,22 @@ export function AccountDataProviderCore({
   ]);
 
   const retryBootstrap = React.useCallback(() => {
+    // A local attempt counts as in flight until the wait passes the long-running threshold;
+    // before that a retry would only run the same work twice. After it the attempt counts as
+    // stalled: the retry starts a new one and the generation check discards the stalled result.
+    if (
+      localBootstrapRef.current !== undefined &&
+      Date.now() - waitStartedAt < ASYNC_FEEDBACK_TIMING.longRunning
+    ) {
+      return;
+    }
+    setWaitStartedAt(Date.now());
     setBootstrapPresentation({
       queryScope: desiredScope,
       state: {status: 'loading'},
     });
     setBootstrapAttempt(attempt => attempt + 1);
-  }, [desiredScope]);
+  }, [desiredScope, waitStartedAt]);
 
   const requestSync = React.useCallback(async () => {
     if (!published?.coordinator) {
@@ -1638,11 +1681,28 @@ export function AccountDataProviderCore({
     runClaim,
   ]);
 
+  // A data-owner switch (sign-in, sign-out) hides the app again, which starts a new wait.
+  const isWaitingForData = contextValue === undefined;
+  const [wasWaitingForData, setWasWaitingForData] =
+    React.useState(isWaitingForData);
+  if (wasWaitingForData !== isWaitingForData) {
+    setWasWaitingForData(isWaitingForData);
+    if (isWaitingForData) {
+      setWaitStartedAt(Date.now());
+    }
+  }
+
   if (!contextValue) {
     return bootstrap.status === 'recoveryRequired' ? (
       <RecoveryScreen kind="accountData" onRetry={retryBootstrap} />
     ) : (
-      <RecoveryScreen kind="loading" />
+      <RecoveryScreen
+        kind="loading"
+        startedAt={waitStartedAt}
+        // While Auth is still checking the session there is no attempt here to restart, so the
+        // shell only says that it is taking long.
+        onRetry={isAuthBootstrapping ? undefined : retryBootstrap}
+      />
     );
   }
 

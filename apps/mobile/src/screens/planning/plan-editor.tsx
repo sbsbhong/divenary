@@ -1,91 +1,102 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import React from 'react';
-import { Keyboard, type LayoutChangeEvent } from 'react-native';
-import { Controller, useForm, type FieldErrors, type Resolver } from 'react-hook-form';
+import { Keyboard } from 'react-native';
+import { useForm, type FieldErrors, type Resolver } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { Box } from '../../components/ui/box';
-import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
-import { InstrumentButton, ScreenBackButton, SelectorPill } from '../../components/ui/instrument';
-import { HStack } from '../../components/ui/hstack';
-import { Input, InputField } from '../../components/ui/input';
-import { Text } from '../../components/ui/text';
-import { Textarea, TextareaInput } from '../../components/ui/textarea';
-import { VStack } from '../../components/ui/vstack';
-import type { DiveEntryStyle, DivePlan, DivePlanStatus } from '../../types/dive-plan';
-import type { WatchSession } from '../../types/dive-session';
+import { InstrumentButton } from '../../components/ui/instrument';
+import type { DivePlan, DivePlanStatus } from '../../types/dive-plan';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
-import { BadgeListField, type BadgeListFieldHandle } from '../common/form/badge-list-field';
-import { DateTimeField } from '../common/form/date-time-field';
-import { EditorField } from '../common/form/editor-field';
-import { planFormSchema, planFormValuesToPlan, planToPlanFormValues, type PlanFormValues } from './plan-form-schema';
-import { PlanModeFields } from './plan-mode-fields';
+import type { BadgeListFieldHandle } from '../common/form/badge-list-field';
+import { CollapsibleSection } from '../common/form/collapsible-section';
+import { EditorAnchor, EditorScreen, type EditorScreenHandle } from '../common/form/editor-screen';
+import {
+  PlanBasicsSection,
+  PlanDetailSections,
+  PlanNotesSection,
+  PlanValuesSection,
+  type PlanBadgeRefs,
+} from './plan-editor-sections';
+import {
+  planDraftSchema,
+  planFormSchema,
+  planFormValuesToPlan,
+  planToPlanFormValues,
+  type PlanFormValues,
+} from './plan-form-schema';
 
 type PlanEditorProps = {
   plan?: DivePlan;
   mode?: 'create' | 'edit';
+  /** The repository is saving; every save action is disabled. */
   isSaving?: boolean;
-  saveError?: Error | null;
   onCancel: () => void;
   onSave: (plan: DivePlan) => Promise<DivePlan>;
-  onFieldLayout?: (fieldName: string, y: number) => void;
+  /** Called with the first invalid field after a blocked save, once the editor has scrolled to it. */
   onInvalidSubmit?: (fieldName: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
 };
 
-const diveModes: NonNullable<WatchSession['diveMode']>[] = ['scuba', 'freedive'];
-const entryStyles: DiveEntryStyle[] = ['shore', 'boat', 'pool'];
+/** Which button started the save, so only that one shows its pending state. */
+type SaveAction = 'draft' | 'planned' | 'save';
+type EditorAnchorName = 'basics' | 'plannedValues' | 'notes' | 'details';
 
+const fullResolver = zodResolver(planFormSchema) as Resolver<PlanFormValues>;
+const draftResolver = zodResolver(planDraftSchema) as Resolver<PlanFormValues>;
+
+// Field order on screen, and the section each field scrolls to when it blocks a save.
+const FIELD_ANCHORS: Array<[keyof PlanFormValues, EditorAnchorName]> = [
+  ['title', 'basics'],
+  ['plannedAt', 'basics'],
+  ['diveMode', 'basics'],
+  ['entryStyle', 'basics'],
+  ['siteName', 'basics'],
+  ['plannedMaxDepthMeters', 'plannedValues'],
+  ['plannedDurationMinutes', 'plannedValues'],
+  ['repetitionTarget', 'plannedValues'],
+  ['objective', 'notes'],
+  ['trainingFocus', 'notes'],
+  ['notes', 'notes'],
+  ['waterCondition', 'details'],
+  ['visibilityExpectation', 'details'],
+  ['perceivedDifficulty', 'details'],
+  ['buddies', 'details'],
+  ['gearIds', 'details'],
+  ['tags', 'details'],
+  ['plannedPressure', 'details'],
+];
+
+/**
+ * The plan editor. A new plan saves as a draft (title or site is enough) or as planned (full
+ * check). An existing plan has one Save that keeps its status; status changes live on the detail
+ * screen.
+ */
 export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
   const { t } = useTranslation();
   const basePlan = React.useMemo(() => props.plan ?? createBlankDivePlan(), [props.plan]);
+  const mode = props.mode ?? 'create';
+  // The resolver reads this, so each button validates against its own rules.
+  const fullCheckRef = React.useRef(false);
   const form = useForm<PlanFormValues>({
     defaultValues: planToPlanFormValues(basePlan),
-    resolver: zodResolver(planFormSchema) as Resolver<PlanFormValues>,
+    resolver: (values, context, options) => (fullCheckRef.current ? fullResolver : draftResolver)(values, context, options),
     mode: 'onSubmit',
   });
-  const [localSaveFailed, setLocalSaveFailed] = React.useState(false);
-  const activeDiveMode = form.watch('diveMode') ?? 'scuba';
-  const mode = props.mode ?? 'create';
-  const errors = form.formState.errors;
-  const isDirty = form.formState.isDirty;
-  const { onDirtyChange } = props;
-  const bodyOffsetRef = React.useRef(0);
+  const editorRef = React.useRef<EditorScreenHandle>(null);
   const buddiesRef = React.useRef<BadgeListFieldHandle>(null);
   const gearIdsRef = React.useRef<BadgeListFieldHandle>(null);
+  const tagsRef = React.useRef<BadgeListFieldHandle>(null);
+  const badgeRefs = React.useMemo<PlanBadgeRefs>(() => ({ buddies: buddiesRef, gearIds: gearIdsRef, tags: tagsRef }), []);
+  const [saveAction, setSaveAction] = React.useState<SaveAction>();
+  const [saveFailed, setSaveFailed] = React.useState(false);
+  const [detailsExpanded, setDetailsExpanded] = React.useState(() => hasDetailValues(planToPlanFormValues(basePlan)));
+  const activeDiveMode = form.watch('diveMode') ?? 'scuba';
+  const errors = form.formState.errors;
+  const isDirty = form.formState.isDirty;
+  const { onDirtyChange, onInvalidSubmit, onSave } = props;
 
   React.useEffect(() => {
     onDirtyChange?.(isDirty);
   }, [isDirty, onDirtyChange]);
-  const tagsRef = React.useRef<BadgeListFieldHandle>(null);
-
-  const registerBodyLayout = React.useCallback((event: LayoutChangeEvent) => {
-    bodyOffsetRef.current = event.nativeEvent.layout.y;
-  }, []);
-
-  const registerFieldLayout = React.useCallback(
-    (fieldName: string) => (event: LayoutChangeEvent) => {
-      props.onFieldLayout?.(fieldName, bodyOffsetRef.current + event.nativeEvent.layout.y);
-    },
-    [props],
-  );
-
-  const registerFieldGroupLayout = React.useCallback(
-    (fieldNames: string[]) => (event: LayoutChangeEvent) => {
-      const y = bodyOffsetRef.current + event.nativeEvent.layout.y;
-      fieldNames.forEach(fieldName => props.onFieldLayout?.(fieldName, y));
-    },
-    [props],
-  );
-
-  const handleInvalidSubmit = React.useCallback(
-    (fieldErrors: FieldErrors<PlanFormValues>) => {
-      const firstInvalidField = getFirstPlanErrorField(fieldErrors);
-      if (firstInvalidField) {
-        props.onInvalidSubmit?.(firstInvalidField);
-      }
-    },
-    [props],
-  );
 
   const flushPendingBadgeFields = React.useCallback(() => {
     form.setValue('buddies', buddiesRef.current?.commitPending() ?? form.getValues('buddies'), { shouldDirty: true });
@@ -93,272 +104,130 @@ export function PlanEditor(props: PlanEditorProps): React.JSX.Element {
     form.setValue('tags', tagsRef.current?.commitPending() ?? form.getValues('tags'), { shouldDirty: true });
   }, [form]);
 
-  const save = React.useCallback(
-    (status: DivePlanStatus) =>
-      {
-        Keyboard.dismiss();
-        flushPendingBadgeFields();
-        return form.handleSubmit(async values => {
-        setLocalSaveFailed(false);
-        try {
-          await props.onSave(planFormValuesToPlan(basePlan, values, status));
-        } catch {
-          setLocalSaveFailed(true);
-        }
-        }, handleInvalidSubmit)();
-      },
-    [basePlan, flushPendingBadgeFields, form, handleInvalidSubmit, props],
+  const handleInvalid = React.useCallback(
+    (fieldErrors: FieldErrors<PlanFormValues>) => {
+      const firstInvalid = FIELD_ANCHORS.find(([fieldName]) => Boolean(fieldErrors[fieldName]));
+      if (!firstInvalid) {
+        return;
+      }
+
+      const [fieldName, anchor] = firstInvalid;
+      if (anchor === 'details') {
+        setDetailsExpanded(true);
+      }
+      editorRef.current?.scrollToAnchor(anchor);
+      onInvalidSubmit?.(fieldName);
+    },
+    [onInvalidSubmit],
   );
 
+  const save = React.useCallback(
+    (action: SaveAction) => {
+      const status: DivePlanStatus = action === 'save' ? basePlan.status : action;
+      Keyboard.dismiss();
+      flushPendingBadgeFields();
+      // A planned plan reaches the watch, so it must stay complete when it is edited.
+      fullCheckRef.current = status === 'planned';
+      setSaveFailed(false);
+      // Busy from the press itself, so a second tap during validation cannot save twice.
+      setSaveAction(action);
+
+      return form.handleSubmit(
+        async values => {
+          try {
+            await onSave(planFormValuesToPlan(basePlan, values, status));
+          } catch {
+            setSaveFailed(true);
+          } finally {
+            setSaveAction(undefined);
+          }
+        },
+        fieldErrors => {
+          setSaveAction(undefined);
+          handleInvalid(fieldErrors);
+        },
+      )();
+    },
+    [basePlan, flushPendingBadgeFields, form, handleInvalid, onSave],
+  );
+
+  const isBusy = saveAction !== undefined || Boolean(props.isSaving);
+
   return (
-    <DiveSummaryCard accent="primary">
-      <ScreenBackButton
-        testID="planning-editor-back"
-        accessibilityLabel={t('common.back', { defaultValue: 'Back' })}
-        onPress={props.onCancel}
-      />
-      <DiveSummaryCard.Header
-        eyebrow={t('planning.editorEyebrow', { defaultValue: 'Planbook entry' })}
-        title={t(mode === 'edit' ? 'planning.editorEditTitle' : 'planning.editorTitle', {
-          defaultValue: mode === 'edit' ? 'Edit dive plan' : 'New dive plan',
-        })}
-        titleTestID="planning-editor-title"
-      />
-      <DiveSummaryCard.Body testID="planning-editor-body" onLayout={registerBodyLayout}>
-        {props.saveError || localSaveFailed ? (
-          <Text
-            testID="planning-editor-error"
-            className="rounded-xl bg-destructive/10 px-4 py-3 text-sm font-semibold text-destructive"
-            children={t('planning.saveError', { defaultValue: 'Could not save this plan locally. Try again.' })}
+    <EditorScreen
+      ref={editorRef}
+      title={t(mode === 'edit' ? 'planning.editorEditTitle' : 'planning.editorTitle')}
+      eyebrow={mode === 'edit' ? t(`planning.status.${basePlan.status}`) : undefined}
+      titleTestID="planning-editor-title"
+      onBack={props.onCancel}
+      backTestID="planning-editor-back"
+      actionError={saveFailed ? t('planning.saveError') : undefined}
+      actionErrorTestID="planning-editor-error"
+      testID="planning-editor"
+      actions={
+        mode === 'edit' ? (
+          <InstrumentButton
+            testID="planning-editor-save"
+            label={t('planning.save')}
+            variant="primary"
+            pending={saveAction === 'save'}
+            disabled={isBusy}
+            onPress={() => save('save')}
           />
-        ) : null}
-        <Controller
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <EditorField label={t('planning.planTitle', { defaultValue: 'Plan title' })} error={errors.title?.message}>
-              <Input className="h-11 rounded-xl bg-background">
-                <InputField
-                  testID="planning-editor-plan-title"
-                  value={field.value ?? ''}
-                  onChangeText={field.onChange}
-                  placeholder={t('planning.planTitlePlaceholder', { defaultValue: 'Morning reef plan' })}
-                />
-              </Input>
-            </EditorField>
-          )}
-        />
-        <Controller
-          control={form.control}
-          name="plannedAt"
-          render={({ field }) => (
-            <DateTimeField
-              label={t('planning.plannedAt', { defaultValue: 'Planned date/time' })}
-              value={field.value}
-              onChange={field.onChange}
-              required
-              error={errors.plannedAt?.message}
-              onLayout={registerFieldLayout('plannedAt')}
-              testID="planning-editor-planned-at"
+        ) : (
+          <>
+            <InstrumentButton
+              testID="planning-editor-save-planned"
+              label={t('planning.setPlanned')}
+              variant="primary"
+              pending={saveAction === 'planned'}
+              disabled={isBusy}
+              onPress={() => save('planned')}
             />
-          )}
-        />
-        <Controller
-          control={form.control}
-          name="diveMode"
-          render={({ field }) => (
-            <EditorField label={t('logbook.diveMode', { defaultValue: 'Dive mode' })} required error={errors.diveMode?.message}>
-              <HStack space="xs" className="rounded-full bg-muted p-1">
-                {diveModes.map(diveMode => (
-                  <SelectorPill
-                    key={diveMode}
-                    testID={`planning-editor-mode-${diveMode}`}
-                    className="flex-1"
-                    label={t(`diveModes.${diveMode}`, { defaultValue: diveMode })}
-                    selected={field.value === diveMode}
-                    onPress={() => field.onChange(diveMode)}
-                  />
-                ))}
-              </HStack>
-            </EditorField>
-          )}
-        />
-        <Controller
-          control={form.control}
-          name="entryStyle"
-          render={({ field }) => (
-            <EditorField label={t('planning.entryStyle', { defaultValue: 'Entry style' })}>
-              <HStack space="xs" className="rounded-full bg-muted p-1">
-                {entryStyles.map(entryStyle => (
-                  <SelectorPill
-                    key={entryStyle}
-                    testID={`planning-editor-entry-style-${entryStyle}`}
-                    className="flex-1"
-                    label={t(`entryStyles.${entryStyle}`, { defaultValue: entryStyle })}
-                    selected={field.value === entryStyle}
-                    onPress={() => field.onChange(field.value === entryStyle ? undefined : entryStyle)}
-                  />
-                ))}
-              </HStack>
-            </EditorField>
-          )}
-        />
-        <Controller
-          control={form.control}
-          name="siteName"
-          render={({ field }) => (
-            <EditorField
-              label={t('planning.siteName', { defaultValue: 'Site name' })}
-              required
-              error={errors.siteName?.message}
-              errorTestID="planning-editor-site-name-error"
-              onLayout={registerFieldLayout('siteName')}
-              testID="planning-editor-site-name-anchor"
-            >
-              <Input className="h-11 rounded-xl bg-background">
-                <InputField
-                  testID="planning-editor-site-name"
-                  value={field.value}
-                  onChangeText={field.onChange}
-                  placeholder={t('planning.siteNamePlaceholder', { defaultValue: 'Dive site' })}
-                />
-              </Input>
-            </EditorField>
-          )}
-        />
-        <HStack space="md">
-          <Controller
-            control={form.control}
-            name="buddies"
-            render={({ field }) => (
-              <BadgeListField
-                ref={buddiesRef}
-                label={t('logbook.buddyNames', { defaultValue: 'Buddies' })}
-                values={field.value}
-                onChange={field.onChange}
-                inputTestID="planning-editor-buddies-input"
-                badgeTestIDPrefix="planning-editor-buddies"
-                placeholder={t('logbook.commaSeparatedPlaceholder', { defaultValue: 'Separate with commas' })}
-                className="flex-1"
-              />
-            )}
-          />
-          <Controller
-            control={form.control}
-            name="gearIds"
-            render={({ field }) => (
-              <BadgeListField
-                ref={gearIdsRef}
-                label={t('logbook.gear', { defaultValue: 'Gear' })}
-                values={field.value}
-                onChange={field.onChange}
-                inputTestID="planning-editor-gear-input"
-                badgeTestIDPrefix="planning-editor-gear"
-                placeholder={t('logbook.commaSeparatedPlaceholder', { defaultValue: 'Separate with commas' })}
-                className="flex-1"
-              />
-            )}
-          />
-        </HStack>
-        <Controller
-          control={form.control}
-          name="tags"
-          render={({ field }) => (
-            <BadgeListField
-              ref={tagsRef}
-              label={t('logbook.tags', { defaultValue: 'Tags' })}
-              values={field.value}
-              onChange={field.onChange}
-              inputTestID="planning-editor-tags-input"
-              badgeTestIDPrefix="planning-editor-tags"
-              placeholder={t('logbook.commaSeparatedPlaceholder', { defaultValue: 'Separate with commas' })}
-            />
-          )}
-        />
-        <Controller
-          control={form.control}
-          name="objective"
-          render={({ field }) => (
-            <EditorField label={t('planning.objective', { defaultValue: 'Objective' })} error={errors.objective?.message}>
-              <Input className="h-11 rounded-xl bg-background">
-                <InputField
-                  testID="planning-editor-objective"
-                  value={field.value ?? ''}
-                  onChangeText={field.onChange}
-                  placeholder={t('planning.objectivePlaceholder', { defaultValue: 'What this dive is for' })}
-                />
-              </Input>
-            </EditorField>
-          )}
-        />
-        <Box
-          testID="planning-editor-mode-fields-anchor"
-          onLayout={registerFieldGroupLayout(['plannedMaxDepthMeters', 'plannedDurationMinutes'])}
-        >
-          <PlanModeFields control={form.control} errors={errors} diveMode={activeDiveMode} />
-        </Box>
-        <Controller
-          control={form.control}
-          name="notes"
-          render={({ field }) => (
-            <EditorField label={t('logbook.notes', { defaultValue: 'Notes' })} error={errors.notes?.message}>
-              <Textarea className="rounded-xl bg-background">
-                <TextareaInput
-                  testID="planning-editor-notes"
-                  value={field.value ?? ''}
-                  onChangeText={field.onChange}
-                  placeholder={t('planning.notesPlaceholder', { defaultValue: 'Planning notes' })}
-                />
-              </Textarea>
-            </EditorField>
-          )}
-        />
-      </DiveSummaryCard.Body>
-      <DiveSummaryCard.Footer>
-        <VStack space="sm">
-          <HStack space="sm">
-            <InstrumentButton className="flex-1" label={t('logbook.cancel', { defaultValue: 'Cancel' })} onPress={props.onCancel} />
             <InstrumentButton
               testID="planning-editor-save-draft"
-              className="flex-1"
-              label={t('planning.saveDraft', { defaultValue: 'Save draft' })}
+              label={t('planning.saveDraft')}
+              pending={saveAction === 'draft'}
+              disabled={isBusy}
               onPress={() => save('draft')}
-              disabled={props.isSaving}
             />
-          </HStack>
-          <InstrumentButton
-            testID="planning-editor-save-planned"
-            label={props.isSaving ? t('planning.saving', { defaultValue: 'Saving' }) : t('planning.setPlanned', { defaultValue: 'Set planned' })}
-            variant="primary"
-            onPress={() => save('planned')}
-            disabled={props.isSaving}
-          />
-        </VStack>
-      </DiveSummaryCard.Footer>
-    </DiveSummaryCard>
+          </>
+        )
+      }>
+      <EditorAnchor name="basics" anchorTestID="planning-editor-basics-anchor">
+        <PlanBasicsSection control={form.control} errors={errors} />
+      </EditorAnchor>
+      <EditorAnchor name="plannedValues" anchorTestID="planning-editor-planned-values-anchor">
+        <PlanValuesSection control={form.control} errors={errors} diveMode={activeDiveMode} />
+      </EditorAnchor>
+      <EditorAnchor name="notes" anchorTestID="planning-editor-notes-anchor">
+        <PlanNotesSection control={form.control} errors={errors} />
+      </EditorAnchor>
+      <EditorAnchor name="details" anchorTestID="planning-editor-details-anchor">
+        <CollapsibleSection
+          title={t('planning.sections.details')}
+          summary={t('planning.detailsSummary')}
+          hasValues={detailsExpanded}
+          expanded={detailsExpanded}
+          onExpandedChange={setDetailsExpanded}
+          testID="planning-editor-details">
+          <PlanDetailSections control={form.control} errors={errors} diveMode={activeDiveMode} badgeRefs={badgeRefs} />
+        </CollapsibleSection>
+      </EditorAnchor>
+    </EditorScreen>
   );
 }
 
-function getFirstPlanErrorField(errors: FieldErrors<PlanFormValues>): string | undefined {
-  const fieldOrder: Array<keyof PlanFormValues> = [
-    'title',
-    'plannedAt',
-    'diveMode',
-    'siteName',
-    'plannedMaxDepthMeters',
-    'plannedDurationMinutes',
-    'buddies',
-    'gearIds',
-    'tags',
-    'objective',
-    'plannedPressure',
-    'waterCondition',
-    'visibilityExpectation',
-    'perceivedDifficulty',
-    'trainingFocus',
-    'repetitionTarget',
-    'notes',
-  ];
-
-  return fieldOrder.find(fieldName => Boolean(errors[fieldName]));
+/** Opens 세부 정보 on load when the plan already has something inside it. */
+function hasDetailValues(values: PlanFormValues): boolean {
+  return Boolean(
+    values.waterCondition !== undefined ||
+      values.visibilityExpectation !== undefined ||
+      values.perceivedDifficulty !== undefined ||
+      values.buddies.length ||
+      values.gearIds.length ||
+      values.tags.length ||
+      values.plannedPressure.start !== undefined ||
+      values.plannedPressure.end !== undefined,
+  );
 }

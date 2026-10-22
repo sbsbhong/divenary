@@ -1,18 +1,21 @@
 import React from 'react';
 import { Alert, AppState, Linking } from 'react-native';
 import { useTranslation } from 'react-i18next';
-import { Box } from '../../components/ui/box';
-import { Button, ButtonIcon, ButtonText } from '../../components/ui/button';
+import packageJson from '../../../package.json';
 import { HStack } from '../../components/ui/hstack';
-import { InstrumentButton } from '../../components/ui/instrument';
-import { ArrowUpIcon, BellIcon, ChevronLeftIcon, ChevronRightIcon, CircleIcon, GlobeIcon, Icon, SunIcon, WatchIcon } from '../../components/ui/icon';
+import { Section, Row } from '../../components/ui/grouped-list';
+import { InstrumentButton, ScreenBackButton } from '../../components/ui/instrument';
+import { BellIcon, GlobeIcon, SunIcon, WatchIcon } from '../../components/ui/icon';
 import { Pressable } from '../../components/ui/pressable';
-import { Radio, RadioGroup, RadioIcon, RadioIndicator, RadioLabel } from '../../components/ui/radio';
+import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
-import { Switch } from '../../components/ui/switch';
+import { Spinner } from '../../components/ui/spinner';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
+import { useContentLoading } from '../../components/ui/skeleton-block';
+import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import type { SupportedLanguage } from '../../i18n';
+import type { SocialProvider } from '../../auth/native-social-auth';
 import { defaultWatchLink } from '../../companion/default-watch-link';
 import type { LinkedWatchInfo } from '../../companion/watch-link';
 import {
@@ -20,7 +23,7 @@ import {
   requestWatchSyncNotificationPermission as requestDefaultWatchSyncNotificationPermission,
 } from '../../notifications/watch-sync-notification-service';
 import { useAppPreferences, type ThemePreference } from '../../states/app-preferences';
-import { useAuth, type AuthState } from '../../states/auth';
+import { useAuth, type AuthContextValue } from '../../states/auth';
 import type { GuestClaimViewState } from '../../claim/guest-claim-types';
 import {
   defaultWatchRejectedPayloadStore,
@@ -28,24 +31,9 @@ import {
   type WatchRejectedPayloadStore,
 } from '../../storage/watch-rejected-payload-store';
 
-export type SettingsRoute = 'index' | 'theme' | 'language' | 'notifications' | 'devices';
+export type SettingsRoute = 'index' | 'account' | 'theme' | 'language' | 'devices';
 
-type SettingRowProps = {
-  icon: React.ElementType;
-  label: string;
-  rowTestID: string;
-  valueTestID: string;
-  value: string;
-  onPress: () => void;
-};
-
-type OptionRowProps = {
-  label: string;
-  rowTestID: string;
-  selected: boolean;
-  onPress: () => void | Promise<void>;
-  value: string;
-};
+type TranslationFunction = ReturnType<typeof useTranslation>['t'];
 
 type SettingsScreenProps = {
   loadLinkedWatchInfo?: () => Promise<LinkedWatchInfo>;
@@ -63,6 +51,11 @@ type SettingsScreenProps = {
   };
   onOpenAccountClaim?: () => void;
   rejectedWatchPayloadStore?: WatchRejectedPayloadStore;
+  /** Counts account changes saved on this device that the cloud has not received yet. */
+  loadPendingChangeCount?: () => Promise<number>;
+  /** True while account records are being downloaded from the cloud. */
+  isCloudRefreshing?: boolean;
+  appVersion?: string;
 };
 
 const themeOptions: ThemePreference[] = ['system', 'light', 'dark'];
@@ -79,6 +72,9 @@ export default function SettingsScreen({
   accountClaim,
   onOpenAccountClaim,
   rejectedWatchPayloadStore = defaultWatchRejectedPayloadStore,
+  loadPendingChangeCount,
+  isCloudRefreshing = false,
+  appVersion = packageJson.version,
   route: controlledRoute,
 }: SettingsScreenProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -88,11 +84,17 @@ export default function SettingsScreen({
   const [localRoute, setLocalRoute] = React.useState<SettingsRoute>('index');
   const [linkedWatchInfo, setLinkedWatchInfo] = React.useState<LinkedWatchInfo | undefined>();
   const [linkedWatchLookupFailed, setLinkedWatchLookupFailed] = React.useState(false);
+  const [isRefreshingWatch, setIsRefreshingWatch] = React.useState(false);
   const [rejectedWatchPayloads, setRejectedWatchPayloads] = React.useState<RejectedWatchPayload[]>([]);
-  const [accountActionBusy, setAccountActionBusy] = React.useState(false);
+  const [isSigningOut, setIsSigningOut] = React.useState(false);
+  const [pendingChangeCount, setPendingChangeCount] = React.useState<number | 'unknown'>();
   const awaitingNotificationSettings = React.useRef(false);
   const notificationToggleBusy = React.useRef(false);
+  const signOutInFlight = React.useRef(false);
+  const loadPendingChangeCountRef = React.useRef(loadPendingChangeCount);
+  loadPendingChangeCountRef.current = loadPendingChangeCount;
   const route = controlledRoute ?? localRoute;
+  const isSignedIn = auth.state.status === 'authenticated' || auth.state.status === 'authenticatedOffline';
 
   React.useEffect(() => {
     const subscription = AppState.addEventListener('change', nextState => {
@@ -112,7 +114,8 @@ export default function SettingsScreen({
   }, [hasWatchSyncNotificationPermission, setWatchSyncNotificationsEnabled, watchSyncNotificationsEnabled]);
 
   React.useEffect(() => {
-    if (route !== 'notifications' || !watchSyncNotificationsEnabled) {
+    // The switch lives on the index, so a permission revoked elsewhere turns it off there.
+    if (route !== 'index' || !watchSyncNotificationsEnabled) {
       return;
     }
     void hasWatchSyncNotificationPermission().then(async permitted => {
@@ -124,16 +127,9 @@ export default function SettingsScreen({
 
   const themeLabel = getThemeLabel(themePreference, t);
   const languageLabel = getLanguageLabel(language, t);
-  const watchSyncNotificationLabel = watchSyncNotificationsEnabled ? t('settings.notifications.on') : t('settings.notifications.off');
   const eligibleAccountClaimCount =
     (accountClaim?.eligible.logCount ?? 0) + (accountClaim?.eligible.planCount ?? 0);
-  const showsAccountClaimRow = Boolean(
-    (auth.state.status === 'authenticated' ||
-      auth.state.status === 'authenticatedOffline') &&
-      accountClaim &&
-      eligibleAccountClaimCount > 0 &&
-      onOpenAccountClaim,
-  );
+  const showsAccountClaimRow = Boolean(isSignedIn && accountClaim && eligibleAccountClaimCount > 0 && onOpenAccountClaim);
   const openRoute = React.useCallback(
     (nextRoute: Exclude<SettingsRoute, 'index'>) => {
       if (onOpenRoute) {
@@ -177,6 +173,17 @@ export default function SettingsScreen({
     }
   }, [loadLinkedWatchInfo]);
 
+  const refreshLinkedWatchInfoFromButton = React.useCallback(async () => {
+    setIsRefreshingWatch(true);
+    try {
+      await refreshLinkedWatchInfo();
+    } finally {
+      if (isMountedRef.current) {
+        setIsRefreshingWatch(false);
+      }
+    }
+  }, [refreshLinkedWatchInfo]);
+
   React.useEffect(() => {
     void refreshLinkedWatchInfo();
   }, [refreshLinkedWatchInfo]);
@@ -196,23 +203,148 @@ export default function SettingsScreen({
     return rejectedWatchPayloadStore.subscribe(loadRejectedPayloads);
   }, [rejectedWatchPayloadStore]);
 
+  const readPendingChangeCount = React.useCallback(async (): Promise<number | 'unknown'> => {
+    const load = loadPendingChangeCountRef.current;
+    if (!load) {
+      return 0;
+    }
+    try {
+      return await load();
+    } catch {
+      return 'unknown';
+    }
+  }, []);
+
+  React.useEffect(() => {
+    if (route !== 'account' || !isSignedIn) {
+      return;
+    }
+    let active = true;
+    void readPendingChangeCount().then(count => {
+      if (active) {
+        setPendingChangeCount(count);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [isSignedIn, readPendingChangeCount, route]);
+
+  const watchStatusLoading = linkedWatchInfo === undefined && !linkedWatchLookupFailed;
+  const showWatchStatusLoading = useContentLoading(watchStatusLoading, 'linked-watch');
+  const watchName = linkedWatchInfo?.name ?? t('settings.devices.appleWatch');
+  // Nothing is shown for a fast lookup; "checking" appears only after the shared delay.
+  const watchStatus = linkedWatchLookupFailed
+    ? t('settings.devices.status.lookupFailed')
+    : watchStatusLoading
+      ? showWatchStatusLoading
+        ? t('settings.devices.status.checking')
+        : undefined
+      : getLinkedWatchStatusLabel(linkedWatchInfo, t);
+
+  const toggleWatchSyncNotifications = React.useCallback(async () => {
+    if (notificationToggleBusy.current) {
+      return;
+    }
+    notificationToggleBusy.current = true;
+    try {
+      if (watchSyncNotificationsEnabled) {
+        await setWatchSyncNotificationsEnabled(false);
+        return;
+      }
+
+      const permitted = await requestWatchSyncNotificationPermission();
+
+      if (permitted) {
+        await setWatchSyncNotificationsEnabled(true);
+        return;
+      }
+      Alert.alert(t('settings.notifications.permissionRequired'), t('settings.notifications.openSettingsDescription'), [
+        {
+          text: t('common.cancel'),
+          style: 'cancel',
+        },
+        {
+          text: t('settings.notifications.openSettings'),
+          onPress: () => {
+            awaitingNotificationSettings.current = true;
+            void openNotificationSettings();
+          },
+        },
+      ]);
+    } finally {
+      notificationToggleBusy.current = false;
+    }
+  }, [
+    openNotificationSettings,
+    requestWatchSyncNotificationPermission,
+    setWatchSyncNotificationsEnabled,
+    t,
+    watchSyncNotificationsEnabled,
+  ]);
+
+  const signOut = React.useCallback(async () => {
+    if (signOutInFlight.current) {
+      return;
+    }
+    signOutInFlight.current = true;
+    setIsSigningOut(true);
+    try {
+      await auth.signOut();
+    } finally {
+      signOutInFlight.current = false;
+      // Signing out swaps the data owner, which usually unmounts this screen first.
+      if (isMountedRef.current) {
+        setIsSigningOut(false);
+      }
+    }
+  }, [auth]);
+
+  const confirmSignOut = React.useCallback(async () => {
+    if (signOutInFlight.current) {
+      return;
+    }
+    // Read the outbox again so the warning matches what is waiting right now.
+    const count = await readPendingChangeCount();
+    if (!isMountedRef.current) {
+      return;
+    }
+    setPendingChangeCount(count);
+    const message = [
+      t('settings.account.signOutMessage'),
+      typeof count === 'number' && count > 0 ? t('settings.account.signOutPendingChanges', { count }) : undefined,
+    ]
+      .filter(Boolean)
+      .join('\n\n');
+
+    Alert.alert(t('settings.account.signOutTitle'), message, [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('settings.account.signOut'),
+        style: 'destructive',
+        onPress: () => {
+          void signOut();
+        },
+      },
+    ]);
+  }, [readPendingChangeCount, signOut, t]);
+
   if (route === 'theme') {
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.theme.title')} onBack={closeRoute} />
-
-        <OptionGroup value={themePreference} onChange={nextValue => setThemePreference(nextValue as ThemePreference)}>
-          {themeOptions.map(option => (
-            <OptionRow
+        <Section>
+          {themeOptions.map((option, index) => (
+            <Row
               key={option}
-              rowTestID={`settings-option-theme-${option}`}
+              testID={`settings-option-theme-${option}`}
               label={getThemeLabel(option, t)}
-              selected={themePreference === option}
+              accessory={{ kind: 'check', checked: themePreference === option }}
               onPress={() => setThemePreference(option)}
-              value={option}
+              separated={index > 0}
             />
           ))}
-        </OptionGroup>
+        </Section>
       </SettingsScaffold>
     );
   }
@@ -221,23 +353,18 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.language.title')} onBack={closeRoute} />
-
-        <OptionGroup
-          value={language}
-          onChange={nextValue => {
-            setLanguage(nextValue as SupportedLanguage);
-          }}>
-          {languageOptions.map(option => (
-            <OptionRow
+        <Section>
+          {languageOptions.map((option, index) => (
+            <Row
               key={option}
-              rowTestID={`settings-option-language-${option}`}
+              testID={`settings-option-language-${option}`}
               label={getLanguageLabel(option, t)}
-              selected={language === option}
+              accessory={{ kind: 'check', checked: language === option }}
               onPress={() => setLanguage(option)}
-              value={option}
+              separated={index > 0}
             />
           ))}
-        </OptionGroup>
+        </Section>
       </SettingsScaffold>
     );
   }
@@ -246,11 +373,21 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.devices.title')} onBack={closeRoute} />
-        <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} lookupFailed={linkedWatchLookupFailed} />
+        <Section>
+          <Row
+            testID="settings-linked-watch"
+            icon={WatchIcon}
+            label={watchName}
+            value={watchStatus}
+            valueTestID="settings-linked-watch-status"
+            separated={false}
+          />
+        </Section>
         <InstrumentButton
           testID="settings-linked-watch-refresh"
           label={t('settings.devices.refresh')}
-          onPress={refreshLinkedWatchInfo}
+          pending={isRefreshingWatch}
+          onPress={refreshLinkedWatchInfoFromButton}
         />
         {rejectedWatchPayloads.length > 0 ? (
           <VStack space="sm" className="rounded-2xl bg-card px-4 py-4">
@@ -260,261 +397,256 @@ export default function SettingsScreen({
             <Text testID="settings-rejected-watch-guidance" size="sm" className="leading-5 text-muted-foreground">
               {t('settings.devices.rejected.guidance')}
             </Text>
-            <InstrumentButton
+            <Pressable
               testID="settings-rejected-watch-clear"
-              label={t('settings.devices.rejected.clear')}
-              onPress={() => rejectedWatchPayloadStore.clear()}
-            />
+              accessibilityRole="button"
+              accessibilityLabel={t('settings.devices.rejected.clear')}
+              className="min-h-11 justify-center self-start"
+              onPress={() => rejectedWatchPayloadStore.clear()}>
+              <Text className="text-base text-primary">{t('settings.devices.rejected.clear')}</Text>
+            </Pressable>
           </VStack>
         ) : null}
       </SettingsScaffold>
     );
   }
 
-  if (route === 'notifications') {
+  if (route === 'account') {
+    const isOffline = auth.state.status === 'authenticatedOffline';
+
     return (
       <SettingsScaffold>
-        <DetailHeader title={t('settings.notifications.title')} onBack={closeRoute} />
-
-        <VStack className="overflow-hidden rounded-2xl bg-card">
-          <ToggleRow
-            rowTestID="settings-option-watch-sync-notifications"
-            label={t('settings.notifications.watchSyncTitle')}
-            selected={watchSyncNotificationsEnabled}
-            onPress={async () => {
-              if (notificationToggleBusy.current) {
-                return;
-              }
-              notificationToggleBusy.current = true;
-              try {
-                if (watchSyncNotificationsEnabled) {
-                  await setWatchSyncNotificationsEnabled(false);
-                  return;
-                }
-
-                const permitted = await requestWatchSyncNotificationPermission();
-
-                if (permitted) {
-                  await setWatchSyncNotificationsEnabled(true);
-                  return;
-                }
-                Alert.alert(
-                  t('settings.notifications.permissionRequired'),
-                  t('settings.notifications.openSettingsDescription'),
-                  [
-                    {
-                      text: t('common.cancel'),
-                      style: 'cancel',
-                    },
-                    {
-                      text: t('settings.notifications.openSettings'),
-                      onPress: () => {
-                        awaitingNotificationSettings.current = true;
-                        void openNotificationSettings();
-                      },
-                    },
-                  ],
-                );
-              } finally {
-                notificationToggleBusy.current = false;
-              }
-            }}
-          />
-        </VStack>
+        <DetailHeader title={t('settings.account.title')} onBack={closeRoute} />
+        {isSignedIn ? (
+          <>
+            <Section>
+              <Row
+                testID="settings-account-identity"
+                label={getSignedInLabel(auth.recentProvider, t)}
+                separated={false}
+              />
+              <Row
+                testID="settings-row-sync"
+                label={t('settings.account.sync')}
+                value={getSyncValue({ isOffline, isCloudRefreshing, pendingChangeCount }, t)}
+                valueTestID="settings-account-sync-status"
+                detail={isOffline ? t('settings.account.offlineDescription') : undefined}
+              />
+              {showsAccountClaimRow ? (
+                <Row
+                  testID="settings-row-account-claim"
+                  label={t('accountClaim.settingsAction')}
+                  value={`${eligibleAccountClaimCount}`}
+                  valueTestID="settings-account-claim-count"
+                  onPress={onOpenAccountClaim}
+                />
+              ) : null}
+            </Section>
+            <VStack className="overflow-hidden rounded-2xl bg-card">
+              <SignOutRow label={t('settings.account.signOut')} pending={isSigningOut} onPress={confirmSignOut} />
+            </VStack>
+          </>
+        ) : (
+          <Section>
+            <Row
+              testID="settings-account-status"
+              label={getAccountRow(auth, t).label}
+              separated={false}
+            />
+          </Section>
+        )}
       </SettingsScaffold>
     );
   }
+
+  const accountRow = getAccountRow(auth, t);
+  const accountRowAction =
+    accountRow.action === 'login' ? onOpenLogin : accountRow.action === 'account' ? () => openRoute('account') : undefined;
 
   return (
     <SettingsScaffold>
-      <Text testID="settings-screen-title" size="3xl" className="font-semibold text-foreground">
-        {t('settings.title')}
-      </Text>
+      <ScreenHeader title={t('settings.title')} titleTestID="settings-screen-title" />
 
-      <VStack space="sm">
-        <Text testID="settings-section-account" size="xs" bold className="uppercase text-muted-foreground">
-          {t('settings.account.title')}
-        </Text>
-        <AccountCard
-          authState={auth.state}
-          isConfigured={auth.isConfigured}
-          isBusy={accountActionBusy}
-          onLogin={onOpenLogin}
-          onSignOut={async () => {
-            if (accountActionBusy) {
-              return;
-            }
-
-            setAccountActionBusy(true);
-            try {
-              await auth.signOut();
-            } finally {
-              setAccountActionBusy(false);
-            }
-          }}
+      <Section testID="settings-section-account" title={t('settings.account.title')}>
+        <Row
+          testID={accountRow.testID}
+          label={accountRow.label}
+          detail={accountRow.detail}
+          value={accountRow.value}
+          valueTestID="settings-account-value"
+          onPress={accountRowAction}
+          separated={false}
         />
-        {showsAccountClaimRow ? (
-          <VStack className="overflow-hidden rounded-2xl bg-card">
-            <SettingRow
-              rowTestID="settings-row-account-claim"
-              icon={ArrowUpIcon}
-              label={t('accountClaim.settingsAction')}
-              value={`${eligibleAccountClaimCount}`}
-              valueTestID="settings-account-claim-count"
-              onPress={onOpenAccountClaim!}
-            />
-          </VStack>
-        ) : null}
-      </VStack>
+      </Section>
 
-      <VStack space="sm">
-        <Text size="xs" className="font-semibold uppercase text-muted-foreground">
-          {t('settings.appearance')}
-        </Text>
-        <VStack className="overflow-hidden rounded-2xl bg-card">
-          <SettingRow
-            rowTestID="settings-row-theme"
-            icon={SunIcon}
-            label={t('settings.theme.title')}
-            value={themeLabel}
-            valueTestID="settings-current-theme"
-            onPress={() => openRoute('theme')}
-          />
-          <Box className="h-px bg-border" />
-          <SettingRow
-            rowTestID="settings-row-language"
-            icon={GlobeIcon}
-            label={t('settings.language.title')}
-            value={languageLabel}
-            valueTestID="settings-current-language"
-            onPress={() => openRoute('language')}
-          />
-        </VStack>
-      </VStack>
+      <Section title={t('settings.appearance')}>
+        <Row
+          testID="settings-row-theme"
+          icon={SunIcon}
+          label={t('settings.theme.title')}
+          value={themeLabel}
+          valueTestID="settings-current-theme"
+          onPress={() => openRoute('theme')}
+          separated={false}
+        />
+        <Row
+          testID="settings-row-language"
+          icon={GlobeIcon}
+          label={t('settings.language.title')}
+          value={languageLabel}
+          valueTestID="settings-current-language"
+          onPress={() => openRoute('language')}
+        />
+      </Section>
 
-      <VStack space="sm">
-        <Text size="xs" className="font-semibold uppercase text-muted-foreground">
-          {t('settings.notifications.title')}
-        </Text>
-        <VStack className="overflow-hidden rounded-2xl bg-card">
-          <SettingRow
-            rowTestID="settings-row-notifications"
-            icon={BellIcon}
-            label={t('settings.notifications.watchSyncTitle')}
-            value={watchSyncNotificationLabel}
-            valueTestID="settings-current-watch-sync-notifications"
-            onPress={() => openRoute('notifications')}
-          />
-        </VStack>
-      </VStack>
+      <Section title={t('settings.notifications.title')}>
+        <Row
+          testID="settings-row-notifications"
+          icon={BellIcon}
+          label={t('settings.notifications.watchSyncTitle')}
+          accessory={{
+            kind: 'switch',
+            value: watchSyncNotificationsEnabled,
+            onValueChange: () => {
+              void toggleWatchSyncNotifications();
+            },
+          }}
+          separated={false}
+        />
+      </Section>
 
-      <VStack space="sm">
-        <Text testID="settings-section-devices" size="xs" className="font-semibold uppercase text-muted-foreground">
-          {t('settings.devices.title')}
-        </Text>
-        <Pressable
+      <Section testID="settings-section-devices" title={t('settings.devices.title')}>
+        <Row
           testID="settings-row-devices"
+          icon={WatchIcon}
+          label={watchName}
+          value={watchStatus}
+          valueTestID="settings-linked-watch-status"
           onPress={() => openRoute('devices')}
-          style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
-          <LinkedWatchCard linkedWatchInfo={linkedWatchInfo} lookupFailed={linkedWatchLookupFailed} showsDisclosure />
-        </Pressable>
-      </VStack>
+          separated={false}
+        />
+      </Section>
+
+      <Section testID="settings-section-about" title={t('settings.about.title')}>
+        <Row
+          testID="settings-row-version"
+          label={t('settings.about.version')}
+          value={appVersion}
+          valueTestID="settings-app-version"
+          separated={false}
+        />
+        <Row testID="settings-row-safety" label={t('settings.about.safetyTitle')} detail={t('settings.about.safetyNotice')} />
+      </Section>
     </SettingsScaffold>
   );
 }
 
-function AccountCard(props: {
-  authState: AuthState;
-  isConfigured: boolean;
-  isBusy: boolean;
-  onLogin?: () => void;
-  onSignOut: () => Promise<void>;
-}): React.JSX.Element {
-  const { t } = useTranslation();
-  const content = getAccountCardContent(props.authState, props.isConfigured, t);
-  const canLogin = content.action === 'login' && props.onLogin !== undefined;
-  const canSignOut = content.action === 'signOut';
+type AccountRowContent = {
+  testID: string;
+  label: string;
+  detail?: string;
+  value?: string;
+  action?: 'login' | 'account';
+};
 
-  return (
-    <VStack space="lg" className="rounded-2xl bg-card px-4 py-4">
-      <VStack space="xs">
-        <Text testID="settings-account-status" size="lg" bold className="text-card-foreground">
-          {content.status}
-        </Text>
-        {content.description ? (
-          <Text testID="settings-account-description" size="sm" className="leading-5 text-muted-foreground">
-            {content.description}
-          </Text>
-        ) : null}
-      </VStack>
-      {canLogin ? (
-        <InstrumentButton
-          testID="settings-account-action"
-          accessibilityLabel={t('settings.account.login')}
-          label={t('settings.account.login')}
-          variant="primary"
-          isDisabled={props.isBusy}
-          onPress={props.onLogin}
-        />
-      ) : null}
-      {canSignOut ? (
-        <InstrumentButton
-          testID="settings-account-action"
-          accessibilityLabel={t('settings.account.signOut')}
-          label={t('settings.account.signOut')}
-          variant="danger"
-          isDisabled={props.isBusy}
-          onPress={props.onSignOut}
-        />
-      ) : null}
-    </VStack>
-  );
-}
+function getAccountRow(
+  auth: Pick<AuthContextValue, 'state' | 'isConfigured' | 'availableProviders' | 'isDevelopmentSignInAvailable' | 'recentProvider'>,
+  t: TranslationFunction,
+): AccountRowContent {
+  const localOnly = { testID: 'settings-account-status', label: t('settings.account.localOnlyStatus') };
+  // A build without a usable sign-in has nothing to offer; it only says where records live.
+  const canSignIn = auth.isConfigured && (auth.availableProviders.length > 0 || auth.isDevelopmentSignInAvailable);
 
-function getAccountCardContent(
-  authState: AuthState,
-  isConfigured: boolean,
-  t: ReturnType<typeof useTranslation>['t'],
-): { status: string; description?: string; action?: 'login' | 'signOut' } {
-  if (!isConfigured) {
-    return {
-      status: t('settings.account.unconfiguredStatus'),
-      description: t('settings.account.unconfiguredDescription'),
-    };
+  if (!auth.isConfigured) {
+    return localOnly;
   }
 
-  switch (authState.status) {
+  switch (auth.state.status) {
     case 'guest':
-      return {
-        status: t('settings.account.guestStatus'),
-        action: 'login',
-      };
+      return canSignIn
+        ? {
+            testID: 'settings-account-action',
+            label: t('settings.account.login'),
+            detail: t('settings.account.loginBenefit'),
+            action: 'login',
+          }
+        : localOnly;
     case 'pendingOnboarding':
-      return {
-        status: t('settings.account.pendingStatus'),
-      };
+      return { testID: 'settings-account-status', label: t('settings.account.pendingStatus') };
     case 'authenticated':
-      return {
-        status: t('settings.account.authenticatedStatus'),
-        action: 'signOut',
-      };
+      return { testID: 'settings-row-account', label: getSignedInLabel(auth.recentProvider, t), action: 'account' };
     case 'authenticatedOffline':
       return {
-        status: t('settings.account.offlineStatus'),
-        description: t('settings.account.offlineDescription'),
-        action: 'signOut',
+        testID: 'settings-row-account',
+        label: getSignedInLabel(auth.recentProvider, t),
+        value: t('settings.account.offlineValue'),
+        action: 'account',
       };
     case 'bootstrapping':
     case 'authenticating':
-      return {
-        status: t('settings.account.signingInStatus'),
-      };
+      return { testID: 'settings-account-status', label: t('settings.account.signingInStatus') };
   }
+}
+
+/**
+ * Auth keeps no provider for the session, so the last provider used on this device is a hint.
+ * After a reinstall restores the session without that hint, the row stays neutral.
+ */
+function getSignedInLabel(recentProvider: SocialProvider | undefined, t: TranslationFunction): string {
+  if (recentProvider === 'apple') {
+    return t('settings.account.signedInWithApple');
+  }
+  if (recentProvider === 'google') {
+    return t('settings.account.signedInWithGoogle');
+  }
+  return t('settings.account.authenticatedStatus');
+}
+
+function getSyncValue(
+  status: { isOffline: boolean; isCloudRefreshing: boolean; pendingChangeCount: number | 'unknown' | undefined },
+  t: TranslationFunction,
+): string | undefined {
+  if (status.isOffline) {
+    return t('settings.account.offlineValue');
+  }
+  if (status.isCloudRefreshing) {
+    return t('settings.account.syncDownloading');
+  }
+  if (status.pendingChangeCount === 'unknown') {
+    return '--';
+  }
+  if (status.pendingChangeCount === undefined) {
+    return undefined;
+  }
+  return status.pendingChangeCount > 0
+    ? t('settings.account.syncPending', { count: status.pendingChangeCount })
+    : t('settings.account.syncNothingPending');
+}
+
+/** The destructive sign-out row: busy at once, spinner only after the shared delay. */
+function SignOutRow(props: { label: string; pending: boolean; onPress: () => void }): React.JSX.Element {
+  const { showIndicator } = useLoadingFeedback(props.pending);
+
+  return (
+    <Pressable
+      testID="settings-account-sign-out"
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
+      accessibilityState={{ busy: props.pending, disabled: props.pending }}
+      disabled={props.pending}
+      onPress={props.onPress}
+      className="active:bg-muted">
+      <HStack space="md" className="min-h-12 items-center px-4 py-3">
+        <Text className="flex-1 text-base text-destructive">{props.label}</Text>
+        {showIndicator ? <Spinner testID="settings-account-sign-out-spinner" aria-label={props.label} size="small" /> : null}
+      </HStack>
+    </Pressable>
+  );
 }
 
 function SettingsScaffold(props: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-5 pb-8 pt-5" contentInsetAdjustmentBehavior="automatic">
+    <ScrollView className="flex-1 bg-background" contentContainerClassName="px-5 pb-6 pt-4" contentInsetAdjustmentBehavior="automatic">
       <VStack space="xl">{props.children}</VStack>
     </ScrollView>
   );
@@ -525,150 +657,21 @@ function DetailHeader(props: { title: string; onBack: () => void }): React.JSX.E
 
   return (
     <VStack space="md">
-      <Button
-        variant="ghost"
-        size="icon"
-        testID="settings-back"
-        accessibilityLabel={t('common.back')}
-        onPress={props.onBack}
-        className="h-11 w-11 self-start rounded-full bg-primary/10"
-        style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.98 : 1 }] }]}>
-        <Box testID="settings-back-icon" className="items-center justify-center">
-          <ButtonIcon as={ChevronLeftIcon} className="text-primary" />
-        </Box>
-      </Button>
-      <Text testID="settings-detail-title" size="3xl" className="font-semibold text-foreground">
-        {props.title}
-      </Text>
+      <ScreenBackButton testID="settings-back" accessibilityLabel={t('common.back')} onPress={props.onBack} />
+      <ScreenHeader title={props.title} titleTestID="settings-detail-title" />
     </VStack>
   );
 }
 
-function OptionGroup(props: { children: React.ReactNode; value: string; onChange: (value: string) => void }): React.JSX.Element {
-  return (
-    <RadioGroup value={props.value} onChange={props.onChange} className="overflow-hidden rounded-2xl bg-card gap-0">
-      {props.children}
-    </RadioGroup>
-  );
-}
-
-function SettingRow(props: SettingRowProps): React.JSX.Element {
-  return (
-    <Button
-      variant="ghost"
-      testID={props.rowTestID}
-      onPress={props.onPress}
-      className="h-auto w-full rounded-none bg-card px-4 py-4"
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
-      <HStack space="md" className="min-h-10 flex-1 items-center justify-between">
-        <Box testID={`${props.rowTestID}-icon`} className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-          <ButtonIcon as={props.icon} className="text-primary" />
-        </Box>
-        <ButtonText className="flex-1 text-base font-semibold text-card-foreground">{props.label}</ButtonText>
-        <HStack space="sm" className="shrink-0 items-center">
-          <ButtonText testID={props.valueTestID} className="text-sm text-muted-foreground">
-            {props.value}
-          </ButtonText>
-          <Box testID={`${props.rowTestID}-disclosure`} className="items-center justify-center">
-            <ButtonIcon as={ChevronRightIcon} className="text-muted-foreground" />
-          </Box>
-        </HStack>
-      </HStack>
-    </Button>
-  );
-}
-
-function OptionRow(props: OptionRowProps): React.JSX.Element {
-  const labelClassName = props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground';
-
-  return (
-    <Radio
-      testID={props.rowTestID}
-      accessibilityState={{ selected: props.selected }}
-      onPress={props.onPress}
-      value={props.value}
-      className={props.selected ? 'bg-primary/10 px-4 py-4' : 'bg-card px-4 py-4'}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
-      <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
-        <RadioLabel className={`${labelClassName} flex-1 pr-3`}>{props.label}</RadioLabel>
-        <RadioIndicator>
-          <RadioIcon as={CircleIcon} />
-        </RadioIndicator>
-      </HStack>
-    </Radio>
-  );
-}
-
-function ToggleRow(props: {
-  label: string;
-  rowTestID: string;
-  selected: boolean;
-  onPress: () => void | Promise<void>;
-}): React.JSX.Element {
-  return (
-    <Pressable
-      testID={props.rowTestID}
-      accessibilityState={{ selected: props.selected }}
-      onPress={props.onPress}
-      className={props.selected ? 'bg-primary/10 px-4 py-4' : 'bg-card px-4 py-4'}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.99 : 1 }] }]}>
-      <HStack space="md" className="min-h-11 flex-1 items-center justify-between">
-        <Text className={`${props.selected ? 'font-semibold text-primary' : 'font-semibold text-card-foreground'} flex-1 pr-3`}>
-          {props.label}
-        </Text>
-        <Switch
-          testID={`${props.rowTestID}-switch`}
-          value={props.selected}
-          onValueChange={() => {
-            void props.onPress();
-          }}
-        />
-      </HStack>
-    </Pressable>
-  );
-}
-
-function LinkedWatchCard(props: {
-  linkedWatchInfo?: LinkedWatchInfo;
-  lookupFailed?: boolean;
-  showsDisclosure?: boolean;
-}): React.JSX.Element {
-  const { t } = useTranslation();
-  const watchName = props.linkedWatchInfo?.name ?? t('settings.devices.appleWatch');
-
-  return (
-    <HStack className="items-center rounded-2xl bg-card px-4 py-4" space="md">
-      <Box testID="settings-linked-watch-icon" className="h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-        <Icon as={WatchIcon} size="sm" className="text-primary" />
-      </Box>
-      <VStack space="xs" className="flex-1">
-        <Text testID="settings-linked-watch-name" className="text-base font-semibold text-card-foreground">
-          {watchName}
-        </Text>
-        <Text testID="settings-linked-watch-status" size="sm" className="leading-5 text-muted-foreground">
-          {props.lookupFailed
-            ? t('settings.devices.status.lookupFailed')
-            : getLinkedWatchStatusLabel(props.linkedWatchInfo, t)}
-        </Text>
-      </VStack>
-      {props.showsDisclosure ? (
-        <Box testID="settings-row-devices-disclosure" className="items-center justify-center">
-          <Icon as={ChevronRightIcon} size="md" className="text-muted-foreground" />
-        </Box>
-      ) : null}
-    </HStack>
-  );
-}
-
-function getThemeLabel(themePreference: ThemePreference, t: ReturnType<typeof useTranslation>['t']): string {
+function getThemeLabel(themePreference: ThemePreference, t: TranslationFunction): string {
   return t(`settings.theme.${themePreference}`);
 }
 
-function getLanguageLabel(language: SupportedLanguage, t: ReturnType<typeof useTranslation>['t']): string {
+function getLanguageLabel(language: SupportedLanguage, t: TranslationFunction): string {
   return language === 'ko' ? t('settings.language.korean') : t('settings.language.english');
 }
 
-function getLinkedWatchStatusLabel(linkedWatchInfo: LinkedWatchInfo | undefined, t: ReturnType<typeof useTranslation>['t']): string {
+function getLinkedWatchStatusLabel(linkedWatchInfo: LinkedWatchInfo | undefined, t: TranslationFunction): string {
   if (!linkedWatchInfo) {
     return t('settings.devices.status.checking');
   }
