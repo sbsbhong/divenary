@@ -35,7 +35,7 @@
 | [Monorepo 구조](architecture/monorepo.md) | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리하고, contracts에 session과 폰-워치 제어 메시지 schema를 둔다. | 2026-10-22 |
 | [Supabase 구조](architecture/supabase.md) | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단하고, mobile Auth 단계의 10초 시간 초과는 로그아웃 없이 transport failure로 다루되 onboarding 실패는 guest로 연다. | 2026-10-22 |
 | [동기화 흐름 구조](architecture/sync-flow.md) | 폰-워치 메시지는 `packages/contracts` schema가 기준이고, account hydrate는 원격 행을 최신순 페이지마다 바로 로컬에 적용하며, durable JSON은 원자적 단일 key 쓰기를 쓴다. | 2026-10-22 |
-| [Watch 앱 구조](architecture/watch-app.md) | 워치 기록·입력 구조, 현재 프로세스 기록을 제외한 복구 재시도, 실시간 수심·수온 유효성 및 데모 저장 실패 버튼 경계를 정리한다. | 2026-10-22 |
+| [Watch 앱 구조](architecture/watch-app.md) | 워치 기록·복구 구조, 계획값과 선택 수명, 저장 실패 후 홈 복귀·재시도, 중복 종료 방지, Always-On 화면 이동 제한과 번호 있는 재전송 피드백을 정리한다. | 2026-10-22 |
 
 ## domains
 
@@ -48,7 +48,7 @@
 | [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 과거 센서 이상 햅틱·화면·지속 표시 약속과 최신 자동 햅틱 금지의 충돌을 표시하고 E2 결정 전 금지를 유지한다. | 2026-10-22 |
 | [Diving App / Scuba Mode](domains/diving-app-scuba-mode.md) | Scuba mode v1은 Apple Watch 기반 40m 이하 Air-only gauge/log와 rule-based safety stop reminder를 포함하고, 40m 초과 값은 지원 범위 밖 warning과 함께 보존하지만 NDL, ceiling, TTS, CNS, gas remaining, decompression stop은 고위험 검증 범위로 분리한다. | 2026-08-02 |
 | [다이브 로그 도메인](domains/dive-log.md) | Watch session 삭제 identity는 `localSessionId`이고, 워치가 잰 값은 편집기에서 잠금(직접 수정·되돌리기)이며, import 기본 사이트·150 bar·내부 태그는 claim 재사용 때문에 저장값을 두고 화면에서만 숨긴다. | 2026-10-22 |
-| [다이브 계획 도메인](domains/dive-planning.md) | Planbook은 비중요 계획 알림이며, 초안은 제목이나 포인트만 요구하고 `계획 확정`과 `planned` 계획 저장만 전체 검사하며, `planned` 계획만 워치로 보내고 현재 버전이 전송됐을 때만 `워치 전송 요청됨`이라 표시한다. | 2026-10-22 |
+| [다이브 계획 도메인](domains/dive-planning.md) | Planbook은 비중요 계획 알림이며, 초안은 제목이나 포인트만 요구하고 `계획 확정`과 `planned` 계획 저장만 전체 검사하며, `planned` 계획만 워치로 보내고 현재 버전의 전송 여부를 표시하며, 워치 선택은 Home 시작에만 적용하고 실행·제거 뒤 해제하며 없는 목표값을 만들지 않는다. | 2026-10-22 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
 | [안전 규칙](domains/safety-rules.md) | 비인증 기록 경계를 유지하고 E1 상승 표시·E2 과거 자동 햅틱 약속의 충돌과 결정 대기, D 배터리·수면·센서 범위 제한을 명시한다. | 2026-10-22 |
 

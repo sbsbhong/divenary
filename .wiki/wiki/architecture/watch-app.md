@@ -12,6 +12,8 @@ Sources: 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22
 Raw: [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md)
 Sources: 워치 복구·실시간 값 후속 리뷰와 현재 구현, 2026-10-22
 Raw: [워치 복구·실시간 값 후속 리뷰](../../raw/architecture/2026-10-22-watch-review-recovery-and-live-values.md)
+Sources: 워치 수정 커밋 2df2bd1·90d3874와 현재 코드 대조, 2026-10-22
+Raw: [2026-10-22 워치 기록 정확도와 화면 흐름 수정](../../raw/architecture/2026-10-22-watch-accuracy-and-flow-fixes.md)
 Updated: 2026-10-22
 
 ## 요약
@@ -60,13 +62,13 @@ smoothed rate와 transient warning은 기록 화면의 비인증 보조 referenc
 
 기록 화면은 `live`일 때만 수심, depth rail, 상승 속도 숫자를 보인다. 그 밖에는 `--.- m`와 Waiting for depth, Depth unavailable, Depth sensor error, Outside sensor-authorized depth 중 맞는 상태를 보이고, 물 밖이면 At surface를 보인다. 마지막 유효 값을 현재 값처럼 남기지 않는다.
 
-sensor range를 넘었거나 sample 공백이 30초를 넘은 기록은 저장할 때 권장 스탑을 `unknown`으로 남긴다. `unsupportedDepth`에는 sensor가 알려준 한계와 처음 넘은 시각을 기록한다. 권장 스탑의 진행·일시정지·미완료 상태는 caution 앰버 색과 Recommended stop 문구를 쓰고 `danger` 빨강이나 action 파랑은 쓰지 않으며, 완료는 보조 회색이다.
+sensor range를 넘었거나 sample 공백이 30초를 넘은 기록은 저장할 때 권장 스탑을 `unknown`으로 남긴다. 공백에는 기록 시작부터 첫 측정, 마지막 측정부터 종료까지도 포함한다. 실시간 수심이 없으면 권장 스탑 타이머를 일시정지로 표시하고, 저장 결과가 `unknown`이면 요약·상세의 완료 여부·남은 시간·구간 내 시간은 `--`로 보인다. 이는 비인증 보조 알림의 관측 불확실성 표시이며 안전 판단이 아니다. `unsupportedDepth`에는 sensor가 알려준 한계와 처음 넘은 시각을 기록한다. 권장 스탑의 진행·일시정지·미완료 상태는 caution 앰버 색과 Recommended stop 문구를 쓰고 `danger` 빨강이나 action 파랑은 쓰지 않으며, 완료는 보조 회색이다.
 
-프리다이빙의 잠수 구간에서 수심이 실시간 상태가 아니면 큰 숫자는 계속 흐르는 전체 기록 시간이다. 마지막 관측 잠수 시간은 보조 항목에 남기며, 새 측정 없이 수심이나 수면 휴식 구간을 만들지 않는다. 실시간 수온은 센서의 실제 수온 측정 시각부터 60초가 되면 `--`로 바뀐다. 수심 측정에 같은 수온이 다시 실려 와도 유효 시간을 연장하지 않으며, 이 시각은 실시간 provider 경로에만 있고 저장·동기화 payload에는 추가하지 않는다.
+프리다이빙의 잠수 구간에서 수심이 실시간 상태가 아니면 큰 숫자는 계속 흐르는 전체 기록 시간이다. 상태 표시는 `Dive active`를 유지해 큰 숫자의 기록 시간 라벨을 반복하지 않는다. 마지막 관측 잠수 시간은 짧은 표시명 `마지막 확인`(`Last seen`)으로 보조 항목에 남기며, 새 측정 없이 수심이나 수면 휴식 구간을 만들지 않는다. 실시간 수온은 센서의 실제 수온 측정 시각부터 60초가 되면 `--`로 바뀐다. 수심 측정에 같은 수온이 다시 실려 와도 유효 시간을 연장하지 않으며, 이 시각은 실시간 provider 경로에만 있고 저장·동기화 payload에는 추가하지 않는다.
 
 ## 시작 규칙
 
-- manual start는 사용자가 고른 명시적 `PreDivePlan`으로 recorder를 시작하고 Divenary가 runtime session을 시작한다.
+- manual start는 사용자가 고른 명시적 `PreDivePlan`으로 recorder를 시작하고 Divenary가 runtime session을 시작한다. 계획을 선택하지 않은 기본 시작에는 계획 목표 수심·시간과 `planned-<n>m` 태그가 없다. 목표 수심 없는 모바일 계획도 `nil`을 유지하며 예전의 18 m 대체값을 쓰지 않는다. 목표 수심 태그는 유한한 양수이며 정수 변환 가능한 값에만 붙인다. 모바일 계획의 `buddyIds`는 `plannedBuddyIds` 배열로 보존한다.
 - 물 감지가 `submerged`가 되면 recorder를 시작하지 않고 `wetReady(mode:)`를 표시한다. 마지막 `preferredDiveMode`를 기본값으로 쓰며 Digital Crown 회전으로 Freedive/Scuba armed mode를 즉시 바꾼다. Crown press는 Water Lock의 watchOS system action이며 앱 입력이나 확인으로 쓰지 않는다.
 - Wet Ready는 자동 실행 권한이 `.active`여도 아직 기록 중이라는 뜻이 아니다. 모든 권한 상태에서 미기록 안내와 홈 화면 복귀를 제공하며, 복귀 뒤 마를 때까지 같은 물 감지로 다시 열리지 않게 한다.
 - system auto-launch는 `Settings > General > Auto-Launch > When Submerged`에서 선택된 Divenary에 watchOS가 runtime session을 제공할 때만 시작한다. Wet Ready가 먼저 있으면 armed mode를 `PreDivePlan`에 고정하고, runtime event가 water UI event보다 먼저 오면 `preferredDiveMode`를 fallback으로 쓴다. app-local depth threshold나 elapsed-time trigger는 recording start 조건이 아니다.
@@ -114,8 +116,8 @@ Action Button의 모든 누르기는 단계를 아는 intent 하나로 처리한
 
 - 모든 화면은 depth gauge, 수심 상태 chip과 Demo/Test 표식, 지원 수심 밖 경고를 유지한다. 화면마다 큰 숫자는 하나다. 스쿠버 Live·세부 화면과 프리다이빙 하강 중 화면(`DepthOrTimeMetric`)에서는 `liveDepthSignal == .live`일 때만 수심이고 그 밖에는 경과 시간이다. 권장 스탑 화면은 남은 스탑 시간, 프리다이빙 수면 대기는 기록 시간, 수면 휴식·요약은 수면 휴식 시간, 프리다이빙 세부 화면은 다이빙 횟수, 종료 화면은 경과 시간을 큰 숫자로 쓴다.
 - 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 수중 잠금 안내는 `notSubmerged`일 때만 보인다. chip과 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
-- Always-On(`isLuminanceReduced`)이면 Live 화면을 그리고 page model에도 알린다. 권장 스탑 라벨과 일시정지 문구, 상태 chip, Demo/Test 표식은 남긴다.
-- `ActionButtonHint`는 모델 식별자(`hw.machine`, 시뮬레이터는 `SIMULATOR_MODEL_IDENTIFIER`)가 `Watch6,18`, `Watch7,5`, `Watch7,12` 중 하나면 Ultra 계열로 본다. 이 판단은 힌트일 뿐이다. Divenary가 Action Button에 지정됐는지는 알 수 없으므로 문구는 조건형이고, Ultra 힌트가 없으면 안내 chip은 크라운 안내를 쓴다. 식별자 목록은 실기기 확인 대상이다.
+- Always-On(`isLuminanceReduced`)이면 `RecordingPageModel` 자체를 Live로 돌리고 그 상태를 유지하며, 동작 버튼·크라운의 화면 이동 요청을 무시한다. 화면은 항상 `pages.page`를 그리므로 보이는 화면과 입력 대상이 일치한다. `setAlwaysOn(false)` 뒤에 화면 이동을 다시 허용한다. 권장 스탑 라벨과 일시정지 문구, 상태 chip, Demo/Test 표식은 남긴다.
+- `ActionButtonHint`는 모델 식별자(`hw.machine`, 시뮬레이터는 `SIMULATOR_MODEL_IDENTIFIER`)가 `Watch6,18`, `Watch7,5`, `Watch7,12` 중 하나면 Ultra 계열로 본다. 이 판단은 힌트일 뿐이다. Divenary가 Action Button에 지정됐는지는 알 수 없으므로 문구는 조건형이고, Ultra 힌트가 없으면 안내 chip은 회전 방향까지 명시한 크라운 안내를 쓴다(`크라운 앞으로 ▸ 상세`, `크라운 뒤로 ▸ 실시간`). 식별자 목록은 실기기 확인 대상이다.
 - `DepthAutoLaunchAuthorization`은 `WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus` 결과를 `DepthAutoLaunchStatus`(`active`, `inactive`, `unknown`)로 읽고 오류는 `unknown`으로 둔다. Wet Ready 시작 안내는 이 상태와 Ultra 힌트로 고르며, `unknown`이거나 `inactive`인데 Ultra 힌트가 없으면 입수 전에 직접 시작하라는 안내를 쓴다.
 
 ## 종료와 결과 규칙
@@ -126,9 +128,15 @@ real recording에는 touch end control이 없다. 종료 화면에도 탭 대상
 2. Action Button end는 종료 화면에서 누를 때만 요청된다. 종료 화면은 물 밖·180초 조건에서만 순환에 들어가므로 종료는 항상 두 번 이상의 의도된 누르기다. `requestActionButtonEnd()`는 latest state가 `notSubmerged`이고 elapsed time이 `>=180s (3 minutes)`일 때만 runtime invalidation을 요청한다. 수중, unknown state, `180s` 미만 rejection은 diver interaction이 아니라 `RealDiveSessionCoordinatorTests.testActionButtonEndRejectsSubmergedUnknownAndTooShortRecordings`와 `testActionButtonEndRejectsUnknownWaterStateEvenNearTheSurface`로 확인한다. 2026-10-21 전 코드는 unknown state에서 마지막 수심이 1m 이하면 허용했지만, 이 계약에 맞춰 지웠다. 2026-10-22 개편은 `minimumHardwareEndElapsedSeconds = 180`과 이 guard를 바꾸지 않았다.
 3. watchOS는 계속 out-of-water 상태가 `>600s (10 minutes)`이면 runtime을 invalidate한다.
 
+종료 조건을 만족한 누르기는 runtime invalidation 전에 `isEnding`을 설정해 즉시 종료 중 화면을 보인다. 같은 종료 요청은 재실행하지 않으며, 종료 대기 중 동작 버튼 누르기는 `.rejected(.busy)`와 잠시 기다리라는 안내로 처리한다.
+
 단일 `notSubmerged` event는 종료하지 않고, Divenary에는 app-side `600-second (10-minute)` timer가 없다. 이 부재는 `RealDiveSessionCoordinator.swift`의 timer-symbol static search와 `RealDiveSessionCoordinatorTests.testWaterStateChangesDoNotStopOrReplaceRecording`으로 감사한다. `600s (10 minutes)` 전에 resubmerge하면 기존 recorder와 local session ID가 계속 사용된다.
 
 valid depth sample이 있으면 invalidation 뒤 finalized `DiveSessionRecord`를 Watch local store에 먼저 저장한다. 성공 뒤에만 recorder completed state를 정리하고 read-only `Saved` summary를 표시한다. save 실패는 record와 local session ID를 유지하며 foreground 복귀 또는 명시적 Retry가 같은 record를 다시 저장한다. real completion에는 post-dive metadata, Save/Discard/Delete 입력이 없다. manual/Action Button start가 sample 없이 끝나면 저장하지 않고 compact no-sample result를 한 번 보인다. system auto-launch no-sample attempt는 저장하거나 UI를 남기지 않고 조용히 취소한다.
+
+실제 저장 실패 화면은 `Retry Save`와 `Back to Home`을 제공하고, 동작 버튼은 저장 재시도 뒤 새 기록을 시작한다고 안내한다. 재저장도 실패하면 기존 기록을 보류한 채 새 시작 경로로 넘어간다. 홈 복귀는 완료 기록을 앱 범위 `pendingRecords`에 보관하고 recorder 메모리만 정리하며 미저장 저널을 취소·삭제하지 않는다. Home 표시와 앱 활성화 때 자동 저장 재시도를 실행하고 성공한 기록만 보류 목록에서 제거한다.
+
+실제·데모 저장 실패 안내는 스크롤 본문의 버튼 위에 배치하고 자동으로 숨기지 않아 재시도 버튼을 덮지 않는다. 연속 실패는 번호로 구분한다. 이는 `90d3874`에서 하단 inset 안내를 바꾼 결과다.
 
 demo/debug는 `DemoDepthSensorProvider`와 Digital Crown depth simulation을 유지하고, Action Button bridge에 설치한 자체 종료 override로 끝낸다. demo는 toolbar의 xmark(`End demo`)로도 끝낼 수 있다. 예전 문서의 `SurfaceEndDiveGate`와 수면 조건 touch end는 2026-07-27 커밋 `748c515`에서 이미 지워졌다. 이 경로는 `WKExtendedRuntimeSession`, Water Lock, real Action Button ending, 화면 순환, 10분 규칙을 사용하지 않는다. demo/debug 요약에는 저장 완료 햅틱과 다음 다이빙 시작 안내가 없다.
 
@@ -143,11 +151,11 @@ demo/debug의 system back은 recording, summary, unresolved cleanup 동안 lifec
 
 ## 저장 기록과 계획 화면
 
-- Home은 Dive Plans 행 하나로 선택된 계획을 보여 주고, Dive Plans 화면에서 계획을 누르면 다음 다이브에 쓰고 다시 누르면 해제한다. 수심이 없는 계획은 `--.- m`로 보인다.
+- Home은 Dive Plans 행 하나로 선택된 계획을 보여 주고, 계획 화면은 선택이 Home에서 시작할 때만 적용되며 다시 누르면 해제된다고 안내한다. Home 표시, 계획 목록 변경, 시작 직전에 선택 ID를 현재 목록과 대조한다. 실제 기록 저장 성공으로 실행된 계획이나 목록에서 제거된 계획은 선택을 해제하고 모드만 남긴 기본 계획으로 되돌린다. 선택 계획과 다른 모드로 시작할 때도 기본 계획을 쓴다. 수심이 없는 계획은 `--.- m`로 보인다. 도메인 경계는 [다이브 계획 도메인](../domains/dive-planning.md)을 따른다.
 - Home의 실제 시작 카드는 프리다이빙과 스쿠버 두 개다. `DepthSensorAvailability` 확인이 끝나기 전(`sensorAvailability == nil`)에는 placeholder 없이 카드를 비활성으로 그리고, 지원하지 않는 기기는 빨간 오류 카드 대신 neutral 안내를 보인다. `수중 조작` 행은 자동 실행 상태를 보이고 `UnderwaterControlsView`(자동 실행 설정, 동작 버튼 지정 방법, 크라운 안내)로 들어간다. Demo는 시작 카드가 아니라 아래쪽 보조 행이다. 이전의 `launchPlaceholder`는 지웠다.
 - 저장 요약은 최대 수심과 시간을 먼저 두고 sample 수는 상세 화면에만 남긴다. 실제 기록의 요약이 보이면 `saved` 햅틱을 한 번 울리고, Ultra 힌트가 있으면 다음 누르기로 다음 다이빙을 시작한다는 안내를 보인다.
-- 동기화 상태 값(`pending`, `synced`, `failed`)은 sync 계약에 있어 그대로 두고, 표시만 Waiting for iPhone, Saved on iPhone, Not sent to iPhone으로 한다. 실패한 세션 상세 화면의 Send Again은 그 artifact 하나를 다시 enqueue한다. 전송 완료와 iPhone 수신 확인 대기를 나누는 표시는 paired hardware 검증 전에는 하지 않는다.
-- 요약, 목록, 상세는 지원 수심을 넘은 기록에 Outside watch support 표식을 붙이고 리뷰용으로만 보관한다고 알린다.
+- 동기화 상태 값(`pending`, `synced`, `failed`)은 sync 계약에 있어 그대로 두고, 표시만 Waiting for iPhone, Saved on iPhone, Not sent to iPhone으로 한다. 실패한 세션 상세 화면의 Send Again은 그 artifact 하나를 다시 enqueue한다. 수동 재전송마다 세션별 시도 번호를 늘리고 manifest 읽기 실패·즉시 전송 실패·비동기 전송 실패를 번호와 함께 상세 화면에 표시한다. 전송 대기나 동기화 완료가 되면 실패 안내를 지우며, iPhone이 이미 확인한 기록을 늦은 실패로 되돌리지 않는다. 전송 완료와 iPhone 수신 확인 대기를 나누는 표시는 paired hardware 검증 전에는 하지 않는다.
+- 요약, 목록, 상세는 지원 수심을 넘은 기록에 Outside watch support 표식을 붙이고 리뷰용으로만 보관한다고 알린다. 기존 `profile.interrupted == true`인 기록에는 `중단 후 복구됨`(`Recovered after interruption`) 표식도 붙인다.
 
 ## Signing과 실기기 경계
 
@@ -161,7 +169,7 @@ signed device build에서 code-signing entitlement와 embedded profile 모두를
 
 ## 2026-10-22 UX 리뷰 백로그와 미결 표시 정책
 
-소유자는 A(기록 정확성)·B(막힌 흐름)를 수정 중이며, D 기능은 [구현 우선순위의 승인 백로그](implementation-priorities.md), E 결정은 [열린 질문](../questions/open-questions.md)에 남기도록 했다. 이 문서의 라이브 상승 속도 참고값 설명은 benchmark의 상승 지시 회피 원칙과 충돌하며 E1에서 유지·숨김·수면 후 리뷰만 표시 중 결정한다. 기존 표시 설명은 새로운 안전 판단 승인이 아니다.
+소유자가 수정 중이라고 알렸던 A(기록 정확성)·B(막힌 흐름) 가운데 위에서 코드로 확인한 수정은 2026-10-22 커밋 `2df2bd1`·`90d3874`에 반영됐다. D 기능은 [구현 우선순위의 승인 백로그](implementation-priorities.md), E 결정은 [열린 질문](../questions/open-questions.md)에 남기도록 했다. 이 문서의 라이브 상승 속도 참고값 설명은 benchmark의 상승 지시 회피 원칙과 충돌하며 E1에서 유지·숨김·수면 후 리뷰만 표시 중 결정한다. 기존 표시 설명은 새로운 안전 판단 승인이 아니다.
 
 동작 버튼의 현행 화면 넘김은 D5 북마크 제안과 같은 입력을 쓰므로 역할·저장 contract 결정이 먼저다. D6는 약 6 m의 공개 shallow 허가 범위 밖에서도 기록 상태를 이해하는 화면 설계이며, 아래 40 m 제품 경계가 실제 센서 권한을 보장하지 않는다. D·E 등록만으로 동작·계약을 바꾸거나 실기기 통과를 선언하지 않는다.
 
