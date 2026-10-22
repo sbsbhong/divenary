@@ -159,7 +159,7 @@ final class RecordingHintTests: XCTestCase {
     }
 
     func testAuthorizedGaugeUsesSixMeterRangeAndCleanSparseTicks() {
-        let scale = RecordingGaugeScale(maximumDepthMeters: 6, fallbackMeters: 30)
+        let scale = RecordingGaugeScale(maximumDepthMeters: 6, rangeMeters: 30)
         XCTAssertEqual(scale.upperBound, 6)
         XCTAssertEqual(scale.ticks, [0, 2, 4, 6])
         XCTAssertEqual(scale.displayedDepth(8), 6)
@@ -168,17 +168,35 @@ final class RecordingHintTests: XCTestCase {
     }
 
     func testGaugeFallbackMinimumAndFractionalAuthorizationNeverInventRange() {
-        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: nil, fallbackMeters: 30).upperBound, 30)
-        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: .nan, fallbackMeters: 30).upperBound, 30)
-        let fractional = RecordingGaugeScale(maximumDepthMeters: 5.7, fallbackMeters: 30)
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: nil, rangeMeters: 30).upperBound, 30)
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: .nan, rangeMeters: 30).upperBound, 30)
+        let fractional = RecordingGaugeScale(maximumDepthMeters: 5.7, rangeMeters: 30)
         XCTAssertEqual(fractional.upperBound, 5.7)
         XCTAssertEqual(fractional.ticks, [0, 2, 4])
         XCTAssertEqual(fractional.displayedDepth(6), 5.7)
-        let shallow = RecordingGaugeScale(maximumDepthMeters: 0.5, fallbackMeters: 30)
+        let shallow = RecordingGaugeScale(maximumDepthMeters: 0.5, rangeMeters: 30)
         XCTAssertEqual(shallow.upperBound, 1)
         XCTAssertTrue(shallow.ticks.allSatisfy { $0 <= 0.5 })
         XCTAssertEqual(shallow.displayedDepth(1), 0.5)
-        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: 100, fallbackMeters: 30).upperBound, 40)
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: 100, rangeMeters: 60).upperBound, 40)
+    }
+
+    func testGaugeRangeFollowsTheDiveWithinTheAuthorizedLimit() {
+        // A 40 m sensor limit no longer pins the rail to 0-40 m from the start of the dive.
+        let shallowDive = RecordingGaugeScale(maximumDepthMeters: 40, rangeMeters: 30)
+        XCTAssertEqual(shallowDive.upperBound, 30)
+        XCTAssertEqual(shallowDive.ticks, [0, 10, 20, 30])
+        XCTAssertEqual(shallowDive.displayLimit, 40)
+
+        let deeperDive = RecordingGaugeScale(maximumDepthMeters: 40, rangeMeters: 40)
+        XCTAssertEqual(deeperDive.upperBound, 40)
+        XCTAssertEqual(deeperDive.ticks, [0, 20, 40])
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: 40, rangeMeters: 50).upperBound, 40)
+
+        // The recommended stop page asks for about 10 m so the 3-6 m zone stands out.
+        let stop = RecordingGaugeScale(maximumDepthMeters: 40, rangeMeters: 10)
+        XCTAssertEqual(stop.upperBound, 10)
+        XCTAssertEqual(stop.ticks, [0, 5, 10])
     }
 
     func testEndGuidanceNamesTheAvailableHardwarePath() {

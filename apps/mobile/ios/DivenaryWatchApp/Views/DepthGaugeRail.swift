@@ -1,19 +1,21 @@
 import SwiftUI
 
-/// Presentation only: the rail never extrapolates beyond the authorized sensor range.
+/// Presentation only. Each page asks for a range that follows the dive: 30 m, widening in 10 m steps
+/// past the deepest point, or about 10 m around a recommended stop so the stop zone stands out. The
+/// rail never extrapolates beyond the authorized sensor range, so that limit caps the range.
 /// A one-meter minimum span avoids division by zero; ticks and values still respect a smaller limit.
 struct RecordingGaugeScale {
     let upperBound: Double
     let displayLimit: Double
 
-    init(maximumDepthMeters: Double?, fallbackMeters: Double) {
-        let fallback = fallbackMeters.isFinite ? max(1, fallbackMeters) : 30
+    init(maximumDepthMeters: Double?, rangeMeters: Double) {
+        let range = rangeMeters.isFinite ? max(1, rangeMeters) : 30
         if let maximumDepthMeters, maximumDepthMeters.isFinite, maximumDepthMeters > 0 {
             displayLimit = min(maximumDepthMeters, DiveDepthSupport.supportedWatchDepthLimitMeters)
-            upperBound = max(1, displayLimit)
+            upperBound = max(1, min(range, displayLimit))
         } else {
-            displayLimit = fallback
-            upperBound = fallback
+            displayLimit = range
+            upperBound = range
         }
     }
 
@@ -107,7 +109,7 @@ struct DepthGaugeRail: View {
     }
 
     private var scale: RecordingGaugeScale {
-        RecordingGaugeScale(maximumDepthMeters: authorizedMaximum, fallbackMeters: maxScaleMeters)
+        RecordingGaugeScale(maximumDepthMeters: authorizedMaximum, rangeMeters: maxScaleMeters)
     }
 
     private var scaleUpperBound: Double { scale.upperBound }

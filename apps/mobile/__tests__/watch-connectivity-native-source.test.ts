@@ -729,7 +729,10 @@ describe('WatchConnectivity native source contract', () => {
     expect(gauge).toContain('visibleRange');
     expect(gauge).toContain('clampedTop');
     expect(gauge).toContain('maxHeight: .infinity');
-    expect(gauge).toContain('fallbackMeters.isFinite ? max(1, fallbackMeters) : 30');
+    expect(gauge).toContain('rangeMeters.isFinite ? max(1, rangeMeters) : 30');
+    // The page's dive-following range applies, capped by the authorized sensor limit.
+    expect(gauge).toContain('upperBound = max(1, min(range, displayLimit))');
+    expect(recording).toContain('max(10, ceil((max(currentDepthMeters ?? 0, safetyStop.maxDepthMeters) + 2) / 2) * 2)');
     expect(gauge).toContain('private func sanitizedDepth(_ depth: Double) -> Double');
     expect(gauge).toContain('guard depth.isFinite else { return 0 }');
     expect(recording).toContain('safetyStop: recorder.scubaSafetyStop');
