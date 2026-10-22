@@ -284,7 +284,66 @@ function watchEntryWithProfile(localId: string, importKey: string, profileKey: s
   };
 }
 
+const watchMessageWithSamples: WatchSyncMessage = {
+  ...watchMessage,
+  session: {
+    ...watchMessage.session,
+    samples: [
+      { localSessionId: watchMessage.session.localSessionId, timestamp: 200, depthMeters: 3 },
+      { localSessionId: watchMessage.session.localSessionId, timestamp: 201, depthMeters: 5 },
+    ],
+  },
+};
+
 describe('PersistentDiveLogRepository', () => {
+  it('stores a shared watch preview once and restores it when read', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDiveLogRepository({ storage, now: () => 500 });
+    const [imported] = await repository.importWatchMessages([watchMessageWithSamples]);
+
+    const stored = JSON.parse((await storage.getString(mobileStorageKeys.logbook))!);
+    expect(stored.schemaVersion).toBe(4);
+    expect(stored.value[0].watchCapture.samples.length).toBeGreaterThan(0);
+    expect(stored.value[0].watchCapture.session).not.toHaveProperty('samples');
+
+    const reread = await new PersistentDiveLogRepository({ storage }).get(imported.localId);
+    expect(reread).toEqual(imported);
+    expect(reread?.watchCapture?.session.samples).toEqual(reread?.watchCapture?.samples);
+  });
+
+  it('keeps both copies when the session samples differ from the preview', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const repository = new PersistentDiveLogRepository({ storage, now: () => 500 });
+    const [imported] = await repository.importWatchMessages([watchMessageWithSamples]);
+    const edited: DiveLogEntry = {
+      ...imported,
+      watchCapture: {
+        ...imported.watchCapture!,
+        session: { ...imported.watchCapture!.session, samples: [] },
+      },
+    };
+
+    await repository.save(edited);
+
+    const stored = JSON.parse((await storage.getString(mobileStorageKeys.logbook))!);
+    expect(stored.value[0].watchCapture.session.samples).toEqual([]);
+    await expect(repository.get(imported.localId)).resolves.toEqual(edited);
+  });
+
+  it('still reads a schema 3 logbook that stored both preview copies', async () => {
+    const storage = new InMemoryKeyValueStore();
+    const [imported] = await new PersistentDiveLogRepository({
+      storage: new InMemoryKeyValueStore(),
+      now: () => 500,
+    }).importWatchMessages([watchMessageWithSamples]);
+    await storage.setString(
+      mobileStorageKeys.logbook,
+      JSON.stringify({ schemaVersion: 3, updatedAt: 1, value: [imported] }),
+    );
+
+    await expect(new PersistentDiveLogRepository({ storage }).list()).resolves.toEqual([imported]);
+  });
+
   it('does not replace unreadable local logbook bytes when a save follows', async () => {
     const storage = new InMemoryKeyValueStore();
     const raw = '{"schemaVersion":99,"updatedAt":1,"value":[]}';

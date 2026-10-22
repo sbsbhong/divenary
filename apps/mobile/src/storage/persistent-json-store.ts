@@ -29,6 +29,8 @@ export type PersistentJsonStoreOptions<T> = {
   onReadError?: (error: Error) => void;
   readFailurePolicy?: 'default' | 'throw';
   recoveryKeys?: PersistentJsonRecoveryKeys;
+  /** Maps a value to the form written to storage; `migrate` turns it back. */
+  serialize?: (value: T) => unknown;
 };
 
 export class UnsupportedStorageVersionError extends Error {
@@ -91,6 +93,7 @@ export class PersistentJsonStore<T> {
   private readonly onReadError?: (error: Error) => void;
   private readonly readFailurePolicy: 'default' | 'throw';
   private readonly recoveryKeys?: PersistentJsonRecoveryKeys;
+  private readonly serialize?: (value: T) => unknown;
   private legacyJournalSettled = false;
   private cached?: {raw: string; value: T};
 
@@ -104,6 +107,7 @@ export class PersistentJsonStore<T> {
     this.onReadError = options.onReadError;
     this.readFailurePolicy = options.readFailurePolicy ?? 'default';
     this.recoveryKeys = options.recoveryKeys;
+    this.serialize = options.serialize;
   }
 
   async read(): Promise<T> {
@@ -135,10 +139,10 @@ export class PersistentJsonStore<T> {
    */
   async write(value: T): Promise<void> {
     await this.settleLegacyJournal();
-    const envelope: StoredEnvelope<T> = {
+    const envelope: StoredEnvelope<unknown> = {
       schemaVersion: this.schemaVersion,
       updatedAt: this.now(),
-      value,
+      value: this.serialize ? this.serialize(value) : value,
     };
 
     const serialized = JSON.stringify(envelope);

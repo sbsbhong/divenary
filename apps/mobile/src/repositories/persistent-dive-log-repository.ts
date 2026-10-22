@@ -45,7 +45,7 @@ export type PersistentDiveLogRepositoryOptions = {
   profileKeyPrefix?: string;
 };
 
-export const DIVE_LOGBOOK_SCHEMA_VERSION = 3;
+export const DIVE_LOGBOOK_SCHEMA_VERSION = 4;
 export const DEFAULT_WATCH_PROFILE_KEY_PREFIX = 'dive-mobile:watch-profile:';
 
 export class PersistentDiveLogRepository implements DiveLogRepository {
@@ -71,6 +71,7 @@ export class PersistentDiveLogRepository implements DiveLogRepository {
       schemaVersion: DIVE_LOGBOOK_SCHEMA_VERSION,
       defaultValue: () => initialEntries.map(cloneDiveLogEntry),
       migrate: envelope => migrateDiveLogbookEnvelope(envelope, storageKey),
+      serialize: entries => entries.map(toStoredEntry),
       storage: metadataStorage,
       now: this.now,
       onReadError: options.onReadError,
@@ -544,6 +545,12 @@ export function migrateDiveLogbookEnvelope(
   assertEnvelope(envelope, storageKey);
 
   if (envelope.schemaVersion === DIVE_LOGBOOK_SCHEMA_VERSION) {
+    restoreSharedPreviews(envelope.value);
+    assertDiveLogEntries(envelope.value, true, storageKey);
+    return envelope.value as DiveLogEntry[];
+  }
+
+  if (envelope.schemaVersion === 3) {
     assertDiveLogEntries(envelope.value, true, storageKey);
     return envelope.value as DiveLogEntry[];
   }
@@ -564,6 +571,36 @@ export const createDefaultPersistentDiveLogRepository = (
 ): PersistentDiveLogRepository => new PersistentDiveLogRepository(options);
 
 export const defaultPersistentDiveLogRepository = createDefaultPersistentDiveLogRepository();
+
+/**
+ * A watch log keeps the same 160-sample preview in `watchCapture.samples` and in
+ * `watchCapture.session.samples`. Schema 4 stores it once: the session copy is left out when
+ * it equals the preview and restored from it on read, so callers still see both.
+ */
+function toStoredEntry(entry: DiveLogEntry): unknown {
+  const capture = entry.watchCapture;
+  if (capture === undefined || !sameSamples(capture.session.samples, capture.samples)) {
+    return entry;
+  }
+  const {samples: _sharedPreview, ...session} = capture.session;
+  return {...entry, watchCapture: {...capture, session}};
+}
+
+function restoreSharedPreviews(value: unknown): void {
+  if (!Array.isArray(value)) {
+    return;
+  }
+  for (const entry of value) {
+    const capture = isRecord(entry) ? entry.watchCapture : undefined;
+    if (isRecord(capture) && isRecord(capture.session) && !('samples' in capture.session)) {
+      capture.session.samples = capture.samples;
+    }
+  }
+}
+
+function sameSamples(left: readonly WatchDepthSample[], right: readonly WatchDepthSample[]): boolean {
+  return left === right || JSON.stringify(left) === JSON.stringify(right);
+}
 
 function findByImportKey(entries: DiveLogEntry[], importKey: string | undefined): DiveLogEntry | undefined {
   if (!importKey) {
@@ -691,16 +728,19 @@ function assertWatchCapture(value: unknown, storageKey: string): void {
   if (!sessionResult.ok) {
     throw new Error(`Malformed logbook watch session for ${storageKey}: ${sessionResult.error.message}`);
   }
-  const samplesResult = parseWatchSyncMessageValue({
-    type: 'sessionEnded',
-    session: {
-      localSessionId: sessionResult.message.session.localSessionId,
-      startedAt: sessionResult.message.session.startedAt,
-      samples: value.samples,
-    },
-  });
-  if (!samplesResult.ok) {
-    throw new Error(`Malformed logbook watch samples for ${storageKey}`);
+  // A restored schema 4 entry shares one preview array, which the session check already covered.
+  if (!isRecord(value.session) || value.samples !== value.session.samples) {
+    const samplesResult = parseWatchSyncMessageValue({
+      type: 'sessionEnded',
+      session: {
+        localSessionId: sessionResult.message.session.localSessionId,
+        startedAt: sessionResult.message.session.startedAt,
+        samples: value.samples,
+      },
+    });
+    if (!samplesResult.ok) {
+      throw new Error(`Malformed logbook watch samples for ${storageKey}`);
+    }
   }
 
   if (value.profile !== undefined) {
