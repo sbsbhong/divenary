@@ -12,17 +12,16 @@ struct HomeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @StateObject private var autoLaunchAuthorization = DepthAutoLaunchAuthorization()
     @State private var plan = PreDivePlan()
-    @State private var sensorAvailability = DepthSensorAvailability.launchPlaceholder
+    /// `nil` while the first sensor check runs. The real start cards stay disabled until then, with
+    /// no placeholder and no error card, because the check takes about one frame.
+    @State private var sensorAvailability: DepthSensorAvailability?
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if sensorAvailability.readiness != .ready {
-                        HomeSensorError(
-                            sensorReadiness: sensorAvailability.readiness,
-                            autoLaunchStatus: autoLaunchAuthorization.statusText
-                        )
+                    if let sensorAvailability, sensorAvailability.readiness != .ready {
+                        HomeSensorNotice(sensorReadiness: sensorAvailability.readiness)
                     }
 
                     Button {
@@ -35,8 +34,8 @@ struct HomeView: View {
                             trailingSystemImage: "play.fill"
                         )
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!sensorAvailability.canStartRealDive)
+                    .buttonStyle(DivePressStyle())
+                    .disabled(!canStartRealDive)
 
                     Button {
                         startRealDive(mode: .scuba)
@@ -48,15 +47,15 @@ struct HomeView: View {
                             trailingSystemImage: "play.fill"
                         )
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!sensorAvailability.canStartRealDive)
+                    .buttonStyle(DivePressStyle())
+                    .disabled(!canStartRealDive)
 
                     if !store.plannedDives.isEmpty {
                         NavigationLink {
                             DivePlansView(
                                 plannedDives: store.plannedDives,
                                 selectedPlanLocalId: plan.sourcePlanLocalId,
-                                isSelectionEnabled: sensorAvailability.canSelectPlannedDives,
+                                isSelectionEnabled: sensorAvailability?.canSelectPlannedDives ?? false,
                                 onSelect: apply(plannedDive:),
                                 onClearSelection: clearPlannedDive
                             )
@@ -69,9 +68,35 @@ struct HomeView: View {
                                 trailingSystemImage: "chevron.right"
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DivePressStyle())
                     }
 
+                    if let latestSession = store.sessions.first {
+                        LatestSessionCard(session: latestSession)
+                    }
+
+                    NavigationLink {
+                        SessionListView(store: store)
+                    } label: {
+                        HomeRow(title: "Saved Sessions", systemImage: "list.bullet")
+                    }
+                    .buttonStyle(DivePressStyle())
+
+                    NavigationLink {
+                        UnderwaterControlsView(
+                            autoLaunchStatus: autoLaunchAuthorization.status,
+                            hasActionButton: ActionButtonHint.current.isLikelyUltra
+                        )
+                    } label: {
+                        HomeRow(
+                            title: "Underwater controls",
+                            detail: autoLaunchAuthorization.statusText,
+                            systemImage: "hand.tap"
+                        )
+                    }
+                    .buttonStyle(DivePressStyle())
+
+                    // A secondary row, so a demo log is never mistaken for a real start.
                     NavigationLink {
                         DeferredView {
                             SimulatedRecordingFlowView(
@@ -83,14 +108,13 @@ struct HomeView: View {
                             )
                         }
                     } label: {
-                        StartSessionCard(
+                        HomeRow(
                             title: "Demo",
-                            systemImage: "digitalcrown.arrow.clockwise",
-                            accent: DiveWatchTheme.secondary,
-                            trailingSystemImage: "play.fill"
+                            detail: String(localized: "Simulated depth"),
+                            systemImage: "digitalcrown.arrow.clockwise"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(DivePressStyle())
 
                     #if DEBUG
                     if showsDebugControls {
@@ -105,15 +129,13 @@ struct HomeView: View {
                                 )
                             }
                         } label: {
-                            StartSessionCard(
+                            HomeRow(
                                 title: "Test Freedive",
-                                subtitle: String(localized: "Debug depth control"),
-                                systemImage: "digitalcrown.arrow.clockwise",
-                                accent: DiveWatchTheme.primary,
-                                trailingSystemImage: "chevron.right"
+                                detail: String(localized: "Debug depth control"),
+                                systemImage: "digitalcrown.arrow.clockwise"
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DivePressStyle())
 
                         NavigationLink {
                             DeferredView {
@@ -126,15 +148,13 @@ struct HomeView: View {
                                 )
                             }
                         } label: {
-                            StartSessionCard(
+                            HomeRow(
                                 title: "Test Scuba",
-                                subtitle: String(localized: "Debug depth control"),
-                                systemImage: "digitalcrown.arrow.clockwise",
-                                accent: DiveWatchTheme.secondary,
-                                trailingSystemImage: "chevron.right"
+                                detail: String(localized: "Debug depth control"),
+                                systemImage: "digitalcrown.arrow.clockwise"
                             )
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(DivePressStyle())
 
                         Button {
                             store.save(DiveSessionRecord.largeDebugFixture(sampleCount: 8_000))
@@ -144,17 +164,6 @@ struct HomeView: View {
                         .buttonStyle(DiveActionButtonStyle(kind: .secondary))
                     }
                     #endif
-
-                    if let latestSession = store.sessions.first {
-                        LatestSessionCard(session: latestSession)
-                    }
-
-                    NavigationLink {
-                        SessionListView(store: store)
-                    } label: {
-                        Label("Saved Sessions", systemImage: "list.bullet")
-                    }
-                    .buttonStyle(DiveActionButtonStyle(kind: .secondary))
 
                     HomeSafetyFooter()
                 }
@@ -170,7 +179,8 @@ struct HomeView: View {
                 RealRecordingFlowView(
                     water: water,
                     recorder: realRecorder,
-                    coordinator: realCoordinator
+                    coordinator: realCoordinator,
+                    autoLaunchStatus: autoLaunchAuthorization.status
                 )
             }
             .onAppear {
@@ -198,6 +208,10 @@ struct HomeView: View {
         #endif
     }
 
+    private var canStartRealDive: Bool {
+        sensorAvailability?.canStartRealDive ?? false
+    }
+
     private var realRecordingFlowIsPresented: Binding<Bool> {
         Binding(
             get: { realCoordinator.phase.presentsRecordingFlow },
@@ -219,6 +233,7 @@ struct HomeView: View {
         plan.diveMode = store.preferredDiveMode
     }
 
+    /// Runs after the first frame so launch does not wait on Core Motion.
     private func loadInitialSensorAvailability() {
         Task { @MainActor in
             await Task.yield()
@@ -275,7 +290,7 @@ struct DivePlansView: View {
                     } label: {
                         PlannedDiveRow(plannedDive: plannedDive, isSelected: isSelected)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(DivePressStyle())
                     .disabled(!isSelectionEnabled)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
@@ -283,7 +298,7 @@ struct DivePlansView: View {
                 Text(isSelectionEnabled
                     ? String(localized: "Tap a plan to use it for the next dive. Tap it again to clear.")
                     : String(localized: "Plans start real dives on a supported Apple Watch."))
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 10, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -324,7 +339,7 @@ private struct PlannedDiveRow: View {
 
                 if let plannedAt = plannedDive.plannedAt {
                     Text(DiveFormatters.sessionDate.string(from: Date(timeIntervalSince1970: plannedAt)))
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(DiveWatchTheme.mutedText)
                         .lineLimit(1)
                 }
@@ -353,32 +368,35 @@ private struct PlannedDiveMetric: View {
     }
 }
 
-private struct HomeSensorError: View {
+/// Shown after the sensor check on a watch that cannot record real dives. It is a quiet notice,
+/// not an alarm: nothing is wrong, and the demo still works.
+private struct HomeSensorNotice: View {
     let sensorReadiness: DepthSensorReadiness
-    let autoLaunchStatus: String
 
     var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.danger) {
-            VStack(alignment: .leading, spacing: 6) {
-                StatusPill(
-                    title: sensorReadiness.statusTitle,
-                    color: DiveWatchTheme.danger
-                )
-
-                Text(autoLaunchStatus)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
+        InstrumentCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(sensorReadiness.statusTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.68)
+                    .minimumScaleFactor(0.7)
+
+                Text(String(localized: "Real dives need a depth sensor. The demo still works."))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.75)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 }
 
 private struct HomeSafetyFooter: View {
     var body: some View {
         Text(String(localized: "Recreational capture and review. Not a certified dive computer."))
-            .font(.system(size: 8, weight: .medium))
+            .font(.system(size: 8, weight: .regular))
             .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.72))
             .multilineTextAlignment(.center)
             .lineLimit(2)
@@ -397,7 +415,7 @@ private extension DepthSensorReadiness {
         case .simulatorRequiresRealWatch:
             return String(localized: "Real Watch required")
         case .unsupportedDevice:
-            return String(localized: "Ultra required")
+            return String(localized: "Depth-capable Apple Watch required")
         }
     }
 }
@@ -437,7 +455,7 @@ private struct StartSessionCard: View {
 
                     if let footnote {
                         Text(footnote)
-                            .font(.system(size: 10, weight: .medium))
+                            .font(.system(size: 10, weight: .regular))
                             .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.82))
                             .lineLimit(2)
                             .minimumScaleFactor(0.7)
@@ -452,6 +470,54 @@ private struct StartSessionCard: View {
             }
             .frame(minHeight: Self.minimumHeight)
         }
+    }
+}
+
+/// A compact secondary row: saved sessions, the underwater controls guide and the demo. It stays
+/// quieter than the real start cards above it.
+private struct HomeRow: View {
+    let title: LocalizedStringKey
+    var detail: String?
+    let systemImage: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+                .frame(width: 20)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                if let detail {
+                    Text(detail)
+                        .font(.system(size: 11, weight: .regular))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.mutedText)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
+                .fill(DiveWatchTheme.surfaceContainer)
+        )
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 

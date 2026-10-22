@@ -117,6 +117,86 @@
         }
       }
     },
+    "Action Button" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button"
+          }
+        }
+      }
+    },
+    "Action ▸ Details %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ Details %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ 세부 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Action ▸ End page" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ End page"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ 종료 화면"
+          }
+        }
+      }
+    },
+    "Action ▸ Live %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ Live %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ 실시간 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Action ▸ Start next dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ Start next dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action ▸ 다음 다이브 시작"
+          }
+        }
+      }
+    },
     "Active dive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -178,7 +258,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "공기 · 스톱 5m/3:00"
+            "value" : "공기 · 스탑 5m/3:00"
           }
         }
       }
@@ -363,6 +443,22 @@
         }
       }
     },
+    "Auto-Launch" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-Launch"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "자동 실행"
+          }
+        }
+      }
+    },
     "Average depth" : {
       "localizations" : {
         "en" : {
@@ -509,6 +605,7 @@
       }
     },
     "Count" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -520,6 +617,38 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "카운트"
+          }
+        }
+      }
+    },
+    "Crown ▸ Details %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown ▸ Details %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 ▸ 세부 %1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "Crown ▸ Live %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Crown ▸ Live %1$lld/%2$lld"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "크라운 ▸ 실시간 %1$lld/%2$lld"
           }
         }
       }
@@ -609,7 +738,6 @@
       }
     },
     "Debug depth control" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -673,6 +801,22 @@
         }
       }
     },
+    "Depth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심"
+          }
+        }
+      }
+    },
     "Depth gauge" : {
       "localizations" : {
         "en" : {
@@ -721,6 +865,22 @@
         }
       }
     },
+    "Depth-capable Apple Watch required" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth-capable Apple Watch required"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 측정을 지원하는 Apple Watch가 필요합니다"
+          }
+        }
+      }
+    },
     "Details" : {
       "localizations" : {
         "en" : {
@@ -733,6 +893,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "상세"
+          }
+        }
+      }
+    },
+    "Digital Crown" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digital Crown"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Digital Crown"
           }
         }
       }
@@ -886,6 +1062,7 @@
       }
     },
     "Dive Summary" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -931,6 +1108,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Divenary"
+          }
+        }
+      }
+    },
+    "Divenary Dive Action" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary Dive Action"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Divenary 다이빙 동작"
           }
         }
       }
@@ -1033,6 +1226,38 @@
         }
       }
     },
+    "End & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "종료하고 저장"
+          }
+        }
+      }
+    },
+    "End available in %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End available in %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "종료 가능까지 %@"
+          }
+        }
+      }
+    },
     "End demo" : {
       "localizations" : {
         "en" : {
@@ -1067,6 +1292,7 @@
       }
     },
     "End Divenary Dive" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1078,6 +1304,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Divenary 다이빙 종료"
+          }
+        }
+      }
+    },
+    "End not available" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End not available"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "지금은 종료할 수 없습니다"
           }
         }
       }
@@ -1100,6 +1342,7 @@
       }
     },
     "End with the configured Action Button or by turning off Water Lock." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1312,6 +1555,70 @@
         }
       }
     },
+    "If you assigned Divenary to the Action Button, press it to start recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you assigned Divenary to the Action Button, press it to start recording."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button에 Divenary를 지정했다면 눌러서 기록을 시작합니다."
+          }
+        }
+      }
+    },
+    "If you assigned Divenary to the Action Button, the first press starts a dive and later presses switch pages. At the surface after 3 minutes, a press on the last page ends and saves." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "If you assigned Divenary to the Action Button, the first press starts a dive and later presses switch pages. At the surface after 3 minutes, a press on the last page ends and saves."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Action Button에 Divenary를 지정했다면 처음 누르면 다이브를 시작하고, 그다음부터는 누를 때마다 화면을 넘깁니다. 3분이 지나 수면에 있으면 마지막 화면에서 눌러 종료하고 저장합니다."
+          }
+        }
+      }
+    },
+    "In Settings > Action Button, choose Dive, then Divenary." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Settings > Action Button, choose Dive, then Divenary."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설정 > Action Button에서 다이빙을 고른 뒤 Divenary를 선택하세요."
+          }
+        }
+      }
+    },
+    "In Settings > General > Auto-Launch, choose Divenary for When Submerged. Recording then starts when watchOS starts the dive session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In Settings > General > Auto-Launch, choose Divenary for When Submerged. Recording then starts when watchOS starts the dive session."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "설정 > 일반 > 자동 실행에서 물에 잠겼을 때 실행할 앱으로 Divenary를 고르세요. 그러면 watchOS가 다이브 세션을 시작할 때 기록을 시작합니다."
+          }
+        }
+      }
+    },
     "Keeping your captured log." : {
       "localizations" : {
         "en" : {
@@ -1356,6 +1663,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "지난 다이브"
+          }
+        }
+      }
+    },
+    "Last dive" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Last dive"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "마지막 다이브"
           }
         }
       }
@@ -1814,6 +2137,22 @@
         }
       }
     },
+    "Please wait" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please wait"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "잠시 기다려 주세요"
+          }
+        }
+      }
+    },
     "Pool" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1865,6 +2204,22 @@
         }
       }
     },
+    "Press to end & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press to end & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "눌러서 종료하고 저장"
+          }
+        }
+      }
+    },
     "Quick note" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1910,6 +2265,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "준비됨"
+          }
+        }
+      }
+    },
+    "Real dives need a depth sensor. The demo still works." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Real dives need a depth sensor. The demo still works."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "실제 다이브 기록에는 수심 센서가 필요합니다. 데모는 계속 쓸 수 있습니다."
           }
         }
       }
@@ -1973,7 +2344,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 세이프티 스톱 리마인더 · 안전계산 없음"
+            "value" : "권장 세이프티 스탑 리마인더 · 안전계산 없음"
           }
         }
       }
@@ -1990,7 +2361,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 세이프티 스톱 리마인더입니다."
+            "value" : "권장 세이프티 스탑 리마인더입니다."
           }
         }
       }
@@ -2006,7 +2377,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 스톱"
+            "value" : "권장 스탑"
           }
         }
       }
@@ -2038,7 +2409,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 스톱 남은 시간"
+            "value" : "권장 스탑 남은 시간"
           }
         }
       }
@@ -2055,6 +2426,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "기록 설정을 완료하지 못했습니다."
+          }
+        }
+      }
+    },
+    "Recording starts when watchOS starts the dive session." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording starts when watchOS starts the dive session."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "watchOS가 다이브 세션을 시작하면 기록됩니다."
           }
         }
       }
@@ -2268,7 +2655,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스톱"
+            "value" : "세이프티 스탑"
           }
         }
       }
@@ -2284,7 +2671,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스톱 계획 리마인더"
+            "value" : "세이프티 스탑 계획 리마인더"
           }
         }
       }
@@ -2300,7 +2687,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스톱 결과"
+            "value" : "세이프티 스탑 결과"
           }
         }
       }
@@ -2316,12 +2703,13 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "세이프티 스톱 요약"
+            "value" : "세이프티 스탑 요약"
           }
         }
       }
     },
     "samples" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2549,7 +2937,6 @@
       }
     },
     "Session time" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2610,6 +2997,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "정지 구간보다 얕음"
+          }
+        }
+      }
+    },
+    "Simulated depth" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Simulated depth"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "가상 수심"
           }
         }
       }
@@ -2679,6 +3082,22 @@
         }
       }
     },
+    "Start from Home before entering the water." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start from Home before entering the water."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "물에 들어가기 전에 Home에서 시작하세요."
+          }
+        }
+      }
+    },
     "Start Planned Dive" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2739,7 +3158,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스톱"
+            "value" : "스탑"
           }
         }
       }
@@ -2756,7 +3175,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스톱 5m/3:00"
+            "value" : "스탑 5m/3:00"
           }
         }
       }
@@ -3070,7 +3489,6 @@
       }
     },
     "Test Freedive" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3086,8 +3504,23 @@
         }
       }
     },
+    "Test Large Sync" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Test Large Sync"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "대용량 동기화 테스트"
+          }
+        }
+      }
+    },
     "Test Scuba" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3115,6 +3548,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "이 앱은 로그 리뷰를 위한 보조 도구이며, 인증된 다이빙 장비가 아닙니다."
+          }
+        }
+      }
+    },
+    "This watch may not have an Action Button. Start from Home before entering the water." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This watch may not have an Action Button. Start from Home before entering the water."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "이 Watch에는 Action Button이 없을 수 있습니다. 물에 들어가기 전에 Home에서 시작하세요."
           }
         }
       }
@@ -3152,7 +3601,6 @@
       }
     },
     "Timer paused" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3186,6 +3634,7 @@
       }
     },
     "Total session time" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3218,7 +3667,40 @@
         }
       }
     },
+    "Turning off Water Lock at the surface ends recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning off Water Lock at the surface ends recording."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수면에서 방수 잠금을 끄면 기록이 끝납니다."
+          }
+        }
+      }
+    },
+    "Turning off Water Lock ends recording." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turning off Water Lock ends recording."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "방수 잠금을 끄면 기록이 끝납니다."
+          }
+        }
+      }
+    },
     "Ultra required" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3234,7 +3716,24 @@
         }
       }
     },
+    "Underwater controls" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Underwater controls"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 조작"
+          }
+        }
+      }
+    },
     "Underwater recording starts automatically." : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3427,6 +3926,22 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "물 상태"
+          }
+        }
+      }
+    },
+    "While recording, turn the Digital Crown to switch between Live and Details." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "While recording, turn the Digital Crown to switch between Live and Details."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 중에는 Digital Crown을 돌려 실시간 화면과 세부 화면을 오갈 수 있습니다."
           }
         }
       }

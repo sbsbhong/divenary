@@ -8,6 +8,7 @@ const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/DepthGaugeRail.swift',
   'ios/DivenaryWatchApp/Views/DiveFormatters.swift',
   'ios/DivenaryWatchApp/Views/RecordingView.swift',
+  'ios/DivenaryWatchApp/Views/RecordingHint.swift',
   'ios/DivenaryWatchApp/Views/SummaryView.swift',
   'ios/DivenaryWatchApp/Views/SessionDetailView.swift',
   'ios/DivenaryWatchApp/Views/SessionListView.swift',
@@ -15,12 +16,21 @@ const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/WetReadyView.swift',
   'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift',
   'ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift',
+  'ios/DivenaryWatchApp/Views/UnderwaterControlsView.swift',
 ];
 const source = watchSourceFiles
   .map(file => readFileSync(join(root, file), 'utf8'))
   .join('\n');
 const recordingViewSource = readFileSync(
   join(root, 'ios/DivenaryWatchApp/Views/RecordingView.swift'),
+  'utf8',
+);
+const recordingHintSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/RecordingHint.swift'),
+  'utf8',
+);
+const underwaterControlsSource = readFileSync(
+  join(root, 'ios/DivenaryWatchApp/Views/UnderwaterControlsView.swift'),
   'utf8',
 );
 const wetReadyViewSource = readFileSync(
@@ -67,6 +77,19 @@ const bannedWatchCopy = [
 ];
 const copySource = `${source}\n${stringCatalogSource}`;
 const bannedCopyMatches = bannedWatchCopy.filter(copy => copySource.toLowerCase().includes(copy.toLowerCase()));
+const blockOf = (text, startMarker, endMarker) => {
+  const start = text.indexOf(startMarker);
+  if (start < 0) {
+    return '';
+  }
+  const end = endMarker ? text.indexOf(endMarker, start + startMarker.length) : -1;
+  return end < 0 ? text.slice(start) : text.slice(start, end);
+};
+const recordingHintBarBlock = blockOf(recordingHintSource, 'struct RecordingHintBar', 'struct RecordingPageDots');
+const realRecordingPagerBlock = blockOf(recordingHintSource, 'struct RealRecordingPager', 'struct RecordingHintBar');
+const koreanCatalogValues = stringCatalogEntries
+  .map(entry => entry.localizations?.ko?.stringUnit?.value ?? '')
+  .join('\n');
 
 const checks = [
   {
@@ -78,10 +101,33 @@ const checks = [
     pattern: /MetricCard\(\s*title:\s*"Bottom Time"[\s\S]*prominent:\s*true/,
   },
   {
-    name: 'recording footer guidance stays readable at 9pt',
-    failed: !/private func footerHint[\s\S]*\.font\(\.system\(size: 9, weight: \.medium\)\)/.test(
-      recordingViewSource,
-    ),
+    name: 'real recording shows a one-line phase hint instead of a fixed end footer',
+    failed:
+      recordingViewSource.includes('End with the configured Action Button') ||
+      recordingViewSource.includes('footerHint') ||
+      !recordingViewSource.includes('if endControl == .crownHint, let hint') ||
+      !recordingViewSource.includes('RecordingHintBar(hint: hint)') ||
+      !recordingHintSource.includes('String(localized: "Action ▸ Details \\(position)/\\(pageCount)")') ||
+      !recordingHintSource.includes('String(localized: "End available in \\(DiveFormatters.countdown(seconds: seconds))")') ||
+      !recordingHintSource.includes('String(localized: "Action ▸ End page")') ||
+      !recordingHintSource.includes('String(localized: "Press to end & save")') ||
+      !recordingHintSource.includes('showsWaterLockNote: waterState == .notSubmerged') ||
+      !recordingHintSource.includes('let input: Input = hasActionButton || page == .end ? .actionButton : .crown'),
+  },
+  {
+    name: 'recording hint and paging have no tap target and the crown never ends a dive',
+    failed:
+      !recordingHintBarBlock ||
+      !realRecordingPagerBlock ||
+      recordingHintBarBlock.includes('Button(') ||
+      realRecordingPagerBlock.includes('Button(') ||
+      !realRecordingPagerBlock.includes('pages.stepFromCrown(by:') ||
+      !realRecordingPagerBlock.includes('isHapticFeedbackEnabled: false') ||
+      /requestActionButtonEnd|handleActionButtonPress/.test(realRecordingPagerBlock),
+  },
+  {
+    name: 'watch UI uses the 300/400/600/700 weight ladder (no medium)',
+    pattern: /weight: \.medium\b|\.fontWeight\(\.medium\)/,
   },
   {
     name: 'saved-session disclaimer uses sentence-style copy',
@@ -148,7 +194,11 @@ const checks = [
     failed:
       !homeViewSource.includes('title: "Freediving"') ||
       !homeViewSource.includes('title: "Scuba Diving"') ||
-      (homeViewSource.match(/trailingSystemImage: "play.fill"/g) ?? []).length !== 3 ||
+      (homeViewSource.match(/trailingSystemImage: "play.fill"/g) ?? []).length !== 2 ||
+      /StartSessionCard\(\s*title: "Demo"/.test(homeViewSource) ||
+      !/HomeRow\(\s*title: "Demo"/.test(homeViewSource) ||
+      !/HomeRow\(\s*title: "Underwater controls"/.test(homeViewSource) ||
+      homeViewSource.includes('Ultra required') ||
       !homeViewSource.includes('static let minimumHeight: CGFloat = 64') ||
       !homeViewSource.includes('            .frame(minHeight: Self.minimumHeight)') ||
       homeViewSource.includes('subtitle: String(localized: "Crown-controlled sample dive")') ||
@@ -157,7 +207,13 @@ const checks = [
   },
   {
     name: 'real recording copy does not claim crown-press handling',
-    failed: /press and hold the Digital Crown/i.test(recordingViewSource),
+    failed: /press and hold the Digital Crown/i.test(
+      `${recordingViewSource}\n${recordingHintSource}\n${underwaterControlsSource}`,
+    ),
+  },
+  {
+    name: 'Korean recommended stop copy uses 권장 스탑',
+    failed: koreanCatalogValues.includes('스톱') || !koreanCatalogValues.includes('권장 스탑'),
   },
   {
     name: 'saved real summary uses toolbar back navigation and a scroll footer',

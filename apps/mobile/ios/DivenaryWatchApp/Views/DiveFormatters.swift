@@ -22,6 +22,18 @@ enum DiveFormatters {
         return String(format: "%02d:%02d", minutes, seconds)
     }
 
+    /// `nil` means the time is unknown, so no number is shown.
+    static func duration(_ seconds: TimeInterval?) -> String {
+        guard let seconds else { return "--:--" }
+        return duration(seconds)
+    }
+
+    /// Minutes and seconds without a leading zero, for short countdowns such as "2:05".
+    static func countdown(seconds: Int) -> String {
+        let clamped = max(0, seconds)
+        return String(format: "%d:%02d", clamped / 60, clamped % 60)
+    }
+
     static func depth(_ meters: Double) -> String {
         String(format: "%.1f m", meters)
     }
@@ -30,6 +42,12 @@ enum DiveFormatters {
     static func depth(_ meters: Double?) -> String {
         guard let meters else { return "--.- m" }
         return depth(meters)
+    }
+
+    /// The number part of `depth(_:)`, for layouts that draw the unit as its own smaller text.
+    static func depthValue(_ meters: Double?) -> String {
+        guard let meters else { return "--.-" }
+        return String(format: "%.1f", meters)
     }
 
     static func temperature(_ celsius: Double?) -> String {
@@ -72,12 +90,28 @@ enum DiveWatchTheme {
         String(localized: "RECREATIONAL USE ONLY. NON-CERTIFIED ASSISTANT.")
     }
 
+    /// Rounded digits of equal width, so live values do not shift as they change.
     static func metricFont(size: CGFloat, weight: Font.Weight = .semibold) -> Font {
-        .system(size: size, weight: weight, design: .monospaced)
+        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
     }
 
     static func labelFont() -> Font {
         .system(size: 11, weight: .semibold, design: .default)
+    }
+}
+
+extension SafetyStopStatus {
+    /// Saved-log tint. A recommended stop that paused or was not finished is caution amber, never
+    /// the danger red; a finished one is quiet grey. Blue stays for actions and selection.
+    var reviewTint: Color {
+        switch self {
+        case .pausedTooDeep, .pausedTooShallow, .skippedOrIncomplete:
+            return DiveWatchTheme.caution
+        case .completed:
+            return DiveWatchTheme.secondary
+        case .unknown, .notRequired, .armed, .active:
+            return DiveWatchTheme.mutedText
+        }
     }
 }
 
@@ -183,7 +217,7 @@ struct UnsupportedDepthNotice: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             Text("Deeper than this app supports on Apple Watch. Kept for review only.")
-                .font(.system(size: 10, weight: .medium))
+                .font(.system(size: 10, weight: .regular))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .lineLimit(3)
                 .minimumScaleFactor(0.75)
@@ -269,6 +303,25 @@ struct DiveActionButtonStyle: ButtonStyle {
             return DiveWatchTheme.primary
         case .destructive:
             return DiveWatchTheme.danger
+        }
+    }
+}
+
+/// Press feedback for cards and rows that are not drawn as capsule buttons. A disabled card, such
+/// as a real start card while the sensor check runs, is drawn dimmed.
+struct DivePressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        PressableLabel(configuration: configuration)
+    }
+
+    private struct PressableLabel: View {
+        let configuration: Configuration
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            configuration.label
+                .opacity(isEnabled ? 1 : 0.45)
+                .scaleEffect(configuration.isPressed ? 0.95 : 1)
         }
     }
 }

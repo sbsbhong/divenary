@@ -558,16 +558,29 @@ describe('WatchConnectivity native source contract', () => {
 
     expect(home).toContain('title: "Scuba Diving"');
     expect(home).toContain('title: "Freediving"');
-    expect(home).toContain('title: "Demo"');
-    for (const title of ['Freediving', 'Scuba Diving', 'Demo']) {
+    for (const title of ['Freediving', 'Scuba Diving']) {
       expect(home).toMatch(new RegExp(`StartSessionCard\\(\\s*title: "${title}",\\s*systemImage: "[^"]+",\\s*accent: DiveWatchTheme\\.\\w+,\\s*trailingSystemImage: "play.fill"`));
     }
+    // Only the two real starts get a play card; Demo is a quieter secondary row near the bottom.
+    expect(home.match(/trailingSystemImage: "play.fill"/g)).toHaveLength(2);
+    expect(home).not.toMatch(/StartSessionCard\(\s*title: "Demo"/);
+    expect(home).toMatch(/HomeRow\(\s*title: "Demo",\s*detail: String\(localized: "Simulated depth"\)/);
+    expect(home.search(/HomeRow\(\s*title: "Demo"/)).toBeGreaterThan(home.indexOf('title: "Scuba Diving"'));
     expect(home).toContain('static let minimumHeight: CGFloat = 64');
     expect(home).toContain('.frame(minHeight: Self.minimumHeight)');
     expect(home).toContain('HomeSafetyFooter()');
     expect(home).toContain('Recreational capture and review. Not a certified dive computer.');
-    expect(home).toContain('if sensorAvailability.readiness != .ready');
-    expect(home).toContain('.disabled(!sensorAvailability.canStartRealDive)');
+    // While the sensor check runs the real start cards are disabled, with no placeholder or error card.
+    expect(home).toContain('if let sensorAvailability, sensorAvailability.readiness != .ready');
+    expect(home.match(/\.disabled\(!canStartRealDive\)/g)).toHaveLength(2);
+    expect(home).toMatch(/private var canStartRealDive: Bool \{\s*sensorAvailability\?\.canStartRealDive \?\? false/);
+    expect(home).not.toContain('HomeSensorError');
+    expect(home).not.toContain('accent: DiveWatchTheme.danger');
+    expect(home).not.toContain('Ultra required');
+    expect(home).toContain('String(localized: "Depth-capable Apple Watch required")');
+    // The underwater controls guide opens from Home and shows the watchOS auto-launch status.
+    expect(home).toMatch(/UnderwaterControlsView\(\s*autoLaunchStatus: autoLaunchAuthorization\.status,\s*hasActionButton: ActionButtonHint\.current\.isLikelyUltra/);
+    expect(home).toMatch(/HomeRow\(\s*title: "Underwater controls",\s*detail: autoLaunchAuthorization\.statusText/);
     expect(home).not.toContain('Text("Divenary")');
     expect(home).not.toContain('Label("Dive Plan", systemImage: "list.clipboard")');
     expect(home).not.toContain('private struct DivePlanSetupView');
@@ -661,7 +674,9 @@ describe('WatchConnectivity native source contract', () => {
     expect(homeHeader).not.toContain('RealDepthSensorProvider()');
     expect(homeHeader).not.toContain('DepthSensorAvailability.current');
     expect(home).toContain('loadInitialSensorAvailability()');
-    expect(homeHeader).toContain('DepthSensorAvailability.launchPlaceholder');
+    // `nil` means the check is still running; a placeholder reading as "unsupported" flashed an error card.
+    expect(homeHeader).toContain('@State private var sensorAvailability: DepthSensorAvailability?');
+    expect(home).not.toContain('DepthSensorAvailability.launchPlaceholder');
     expect(home).toMatch(/\.onAppear \{\s*applyPreferredDiveMode\(\)\s*loadInitialSensorAvailability\(\)/);
     expect(home).toMatch(/await Task\.yield\(\)\s*sensorAvailability = DepthSensorAvailability\.current/);
     expect(services).toContain('let water = WaterSubmersionCoordinator.shared');
@@ -716,12 +731,13 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('DepthGaugeRail');
     expect(recording).toContain('GeometryReader { proxy in');
     expect(recording).toContain('VStack(spacing: 4)');
-    expect(recording).toMatch(/liveInstrument\s*\.environment\(\s*\\\.liveReadoutStatus,[\s\S]*?\)\s*\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity, alignment: \.topLeading\)\s*\.layoutPriority\(1\)/);
+    expect(recording).toMatch(/pageInstrument\(page\)\s*\.environment\(\s*\\\.liveReadoutStatus,[\s\S]*?\)\s*\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity, alignment: \.topLeading\)\s*\.layoutPriority\(1\)/);
     expect(recording).toContain('recordingErrorFooter');
-    expect(recording).toContain('if endControl == .crownHint');
-    expect(recording).toContain('RecordingEndControlFooter(');
+    // The fixed two-line end footer became a one-line phase hint chip (see the hint test below).
+    expect(recording).toMatch(/if endControl == \.crownHint, let hint \{\s*RecordingHintBar\(hint: hint\)/);
+    expect(recording).not.toContain('RecordingEndControlFooter');
     expect(recording).toContain('.padding(.bottom, 3)');
-    expect(recording).toContain('End with the configured Action Button or by turning off Water Lock.');
+    expect(recording).not.toContain('End with the configured Action Button or by turning off Water Lock.');
     expect(recording).toContain('.frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)');
     expect(recording).not.toContain('ZStack(alignment: .topLeading)');
     expect(recording).not.toContain('availableInstrumentHeight');
@@ -765,8 +781,189 @@ describe('WatchConnectivity native source contract', () => {
     expect(endDive).toContain('lifecycle.finishRecording()');
     expect(endDive).not.toContain('cancelSession');
     expect(recording).toMatch(/case \.demo:\s*return \.toolbarEnd/);
-    expect(recording).toMatch(/case \.toolbarEnd, \.hidden:\s*EmptyView\(\)/);
+    expect(recording).toMatch(/case \.debugTest:\s*return \.hidden/);
     expect(simulated).toContain('showsNavigationToolbar: recordingMode == .demo');
+  });
+
+  it('pages the real recording with a phase hint chip and never ends it by touch or crown', () => {
+    const hint = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RecordingHint.swift');
+    const recording = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RecordingView.swift');
+    const realFlow = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift');
+    const simulated = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift');
+    const project = readRepoFile('apps/mobile/ios/Divenary.xcodeproj/project.pbxproj');
+    const hintBar = hint.slice(hint.indexOf('struct RecordingHintBar'), hint.indexOf('struct RecordingPageDots'));
+    const pager = hint.slice(hint.indexOf('struct RealRecordingPager'), hint.indexOf('struct RecordingHintBar'));
+    const endPage = recording.slice(recording.indexOf('private struct EndPageInstrument'), recording.indexOf('#if DEBUG\n#Preview'));
+    const depthLayout = recording.slice(recording.indexOf('private struct InstrumentDepthLayout'), recording.indexOf('private struct LiveReadoutStatusRow'));
+
+    expect(project).toContain('RecordingHint.swift in Sources');
+    // One line per phase: underwater page, surface countdown, End page in the cycle, End page itself.
+    expect(hint).toContain('String(localized: "Action ▸ Details \\(position)/\\(pageCount)")');
+    expect(hint).toContain('String(localized: "End available in \\(DiveFormatters.countdown(seconds: seconds))")');
+    expect(hint).toContain('String(localized: "Action ▸ End page")');
+    expect(hint).toContain('String(localized: "Press to end & save")');
+    expect(hint).toContain('String(localized: "Crown ▸ Details \\(position)/\\(pageCount)")');
+    expect(hint).toContain('let input: Input = hasActionButton || page == .end ? .actionButton : .crown');
+    // Turning off Water Lock ends the recording, so that note shows at the surface only.
+    expect(hint).toContain('showsWaterLockNote: waterState == .notSubmerged');
+    expect(hint).toContain('hasActionButton: ActionButtonHint.current.isLikelyUltra');
+    expect(hintBar).not.toContain('Button(');
+    expect(pager).not.toContain('Button(');
+    expect(pager).toContain('pages.stepFromCrown(by: Int((newTicks - oldTicks).rounded()))');
+    expect(pager).toContain('isHapticFeedbackEnabled: false');
+    expect(pager).not.toMatch(/requestActionButtonEnd|handleActionButtonPress/);
+    expect(pager).toContain('pages.setAlwaysOn(isLuminanceReduced)');
+    expect(pager).toContain('isLuminanceReduced ? .live : pages.page');
+    expect(pager).toMatch(/case \.rejected = feedback\.outcome/);
+    expect(realFlow).toContain('pages: coordinator.recordingPages');
+    // Demo and debug keep crown depth and their own end path; only real recording pages.
+    expect(simulated).not.toContain('recordingPages');
+    expect(simulated).toContain('.focusable(recordingMode.controlPolicy.usesCrownDepthControl)');
+    // Every page keeps the gauge, the status chip with the Demo/Test marker and the unsupported-depth marker.
+    expect(depthLayout).toContain('DepthGaugeRail(');
+    expect(depthLayout).toContain('LiveReadoutStatusRow()');
+    expect(depthLayout).toContain('UnsupportedDepthWarning(');
+    expect(recording).toMatch(/case \.live:\s*liveInstrument\s*case \.details:\s*detailsInstrument\s*case \.end:\s*EndPageInstrument\(/);
+    expect(endPage).toContain('InstrumentDepthLayout(');
+    expect(endPage).not.toContain('Button(');
+    expect(endPage).not.toContain('onTapGesture');
+  });
+
+  it('keeps one large live value, two details at most and an honest Always-On readout', () => {
+    const recording = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RecordingView.swift');
+    const formatters = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DiveFormatters.swift');
+    const gauge = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DepthGaugeRail.swift');
+    const depthOrTime = recording.slice(recording.indexOf('private struct DepthOrTimeMetric'), recording.indexOf('private struct DepthOrTimeSecondary'));
+    const bigMetric = recording.slice(recording.indexOf('private struct BigMetricText'), recording.indexOf('private struct DepthOrTimeMetric'));
+    const metric = recording.slice(recording.indexOf('private struct LiveInstrumentMetric'), recording.indexOf('private struct BigMetricText'));
+    const scubaDetails = recording.slice(recording.indexOf('private struct ScubaDetailsInstrument'), recording.indexOf('private struct FreeSessionDetailsInstrument'));
+    const freeDetails = recording.slice(recording.indexOf('private struct FreeSessionDetailsInstrument'), recording.indexOf('private struct EndPageInstrument'));
+    const surfaceReady = recording.slice(recording.indexOf('private struct FreeSurfaceReadyInstrument'), recording.indexOf('private struct FreeDiveActiveInstrument'));
+    const safetyStop = recording.slice(recording.indexOf('private struct SafetyStopInstrument'), recording.indexOf('private struct LiveInstrumentMetric'));
+
+    // The large value is live depth only while the reading is current, otherwise the elapsed time.
+    expect(depthOrTime).toMatch(/if let depthMeters \{\s*BigMetricText\(\s*value: DiveFormatters\.depthValue\(depthMeters\),\s*unit: "m"/);
+    expect(depthOrTime).toContain('value: DiveFormatters.duration(time)');
+    expect(formatters).toContain('guard let meters else { return "--.-" }');
+    expect(formatters).toContain('.system(size: size, weight: weight, design: .rounded).monospacedDigit()');
+    expect(bigMetric).toContain('foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)');
+    expect(bigMetric).toContain('Text(unit)');
+    // Always-On hides secondary values except depth and time; status chips and markers stay.
+    expect(metric).toContain('if keepsInAlwaysOn || !isLuminanceReduced');
+    expect(gauge).toContain('@Environment(\\.isLuminanceReduced) private var isLuminanceReduced');
+    expect(gauge).toContain('static let layoutWidth: CGFloat = 46');
+    expect(
+      recording.slice(recording.indexOf('private struct LiveReadoutStatusRow'), recording.indexOf('private struct UnsupportedDepthWarning')),
+    ).not.toContain('isLuminanceReduced');
+    expect(scubaDetails).toContain('String(localized: "Max")');
+    expect(scubaDetails).toContain('String(localized: "Temp")');
+    expect(scubaDetails.match(/LiveInstrumentMetric\(/g)).toHaveLength(2);
+    expect(freeDetails).toContain('caption: String(localized: "Dive count")');
+    expect(freeDetails).toContain('String(localized: "Last dive")');
+    expect(freeDetails).toContain('String(localized: "Longest dive")');
+    expect(freeDetails.match(/LiveInstrumentMetric\(/g)).toHaveLength(2);
+    expect(recording).not.toContain('Average depth');
+    // Copy fixes: plain dive count, labelled depth on the recommended stop.
+    expect(surfaceReady).not.toContain('/#');
+    expect(surfaceReady).not.toContain('String(localized: "Mode")');
+    expect(safetyStop).not.toContain('title: ""');
+    expect(safetyStop).toContain('String(localized: "Timer paused")');
+    expect(safetyStop).not.toContain('isLuminanceReduced');
+  });
+
+  it('chooses Wet Ready, summary and setup copy by start path without claiming the Action Button', () => {
+    const wetReady = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift');
+    const realFlow = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift');
+    const summary = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SummaryView.swift');
+    const guide = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/UnderwaterControlsView.swift');
+    const catalog = JSON.parse(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Localizable.xcstrings')) as {
+      strings: Record<string, { localizations?: { ko?: { stringUnit?: { value?: string } } } }>;
+    };
+    const korean = (key: string) => catalog.strings[key]?.localizations?.ko?.stringUnit?.value;
+    const startCopy = wetReady.slice(wetReady.indexOf('private var startCopy'), wetReady.indexOf('private var accent'));
+    const summaryHeader = summary.slice(summary.indexOf('struct SessionSummaryContent'), summary.indexOf('private var commonMetricsSection'));
+
+    expect(startCopy).toMatch(/case \.active:\s*return String\(localized: "Recording starts when watchOS starts the dive session\."\)/);
+    expect(startCopy).toMatch(/case \.inactive where hasActionButton:\s*return String\(localized: "If you assigned Divenary to the Action Button, press it to start recording\."\)/);
+    expect(startCopy).toMatch(/case \.inactive, \.unknown:\s*return String\(localized: "Start from Home before entering the water\."\)/);
+    expect(wetReady).not.toContain('Underwater recording starts automatically.');
+    expect(wetReady).toContain('.frame(maxWidth: .infinity, minHeight: 44)');
+    expect(realFlow).toContain('autoLaunchStatus: autoLaunchStatus');
+    expect(realFlow).toMatch(/onBack: coordinator\.dismissSavedSummary,\s*showsNextDiveHint: ActionButtonHint\.current\.isLikelyUltra/);
+    // The summary leads with max depth and duration; the sample count lives on the detail screen.
+    expect(summaryHeader).toContain('if showsNextDiveHint {\n                    NextDiveActionHint()');
+    expect(summaryHeader.indexOf('"Max Depth"')).toBeLessThan(summaryHeader.indexOf('DepthProfileSparkline'));
+    expect(summary).not.toContain('summary.sampleCount');
+    expect(summary).not.toContain('StatusPill(title: safetyStop.status.displayText');
+    expect(guide).toContain('autoLaunchStatus.displayText');
+    expect(guide).toContain('If you assigned Divenary to the Action Button');
+    expect(korean('Recommended stop')).toBe('권장 스탑');
+    expect(korean('Recommended stop time remaining')).toBe('권장 스탑 남은 시간');
+    expect(korean('Action ▸ Details %lld/%lld')).toBe('Action ▸ 세부 %1$lld/%2$lld');
+    expect(korean('End available in %@')).toBe('종료 가능까지 %@');
+    expect(korean('Action ▸ End page')).toBe('Action ▸ 종료 화면');
+    expect(korean('Press to end & save')).toBe('눌러서 종료하고 저장');
+    expect(korean('If you assigned Divenary to the Action Button, press it to start recording.')).toBe(
+      'Action Button에 Divenary를 지정했다면 눌러서 기록을 시작합니다.',
+    );
+  });
+
+  it('routes every watch Action Button press through one phase-aware dive action intent', () => {
+    const intents = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/DiveActionButtonIntents.swift');
+    const coordinator = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/RealDiveSessionCoordinator.swift');
+    const pages = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/RecordingPageModel.swift');
+    const haptics = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Runtime/DiveHaptics.swift');
+    const press = coordinator.slice(
+      coordinator.indexOf('func handleActionButtonPress()'),
+      coordinator.indexOf('func startFromActionButton()'),
+    );
+    const recordingPress = coordinator.slice(
+      coordinator.indexOf('private func handleRecordingActionButtonPress()'),
+      coordinator.indexOf('private func preferredPlan()'),
+    );
+    const hapticEvents = haptics.slice(
+      haptics.indexOf('enum DiveHapticEvent'),
+      haptics.indexOf('fileprivate var hapticType'),
+    );
+    const hapticEventCases = Array.from(hapticEvents.matchAll(/^\s*case (\w+)$/gm), (match) => match[1]);
+
+    expect(intents).not.toContain('DivenaryEndDiveIntent');
+    expect(intents).toContain('struct DivenaryStartDiveIntent: StartDiveIntent');
+    expect(intents).toContain('struct DivenaryDiveActionIntent: AppIntent');
+    // The Start intent result, the dive action's own result and the donation all hand over the same intent.
+    expect(intents.match(/\.result\(actionButtonIntent: DivenaryDiveActionIntent\(\)\)/g)).toHaveLength(3);
+    expect(intents).toMatch(/var keepsDiveActionOnButton: Bool \{\s*self != \.endRequested/);
+    expect(press).toMatch(/case \.completing, \.awaitingRuntimeInvalidation:\s*outcome = \.rejected\(\.busy\)/);
+    expect(recordingPress).toMatch(/guard recordingPages\.page == \.end else \{\s*return \.pageChanged\(recordingPages\.advanceFromActionButton\(\)\)/);
+    expect(recordingPress).toContain('guard requestActionButtonEnd() else');
+    expect(pages).toContain('static let idleReturnSeconds: TimeInterval = 10');
+    expect(pages).toContain('let crownPages: [RecordingPage] = [.live, .details]');
+    expect(hapticEventCases).toEqual(['start', 'pageChange', 'rejected', 'endRequested', 'saved']);
+  });
+
+  it('plays watch haptics only through the user-action haptic wrapper', () => {
+    const nodeRequire = require as (moduleName: string) => {
+      readdirSync: (dirPath: string) => string[];
+    };
+    const fs = nodeRequire('fs');
+    const cwd = (globalThis as unknown as { process: { cwd: () => string } }).process.cwd();
+    const watchRoot = 'apps/mobile/ios/DivenaryWatchApp';
+    const watchSwiftFiles = ['', '/Models', '/Recording', '/Runtime', '/Sensors', '/Storage', '/Sync', '/Views'].flatMap(
+      (folder) =>
+        fs
+          .readdirSync(`${cwd}/../../${watchRoot}${folder}`)
+          .filter((name) => name.endsWith('.swift'))
+          .map((name) => `${watchRoot}${folder}/${name}`),
+    );
+
+    expect(watchSwiftFiles).toContain(`${watchRoot}/Runtime/DiveHaptics.swift`);
+    for (const file of watchSwiftFiles.filter((path) => !path.endsWith('/Runtime/DiveHaptics.swift'))) {
+      const source = readRepoFile(file);
+      expect({ file, playsHaptic: /WKInterfaceDevice\.current\(\)\.play|\.sensoryFeedback\(/.test(source) }).toEqual({
+        file,
+        playsHaptic: false,
+      });
+    }
   });
 
   it('keeps mode-specific live instruments honest about depth, stop state, and safety calculation scope', () => {

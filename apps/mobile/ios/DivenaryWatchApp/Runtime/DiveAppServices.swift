@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 #if DEBUG
@@ -40,6 +41,7 @@ final class DiveAppServices {
         let realSensorProvider = RealDepthSensorProvider(coordinator: water)
         let realRecorder = DiveSessionRecorder(sensorProvider: realSensorProvider)
         let actionButtonDonor = DiveActionButtonDonor()
+        let haptics = WatchDiveHaptics()
         let completionStore: any DiveSessionPersisting
         #if DEBUG
         if ProcessInfo.processInfo.environment["DIVE_WATCH_FAIL_FIRST_COMPLETION_SAVE"] == "1" {
@@ -57,7 +59,12 @@ final class DiveAppServices {
             recorder: realRecorder,
             water: water,
             actionButtonDonor: actionButtonDonor,
-            sessionStore: completionStore
+            sessionStore: completionStore,
+            haptics: haptics
+        )
+        realCoordinator.recordingPages.observe(
+            recorder: realRecorder,
+            waterState: water.$latestState.eraseToAnyPublisher()
         )
 
         self.store = store

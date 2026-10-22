@@ -21,7 +21,7 @@
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>NSMotionUsageDescription</key>
-	<string>Divenary records underwater depth samples on supported Apple Watch Ultra devices.</string>
+	<string>Divenary records underwater depth samples on a depth-capable Apple Watch.</string>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UISupportedInterfaceOrientations</key>

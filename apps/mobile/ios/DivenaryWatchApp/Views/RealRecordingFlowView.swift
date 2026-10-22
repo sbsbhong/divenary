@@ -4,6 +4,8 @@ struct RealRecordingFlowView: View {
     @ObservedObject var water: WaterSubmersionCoordinator
     @ObservedObject var recorder: DiveSessionRecorder
     @ObservedObject var coordinator: RealDiveSessionCoordinator
+    /// Chooses the Wet Ready start copy. Home reads it from watchOS.
+    var autoLaunchStatus: DepthAutoLaunchStatus = .unknown
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -15,6 +17,8 @@ struct RealRecordingFlowView: View {
                 WetReadyView(
                     mode: mode,
                     currentDepthMeters: water.latestDepthMeters,
+                    autoLaunchStatus: autoLaunchStatus,
+                    hasActionButton: ActionButtonHint.current.isLikelyUltra,
                     onSelect: coordinator.selectWetReadyMode
                 )
             case .recording(_, let plan):
@@ -23,14 +27,16 @@ struct RealRecordingFlowView: View {
                     plan: plan,
                     maximumDepthMeters: water.maximumDepthMeters,
                     endControl: WatchRecordingMode.real.endControl,
-                    waterState: water.latestState
+                    waterState: water.latestState,
+                    pages: coordinator.recordingPages
                 )
             case .completing:
                 savingView
             case .savedSummary(let session):
                 SavedSessionSummaryView(
                     session: session,
-                    onBack: coordinator.dismissSavedSummary
+                    onBack: coordinator.dismissSavedSummary,
+                    showsNextDiveHint: ActionButtonHint.current.isLikelyUltra
                 )
             case .noSamples:
                 noSamplesView
@@ -82,7 +88,7 @@ struct RealRecordingFlowView: View {
                 .minimumScaleFactor(0.75)
 
             Text("Recording setup could not be completed.")
-                .font(.system(size: 11))
+                .font(.system(size: 11, weight: .regular))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -96,6 +102,7 @@ struct RealRecordingFlowView: View {
             } else {
                 ProgressView()
                     .tint(DiveWatchTheme.primary)
+                BusyPressNote(pages: coordinator.recordingPages)
             }
         }
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
@@ -103,6 +110,7 @@ struct RealRecordingFlowView: View {
         .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
+    /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire.
     private var savingView: some View {
         VStack(spacing: 10) {
             ProgressView()
@@ -110,6 +118,7 @@ struct RealRecordingFlowView: View {
             Text("Saving log")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.text)
+            BusyPressNote(pages: coordinator.recordingPages)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
@@ -134,5 +143,35 @@ struct RealRecordingFlowView: View {
         .padding(.horizontal, DiveWatchTheme.edgeMargin)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(DiveWatchTheme.background.ignoresSafeArea())
+    }
+}
+
+/// A short note after an Action Button press that came while the log was saving or the runtime was
+/// still stopping. The runtime already played the rejection haptic; this view plays none.
+private struct BusyPressNote: View {
+    @ObservedObject var pages: RecordingPageModel
+    @State private var flashedPressID: Int?
+
+    var body: some View {
+        Text(String(localized: "Please wait"))
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(DiveWatchTheme.mutedText)
+            .lineLimit(1)
+            .opacity(flashedPressID == nil ? 0 : 1)
+            .accessibilityHidden(flashedPressID == nil)
+            .onChange(of: pages.lastActionFeedback?.id) { _, _ in
+                guard let feedback = pages.lastActionFeedback,
+                      feedback.outcome == .rejected(.busy)
+                else {
+                    return
+                }
+                flashedPressID = feedback.id
+            }
+            .task(id: flashedPressID) {
+                guard flashedPressID != nil else { return }
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                flashedPressID = nil
+            }
     }
 }

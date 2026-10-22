@@ -88,7 +88,7 @@ struct SessionDetailView: View {
                             .font(DiveWatchTheme.labelFont())
                             .foregroundStyle(DiveWatchTheme.mutedText)
                         Text(session.notes ?? String(localized: "No note"))
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.system(size: 12, weight: .regular))
                             .foregroundStyle(DiveWatchTheme.text)
                             .multilineTextAlignment(.leading)
                             .lineLimit(5)
@@ -145,7 +145,7 @@ private struct FreeSegmentListSection: View {
 
                 if segmentRows.isEmpty {
                     Text(String(localized: "No segments"))
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(DiveWatchTheme.mutedText)
                 } else {
                     ForEach(segmentRows) { row in
@@ -244,15 +244,11 @@ private struct SafetyStopResultSection: View {
     var body: some View {
         InstrumentCard(accent: DiveWatchTheme.primary) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Safety Stop Result")
-                        .font(DiveWatchTheme.labelFont())
-                        .foregroundStyle(DiveWatchTheme.primary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
-                    Spacer(minLength: 4)
-                    StatusPill(title: safetyStop.status.displayText, color: statusColor)
-                }
+                Text("Safety Stop Result")
+                    .font(DiveWatchTheme.labelFont())
+                    .foregroundStyle(DiveWatchTheme.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
 
                 VStack(spacing: 6) {
                     SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
@@ -283,7 +279,7 @@ private struct SafetyStopResultSection: View {
     }
 
     private var statusColor: Color {
-        safetyStop.completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
+        safetyStop.status.reviewTint
     }
 
     private func localizedBoolean(_ value: Bool) -> String {

@@ -50,6 +50,12 @@
 		C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000003 /* RealDiveSessionCoordinator.swift */; };
 		C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000001 /* DiveActionButtonIntentTests.swift */; };
 		C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50000000000000000000003 /* DiveActionButtonIntents.swift */; };
+		C60000000000000000000002 /* RecordingPageModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000001 /* RecordingPageModel.swift */; };
+		C60000000000000000000004 /* DiveHaptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000003 /* DiveHaptics.swift */; };
+		C60000000000000000000006 /* UnderwaterInputModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C60000000000000000000005 /* UnderwaterInputModelTests.swift */; };
+		C70000000000000000000002 /* RecordingHint.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000001 /* RecordingHint.swift */; };
+		C70000000000000000000004 /* UnderwaterControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000003 /* UnderwaterControlsView.swift */; };
+		C70000000000000000000006 /* RecordingHintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000005 /* RecordingHintTests.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		D17C3550307FEA5F1AE61BEA /* DiveSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A9E92112D9DE95CBF5EFC3F /* DiveSession.swift */; };
 		D60000000000000000000001 /* DiveAppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60000000000000000000002 /* DiveAppServices.swift */; };
@@ -154,6 +160,12 @@
 		C40000000000000000000003 /* RealDiveSessionCoordinator.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RealDiveSessionCoordinator.swift; sourceTree = "<group>"; };
 		C50000000000000000000001 /* DiveActionButtonIntentTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntentTests.swift; sourceTree = "<group>"; };
 		C50000000000000000000003 /* DiveActionButtonIntents.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveActionButtonIntents.swift; sourceTree = "<group>"; };
+		C60000000000000000000001 /* RecordingPageModel.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingPageModel.swift; sourceTree = "<group>"; };
+		C60000000000000000000003 /* DiveHaptics.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveHaptics.swift; sourceTree = "<group>"; };
+		C60000000000000000000005 /* UnderwaterInputModelTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UnderwaterInputModelTests.swift; sourceTree = "<group>"; };
+		C70000000000000000000001 /* RecordingHint.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingHint.swift; sourceTree = "<group>"; };
+		C70000000000000000000003 /* UnderwaterControlsView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = UnderwaterControlsView.swift; sourceTree = "<group>"; };
+		C70000000000000000000005 /* RecordingHintTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingHintTests.swift; sourceTree = "<group>"; };
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = Divenary/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = Divenary/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = Divenary/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
@@ -342,6 +354,8 @@
 				C30000000000000000000003 /* DiveRuntimeSessionController.swift */,
 				C40000000000000000000003 /* RealDiveSessionCoordinator.swift */,
 				C50000000000000000000003 /* DiveActionButtonIntents.swift */,
+				C60000000000000000000001 /* RecordingPageModel.swift */,
+				C60000000000000000000003 /* DiveHaptics.swift */,
 				D60000000000000000000004 /* DivenaryWatchApplicationDelegate.swift */,
 			);
 			path = Runtime;
@@ -365,10 +379,12 @@
 				F20000000000000000000001 /* WetReadyView.swift */,
 				D60000000000000000000006 /* RealRecordingFlowView.swift */,
 				1E2C63175E91C4718DBE3923 /* RecordingView.swift */,
+				C70000000000000000000001 /* RecordingHint.swift */,
 				D60000000000000000000008 /* SimulatedRecordingFlowView.swift */,
 				4EF0EED63FCE91EFD89F04B5 /* SessionDetailView.swift */,
 				956EB9D331534828E0706E5C /* SessionListView.swift */,
 				8EE02CFF90DFD4AE52C7E631 /* SummaryView.swift */,
+				C70000000000000000000003 /* UnderwaterControlsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -411,6 +427,8 @@
 				C30000000000000000000001 /* DiveRuntimeSessionControllerTests.swift */,
 				C40000000000000000000001 /* RealDiveSessionCoordinatorTests.swift */,
 				C50000000000000000000001 /* DiveActionButtonIntentTests.swift */,
+				C60000000000000000000005 /* UnderwaterInputModelTests.swift */,
+				C70000000000000000000005 /* RecordingHintTests.swift */,
 			);
 			path = DivenaryWatchAppTests;
 			sourceTree = "<group>";
@@ -679,6 +697,8 @@
 				C30000000000000000000004 /* DiveRuntimeSessionController.swift in Sources */,
 				C40000000000000000000004 /* RealDiveSessionCoordinator.swift in Sources */,
 				C50000000000000000000004 /* DiveActionButtonIntents.swift in Sources */,
+				C60000000000000000000002 /* RecordingPageModel.swift in Sources */,
+				C60000000000000000000004 /* DiveHaptics.swift in Sources */,
 				D60000000000000000000001 /* DiveAppServices.swift in Sources */,
 				D60000000000000000000003 /* DivenaryWatchApplicationDelegate.swift in Sources */,
 				8A0581CAFEA98B87A4EACC3E /* DiveSessionStore.swift in Sources */,
@@ -691,10 +711,12 @@
 				F10000000000000000000001 /* WetReadyView.swift in Sources */,
 				D60000000000000000000005 /* RealRecordingFlowView.swift in Sources */,
 				079BC7FC489ADFF26E895903 /* RecordingView.swift in Sources */,
+				C70000000000000000000002 /* RecordingHint.swift in Sources */,
 				D60000000000000000000007 /* SimulatedRecordingFlowView.swift in Sources */,
 				FD8FF9CF0CE01A2EF209C3BD /* SessionDetailView.swift in Sources */,
 				0DA3A8DE547E6EA68A8F60D0 /* SessionListView.swift in Sources */,
 				65B418949D09CE62247AEB33 /* SummaryView.swift in Sources */,
+				C70000000000000000000004 /* UnderwaterControlsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -715,6 +737,8 @@
 				C30000000000000000000002 /* DiveRuntimeSessionControllerTests.swift in Sources */,
 				C40000000000000000000002 /* RealDiveSessionCoordinatorTests.swift in Sources */,
 				C50000000000000000000002 /* DiveActionButtonIntentTests.swift in Sources */,
+				C60000000000000000000006 /* UnderwaterInputModelTests.swift in Sources */,
+				C70000000000000000000006 /* RecordingHintTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

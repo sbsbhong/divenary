@@ -75,12 +75,25 @@ protocol DiveSessionPersisting: AnyObject {
 
 @MainActor
 protocol DiveActionButtonDonating: AnyObject {
-    func donateEndAction()
+    /// Tells watchOS that the next Action Button press runs `DivenaryDiveActionIntent`.
+    func donateDiveAction()
 }
 
 @MainActor
 final class RealDiveSessionCoordinator: ObservableObject {
-    @Published private(set) var phase: RealDivePhase = .idle
+    @Published private(set) var phase: RealDivePhase = .idle {
+        didSet {
+            // Readout pages exist only while recording; any other phase resets them to Live.
+            if case .recording = phase {
+                recordingPages.setRecording(true)
+            } else {
+                recordingPages.setRecording(false)
+            }
+        }
+    }
+
+    /// Readout pages for the real recording screen. Views observe it; the Action Button and crown move it.
+    let recordingPages: RecordingPageModel
 
     private let preferredMode: () -> DiveMode
     private let updatePreferredMode: (DiveMode) -> Void
@@ -91,6 +104,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
     private let actionButtonDonor: DiveActionButtonDonating
     private let wetReadyExitScheduler: WetReadyExitScheduling
     private let schedulePersistence: (@escaping @MainActor () -> Void) -> Void
+    private let haptics: DiveHapticPlaying
     private let minimumHardwareEndElapsedSeconds: TimeInterval = 180
 
     init(
@@ -102,7 +116,9 @@ final class RealDiveSessionCoordinator: ObservableObject {
         actionButtonDonor: DiveActionButtonDonating,
         wetReadyExitScheduler: WetReadyExitScheduling? = nil,
         sessionStore: DiveSessionPersisting,
-        schedulePersistence: ((@escaping @MainActor () -> Void) -> Void)? = nil
+        schedulePersistence: ((@escaping @MainActor () -> Void) -> Void)? = nil,
+        haptics: DiveHapticPlaying? = nil,
+        pageReturnScheduler: RecordingPageReturnScheduling? = nil
     ) {
         self.preferredMode = preferredMode
         self.updatePreferredMode = updatePreferredMode
@@ -120,6 +136,13 @@ final class RealDiveSessionCoordinator: ObservableObject {
                 work()
             }
         }
+        let haptics = haptics ?? WatchDiveHaptics()
+        self.haptics = haptics
+        recordingPages = RecordingPageModel(
+            minimumEndElapsedSeconds: minimumHardwareEndElapsedSeconds,
+            haptics: haptics,
+            returnScheduler: pageReturnScheduler ?? TaskRecordingPageReturnScheduler()
+        )
         runtime.onEvent = { [weak self] event in
             self?.handleRuntimeEvent(event)
         }
@@ -139,8 +162,38 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return false
         }
         phase = .recording(source: .manual, plan: plan)
-        actionButtonDonor.donateEndAction()
+        haptics.play(.start)
+        actionButtonDonor.donateDiveAction()
         return true
+    }
+
+    /// One Action Button press, whatever the phase. Recording pages through the readouts, and a press
+    /// on the End page asks to end through `requestActionButtonEnd()`. Saving and runtime handoffs
+    /// reject the press. Every other phase starts a dive, as the first press always has.
+    func handleActionButtonPress() -> DiveActionOutcome {
+        let outcome: DiveActionOutcome
+        switch phase {
+        case .recording:
+            outcome = handleRecordingActionButtonPress()
+        case .completing, .awaitingRuntimeInvalidation:
+            outcome = .rejected(.busy)
+        case .idle, .wetReady, .savedSummary, .noSamples, .startPersistenceError, .savePersistenceError:
+            outcome = startFromActionButton() ? .started : .rejected(.startFailed)
+        }
+
+        switch outcome {
+        case .started:
+            haptics.play(.start)
+        case .endRequested:
+            haptics.play(.endRequested)
+        case .rejected:
+            haptics.play(.rejected)
+        case .pageChanged:
+            // The page model plays the page-change haptic for both the Action Button and the crown.
+            break
+        }
+        recordingPages.recordActionFeedback(outcome)
+        return outcome
     }
 
     @discardableResult
@@ -205,6 +258,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
         phase = .wetReady(mode: mode)
     }
 
+    /// The existing end path: out of the water and at least `minimumHardwareEndElapsedSeconds` in.
     func requestActionButtonEnd() -> Bool {
         guard case .recording = phase,
               recorder.elapsedTime >= minimumHardwareEndElapsedSeconds,
@@ -285,7 +339,18 @@ final class RealDiveSessionCoordinator: ObservableObject {
             return
         }
         phase = .recording(source: .systemAutoLaunch, plan: plan)
-        actionButtonDonor.donateEndAction()
+        actionButtonDonor.donateDiveAction()
+    }
+
+    private func handleRecordingActionButtonPress() -> DiveActionOutcome {
+        guard recordingPages.page == .end else {
+            return .pageChanged(recordingPages.advanceFromActionButton())
+        }
+        guard requestActionButtonEnd() else {
+            recordingPages.returnToLiveAfterRejectedEnd()
+            return .rejected(.endUnavailable)
+        }
+        return .endRequested
     }
 
     private func preferredPlan() -> PreDivePlan {
@@ -372,6 +437,7 @@ final class RealDiveSessionCoordinator: ObservableObject {
 
         recorder.resetCompletedSession()
         phase = .savedSummary(record: record)
+        haptics.play(.saved)
     }
 
     private func cancelWithoutSamples(source: RealDiveStartSource) {

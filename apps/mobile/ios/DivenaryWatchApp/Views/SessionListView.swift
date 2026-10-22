@@ -40,7 +40,7 @@ private struct EmptySessionsView: View {
                     .font(DiveWatchTheme.metricFont(size: 20, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.text)
                 Text("Start a recreational capture to create a watch log.")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
         }

@@ -236,7 +236,7 @@ struct SimulatedRecordingFlowView: View {
         .safeAreaInset(edge: .bottom) {
             if recordingMode == .demo, lifecycle.showsRecordingControls {
                 Text(String(localized: "Adjust depth with the Digital Crown"))
-                    .font(.system(size: 9, weight: .medium))
+                    .font(.system(size: 9, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
                     .frame(maxWidth: .infinity)
                     .allowsHitTesting(false)
@@ -426,7 +426,7 @@ struct SimulatedRecordingFlowView: View {
         actionButtonEndOverrideToken = actionButtonBridge.installEndOverride {
             endDive()
         }
-        actionButtonDonor.donateEndAction()
+        actionButtonDonor.donateDiveAction()
     }
 
     private func removeActionButtonEndOverride() {

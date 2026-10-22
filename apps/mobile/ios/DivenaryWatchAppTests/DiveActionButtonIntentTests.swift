@@ -3,98 +3,105 @@ import XCTest
 
 @MainActor
 final class DiveActionButtonIntentTests: XCTestCase {
-    func testBridgeStartsFromActionButtonOnce() {
-        let coordinator = FakeRealDiveActionController()
+    func testBridgeForwardsEachPressToTheCoordinatorOnce() {
+        let coordinator = FakeRealDiveActionController(outcomes: [.started, .pageChanged(.details)])
         let bridge = DiveActionButtonBridge(controller: coordinator)
 
-        XCTAssertTrue(bridge.startDive())
+        XCTAssertEqual(bridge.performDiveAction(), .started)
+        XCTAssertEqual(bridge.performDiveAction(), .pageChanged(.details))
 
-        XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
+        XCTAssertEqual(coordinator.pressCount, 2)
     }
 
-    func testBridgeReturnsRejectedStartWithoutMarkingRecordingActive() {
-        let coordinator = FakeRealDiveActionController(acceptsStartRequest: false)
+    func testBridgeReturnsTheCoordinatorsRejection() {
+        let coordinator = FakeRealDiveActionController(outcomes: [.rejected(.startFailed)])
         let bridge = DiveActionButtonBridge(controller: coordinator)
 
-        XCTAssertFalse(bridge.startDive())
-
-        XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
-        XCTAssertFalse(coordinator.isRecording)
+        XCTAssertEqual(bridge.performDiveAction(), .rejected(.startFailed))
+        XCTAssertEqual(coordinator.pressCount, 1)
     }
 
-    func testBridgeForwardsAcceptedEndToCoordinatorOnce() {
-        let coordinator = FakeRealDiveActionController(acceptsEndRequest: true)
+    func testBridgeRoutesPressesToActiveDemoOverrideBeforeRealCoordinator() {
+        let coordinator = FakeRealDiveActionController(outcomes: [.pageChanged(.details)])
         let bridge = DiveActionButtonBridge(controller: coordinator)
-
-        XCTAssertTrue(bridge.requestEndDive())
-
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
-        XCTAssertFalse(coordinator.isRecording)
-    }
-
-    func testBridgeLeavesRecordingActiveWhenCoordinatorRejectsEnd() {
-        let coordinator = FakeRealDiveActionController(acceptsEndRequest: false)
-        let bridge = DiveActionButtonBridge(controller: coordinator)
-
-        XCTAssertFalse(bridge.requestEndDive())
-
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
-        XCTAssertTrue(coordinator.isRecording)
-    }
-
-    func testBridgeRoutesEndToActiveOverrideBeforeRealCoordinator() {
-        let coordinator = FakeRealDiveActionController(acceptsEndRequest: false)
-        let bridge = DiveActionButtonBridge(controller: coordinator)
+        var overrideResults = [true, false]
         var overrideCallCount = 0
 
         let token = bridge.installEndOverride {
             overrideCallCount += 1
-            return true
+            return overrideResults.removeFirst()
         }
 
-        XCTAssertTrue(bridge.requestEndDive())
-
-        XCTAssertEqual(overrideCallCount, 1)
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 0)
+        XCTAssertEqual(bridge.performDiveAction(), .endRequested)
+        XCTAssertEqual(bridge.performDiveAction(), .rejected(.endUnavailable))
+        XCTAssertEqual(overrideCallCount, 2)
+        XCTAssertEqual(coordinator.pressCount, 0)
 
         bridge.removeEndOverride(token)
-        XCTAssertFalse(bridge.requestEndDive())
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
+        XCTAssertEqual(bridge.performDiveAction(), .pageChanged(.details))
+        XCTAssertEqual(coordinator.pressCount, 1)
     }
 
-    func testStartIntentRoutesToActionButtonBridgeOnce() async throws {
-        let coordinator = FakeRealDiveActionController()
+    func testRemovingAStaleOverrideTokenKeepsTheCurrentOverride() {
+        let coordinator = FakeRealDiveActionController(outcomes: [.pageChanged(.details)])
+        let bridge = DiveActionButtonBridge(controller: coordinator)
+        let staleToken = bridge.installEndOverride { false }
+        _ = bridge.installEndOverride { true }
+
+        bridge.removeEndOverride(staleToken)
+
+        XCTAssertEqual(bridge.performDiveAction(), .endRequested)
+        XCTAssertEqual(coordinator.pressCount, 0)
+    }
+
+    func testStartIntentRunsThePhaseAwarePressOnce() async throws {
+        let coordinator = FakeRealDiveActionController(outcomes: [.started])
         let intent = DivenaryStartDiveIntent(
             bridge: DiveActionButtonBridge(controller: coordinator)
         )
 
         _ = try await intent.perform()
 
-        XCTAssertEqual(coordinator.actionButtonStartCallCount, 1)
+        XCTAssertEqual(coordinator.pressCount, 1)
     }
 
-    func testEndIntentRoutesAcceptedEndRequestToBridgeOnce() async throws {
-        let coordinator = FakeRealDiveActionController(acceptsEndRequest: true)
-        let intent = DivenaryEndDiveIntent(
+    func testDiveActionIntentRunsThePhaseAwarePressOnce() async throws {
+        let coordinator = FakeRealDiveActionController(outcomes: [.pageChanged(.details)])
+        let intent = DivenaryDiveActionIntent(
             bridge: DiveActionButtonBridge(controller: coordinator)
         )
 
         _ = try await intent.perform()
 
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
-        XCTAssertFalse(coordinator.isRecording)
+        XCTAssertEqual(coordinator.pressCount, 1)
     }
 
-    func testEndIntentRoutesRejectedEndRequestToBridgeOnceAndKeepsRecording() async throws {
-        let coordinator = FakeRealDiveActionController(acceptsEndRequest: false)
-        let intent = DivenaryEndDiveIntent(
+    func testDiveActionIntentForwardsAnEndPressOnce() async throws {
+        let coordinator = FakeRealDiveActionController(outcomes: [.endRequested])
+        let intent = DivenaryDiveActionIntent(
             bridge: DiveActionButtonBridge(controller: coordinator)
         )
 
         _ = try await intent.perform()
 
-        XCTAssertEqual(coordinator.actionButtonEndRequestCallCount, 1)
-        XCTAssertTrue(coordinator.isRecording)
+        XCTAssertEqual(coordinator.pressCount, 1)
+    }
+
+    func testDiveActionStaysOnTheButtonUntilAPressEndsTheDive() {
+        let keepingOutcomes: [DiveActionOutcome] = [
+            .started,
+            .pageChanged(.live),
+            .pageChanged(.details),
+            .pageChanged(.end),
+            .rejected(.busy),
+            .rejected(.startFailed),
+            .rejected(.endUnavailable),
+        ]
+
+        for outcome in keepingOutcomes {
+            XCTAssertTrue(outcome.keepsDiveActionOnButton, "\(outcome)")
+        }
+        XCTAssertFalse(DiveActionOutcome.endRequested.keepsDiveActionOnButton)
     }
 
     func testDonorInvokesInjectedDonationOperationOnce() async {
@@ -105,7 +112,7 @@ final class DiveActionButtonIntentTests: XCTestCase {
             invoked.fulfill()
         }
 
-        donor.donateEndAction()
+        donor.donateDiveAction()
 
         await fulfillment(of: [invoked], timeout: 1)
         XCTAssertEqual(recorder.callCount, 1)
@@ -127,7 +134,7 @@ final class DiveActionButtonIntentTests: XCTestCase {
             }
         )
 
-        donor.donateEndAction()
+        donor.donateDiveAction()
 
         await fulfillment(of: [invoked, failureObserved], timeout: 1)
         XCTAssertEqual(recorder.callCount, 1)
@@ -136,30 +143,16 @@ final class DiveActionButtonIntentTests: XCTestCase {
 
 @MainActor
 private final class FakeRealDiveActionController: RealDiveActionControlling {
-    private(set) var actionButtonStartCallCount = 0
-    private(set) var actionButtonEndRequestCallCount = 0
-    private(set) var isRecording = true
+    private(set) var pressCount = 0
+    private var outcomes: [DiveActionOutcome]
 
-    private let acceptsEndRequest: Bool
-    private let acceptsStartRequest: Bool
-
-    init(acceptsEndRequest: Bool = true, acceptsStartRequest: Bool = true) {
-        self.acceptsEndRequest = acceptsEndRequest
-        self.acceptsStartRequest = acceptsStartRequest
+    init(outcomes: [DiveActionOutcome]) {
+        self.outcomes = outcomes
     }
 
-    func startFromActionButton() -> Bool {
-        actionButtonStartCallCount += 1
-        isRecording = acceptsStartRequest
-        return acceptsStartRequest
-    }
-
-    func requestActionButtonEnd() -> Bool {
-        actionButtonEndRequestCallCount += 1
-        if acceptsEndRequest {
-            isRecording = false
-        }
-        return acceptsEndRequest
+    func handleActionButtonPress() -> DiveActionOutcome {
+        pressCount += 1
+        return outcomes.isEmpty ? .rejected(.busy) : outcomes.removeFirst()
     }
 }
 

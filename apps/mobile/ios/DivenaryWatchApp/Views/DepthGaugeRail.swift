@@ -1,26 +1,30 @@
 import SwiftUI
 
+/// The left depth rail of every recording page. It is kept narrow so the live value beside it can
+/// stay large; tick labels sit inside the same width. Always-On draws it as an outline.
 struct DepthGaugeRail: View {
-    static let layoutWidth: CGFloat = 72
+    static let layoutWidth: CGFloat = 46
 
     let depthMeters: Double?
     let maxScaleMeters: Double
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
 
-    private let railX: CGFloat = 40
-    private let railWidth: CGFloat = 24
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    private let railX: CGFloat = 26
+    private let railWidth: CGFloat = 16
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             GeometryReader { proxy in
                 let height = proxy.size.height
 
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(deepBlueGradient)
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isLuminanceReduced ? AnyShapeStyle(Color.clear) : AnyShapeStyle(deepBlueGradient))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .stroke(Color.white.opacity(0.18), lineWidth: 1)
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .stroke(Color.white.opacity(isLuminanceReduced ? 0.5 : 0.18), lineWidth: 1)
                     )
                     .frame(width: railWidth, height: height)
                     .position(x: railX + railWidth / 2, y: height / 2)
@@ -86,19 +90,19 @@ struct DepthGaugeRail: View {
     private func tickMark(for depth: Double, height: CGFloat) -> some View {
         let y = yPosition(for: depth, height: height)
 
-        return HStack(spacing: 3) {
+        return HStack(spacing: 2) {
             Text(tickLabel(for: depth))
-                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .font(DiveWatchTheme.metricFont(size: 9, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
-                .frame(width: 25, alignment: .trailing)
+                .frame(width: 16, alignment: .trailing)
 
             Rectangle()
                 .fill(Color.white.opacity(0.55))
-                .frame(width: 8, height: 1.4)
+                .frame(width: 5, height: 1.4)
         }
-        .position(x: 17, y: y)
+        .position(x: 11.5, y: y)
     }
 
     private func tickLabel(for depth: Double) -> String {
@@ -120,13 +124,13 @@ struct DepthGaugeRail: View {
         let clampedBottom = min(max(centeredBottom, 0), height)
         let boxHeight = hasVisibleOverlap ? max(0, clampedBottom - clampedTop) : 0
 
-        return RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(Color(red: 0.38, green: 0.79, blue: 1.0).opacity(0.24))
+        return RoundedRectangle(cornerRadius: 5, style: .continuous)
+            .fill(Color(red: 0.38, green: 0.79, blue: 1.0).opacity(isLuminanceReduced ? 0 : 0.24))
             .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(Color(red: 0.64, green: 0.9, blue: 1.0).opacity(0.9), lineWidth: 1.4)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .stroke(Color(red: 0.64, green: 0.9, blue: 1.0).opacity(isLuminanceReduced ? 0.6 : 0.9), lineWidth: 1.4)
             )
-            .frame(width: railWidth + 10, height: boxHeight)
+            .frame(width: railWidth + 8, height: boxHeight)
             .position(x: railX + railWidth / 2, y: clampedTop + boxHeight / 2)
             .opacity(boxHeight > 0 ? 1 : 0)
     }
@@ -134,7 +138,7 @@ struct DepthGaugeRail: View {
     private func targetLine(at depth: Double, height: CGFloat) -> some View {
         Rectangle()
             .fill(Color.white.opacity(0.92))
-            .frame(width: railWidth + 14, height: 2)
+            .frame(width: railWidth + 8, height: 2)
             .position(x: railX + railWidth / 2, y: yPosition(for: depth, height: height))
     }
 
@@ -149,10 +153,9 @@ struct DepthGaugeRail: View {
                 .frame(width: 10, height: 10)
                 .overlay(
                     Circle()
-                        .stroke(DiveWatchTheme.primary, lineWidth: 2.2)
+                        .stroke(isLuminanceReduced ? Color.white : DiveWatchTheme.primary, lineWidth: 2.2)
                 )
         }
-        .shadow(color: Color.black.opacity(0.35), radius: 2, x: 0, y: 1)
         .position(x: railX + 5, y: yPosition(for: depthMeters, height: height))
     }
 

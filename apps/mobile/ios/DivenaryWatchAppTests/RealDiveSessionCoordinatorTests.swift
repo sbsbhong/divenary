@@ -1,10 +1,11 @@
+import Combine
 import WatchKit
 import XCTest
 @testable import DivenaryWatchApp
 
 @MainActor
 final class RealDiveSessionCoordinatorTests: XCTestCase {
-    func testManualRecorderStartFailureDoesNotStartRuntimeOrDonateEndAction() {
+    func testManualRecorderStartFailureDoesNotStartRuntimeOrDonateDiveAction() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
         let recorder = FakeDiveRecorder(calls: calls, startResults: [false])
@@ -231,7 +232,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(recorder.cancelCallCount, 3)
     }
 
-    func testManualStartPreservesPlanStartsRecorderBeforeRuntimeAndDonatesEndAction() {
+    func testManualStartPreservesPlanStartsRecorderBeforeRuntimeAndDonatesDiveAction() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
         let recorder = FakeDiveRecorder(calls: calls)
@@ -279,7 +280,7 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         assertRecording(coordinator, source: .actionButton)
     }
 
-    func testAdoptedSystemSessionUsesPreferredModeImmediatelyWithoutStartingRuntimeAndDonatesEndAction() {
+    func testAdoptedSystemSessionUsesPreferredModeImmediatelyWithoutStartingRuntimeAndDonatesDiveAction() {
         let calls = LifecycleCallLog()
         let runtime = FakeDiveRuntime(calls: calls)
         let recorder = FakeDiveRecorder(calls: calls)
@@ -558,6 +559,265 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         XCTAssertEqual(runtime.invalidateCallCount, 1)
         XCTAssertEqual(recorder.stopCallCount, 0)
         assertRecording(coordinator, source: .actionButton)
+    }
+
+    func testActionButtonPressFromIdleStartsWithAStartHaptic() {
+        let calls = LifecycleCallLog()
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(
+            preferredMode: .freedive,
+            runtime: FakeDiveRuntime(calls: calls),
+            recorder: FakeDiveRecorder(calls: calls),
+            haptics: haptics
+        )
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .started)
+
+        assertRecording(coordinator, source: .actionButton, plan: PreDivePlan(diveMode: .freedive))
+        XCTAssertEqual(haptics.events, [.start])
+        XCTAssertEqual(coordinator.recordingPages.page, .live)
+        XCTAssertEqual(coordinator.recordingPages.lastActionFeedback?.outcome, .started)
+    }
+
+    func testActionButtonPressFromWetReadyStartsTheArmedMode() {
+        let calls = LifecycleCallLog()
+        let coordinator = makeCoordinator(
+            runtime: FakeDiveRuntime(calls: calls),
+            recorder: FakeDiveRecorder(calls: calls)
+        )
+        coordinator.receiveWaterState(.submerged)
+        coordinator.selectWetReadyMode(.freedive)
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .started)
+
+        assertRecording(coordinator, source: .actionButton, plan: PreDivePlan(diveMode: .freedive))
+    }
+
+    func testActionButtonPressFromSavedSummaryStartsTheNextDive() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, haptics: haptics)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+        assertSavedSummary(coordinator)
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .started)
+
+        assertRecording(coordinator, source: .actionButton)
+        XCTAssertEqual(recorder.startedPlans.count, 2)
+        XCTAssertEqual(haptics.events, [.start, .saved, .start])
+    }
+
+    func testRejectedActionButtonStartPlaysARejectionHaptic() {
+        let calls = LifecycleCallLog()
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(
+            runtime: FakeDiveRuntime(calls: calls),
+            recorder: FakeDiveRecorder(calls: calls, startResults: [false]),
+            haptics: haptics
+        )
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.startFailed))
+
+        assertStartPersistenceError(coordinator, source: .actionButton)
+        XCTAssertEqual(haptics.events, [.rejected])
+        XCTAssertEqual(coordinator.recordingPages.lastActionFeedback?.outcome, .rejected(.startFailed))
+    }
+
+    func testActionButtonPagesUnderwaterAndNeverEnds() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 900)
+        let water = FakeWaterStateReader(latestState: .submerged)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water, haptics: haptics)
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        coordinator.recordingPages.receive(signals(water: .submerged, elapsed: 900))
+
+        let outcomes = (0..<4).map { _ in coordinator.handleActionButtonPress() }
+
+        XCTAssertEqual(outcomes, [
+            .pageChanged(.details),
+            .pageChanged(.live),
+            .pageChanged(.details),
+            .pageChanged(.live),
+        ])
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+        XCTAssertEqual(haptics.events, [.start, .pageChange, .pageChange, .pageChange, .pageChange])
+        assertRecording(coordinator, source: .manual)
+    }
+
+    func testActionButtonAtTheSurfaceUnderTheMinimumPagesAndShowsTheRemainingTime() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 150)
+        let water = FakeWaterStateReader(latestState: .notSubmerged)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water)
+        coordinator.startFromActionButton()
+        coordinator.recordingPages.receive(signals(water: .notSubmerged, elapsed: 150))
+
+        XCTAssertEqual(coordinator.recordingPages.endAvailability, .availableIn(seconds: 30))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.details))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.live))
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+    }
+
+    func testActionButtonEndsOnlyFromTheEndPageThroughTheGuardedPath() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 180)
+        let water = FakeWaterStateReader(latestState: .notSubmerged)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water, haptics: haptics)
+        coordinator.startFromActionButton()
+        coordinator.recordingPages.receive(signals(water: .notSubmerged, elapsed: 180))
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.details))
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.end))
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .endRequested)
+
+        XCTAssertEqual(runtime.invalidateCallCount, 1)
+        XCTAssertEqual(recorder.stopCallCount, 0)
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange, .endRequested])
+        assertRecording(coordinator, source: .actionButton)
+    }
+
+    func testEndPagePressIsRejectedWhenTheGuardNoLongerPasses() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, elapsedTime: 240)
+        let water = FakeWaterStateReader(latestState: .notSubmerged)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder, water: water, haptics: haptics)
+        coordinator.startFromActionButton()
+        coordinator.recordingPages.receive(signals(water: .notSubmerged, elapsed: 240))
+        _ = coordinator.handleActionButtonPress()
+        _ = coordinator.handleActionButtonPress()
+        XCTAssertEqual(coordinator.recordingPages.page, .end)
+
+        water.latestState = .submerged
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.endUnavailable))
+
+        XCTAssertEqual(runtime.invalidateCallCount, 0)
+        XCTAssertEqual(coordinator.recordingPages.page, .live)
+        XCTAssertEqual(coordinator.recordingPages.lastChange?.reason, .endUnavailable)
+        XCTAssertEqual(haptics.events, [.pageChange, .pageChange, .rejected])
+        XCTAssertEqual(
+            coordinator.recordingPages.lastActionFeedback,
+            DiveActionFeedback(id: 3, outcome: .rejected(.endUnavailable))
+        )
+        assertRecording(coordinator, source: .actionButton)
+    }
+
+    func testActionButtonPressWhileSavingIsRejected() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let haptics = RecordedDiveHaptics()
+        var scheduledSave: (@MainActor () -> Void)?
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
+            runtime: runtime,
+            recorder: recorder,
+            water: FakeWaterStateReader(),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { scheduledSave = $0 },
+            haptics: haptics,
+            pageReturnScheduler: ManualPageReturnScheduler()
+        )
+        coordinator.startManual(plan: PreDivePlan())
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .rejected(.busy))
+        XCTAssertEqual(recorder.startedPlans.count, 1)
+
+        scheduledSave?()
+
+        assertSavedSummary(coordinator)
+        XCTAssertEqual(haptics.events, [.start, .rejected, .saved])
+    }
+
+    func testOnlyUserCausedStartsPlayAStartHaptic() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = makeCoordinator(
+            runtime: runtime,
+            recorder: FakeDiveRecorder(calls: calls),
+            haptics: haptics
+        )
+
+        runtime.emit(.adoptedSystemSession)
+
+        assertRecording(coordinator, source: .systemAutoLaunch)
+        XCTAssertTrue(haptics.events.isEmpty)
+    }
+
+    func testRecordingPagesFollowTheRecordingPhase() {
+        let calls = LifecycleCallLog()
+        let runtime = FakeDiveRuntime(calls: calls)
+        let recorder = FakeDiveRecorder(calls: calls, hasCapturedDepthSample: true)
+        let coordinator = makeCoordinator(runtime: runtime, recorder: recorder)
+        XCTAssertFalse(coordinator.recordingPages.isRecording)
+
+        coordinator.startManual(plan: PreDivePlan())
+        XCTAssertTrue(coordinator.recordingPages.isRecording)
+        _ = coordinator.handleActionButtonPress()
+        XCTAssertEqual(coordinator.recordingPages.page, .details)
+
+        runtime.emit(.didInvalidate(reason: .none, errorDescription: nil))
+
+        assertSavedSummary(coordinator)
+        XCTAssertFalse(coordinator.recordingPages.isRecording)
+        XCTAssertEqual(coordinator.recordingPages.page, .live)
+    }
+
+    func testRecommendedStopBecomingActiveReturnsToLiveWithoutAHaptic() {
+        let calls = LifecycleCallLog()
+        let sensorProvider = RetainingManualDepthSensorProvider()
+        let recorder = DiveSessionRecorder(
+            sensorProvider: sensorProvider,
+            profileStore: CountingProfileRecordingStore(),
+            now: { EngineTestFixtures.date(2) }
+        )
+        let water = CurrentValueSubject<WaterSubmersionState, Never>(.submerged)
+        let haptics = RecordedDiveHaptics()
+        let coordinator = RealDiveSessionCoordinator(
+            preferredMode: { .scuba },
+            updatePreferredMode: { _ in },
+            runtime: FakeDiveRuntime(calls: calls),
+            recorder: recorder,
+            water: FakeWaterStateReader(latestState: .submerged),
+            actionButtonDonor: FakeActionButtonDonor(calls: calls),
+            wetReadyExitScheduler: FakeWetReadyExitScheduler(),
+            sessionStore: FakeDiveSessionStore(),
+            schedulePersistence: { $0() },
+            haptics: haptics,
+            pageReturnScheduler: ManualPageReturnScheduler()
+        )
+        coordinator.recordingPages.observe(recorder: recorder, waterState: water.eraseToAnyPublisher())
+        coordinator.startManual(plan: PreDivePlan(diveMode: .scuba))
+        sensorProvider.emit(EngineTestFixtures.sample(0, depth: 12))
+        XCTAssertEqual(recorder.scubaSafetyStop.status, .armed)
+        XCTAssertEqual(coordinator.handleActionButtonPress(), .pageChanged(.details))
+        let eventsBeforeStop = haptics.events
+
+        sensorProvider.emit(EngineTestFixtures.sample(2, depth: 5))
+
+        XCTAssertEqual(recorder.scubaSafetyStop.status, .active)
+        XCTAssertEqual(coordinator.recordingPages.page, .live)
+        XCTAssertEqual(coordinator.recordingPages.lastChange?.reason, .recommendedStop)
+        XCTAssertFalse(coordinator.recordingPages.lastChange?.userInitiated ?? true)
+        XCTAssertEqual(haptics.events, eventsBeforeStop)
+        XCTAssertEqual(eventsBeforeStop, [.start, .pageChange])
     }
 
     func testRuntimeInvalidationWithSamplesAutomaticallySavesExactlyOnce() {
@@ -1017,6 +1277,16 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         )
     }
 
+    private func signals(water: WaterSubmersionState, elapsed: TimeInterval) -> RecordingPageSignals {
+        RecordingPageSignals(
+            waterState: water,
+            elapsedTime: elapsed,
+            liveDepthSignal: water == .notSubmerged ? .stale : .live,
+            freediveState: nil,
+            safetyStopStatus: .notRequired
+        )
+    }
+
     private func makeCoordinator(
         preferredMode: DiveMode = .scuba,
         runtime: FakeDiveRuntime,
@@ -1025,7 +1295,9 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
         donor: FakeActionButtonDonor? = nil,
         preference: FakeDiveModePreference? = nil,
         scheduler: FakeWetReadyExitScheduler? = nil,
-        sessionStore: FakeDiveSessionStore? = nil
+        sessionStore: FakeDiveSessionStore? = nil,
+        haptics: RecordedDiveHaptics? = nil,
+        pageScheduler: ManualPageReturnScheduler? = nil
     ) -> RealDiveSessionCoordinator {
         let preference = preference ?? FakeDiveModePreference(mode: preferredMode)
         return RealDiveSessionCoordinator(
@@ -1037,7 +1309,9 @@ final class RealDiveSessionCoordinatorTests: XCTestCase {
             actionButtonDonor: donor ?? FakeActionButtonDonor(calls: LifecycleCallLog()),
             wetReadyExitScheduler: scheduler ?? FakeWetReadyExitScheduler(),
             sessionStore: sessionStore ?? FakeDiveSessionStore(),
-            schedulePersistence: { $0() }
+            schedulePersistence: { $0() },
+            haptics: haptics ?? RecordedDiveHaptics(),
+            pageReturnScheduler: pageScheduler ?? ManualPageReturnScheduler()
         )
     }
 
@@ -1418,7 +1692,7 @@ private final class FakeActionButtonDonor: DiveActionButtonDonating {
         self.shouldFail = shouldFail
     }
 
-    func donateEndAction() {
+    func donateDiveAction() {
         callCount += 1
         calls.append(shouldFail ? "donor.failed" : "donor.donated")
     }

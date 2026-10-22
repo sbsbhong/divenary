@@ -1,32 +1,52 @@
 import Foundation
 import WatchKit
 
-@MainActor
-final class DepthAutoLaunchAuthorization: ObservableObject {
-    @Published private(set) var statusText = String(localized: "Auto launch status unavailable")
+/// Whether watchOS launches Divenary when the watch is submerged
+/// (Settings > General > Auto-Launch > When Submerged).
+enum DepthAutoLaunchStatus: Equatable {
+    case active
+    case inactive
+    /// Not read yet, or watchOS could not report it. Copy treats it as "start from Home".
+    case unknown
 
-    func refresh() {
-        WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus { status, error in
-            Task { @MainActor in
-                if error != nil {
-                    self.statusText = String(localized: "Auto launch status unavailable")
-                } else {
-                    self.statusText = Self.displayText(for: status)
-                }
-            }
+    init(_ status: WKExtendedRuntimeSessionAutoLaunchAuthorizationStatus) {
+        switch status {
+        case .active:
+            self = .active
+        case .inactive:
+            self = .inactive
+        case .unknown:
+            self = .unknown
+        @unknown default:
+            self = .unknown
         }
     }
 
-    private static func displayText(for status: WKExtendedRuntimeSessionAutoLaunchAuthorizationStatus) -> String {
-        switch status {
+    var displayText: String {
+        switch self {
         case .active:
             return String(localized: "Auto launch active")
         case .inactive:
             return String(localized: "Auto launch inactive")
         case .unknown:
             return String(localized: "Auto launch status unavailable")
-        @unknown default:
-            return String(localized: "Auto launch status unavailable")
+        }
+    }
+}
+
+@MainActor
+final class DepthAutoLaunchAuthorization: ObservableObject {
+    @Published private(set) var status: DepthAutoLaunchStatus = .unknown
+
+    var statusText: String {
+        status.displayText
+    }
+
+    func refresh() {
+        WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus { status, error in
+            Task { @MainActor in
+                self.status = error == nil ? DepthAutoLaunchStatus(status) : .unknown
+            }
         }
     }
 }

@@ -65,6 +65,8 @@ enum WatchRecordingMode: Equatable {
 }
 
 enum RecordingEndControl: Equatable {
+    /// Real recording: the phase hint chip under the instrument. It names the next Action Button
+    /// press, or the crown turn on a watch that probably has no Action Button.
     case crownHint
     case toolbarEnd
     case hidden
@@ -113,11 +115,24 @@ struct RecordingInstrumentView: View {
     var showsNavigationToolbar = false
     var waterState: WaterSubmersionState = .unknown
     var markerTitle: String?
+    /// Real recording only: the readout pages the Action Button and crown move. Demo and debug
+    /// recordings pass `nil`, stay on Live and keep the crown for simulated depth.
+    var pages: RecordingPageModel?
 
     var body: some View {
+        if let pages {
+            RealRecordingPager(pages: pages, waterState: waterState) { page, hint in
+                instrumentStack(page: page, hint: hint)
+            }
+        } else {
+            instrumentStack(page: .live, hint: nil)
+        }
+    }
+
+    private func instrumentStack(page: RecordingPage, hint: RecordingHint?) -> some View {
         GeometryReader { proxy in
             VStack(spacing: 4) {
-                liveInstrument
+                pageInstrument(page)
                     .environment(
                         \.liveReadoutStatus,
                         LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle)
@@ -134,10 +149,10 @@ struct RecordingInstrumentView: View {
                     .minimumScaleFactor(0.7)
                     .frame(maxWidth: .infinity)
 
-                if endControl == .crownHint {
-                    RecordingEndControlFooter(
-                        endControl: endControl
-                    )
+                // The phase hint replaces a fixed end instruction. Demo ends from its toolbar and
+                // debug recordings show no end hint.
+                if endControl == .crownHint, let hint {
+                    RecordingHintBar(hint: hint)
                 }
             }
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
@@ -172,6 +187,11 @@ struct RecordingInstrumentView: View {
         recorder.liveDepthSignal == .live ? recorder.latestAscentRateMetersPerMinute : nil
     }
 
+    /// The deepest sample so far, or `nil` before the first one, so an unknown maximum never reads 0.
+    private var capturedMaxDepthMeters: Double? {
+        recorder.hasCapturedDepthSample ? recorder.maxDepth : nil
+    }
+
     private var depthStatusText: String? {
         switch recorder.liveDepthSignal {
         case .live:
@@ -188,6 +208,25 @@ struct RecordingInstrumentView: View {
             return String(localized: "Depth sensor error")
         case .beyondSensorRange:
             return String(localized: "Outside sensor-authorized depth")
+        }
+    }
+
+    /// Every page keeps the depth gauge, the status row and the unsupported-depth marker.
+    @ViewBuilder
+    private func pageInstrument(_ page: RecordingPage) -> some View {
+        switch page {
+        case .live:
+            liveInstrument
+        case .details:
+            detailsInstrument
+        case .end:
+            EndPageInstrument(
+                currentDepthMeters: displayedDepthMeters,
+                elapsedTime: recorder.elapsedTime,
+                maxDepthMeters: capturedMaxDepthMeters,
+                scaleDepthMeters: recorder.maxDepth,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
+            )
         }
     }
 
@@ -209,10 +248,31 @@ struct RecordingInstrumentView: View {
                     elapsedTime: recorder.elapsedTime,
                     displayedMaxDepthMeters: recorder.maxDepth,
                     ascentRateMetersPerMinute: displayedAscentRate,
-                    waterTemperatureCelsius: recorder.waterTemperatureCelsius,
                     sensorDisplayLimitMeters: sensorDisplayLimitMeters
                 )
             }
+        }
+    }
+
+    /// Values the recorder already publishes, two secondary values at most.
+    @ViewBuilder
+    private var detailsInstrument: some View {
+        switch plan.diveMode {
+        case .freedive:
+            FreeSessionDetailsInstrument(
+                currentDepthMeters: displayedDepthMeters,
+                snapshot: currentFreeSnapshot,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
+            )
+        case .scuba:
+            ScubaDetailsInstrument(
+                currentDepthMeters: displayedDepthMeters,
+                elapsedTime: recorder.elapsedTime,
+                maxDepthMeters: capturedMaxDepthMeters,
+                scaleDepthMeters: recorder.maxDepth,
+                waterTemperatureCelsius: recorder.waterTemperatureCelsius,
+                sensorDisplayLimitMeters: sensorDisplayLimitMeters
+            )
         }
     }
 
@@ -241,7 +301,6 @@ struct RecordingInstrumentView: View {
                 surfaceRestTime: surfaceRestTime(for: snapshot),
                 lastSegment: snapshot.segments.last,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                diveCount: snapshot.diveCount,
                 sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         case .summary:
@@ -250,7 +309,6 @@ struct RecordingInstrumentView: View {
                 surfaceRestTime: surfaceRestTime(for: snapshot),
                 lastSegment: snapshot.segments.last,
                 maxDepthMeters: snapshot.maxDepthMeters,
-                diveCount: snapshot.diveCount,
                 sensorDisplayLimitMeters: sensorDisplayLimitMeters
             )
         }
@@ -282,31 +340,6 @@ struct RecordingInstrumentView: View {
         }
 
         return max(0, Date().timeIntervalSince(lastEndTime))
-    }
-}
-
-private struct RecordingEndControlFooter: View {
-    let endControl: RecordingEndControl
-
-    var body: some View {
-        switch endControl {
-        case .crownHint:
-            footerHint(
-                String(localized: "End with the configured Action Button or by turning off Water Lock.")
-            )
-        case .toolbarEnd, .hidden:
-            EmptyView()
-        }
-    }
-
-    private func footerHint(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 9, weight: .medium))
-            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.72)
-            .frame(maxWidth: .infinity)
     }
 }
 
@@ -390,21 +423,21 @@ private struct FreeSurfaceReadyInstrument: View {
 
             Spacer(minLength: 2)
 
-            Text(DiveFormatters.duration(sessionTime))
-                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.45)
+            BigMetricText(
+                value: DiveFormatters.duration(sessionTime),
+                color: DiveWatchTheme.secondary,
+                accessibilityTitle: String(localized: "Session time")
+            )
 
             HStack(spacing: 7) {
                 LiveInstrumentMetric(
-                    title: String(localized: "Count"),
-                    value: "\(max(0, diveCount))/#"
+                    title: String(localized: "Dive count"),
+                    value: "\(max(0, diveCount))"
                 )
                 LiveInstrumentMetric(
-                    title: String(localized: "Mode"),
-                    value: String(localized: "Freedive")
+                    title: String(localized: "Depth"),
+                    value: DiveFormatters.depth(currentDepthMeters),
+                    keepsInAlwaysOn: true
                 )
             }
 
@@ -434,25 +467,10 @@ private struct FreeDiveActiveInstrument: View {
         ) {
             StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
 
-            Text(DiveFormatters.depth(currentDepthMeters))
-                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.primary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.38)
-
-            Text(DiveFormatters.duration(activeDiveTime))
-                .font(DiveWatchTheme.metricFont(size: 27, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
+            DepthOrTimeMetric(depthMeters: currentDepthMeters, time: activeDiveTime)
 
             HStack(spacing: 7) {
-                LiveInstrumentMetric(
-                    title: String(localized: "Max"),
-                    value: DiveFormatters.depth(maxDepthMeters)
-                )
+                DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: activeDiveTime)
                 LiveInstrumentMetric(
                     title: String(localized: "Ascent"),
                     value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
@@ -475,7 +493,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
+        HStack(alignment: .top, spacing: 8) {
             DepthGaugeRail(
                 depthMeters: currentDepthMeters,
                 maxScaleMeters: maxScaleMeters,
@@ -483,7 +501,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
                 targetDepthMeters: targetDepthMeters
             )
 
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 6) {
                 LiveReadoutStatusRow()
 
                 UnsupportedDepthWarning(
@@ -500,6 +518,7 @@ private struct InstrumentDepthLayout<Content: View>: View {
     }
 }
 
+/// The depth status chip and the Demo/Test marker. Always-On never hides them.
 private struct LiveReadoutStatusRow: View {
     @Environment(\.liveReadoutStatus) private var status
 
@@ -558,7 +577,6 @@ private struct FreeSurfaceIntervalInstrument: View {
     let surfaceRestTime: TimeInterval
     let lastSegment: FreeDiveSegment?
     let maxDepthMeters: Double
-    let diveCount: Int
     var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
@@ -571,34 +589,13 @@ private struct FreeSurfaceIntervalInstrument: View {
         ) {
             StatusPill(title: String(localized: "Surface interval"), color: DiveWatchTheme.secondary)
 
-            Text(DiveFormatters.duration(surfaceRestTime))
-                .font(DiveWatchTheme.metricFont(size: 46, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.45)
+            BigMetricText(
+                value: DiveFormatters.duration(surfaceRestTime),
+                color: DiveWatchTheme.secondary,
+                accessibilityTitle: String(localized: "Surface interval")
+            )
 
-            HStack(spacing: 7) {
-                LiveInstrumentMetric(
-                    title: String(localized: "Last duration"),
-                    value: DiveFormatters.duration(lastSegment?.durationSeconds ?? 0)
-                )
-                LiveInstrumentMetric(
-                    title: String(localized: "Last depth"),
-                    value: DiveFormatters.depth(lastSegment?.maxDepthMeters ?? 0)
-                )
-            }
-
-            HStack(spacing: 7) {
-                LiveInstrumentMetric(
-                    title: String(localized: "Max"),
-                    value: DiveFormatters.depth(maxDepthMeters)
-                )
-                LiveInstrumentMetric(
-                    title: String(localized: "Count"),
-                    value: "\(max(0, diveCount))"
-                )
-            }
+            FreeLastDiveMetrics(lastSegment: lastSegment)
         }
     }
 
@@ -607,12 +604,12 @@ private struct FreeSurfaceIntervalInstrument: View {
     }
 }
 
+/// The freedive session after the engine stops counting dives. It reads like the surface interval.
 private struct FreeDiveSummaryInstrument: View {
     let currentDepthMeters: Double?
     let surfaceRestTime: TimeInterval
     let lastSegment: FreeDiveSegment?
     let maxDepthMeters: Double
-    let diveCount: Int
     var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
@@ -625,34 +622,13 @@ private struct FreeDiveSummaryInstrument: View {
         ) {
             StatusPill(title: String(localized: "Summary"), color: DiveWatchTheme.secondary)
 
-            Text(DiveFormatters.duration(surfaceRestTime))
-                .font(DiveWatchTheme.metricFont(size: 46, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.secondary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.45)
+            BigMetricText(
+                value: DiveFormatters.duration(surfaceRestTime),
+                color: DiveWatchTheme.secondary,
+                accessibilityTitle: String(localized: "Surface interval")
+            )
 
-            HStack(spacing: 7) {
-                LiveInstrumentMetric(
-                    title: String(localized: "Last duration"),
-                    value: DiveFormatters.duration(lastSegment?.durationSeconds ?? 0)
-                )
-                LiveInstrumentMetric(
-                    title: String(localized: "Last depth"),
-                    value: DiveFormatters.depth(lastSegment?.maxDepthMeters ?? 0)
-                )
-            }
-
-            HStack(spacing: 7) {
-                LiveInstrumentMetric(
-                    title: String(localized: "Max"),
-                    value: DiveFormatters.depth(maxDepthMeters)
-                )
-                LiveInstrumentMetric(
-                    title: String(localized: "Count"),
-                    value: "\(max(0, diveCount))"
-                )
-            }
+            FreeLastDiveMetrics(lastSegment: lastSegment)
         }
     }
 
@@ -666,7 +642,6 @@ private struct ScubaLiveInstrument: View {
     let elapsedTime: TimeInterval
     let displayedMaxDepthMeters: Double
     let ascentRateMetersPerMinute: Double?
-    let waterTemperatureCelsius: Double?
     var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
@@ -677,21 +652,14 @@ private struct ScubaLiveInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            Text(DiveFormatters.depth(currentDepthMeters))
-                .font(DiveWatchTheme.metricFont(size: 50, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.primary)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.38)
+            DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
 
             HStack(spacing: 7) {
-                LiveInstrumentMetric(title: String(localized: "Time"), value: DiveFormatters.duration(elapsedTime))
-                LiveInstrumentMetric(title: String(localized: "Max"), value: DiveFormatters.depth(displayedMaxDepthMeters))
-            }
-
-            HStack(spacing: 7) {
-                LiveInstrumentMetric(title: String(localized: "Ascent"), value: DiveFormatters.ascentRate(ascentRateMetersPerMinute))
-                LiveInstrumentMetric(title: String(localized: "Temp"), value: DiveFormatters.temperature(waterTemperatureCelsius))
+                DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: elapsedTime)
+                LiveInstrumentMetric(
+                    title: String(localized: "Ascent"),
+                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
+                )
             }
         }
     }
@@ -718,24 +686,25 @@ private struct SafetyStopInstrument: View {
 
             StatusPill(title: String(localized: "Recommended stop"), color: statusColor)
 
-            Text(DiveFormatters.duration(safetyStop.remainingSeconds))
-                .font(DiveWatchTheme.metricFont(size: 48, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.45)
-                .accessibilityLabel(Text("Recommended stop time remaining"))
-                .accessibilityValue(Text(DiveFormatters.duration(safetyStop.remainingSeconds)))
-
-            LiveInstrumentMetric(
-                title: "",
-                value: DiveFormatters.depth(currentDepthMeters)
+            BigMetricText(
+                value: DiveFormatters.duration(safetyStop.remainingSeconds),
+                color: statusColor,
+                accessibilityTitle: String(localized: "Recommended stop time remaining"),
+                size: 48
             )
 
-            LiveInstrumentMetric(
-                title: String(localized: "Stop zone"),
-                value: "\(DiveFormatters.depth(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
-            )
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Depth"),
+                    value: DiveFormatters.depth(currentDepthMeters),
+                    keepsInAlwaysOn: true
+                )
+
+                LiveInstrumentMetric(
+                    title: String(localized: "Stop zone"),
+                    value: "\(DiveFormatters.depthValue(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
+                )
+            }
         }
     }
 
@@ -757,12 +726,22 @@ private struct SafetyStopInstrument: View {
         return safetyStop.status == .completed ? DiveWatchTheme.secondary : DiveWatchTheme.primary
     }
 
+    /// A paused timer is told apart by words as well as amber, so it still reads in Always-On.
     @ViewBuilder
     private var pausedBand: some View {
         if isTimerPaused {
-            RoundedRectangle(cornerRadius: 3, style: .continuous)
-                .fill(DiveWatchTheme.caution.opacity(0.7))
-                .frame(height: 3)
+            HStack(spacing: 4) {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(DiveWatchTheme.caution.opacity(0.7))
+                    .frame(width: 3, height: 10)
+
+                Text(String(localized: "Timer paused"))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.caution)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .accessibilityElement(children: .combine)
         }
     }
 }
@@ -770,25 +749,240 @@ private struct SafetyStopInstrument: View {
 private struct LiveInstrumentMetric: View {
     let title: String
     let value: String
+    /// Always-On keeps only the values read at a glance (depth and time); the rest are hidden.
+    var keepsInAlwaysOn = false
+
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if !title.isEmpty {
+        if keepsInAlwaysOn || !isLuminanceReduced {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.65)
+
+                Text(value)
+                    .font(DiveWatchTheme.metricFont(size: 18, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.48)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .combine)
+        }
+    }
+}
+
+/// The large number on a recording page. Digits are rounded and equal width, and the unit is a
+/// smaller separate text so the number keeps its size. Always-On draws the number white.
+private struct BigMetricText: View {
+    var caption: String?
+    let value: String
+    var unit: String?
+    let color: Color
+    let accessibilityTitle: String
+    var size: CGFloat = 50
+
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let caption {
+                Text(caption.uppercased())
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.65)
             }
 
-            Text(value)
-                .font(DiveWatchTheme.metricFont(size: 18, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.48)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value)
+                    .font(DiveWatchTheme.metricFont(size: size, weight: .semibold))
+                    .foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+
+                if let unit {
+                    Text(unit)
+                        .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
+                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .lineLimit(1)
+                        .fixedSize()
+                }
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(accessibilityTitle))
+        .accessibilityValue(Text(unit.map { "\(value) \($0)" } ?? value))
+    }
+}
+
+/// The one large value: live depth while the reading is current, otherwise the elapsed time, so a
+/// depth that is no longer current never stays on screen as the main number.
+private struct DepthOrTimeMetric: View {
+    let depthMeters: Double?
+    let time: TimeInterval
+
+    var body: some View {
+        if let depthMeters {
+            BigMetricText(
+                value: DiveFormatters.depthValue(depthMeters),
+                unit: "m",
+                color: DiveWatchTheme.primary,
+                accessibilityTitle: String(localized: "Depth")
+            )
+        } else {
+            BigMetricText(
+                value: DiveFormatters.duration(time),
+                color: DiveWatchTheme.text,
+                accessibilityTitle: String(localized: "Time")
+            )
+        }
+    }
+}
+
+/// Whichever of depth and time is not the large value. Unknown depth reads `--.- m`.
+private struct DepthOrTimeSecondary: View {
+    let depthMeters: Double?
+    let time: TimeInterval
+
+    var body: some View {
+        if depthMeters != nil {
+            LiveInstrumentMetric(
+                title: String(localized: "Time"),
+                value: DiveFormatters.duration(time),
+                keepsInAlwaysOn: true
+            )
+        } else {
+            LiveInstrumentMetric(
+                title: String(localized: "Depth"),
+                value: DiveFormatters.depth(depthMeters),
+                keepsInAlwaysOn: true
+            )
+        }
+    }
+}
+
+/// The last freedive of the session. Before the first dive both values are unknown.
+private struct FreeLastDiveMetrics: View {
+    let lastSegment: FreeDiveSegment?
+
+    var body: some View {
+        HStack(spacing: 7) {
+            LiveInstrumentMetric(
+                title: String(localized: "Last duration"),
+                value: DiveFormatters.duration(lastSegment?.durationSeconds)
+            )
+            LiveInstrumentMetric(
+                title: String(localized: "Last depth"),
+                value: DiveFormatters.depth(lastSegment?.maxDepthMeters)
+            )
+        }
+    }
+}
+
+/// Details page, scuba: maximum depth and water temperature beside the one large value.
+private struct ScubaDetailsInstrument: View {
+    let currentDepthMeters: Double?
+    let elapsedTime: TimeInterval
+    let maxDepthMeters: Double?
+    let scaleDepthMeters: Double
+    let waterTemperatureCelsius: Double?
+    let sensorDisplayLimitMeters: Double
+
+    var body: some View {
+        InstrumentDepthLayout(
+            currentDepthMeters: currentDepthMeters,
+            maxScaleMeters: max(30, ceil(max(currentDepthMeters ?? 0, scaleDepthMeters) / 10) * 10),
+            stopZone: nil,
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
+        ) {
+            DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
+
+            HStack(spacing: 7) {
+                LiveInstrumentMetric(
+                    title: String(localized: "Max"),
+                    value: DiveFormatters.depth(maxDepthMeters)
+                )
+                LiveInstrumentMetric(
+                    title: String(localized: "Temp"),
+                    value: DiveFormatters.temperature(waterTemperatureCelsius)
+                )
+            }
+        }
+    }
+}
+
+/// Details page, freedive session: the dive count, then the last and the longest dive.
+private struct FreeSessionDetailsInstrument: View {
+    let currentDepthMeters: Double?
+    let snapshot: FreeDiveSessionSnapshot
+    let sensorDisplayLimitMeters: Double
+
+    var body: some View {
+        InstrumentDepthLayout(
+            currentDepthMeters: currentDepthMeters,
+            maxScaleMeters: max(30, ceil(max(currentDepthMeters ?? 0, snapshot.maxDepthMeters) / 10) * 10),
+            stopZone: nil,
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
+        ) {
+            BigMetricText(
+                caption: String(localized: "Dive count"),
+                value: "\(max(0, snapshot.diveCount))",
+                color: DiveWatchTheme.text,
+                accessibilityTitle: String(localized: "Dive count"),
+                size: 40
+            )
+
+            LiveInstrumentMetric(title: String(localized: "Last dive"), value: lastDiveText)
+
+            LiveInstrumentMetric(
+                title: String(localized: "Longest dive"),
+                value: DiveFormatters.duration(snapshot.segments.map(\.durationSeconds).max())
+            )
+        }
+    }
+
+    private var lastDiveText: String {
+        let lastSegment = snapshot.segments.last
+        return "\(DiveFormatters.duration(lastSegment?.durationSeconds)) · \(DiveFormatters.depth(lastSegment?.maxDepthMeters))"
+    }
+}
+
+/// The last page of the Action Button cycle, at the surface once ending is allowed. It has no tap
+/// target: the next Action Button press ends through the coordinator's guarded path.
+private struct EndPageInstrument: View {
+    let currentDepthMeters: Double?
+    let elapsedTime: TimeInterval
+    let maxDepthMeters: Double?
+    let scaleDepthMeters: Double
+    let sensorDisplayLimitMeters: Double
+
+    var body: some View {
+        InstrumentDepthLayout(
+            currentDepthMeters: currentDepthMeters,
+            maxScaleMeters: max(30, ceil(max(currentDepthMeters ?? 0, scaleDepthMeters) / 10) * 10),
+            stopZone: nil,
+            targetDepthMeters: nil,
+            sensorDisplayLimitMeters: sensorDisplayLimitMeters
+        ) {
+            StatusPill(title: String(localized: "End & save"), color: DiveWatchTheme.secondary)
+
+            BigMetricText(
+                value: DiveFormatters.duration(elapsedTime),
+                color: DiveWatchTheme.text,
+                accessibilityTitle: String(localized: "Time")
+            )
+
+            LiveInstrumentMetric(
+                title: String(localized: "Max"),
+                value: DiveFormatters.depth(maxDepthMeters)
+            )
+        }
     }
 }
 
@@ -819,21 +1013,8 @@ private struct LiveInstrumentMetric: View {
     FreeSurfaceIntervalInstrument(
         currentDepthMeters: 0.6,
         surfaceRestTime: 135,
-        lastSegment: FreeDiveSegment(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000301")!,
-            index: 3,
-            startTime: Date(timeIntervalSince1970: 1_783_225_525),
-            endTime: Date(timeIntervalSince1970: 1_783_225_571),
-            durationSeconds: 46,
-            maxDepthMeters: 22.1,
-            minDepthMeters: 0.4,
-            sampleStartIndex: 20,
-            sampleEndIndex: 42,
-            descentRateMetersPerSecond: nil,
-            ascentRateMetersPerSecond: nil
-        ),
-        maxDepthMeters: 22.1,
-        diveCount: 3
+        lastSegment: previewFreeSegment(id: "00000000-0000-0000-0000-000000000301"),
+        maxDepthMeters: 22.1
     )
     .padding(DiveWatchTheme.edgeMargin)
     .background(DiveWatchTheme.background)
@@ -843,21 +1024,25 @@ private struct LiveInstrumentMetric: View {
     FreeDiveSummaryInstrument(
         currentDepthMeters: 0.4,
         surfaceRestTime: 135,
-        lastSegment: FreeDiveSegment(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000302")!,
-            index: 3,
-            startTime: Date(timeIntervalSince1970: 1_783_225_525),
-            endTime: Date(timeIntervalSince1970: 1_783_225_571),
-            durationSeconds: 46,
+        lastSegment: previewFreeSegment(id: "00000000-0000-0000-0000-000000000302"),
+        maxDepthMeters: 22.1
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Free Session Details") {
+    FreeSessionDetailsInstrument(
+        currentDepthMeters: nil,
+        snapshot: FreeDiveSessionSnapshot(
+            state: .surfaceInterval,
+            segments: [previewFreeSegment(id: "00000000-0000-0000-0000-000000000303")],
+            activeSegment: nil,
+            diveCount: 1,
             maxDepthMeters: 22.1,
-            minDepthMeters: 0.4,
-            sampleStartIndex: 20,
-            sampleEndIndex: 42,
-            descentRateMetersPerSecond: nil,
-            ascentRateMetersPerSecond: nil
+            currentDepthMeters: 0.4
         ),
-        maxDepthMeters: 22.1,
-        diveCount: 3
+        sensorDisplayLimitMeters: DiveDepthSupport.supportedWatchDepthLimitMeters
     )
     .padding(DiveWatchTheme.edgeMargin)
     .background(DiveWatchTheme.background)
@@ -868,8 +1053,32 @@ private struct LiveInstrumentMetric: View {
         currentDepthMeters: 18.6,
         elapsedTime: 18 * 60,
         displayedMaxDepthMeters: 21.2,
-        ascentRateMetersPerMinute: 4.2,
-        waterTemperatureCelsius: 24
+        ascentRateMetersPerMinute: 4.2
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("Scuba Details") {
+    ScubaDetailsInstrument(
+        currentDepthMeters: 18.6,
+        elapsedTime: 18 * 60,
+        maxDepthMeters: 21.2,
+        scaleDepthMeters: 21.2,
+        waterTemperatureCelsius: 24,
+        sensorDisplayLimitMeters: DiveDepthSupport.supportedWatchDepthLimitMeters
+    )
+    .padding(DiveWatchTheme.edgeMargin)
+    .background(DiveWatchTheme.background)
+}
+
+#Preview("End Page") {
+    EndPageInstrument(
+        currentDepthMeters: nil,
+        elapsedTime: 34 * 60,
+        maxDepthMeters: 21.2,
+        scaleDepthMeters: 21.2,
+        sensorDisplayLimitMeters: DiveDepthSupport.supportedWatchDepthLimitMeters
     )
     .padding(DiveWatchTheme.edgeMargin)
     .background(DiveWatchTheme.background)
@@ -915,6 +1124,22 @@ private struct LiveInstrumentMetric: View {
     )
     .padding(DiveWatchTheme.edgeMargin)
     .background(DiveWatchTheme.background)
+}
+
+private func previewFreeSegment(id: String) -> FreeDiveSegment {
+    FreeDiveSegment(
+        id: UUID(uuidString: id)!,
+        index: 3,
+        startTime: Date(timeIntervalSince1970: 1_783_225_525),
+        endTime: Date(timeIntervalSince1970: 1_783_225_571),
+        durationSeconds: 46,
+        maxDepthMeters: 22.1,
+        minDepthMeters: 0.4,
+        sampleStartIndex: 20,
+        sampleEndIndex: 42,
+        descentRateMetersPerSecond: nil,
+        ascentRateMetersPerSecond: nil
+    )
 }
 
 private func previewSafetyStop(
