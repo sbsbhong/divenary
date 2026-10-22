@@ -28,14 +28,14 @@
 | Article                                                                      | Summary                                                                                                                                                                                                                                                                                                                                                                | Updated    |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
 | [Diving App / State Management](architecture/diving-app-state-management.md) | 향후 스쿠버 계산 기능에서는 tissue state 유실이 가장 위험한 오류 중 하나이며, compact state와 1초 로그 저장, crash/reboot 복구, gauge fallback 정책이 필요하다.                                                                                                                                                                                                                                                  | 2026-06-28 |
-| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | Google·claim 실기기, Watch 회귀, account deletion과 개인정보 최소화 device-local 진단 기반을 P0로 두고 원격 수집을 별도 2단계로 분리한다. | 2026-08-02 |
+| [구현 우선순위 기록](architecture/implementation-priorities.md)                      | 기존 P0를 유지하고 소유자가 승인한 워치 UX D1–D6를 Wave 2·4에 배치하며 구현 가능·결정·하드웨어 상태를 구분한다. | 2026-10-22 |
 | [모바일 로그북 로드맵](architecture/mobile-logbook-roadmap.md)                        | Auth, remote schema, principal outbox/claim과 hosted staging 완료를 physical·lifecycle 후속과 단계별로 분리한다. | 2026-07-20 |
 | [모바일 구조](architecture/mobile.md) | 작성·수정은 전체 화면 routed 편집기이고 목록 로딩 전 상세 route는 `DetailSkeleton`을 보이며, 시작 shell은 Auth 확인 동안 guest를 열지 않고 Auth 단계마다 10초 제한이 있고, 결과 배너는 account-data gate 위에 두며, 워치 가져오기 기본값·내부 태그는 저장값을 두고 화면에서만 숨긴다. | 2026-10-22 |
 | [1Hz 프로파일 파일 저장과 동기화](architecture/profile-file-sync.md) | Watch inbox는 bounded descriptor/preview만 JS에 전달하고 prepared profile을 native file로 채택하며, Watch 기록 journal은 열어 둔 채 1Hz 줄을 쓰고 10 sample마다 flush한다. | 2026-10-22 |
 | [Monorepo 구조](architecture/monorepo.md) | Yarn 1 app/package와 local/staging account migration, owner RLS, private Storage, claim Function 책임을 관리하고, contracts에 session과 폰-워치 제어 메시지 schema를 둔다. | 2026-10-22 |
 | [Supabase 구조](architecture/supabase.md) | 삭제된 Watch session을 포함한 noncommitted claim은 staging의 idempotent abandonment 경계로 stale finalization을 차단하고, mobile Auth 단계의 10초 시간 초과는 로그아웃 없이 transport failure로 다루되 onboarding 실패는 guest로 연다. | 2026-10-22 |
 | [동기화 흐름 구조](architecture/sync-flow.md) | 폰-워치 메시지는 `packages/contracts` schema가 기준이고, account hydrate는 원격 행을 최신순 페이지마다 바로 로컬에 적용하며, durable JSON은 원자적 단일 key 쓰기를 쓴다. | 2026-10-22 |
-| [Watch 앱 구조](architecture/watch-app.md) | Action Button은 단계를 아는 intent chain 하나로 시작·화면 넘김·물 밖 180초 뒤 종료 화면 종료를 처리하고, 자동 화면 전환에는 햅틱이 없으며, journal을 열어 둔 채 쓰고 다이빙이 끝나면 저장 중 화면을 먼저 그린다. | 2026-10-22 |
+| [Watch 앱 구조](architecture/watch-app.md) | 현행 워치 기록·입력 구조를 유지하고 상승 속도 표시와 benchmark의 충돌, 북마크 입력 결정, 약 6 m 센서 범위 밖 화면 백로그를 연결한다. | 2026-10-22 |
 
 ## domains
 
@@ -45,12 +45,12 @@
 |---|---|---|
 | [Diving App / Freediving Mode](domains/diving-app-freediving-mode.md) | Freedive mode는 압축공기 기반 NDL 계산이 아니라 수심, 시간, 속도, 수면 회복, 반복 부하, 로그, 행동 경고를 중심으로 하며, watch 구현은 한 `FreeDiveSession` 안에 여러 `FreeDiveSegment`를 저장한다. | 2026-07-05 |
 | [Diving App / Non-Negotiable Safety Rules](domains/diving-app-non-negotiable-safety-rules.md) | 제품 구현에서 절대 위반하면 안 되는 safety-critical 규칙을 정리하고, Apple Watch 기반 v1 40m 지원 범위, 40m 초과 값 보존+unsupported 표시, v1 Air-only safety stop을 감압 의무처럼 표현하지 않는 규칙을 포함한다. | 2026-07-09 |
-| [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 안전 copy, warning hierarchy, 책임 관련 UX 원칙을 정리하고, v1 Air-only safety stop 권장을 mandatory/decompression stop과 다른 색상과 문구로 제한한다. | 2026-07-08 |
+| [Diving App / Safety UX and Legal Notes](domains/diving-app-safety-ux-legal-notes.md) | 과거 센서 이상 햅틱·화면·지속 표시 약속과 최신 자동 햅틱 금지의 충돌을 표시하고 E2 결정 전 금지를 유지한다. | 2026-10-22 |
 | [Diving App / Scuba Mode](domains/diving-app-scuba-mode.md) | Scuba mode v1은 Apple Watch 기반 40m 이하 Air-only gauge/log와 rule-based safety stop reminder를 포함하고, 40m 초과 값은 지원 범위 밖 warning과 함께 보존하지만 NDL, ceiling, TTS, CNS, gas remaining, decompression stop은 고위험 검증 범위로 분리한다. | 2026-08-02 |
 | [다이브 로그 도메인](domains/dive-log.md) | Watch session 삭제 identity는 `localSessionId`이고, 워치가 잰 값은 편집기에서 잠금(직접 수정·되돌리기)이며, import 기본 사이트·150 bar·내부 태그는 claim 재사용 때문에 저장값을 두고 화면에서만 숨긴다. | 2026-10-22 |
 | [다이브 계획 도메인](domains/dive-planning.md) | Planbook은 비중요 계획 알림이며, 초안은 제목이나 포인트만 요구하고 `계획 확정`과 `planned` 계획 저장만 전체 검사하며, `planned` 계획만 워치로 보내고 현재 버전이 전송됐을 때만 `워치 전송 요청됨`이라 표시한다. | 2026-10-22 |
 | [다이빙 용어](domains/diving-glossary.md) | 이 glossary는 현재 앱의 domain 용어를 정의하며, Apple Watch 기반 40m supported depth cap, unsupported depth, safety stop 권장 리마인더, decompression stop/mandatory stop의 구분을 포함한다. | 2026-07-09 |
-| [안전 규칙](domains/safety-rules.md) | stale·오류 수심을 실측값처럼 표시하지 않고, 권장 스탑은 caution 앰버로 Always-On에서도 라벨을 남기며, 워치 햅틱은 다이버 조작에만 쓰고 자동 전환·센서·권장 스탑·상승에는 쓰지 않고, 실제 기록은 터치로 끝나지 않는다. | 2026-10-22 |
+| [안전 규칙](domains/safety-rules.md) | 비인증 기록 경계를 유지하고 E1 상승 표시·E2 과거 자동 햅틱 약속의 충돌과 결정 대기, D 배터리·수면·센서 범위 제한을 명시한다. | 2026-10-22 |
 
 ## design
 
@@ -79,4 +79,4 @@
 | Article | Summary | Updated |
 |---|---|---|
 | [Diving App / Open Questions](questions/diving-app-open-questions.md) | Apple Watch Ultra급 프리다이빙/스쿠버 제품 방향에서 GF 기본값, v2 Air/Nitrox 범위, unsupported-depth warning 실기기 UX, safety/deco 장기 migration, mandatory deco 처리, tank transmitter, export format을 열린 질문으로 둔다. | 2026-07-09 |
-| [열린 질문](questions/open-questions.md) | 남은 claim·Watch·production gate와 진단 단계, 오프라인 membership 신뢰 기한, 2026-10-21 실기기 항목에 더해 2026-10-22 워치 수중 입력의 하드웨어 전용 확인, 계획 수신 확인, Open-Meteo 이용 조건을 추적한다. | 2026-10-22 |
+| [열린 질문](questions/open-questions.md) | 워치 UX E1 상승 속도 표시·E2 센서 이상 알림·E3 계획 수신 확인을 소유자 결정 대기로 기록하고 기존 실기기·계정 후속 질문을 유지한다. | 2026-10-22 |

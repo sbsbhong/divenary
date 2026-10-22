@@ -1,7 +1,7 @@
 # Watch 앱 구조
 
-Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18; Watch 기록 내구성과 경로 복구 경계, 2026-07-18; Watch callback, retry, re-entry, navigation hardening, 2026-07-18
-Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md); [Watch callback, retry, re-entry, navigation hardening](../../raw/architecture/2026-07-18-watch-callback-retry-reentry-navigation.md)
+Sources: pre-Karpathy wiki page, 2026-06-28; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Watch underwater runtime lifecycle implementation and device boundary, 2026-07-18; Watch live ascent-rate smoothing boundary, 2026-07-18; Watch 기록 내구성과 경로 복구 경계, 2026-07-18; Watch callback, retry, re-entry, navigation hardening, 2026-07-18; 워치 UX 리뷰 3종 및 소유자 백로그 승인, 2026-10-22
+Raw: [Pre-Karpathy: Watch 앱 구조](../../raw/architecture/watch-app.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Watch underwater runtime lifecycle implementation and device boundary](../../raw/architecture/2026-07-18-watch-underwater-runtime-lifecycle.md); [Watch live ascent-rate smoothing boundary](../../raw/architecture/2026-07-18-watch-live-ascent-rate-smoothing.md); [Watch 기록 내구성과 경로 복구 경계](../../raw/architecture/2026-07-18-watch-recording-durability-and-route-recovery.md); [Watch callback, retry, re-entry, navigation hardening](../../raw/architecture/2026-07-18-watch-callback-retry-reentry-navigation.md); [2026-10-22 워치 UX 리뷰와 소유자 백로그 승인](../../raw/design/2026-10-22-watch-ux-review.md)
 Sources: Mobile-authoritative Watch log deletion implementation and physical verification, 2026-08-02; Watch Wet Ready and automatic local save, 2026-09-01; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [Mobile-authoritative Watch log deletion implementation and physical verification](../../raw/architecture/2026-08-02-mobile-authoritative-watch-log-deletion.md); [Watch Wet Ready and automatic local save](../../raw/architecture/2026-09-01-watch-wet-ready-auto-save.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
 Sources: 2026-10-22 성능 정리와 플랫폼 중립 Watch link 경계, 2026-10-22
@@ -151,6 +151,12 @@ signed device build에서 code-signing entitlement와 embedded profile 모두를
 15cm bag/tank test는 manually started real session의 shallow sample(예: 약 `0.1 m`)과 Water Lock만 검증한다. Xcode Easy Submersion은 simulator adoption 확인으로만 기록한다. physical `When Submerged` automatic launch는 지원 hardware에서 Wet Ready와 Crown selection을 확인한 뒤 watchOS가 제공하는 threshold의 `handle(_:)` adoption과 실제 selection을 별도로 검증해야 한다. Digital Crown, timeout, surfaced eligible Action Button end도 지원 hardware에서 독립적으로 확인해야 한다.
 
 2026-10-22 수중 입력 모델의 실기기 동작도 검증되지 않았다. 실제 Ultra의 Action Button chain·화면 넘김·종료 화면 종료, 수중 잠금 중 크라운 회전 전달, 수중 runtime 중 햅틱 전달과 웻슈트 너머 체감, Always-On 진입과 갱신 주기, 손목을 내린 상태의 10초 복귀, 41/46/49mm 배치, Ultra 모델 식별자, 한국어 watchOS 메뉴 이름, 실제 auto-launch 상태 값은 [열린 질문](../questions/open-questions.md)에 남긴다. simulator, XCTest와 build 성공은 이 행동의 증거가 아니다.
+
+## 2026-10-22 UX 리뷰 백로그와 미결 표시 정책
+
+소유자는 A(기록 정확성)·B(막힌 흐름)를 수정 중이며, D 기능은 [구현 우선순위의 승인 백로그](implementation-priorities.md), E 결정은 [열린 질문](../questions/open-questions.md)에 남기도록 했다. 이 문서의 라이브 상승 속도 참고값 설명은 benchmark의 상승 지시 회피 원칙과 충돌하며 E1에서 유지·숨김·수면 후 리뷰만 표시 중 결정한다. 기존 표시 설명은 새로운 안전 판단 승인이 아니다.
+
+동작 버튼의 현행 화면 넘김은 D5 북마크 제안과 같은 입력을 쓰므로 역할·저장 contract 결정이 먼저다. D6는 약 6 m의 공개 shallow 허가 범위 밖에서도 기록 상태를 이해하는 화면 설계이며, 아래 40 m 제품 경계가 실제 센서 권한을 보장하지 않는다. D·E 등록만으로 동작·계약을 바꾸거나 실기기 통과를 선언하지 않는다.
 
 ## 관련 문서
 

@@ -1,11 +1,11 @@
 # Diving App / Safety UX and Legal Notes
 
-Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08
-Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md)
-Updated: 2026-07-08
+Sources: user pasted request, 2026-06-28; user pasted hardening request, 2026-06-28; user requested v1 Air-only safety stop scope, 2026-06-28; user requested depth/safety stop/deco pending work, 2026-07-08; 워치 UX 리뷰 3종 및 소유자 백로그 승인, 2026-10-22
+Raw: [Diving app technical wiki request](../../raw/algorithms/2026-06-28-diving-app-technical-wiki-request.md); [Diving app wiki hardening request](../../raw/algorithms/2026-06-28-diving-app-wiki-hardening-request.md); [v1 Air-only scuba safety stop scope](../../raw/project/2026-06-28-v1-air-only-scuba-safety-stop.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [2026-10-22 워치 UX 리뷰와 소유자 백로그 승인](../../raw/design/2026-10-22-watch-ux-review.md)
+Updated: 2026-10-22
 Status: Reference / Safety Critical
 Owner: local product/dev agent
-Last reviewed: 2026-07-08
+Last reviewed: 2026-10-22
 Change policy: safety wording changes require explicit review
 Related pages: [Diving App / Non-Negotiable Safety Rules](diving-app-non-negotiable-safety-rules.md); [Diving App / Scuba Mode](diving-app-scuba-mode.md); [Diving App / Freediving Mode](diving-app-freediving-mode.md); [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md)
 Slug: diving-app-safety-ux-legal-notes
@@ -13,6 +13,12 @@ Slug: diving-app-safety-ux-legal-notes
 ## 요약
 
 이 문서는 safety copy, warning hierarchy, liability-related UX를 정리한다. 앱은 훈련, 인증, 전문 다이브 컴퓨터, 백업 수심계, 타이머, 감압표를 대체하지 않는다. v1 safety stop 권장 상태는 mandatory/decompression stop처럼 보이면 안 된다.
+
+## 2026-10-22 현행 정책과의 충돌
+
+아래 UX 원칙·경고 계층·Critical Warning UX의 센서 이상 햅틱·화면·지속 표시 조합은 과거 문서의 약속이다. 최신 [안전 규칙](safety-rules.md)과 [2026-10-22 개편 설계](../../../docs/superpowers/specs/2026-10-22-ui-ux-overhaul-design.md)는 센서·권장 스탑·상승 자동 햅틱을 사용자 안전 검토 전까지 금지한다. 현재 조작 확인 햅틱과 자동 이상 알림은 다른 기능이다.
+
+소유자는 이 충돌을 [E2 결정 대기 백로그](../questions/open-questions.md)로 등록하도록 승인했다. 방향을 정하기 전에는 최신 금지를 유지하며 과거 경고 표를 구현 지시로 사용하지 않는다. 이 앱은 인증된 다이브 컴퓨터·비상 판단 시스템이 아니다. 감압 계산·안전 판정·생명에 중요한 수중 행동 지시를 구현하지 않으며, 남아 있는 고위험 계산·경고 예시는 현재 제품 범위의 승인이 아니다.
 
 ## 필수 메시지
 
