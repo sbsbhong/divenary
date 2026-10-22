@@ -116,6 +116,16 @@ const englishInternalWordLeaks = ['session', 'sample', 'capture'].filter(term =>
 
 const checks = [
   {
+    name: 'every recording page keeps the readable short non-certified marker',
+    failed:
+      !recordingViewSource.includes('Text(String(localized: "Log only · Not certified"))') ||
+      recordingViewSource.includes('Text(DiveWatchTheme.safetyDisclaimer)'),
+  },
+  {
+    name: 'recording essential labels have an 11pt nominal floor',
+    failed: [recordingViewSource, recordingHintSource].some(source => /size: (?:8|9|10),/.test(source)),
+  },
+  {
     name: 'watch surfaces avoid decorative card borders',
     pattern: /DiveWatchTheme\.outline|borderColor|\.stroke\(color\.opacity\(0\.65\)/,
   },

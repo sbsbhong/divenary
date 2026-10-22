@@ -729,7 +729,7 @@ describe('WatchConnectivity native source contract', () => {
     expect(gauge).toContain('visibleRange');
     expect(gauge).toContain('clampedTop');
     expect(gauge).toContain('maxHeight: .infinity');
-    expect(gauge).toContain('guard maxScaleMeters.isFinite else { return 1 }');
+    expect(gauge).toContain('fallbackMeters.isFinite ? max(1, fallbackMeters) : 30');
     expect(gauge).toContain('private func sanitizedDepth(_ depth: Double) -> Double');
     expect(gauge).toContain('guard depth.isFinite else { return 0 }');
     expect(recording).toContain('safetyStop: recorder.scubaSafetyStop');
@@ -739,8 +739,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).toContain('targetDepthMeters: safetyStop.targetDepthMeters');
     expect(recording).toContain('DepthGaugeRail');
     expect(recording).toContain('GeometryReader { proxy in');
-    expect(recording).toContain('VStack(spacing: 4)');
-    expect(recording).toMatch(/pageInstrument\(page\)\s*\.environment\(\s*\\\.liveReadoutStatus,[\s\S]*?\)\s*\)\s*\.frame\(maxWidth: \.infinity, maxHeight: \.infinity, alignment: \.topLeading\)\s*\.layoutPriority\(1\)/);
+    expect(recording).toContain('VStack(spacing: 3)');
+    expect(recording).toMatch(/LiveReadoutStatusRow\(\)[\s\S]*?pageInstrument\(page\)[\s\S]*?recordingErrorFooter/);
     expect(recording).toContain('recordingErrorFooter');
     // The fixed two-line end footer became a one-line phase hint chip (see the hint test below).
     expect(recording).toMatch(/if endControl == \.crownHint, let hint \{\s*RecordingHintBar\(hint: hint\)/);
@@ -756,14 +756,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(watchUiCheck).toContain('ios/DivenaryWatchApp/Views/DepthGaugeRail.swift');
   });
 
-  it('renders watch session-list sync status as a bounded readable badge', () => {
+  it('renders watch session-list sync status as an icon with its full accessible status', () => {
     const sessionList = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionListView.swift');
 
     expect(sessionList).toContain('SessionSyncStatusPill(syncStatus: session.syncStatus)');
     expect(sessionList).toContain('private struct SessionSyncStatusPill');
-    expect(sessionList).toContain('syncStatus.shortLabel');
+    expect(sessionList).toContain('Image(systemName: syncStatus.symbol)');
     expect(sessionList).toContain('syncStatus.tint');
-    expect(sessionList).toContain('.frame(minWidth: 42');
+    expect(sessionList).toContain('.fixedSize()');
     expect(sessionList).toContain('.accessibilityLabel(syncStatus.label)');
     expect(sessionList).not.toContain('Text(session.syncStatus.label)');
   });
@@ -839,8 +839,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(simulated).toContain('.focusable(recordingMode.controlPolicy.usesCrownDepthControl)');
     // Every page keeps the gauge, the status chip with the Demo/Test marker and the unsupported-depth marker.
     expect(depthLayout).toContain('DepthGaugeRail(');
-    expect(depthLayout).toContain('LiveReadoutStatusRow()');
-    expect(depthLayout).toContain('UnsupportedDepthWarning(');
+    expect(recording.slice(recording.indexOf('private func instrumentStack'), recording.indexOf('private var recordingErrorFooter'))).toContain('LiveReadoutStatusRow()');
+    expect(recording.slice(recording.indexOf('private func instrumentStack'), recording.indexOf('private var recordingErrorFooter'))).toContain('UnsupportedDepthWarning(');
     expect(recording).toMatch(/case \.live:\s*liveInstrument\s*case \.details:\s*detailsInstrument\s*case \.end:\s*EndPageInstrument\(/);
     expect(endPage).toContain('InstrumentDepthLayout(');
     expect(endPage).not.toContain('Button(');
@@ -1083,14 +1083,15 @@ describe('WatchConnectivity native source contract', () => {
     expect(freeDiveActiveInstrument).not.toContain('Ascent/descent');
     expect(safetyStopInstrument).toContain('pausedBand');
     expect(safetyStopInstrument).toContain('isTimerPaused');
-    expect(safetyStopInstrument).toContain('StatusPill(title: String(localized: "Recommended stop"), color: statusColor)');
+    expect(safetyStopInstrument).toContain('Text(String(localized: "Recommended stop"))');
     expect(safetyStopInstrument).toContain('DiveWatchTheme.caution');
     expect(safetyStopInstrument).not.toContain('DiveWatchTheme.danger');
-    // Blue is for actions and selection: a counting recommended stop is amber, a finished one grey.
+    // All live recommended-stop states retain amber and explicit wording.
     expect(safetyStopInstrument).not.toContain('DiveWatchTheme.primary');
-    expect(safetyStopInstrument).toMatch(
-      /safetyStop\.status == \.completed \? DiveWatchTheme\.secondary : DiveWatchTheme\.caution/,
-    );
+    expect(safetyStopInstrument).toContain('String(localized: "Stop complete")');
+    expect(safetyStopInstrument).toContain('systemImage: "checkmark"');
+    expect(safetyStopInstrument).toContain('value: DiveFormatters.duration(elapsedTime)');
+    expect(safetyStopInstrument).toContain('title: String(localized: "Log time")');
     expect(safetyStopInstrument).toContain('value: DiveFormatters.depth(currentDepthMeters)');
     expect(safetyStopInstrument).not.toContain('Within stop zone');
     expect(safetyStopInstrument).not.toContain('Deeper than stop zone');
@@ -1099,7 +1100,8 @@ describe('WatchConnectivity native source contract', () => {
     expect(safetyStopInstrument).toContain('ceil((max(currentDepthMeters ?? 0, safetyStop.maxDepthMeters) + 2) / 2) * 2');
     expect(recording).toContain('recorder.liveDepthSignal == .live ? recorder.currentDepth : nil');
     expect(recording).toContain('recorder.liveDepthSignal == .live ? recorder.latestAscentRateMetersPerMinute : nil');
-    expect(recording).toContain('Text(DiveWatchTheme.safetyDisclaimer)');
+    expect(recording).toContain('Text(String(localized: "Log only · Not certified"))');
+    expect(recording).not.toContain('Text(DiveWatchTheme.safetyDisclaimer)');
     expect(simulated).toContain('markerTitle: recordingMode.markerTitle');
     expect(summary).toContain('Supplemental log · no safety calculation');
     expect(summary).toContain('Recommended safety stop reminder · no safety calculation');
@@ -1114,6 +1116,31 @@ describe('WatchConnectivity native source contract', () => {
     expect(demoProvider).toContain('func setDepthMeters');
     expect(demoProvider).toContain('waterTemperatureCelsius');
     expect(demoProvider).not.toContain('private func depth(for phase');
+  });
+
+  it('keeps recording text readable and review summaries semantic', () => {
+    const recording = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RecordingView.swift');
+    const hint = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RecordingHint.swift');
+    const gauge = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DepthGaugeRail.swift');
+    const rows = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionListView.swift');
+    const detail = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionDetailView.swift');
+    const formatters = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DiveFormatters.swift');
+    for (const source of [recording, hint, gauge]) {
+      expect(source).not.toMatch(/size: (?:8|9|10),/);
+      expect(source).not.toMatch(/minimumScaleFactor\(0\.(?:48|65|68|7)\)/);
+    }
+    expect(recording).toContain('.environment(\\.recordingAuthorizedMaximum, maximumDepthMeters)');
+    expect(recording).toContain('private struct RecordingSecondaryMetrics');
+    expect(gauge).toContain('scale.displayedDepth(depthMeters)');
+    expect(hint).toContain('kind = hasActionButton ? .pressToEnd : .waterLockToEnd');
+    expect(rows).toContain('sessionAccessibilitySummary(session, summary: summary)');
+    expect(rows).not.toContain('.frame(width: 62');
+    expect(rows).toContain('Image(systemName: syncStatus.symbol)');
+    expect(detail).toContain('VStack(alignment: .leading, spacing: 4) { headerBadges }');
+    expect(formatters).toContain('profileAccessibilitySummary(samples: samples)');
+    expect(formatters).toContain('@ScaledMetric');
+    const wet = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift');
+    expect(wet).toContain('DiveDisclaimer()');
   });
 
   it('provides watch previews for live freedive and scuba safety stop states', () => {
@@ -1202,7 +1229,7 @@ describe('WatchConnectivity native source contract', () => {
     );
     const detailMetadataBlock = detail.slice(
       detail.indexOf('private var metadataSection'),
-      detail.indexOf('@ViewBuilder'),
+      detail.indexOf('@ViewBuilder', detail.indexOf('private var metadataSection')),
     );
 
     expect(summary).toContain('Free Session Summary');

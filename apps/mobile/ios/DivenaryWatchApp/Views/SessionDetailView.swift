@@ -13,35 +13,39 @@ struct SessionDetailView: View {
         session.summary
     }
 
+    @ViewBuilder
+    private var headerBadges: some View {
+        StatusPill(title: session.diveMode.label)
+        if let captureProvenanceLabel = session.captureProvenanceLabel {
+            StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
+        }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 InstrumentCard(accent: DiveWatchTheme.primary) {
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            StatusPill(title: session.diveMode.label)
-                            if let captureProvenanceLabel = session.captureProvenanceLabel {
-                                StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
-                            }
-                            Spacer(minLength: 6)
-                            Text(session.syncStatus.label)
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(DiveWatchTheme.mutedText)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.62)
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 5) { headerBadges }
+                            VStack(alignment: .leading, spacing: 4) { headerBadges }
                         }
+                        Text(session.syncStatus.label)
+                            .font(.caption2)
+                            .foregroundStyle(DiveWatchTheme.mutedText)
+                            .fixedSize(horizontal: false, vertical: true)
 
                         if let recoveryLabel = session.recoveryLabel {
                             Text(recoveryLabel)
-                                .font(.system(size: 12))
+                                .font(.body)
                                 .foregroundStyle(DiveWatchTheme.secondary)
                         }
 
                         Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                            .font(DiveWatchTheme.metricFont(size: 20, weight: .semibold))
+                            .font(.system(.title3, design: .rounded, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.text)
-                            .lineLimit(2)
-                            .minimumScaleFactor(0.55)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .minimumScaleFactor(1)
 
                         DepthProfileSparkline(samples: session.samples)
                             .frame(height: 44)
@@ -63,12 +67,12 @@ struct SessionDetailView: View {
 
                 if let feedback = store.syncRetryFeedback[session.id] {
                     Text(feedback)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(.caption, weight: .semibold))
                         .foregroundStyle(DiveWatchTheme.danger)
                         .multilineTextAlignment(.center)
                 }
 
-                HStack(spacing: 8) {
+                VStack(spacing: 8) {
                     MetricCard(title: String(localized: "Max Depth"), value: DiveFormatters.depth(summary.maxDepthMeters), compact: true)
                     MetricCard(title: String(localized: "Duration"), value: DiveFormatters.duration(summary.durationSeconds), compact: true)
                 }
@@ -210,7 +214,7 @@ private struct FreeSegmentRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Text(segmentTitle)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
@@ -227,7 +231,7 @@ private struct FreeSegmentRow: View {
 
             if let surfaceIntervalSeconds = row.surfaceIntervalSeconds {
                 Text("\(String(localized: "Surface interval")): \(DiveFormatters.duration(surfaceIntervalSeconds))")
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
@@ -279,9 +283,9 @@ private struct SafetyStopResultSection: View {
                 }
 
                 Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(.caption, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                     .minimumScaleFactor(0.72)
             }
         }

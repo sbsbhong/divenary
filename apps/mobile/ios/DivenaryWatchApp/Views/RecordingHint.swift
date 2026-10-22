@@ -1,5 +1,24 @@
 import SwiftUI
 
+/// Copy only. Hardware handling and the 180-second / surface guard stay in the coordinator.
+struct RecordingEndGuidance {
+    let hasActionButton: Bool
+
+    var text: String {
+        hasActionButton
+            ? String(localized: "Press Action Button\nEnd & save")
+            : String(localized: "Water Lock off\nEnd & save")
+    }
+
+    var accessibilityText: String {
+        hasActionButton
+            ? String(localized: "Press the Action Button to end and save the log.")
+            : String(localized: "Turning off Water Lock ends recording.")
+    }
+
+    var symbol: String { hasActionButton ? "button.programmable" : "lock.open" }
+}
+
 /// The one-line hint under a real recording. It says what the next Action Button press does, or, on a
 /// watch without the button, what turning the crown does. There is no public API that says whether
 /// Divenary is the app assigned to the Action Button, so `hasActionButton` is only a hint.
@@ -17,6 +36,7 @@ struct RecordingHint: Equatable {
         case endAvailableIn(seconds: Int)
         /// The End page: the next press ends and saves.
         case pressToEnd
+        case waterLockToEnd
         /// A press on the End page that could not end the recording. Shown briefly.
         case endRejected
     }
@@ -45,7 +65,7 @@ struct RecordingHint: Equatable {
         if showsRejection {
             kind = .endRejected
         } else if page == .end {
-            kind = .pressToEnd
+            kind = hasActionButton ? .pressToEnd : .waterLockToEnd
         } else if input == .crown {
             kind = .nextPage(cycle[(index + 1) % cycle.count], input: .crown)
         } else {
@@ -84,6 +104,8 @@ struct RecordingHint: Equatable {
             return String(localized: "End available in \(DiveFormatters.countdown(seconds: seconds))")
         case .pressToEnd:
             return String(localized: "Press to end & save")
+        case .waterLockToEnd:
+            return String(localized: "Water Lock off ends log")
         case .endRejected:
             return String(localized: "End not available")
         }
@@ -172,25 +194,29 @@ struct RecordingHintBar: View {
             HStack(spacing: 5) {
                 RecordingPageDots(index: hint.pageIndex, count: hint.pageCount)
 
-                Text(hint.text)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(hint.kind == .pressToEnd ? DiveWatchTheme.text : DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                // The End page already presents this instruction prominently; keep its dots
+                // and Water Lock note without repeating a second end-and-save label.
+                if hint.kind != .pressToEnd && hint.kind != .waterLockToEnd {
+                    Text(hint.text)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(hint.kind == .pressToEnd ? DiveWatchTheme.text : DiveWatchTheme.mutedText)
+                        .lineLimit(2)
+                        .minimumScaleFactor(1)
+                }
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 6)
                     .fill(DiveWatchTheme.surfaceRaised)
             )
 
             if hint.showsWaterLockNote {
-                Text(String(localized: "Turning off Water Lock ends recording."))
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                Text(String(localized: "Water Lock off ends log"))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(1)
             }
         }
         .frame(maxWidth: .infinity)
@@ -207,7 +233,7 @@ struct RecordingPageDots: View {
         HStack(spacing: 3) {
             ForEach(0..<max(count, 1), id: \.self) { dot in
                 Circle()
-                    .fill(dot == index ? DiveWatchTheme.text : DiveWatchTheme.mutedText.opacity(0.35))
+                    .fill(dot == index ? DiveWatchTheme.text : DiveWatchTheme.mutedText.opacity(0.75))
                     .frame(width: 4, height: 4)
             }
         }
@@ -222,12 +248,12 @@ struct NextDiveActionHint: View {
         Text(String(localized: "Action ▸ Start next dive"))
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(DiveWatchTheme.mutedText)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .lineLimit(2)
+            .minimumScaleFactor(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 6)
                     .fill(DiveWatchTheme.surfaceRaised)
             )
             .frame(maxWidth: .infinity)

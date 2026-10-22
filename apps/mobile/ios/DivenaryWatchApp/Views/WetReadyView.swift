@@ -103,6 +103,8 @@ struct WetReadyView: View {
                     .lineLimit(3)
                     .minimumScaleFactor(0.75)
 
+                DiveDisclaimer()
+
                 if startGuidance.showsHomeButton {
                     Button(String(localized: "Back to Home"), action: onHome)
                         .buttonStyle(DiveActionButtonStyle(kind: .secondary))

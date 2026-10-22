@@ -325,7 +325,7 @@ struct DivePlansView: View {
                 Text(isSelectionEnabled
                     ? HomePlanSelection.instructions
                     : String(localized: "Plans start real dives on a supported Apple Watch."))
-                    .font(.system(size: 10, weight: .regular))
+                    .font(.system(.caption2, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: .infinity)
@@ -347,10 +347,10 @@ private struct PlannedDiveRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(plannedDive.displayTitle)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(.headline, weight: .semibold))
                         .foregroundStyle(DiveWatchTheme.text)
                         .lineLimit(2)
-                        .minimumScaleFactor(0.72)
+                        .minimumScaleFactor(1)
                     Spacer(minLength: 4)
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
@@ -366,9 +366,9 @@ private struct PlannedDiveRow: View {
 
                 if let plannedAt = plannedDive.plannedAt {
                     Text(DiveFormatters.sessionDate.string(from: Date(timeIntervalSince1970: plannedAt)))
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(.caption2, weight: .regular))
                         .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -383,13 +383,13 @@ private struct PlannedDiveMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
             Text(value)
                 .font(DiveWatchTheme.metricFont(size: 14, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.58)
+                .fixedSize(horizontal: false, vertical: true)
+                .minimumScaleFactor(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -407,13 +407,13 @@ private struct HomeSensorNotice: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.text)
                     .lineLimit(2)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(1)
 
                 Text(String(localized: "Real dives need a depth sensor. The demo still works."))
-                    .font(.system(size: 11, weight: .regular))
+                    .font(.system(.caption2, weight: .regular))
                     .foregroundStyle(DiveWatchTheme.mutedText)
                     .lineLimit(3)
-                    .minimumScaleFactor(0.75)
+                    .minimumScaleFactor(1)
             }
         }
         .accessibilityElement(children: .combine)
@@ -423,11 +423,11 @@ private struct HomeSensorNotice: View {
 private struct HomeSafetyFooter: View {
     var body: some View {
         Text(String(localized: "Recreational capture and review. Not a certified dive computer."))
-            .font(.system(size: 8, weight: .regular))
-            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.72))
+            .font(.system(.caption2, weight: .regular))
+            .foregroundStyle(DiveWatchTheme.mutedText)
             .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.72)
+            .fixedSize(horizontal: false, vertical: true)
+            .minimumScaleFactor(1)
             .frame(maxWidth: .infinity)
             .padding(.top, 2)
             .padding(.horizontal, 8)
@@ -467,32 +467,32 @@ private struct StartSessionCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.system(.headline, weight: .semibold))
                         .foregroundStyle(DiveWatchTheme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.65)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(1)
 
                     if let subtitle {
                         Text(subtitle)
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(.caption2, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.mutedText)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .minimumScaleFactor(1)
                     }
 
                     if let footnote {
                         Text(footnote)
-                            .font(.system(size: 10, weight: .regular))
-                            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.82))
+                            .font(.system(.caption2, weight: .regular))
+                            .foregroundStyle(DiveWatchTheme.mutedText)
                             .lineLimit(2)
-                            .minimumScaleFactor(0.7)
+                            .minimumScaleFactor(1)
                     }
                 }
 
                 Spacer(minLength: 4)
 
                 Image(systemName: trailingSystemImage)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(.caption2, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
             .frame(minHeight: Self.minimumHeight)
@@ -510,30 +510,30 @@ private struct HomeRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: systemImage)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(.headline, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(.headline, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .minimumScaleFactor(1)
 
                 if let detail {
                     Text(detail)
-                        .font(.system(size: 11, weight: .regular))
+                        .font(.system(.caption2, weight: .regular))
                         .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .minimumScaleFactor(1)
                 }
             }
 
             Spacer(minLength: 4)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
         }
         .padding(.horizontal, 10)
@@ -567,18 +567,18 @@ private struct LatestSessionCard: View {
                             Text("LAST DIVE")
                                 .font(DiveWatchTheme.labelFont())
                                 .foregroundStyle(DiveWatchTheme.mutedText)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.7)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .minimumScaleFactor(1)
                             // A demo or test log never reads as a real dive on Home.
                             if let captureProvenanceLabel = session.captureProvenanceLabel {
                                 StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
                             }
                         }
                         Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.system(.caption2, weight: .semibold))
                             .foregroundStyle(DiveWatchTheme.text)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .minimumScaleFactor(1)
                     }
 
                     Spacer(minLength: 6)
@@ -594,6 +594,8 @@ private struct LatestSessionCard: View {
                 }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(DiveFormatters.sessionAccessibilitySummary(session, summary: summary))
     }
 }
 
@@ -604,14 +606,14 @@ private struct LatestMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(.caption2, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
             Text(value)
-                .font(DiveWatchTheme.metricFont(size: 17, weight: .semibold))
+                .font(.system(.body, design: .rounded, weight: .semibold).monospacedDigit())
                 .foregroundStyle(DiveWatchTheme.text)
                 .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.6)
+                .fixedSize(horizontal: false, vertical: true)
+                .minimumScaleFactor(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)

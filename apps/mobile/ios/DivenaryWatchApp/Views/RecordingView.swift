@@ -107,6 +107,30 @@ extension EnvironmentValues {
     }
 }
 
+private struct CompactRecordingReadoutKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var compactRecordingReadout: Bool {
+        get { self[CompactRecordingReadoutKey.self] }
+        set { self[CompactRecordingReadoutKey.self] = newValue }
+    }
+}
+
+/// Stacked, inline secondary values use less height when errors reduce the recording viewport.
+private struct RecordingSecondaryMetrics<Content: View>: View {
+    @Environment(\.compactRecordingReadout) private var compact
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        let layout = compact
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 1))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 7))
+        layout { content }
+    }
+}
+
 struct RecordingInstrumentView: View {
     @ObservedObject var recorder: DiveSessionRecorder
     let plan: PreDivePlan
@@ -131,30 +155,38 @@ struct RecordingInstrumentView: View {
 
     private func instrumentStack(page: RecordingPage, hint: RecordingHint?) -> some View {
         GeometryReader { proxy in
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
+                LiveReadoutStatusRow()
+                    .fixedSize(horizontal: false, vertical: true)
+                UnsupportedDepthWarning(
+                    currentDepthMeters: displayedDepthMeters,
+                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
+                )
                 pageInstrument(page)
-                    .environment(
-                        \.liveReadoutStatus,
-                        LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle)
-                    )
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .layoutPriority(1)
 
                 recordingErrorFooter
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Text(DiveWatchTheme.safetyDisclaimer)
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.7))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                Text(String(localized: "Log only · Not certified"))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
+                    .lineLimit(2)
+                    .minimumScaleFactor(1)
                     .frame(maxWidth: .infinity)
 
                 // The phase hint replaces a fixed end instruction. Demo ends from its toolbar and
                 // debug recordings show no end hint.
                 if endControl == .crownHint, let hint {
                     RecordingHintBar(hint: hint)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .environment(\.liveReadoutStatus,
+                LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle))
+            .environment(\.recordingAuthorizedMaximum, maximumDepthMeters)
+            .environment(\.compactRecordingReadout, proxy.size.height < 220 || recorder.recordingPersistenceError != nil)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .padding(.horizontal, 4)
@@ -166,11 +198,11 @@ struct RecordingInstrumentView: View {
     @ViewBuilder
     private var recordingErrorFooter: some View {
         if recorder.recordingPersistenceError != nil {
-            Label("Storage retry pending", systemImage: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 9, weight: .semibold))
+            Label(String(localized: "Save retry pending"), systemImage: "externaldrive.badge.exclamationmark")
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.danger)
                 .lineLimit(1)
-                .minimumScaleFactor(0.65)
+                .minimumScaleFactor(1)
                 .frame(maxWidth: .infinity)
         }
     }
@@ -240,6 +272,7 @@ struct RecordingInstrumentView: View {
                 SafetyStopInstrument(
                     currentDepthMeters: displayedDepthMeters,
                     safetyStop: recorder.scubaSafetyStop,
+                    elapsedTime: recorder.elapsedTime,
                     sensorDisplayLimitMeters: sensorDisplayLimitMeters
                 )
             } else {
@@ -386,7 +419,8 @@ struct RecordingLayoutFixtureView: View {
             recorder: recorder,
             plan: plan,
             maximumDepthMeters: fixture == .real ? 6 : nil,
-            endControl: fixture.recordingMode.endControl
+            endControl: fixture.recordingMode.endControl,
+            markerTitle: fixture.recordingMode.markerTitle
         )
         .onAppear {
             recorder.startSession(plan: plan)
@@ -420,19 +454,16 @@ private struct FreeSurfaceReadyInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: currentDepthMeters == nil
-                ? String(localized: "Depth unavailable") : String(localized: "Surface ready"),
-                color: DiveWatchTheme.secondary)
-
             Spacer(minLength: 2)
 
             BigMetricText(
+                caption: String(localized: "Session time"),
                 value: DiveFormatters.duration(sessionTime),
                 color: DiveWatchTheme.secondary,
                 accessibilityTitle: String(localized: "Session time")
             )
 
-            HStack(spacing: 7) {
+            RecordingSecondaryMetrics {
                 LiveInstrumentMetric(
                     title: String(localized: "Dive count"),
                     value: "\(max(0, diveCount))"
@@ -469,15 +500,13 @@ private struct FreeDiveActiveInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "Dive active"), color: DiveWatchTheme.primary)
-
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: primaryTime,
                 timeCaption: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters))
 
-            HStack(spacing: 7) {
+            RecordingSecondaryMetrics {
                 if currentDepthMeters == nil {
                     LiveInstrumentMetric(
-                        title: String(localized: "Last observed dive time"),
+                        title: String(localized: "Observed time"),
                         value: DiveFormatters.duration(activeDiveTime),
                         keepsInAlwaysOn: true
                     )
@@ -514,17 +543,10 @@ private struct InstrumentDepthLayout<Content: View>: View {
                 targetDepthMeters: targetDepthMeters
             )
 
-            VStack(alignment: .leading, spacing: 6) {
-                LiveReadoutStatusRow()
-
-                UnsupportedDepthWarning(
-                    currentDepthMeters: currentDepthMeters,
-                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
-                )
-
+            VStack(alignment: .leading, spacing: 3) {
                 content
             }
-            .padding(.top, 8)
+            .padding(.top, 2)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -537,26 +559,33 @@ private struct LiveReadoutStatusRow: View {
 
     var body: some View {
         if status.markerTitle != nil || status.depthStatusText != nil {
-            HStack(spacing: 4) {
-                if let markerTitle = status.markerTitle {
-                    chip(markerTitle, color: DiveWatchTheme.secondary)
-                }
-                if let depthStatusText = status.depthStatusText {
-                    chip(depthStatusText, color: DiveWatchTheme.mutedText)
-                }
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 4) { chips }
+                VStack(alignment: .leading, spacing: 2) { chips }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private var chips: some View {
+        if let markerTitle = status.markerTitle {
+            chip(markerTitle, color: DiveWatchTheme.secondary)
+        }
+        if let depthStatusText = status.depthStatusText {
+            chip(depthStatusText, color: DiveWatchTheme.mutedText)
         }
     }
 
     private func chip(_ text: String, color: Color) -> some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
+            .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.68)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
+            .lineLimit(2)
+            .minimumScaleFactor(1)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
             .background(
                 RoundedRectangle(cornerRadius: 5, style: .continuous)
                     .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
@@ -571,12 +600,12 @@ private struct UnsupportedDepthWarning: View {
     var body: some View {
         if let currentDepthMeters, currentDepthMeters > sensorDisplayLimitMeters {
             Text(String(localized: "Outside sensor-authorized depth"))
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.68)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
+                .lineLimit(2)
+                .minimumScaleFactor(1)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
                 .background(
                     RoundedRectangle(cornerRadius: 5, style: .continuous)
                         .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
@@ -600,11 +629,8 @@ private struct FreeSurfaceIntervalInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: observedInterval == nil
-                ? String(localized: "Depth unavailable") : String(localized: "Surface interval"),
-                color: DiveWatchTheme.secondary)
-
             BigMetricText(
+                caption: String(localized: "Surface interval"),
                 value: DiveFormatters.duration(observedInterval),
                 color: DiveWatchTheme.secondary,
                 accessibilityTitle: observedInterval == nil
@@ -640,9 +666,8 @@ private struct FreeDiveSummaryInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "Summary"), color: DiveWatchTheme.secondary)
-
             BigMetricText(
+                caption: String(localized: "Surface interval"),
                 value: DiveFormatters.duration(surfaceRestTime),
                 color: DiveWatchTheme.secondary,
                 accessibilityTitle: String(localized: "Surface interval")
@@ -674,7 +699,7 @@ private struct ScubaLiveInstrument: View {
         ) {
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
 
-            HStack(spacing: 7) {
+            RecordingSecondaryMetrics {
                 DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: elapsedTime)
                 LiveInstrumentMetric(
                     title: String(localized: "Ascent"),
@@ -692,6 +717,7 @@ private struct ScubaLiveInstrument: View {
 private struct SafetyStopInstrument: View {
     let currentDepthMeters: Double?
     let safetyStop: SafetyStopRecord
+    var elapsedTime: TimeInterval = 0
     var sensorDisplayLimitMeters = DiveDepthSupport.supportedWatchDepthLimitMeters
 
     var body: some View {
@@ -704,16 +730,19 @@ private struct SafetyStopInstrument: View {
         ) {
             pausedBand
 
-            StatusPill(title: String(localized: "Recommended stop"), color: statusColor)
+            Text(String(localized: "Recommended stop"))
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(statusColor)
+                .fixedSize(horizontal: false, vertical: true)
 
             BigMetricText(
                 value: DiveFormatters.duration(safetyStop.remainingSeconds),
                 color: statusColor,
                 accessibilityTitle: String(localized: "Recommended stop time remaining"),
-                size: 48
+                size: 34
             )
 
-            HStack(spacing: 7) {
+            RecordingSecondaryMetrics {
                 LiveInstrumentMetric(
                     title: String(localized: "Depth"),
                     value: DiveFormatters.depth(currentDepthMeters),
@@ -721,8 +750,9 @@ private struct SafetyStopInstrument: View {
                 )
 
                 LiveInstrumentMetric(
-                    title: String(localized: "Stop zone"),
-                    value: "\(DiveFormatters.depthValue(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
+                    title: String(localized: "Log time"),
+                    value: DiveFormatters.duration(elapsedTime),
+                    keepsInAlwaysOn: true
                 )
             }
         }
@@ -738,25 +768,29 @@ private struct SafetyStopInstrument: View {
 
     /// A recommended stop is the supplementary caution amber while it counts and while it pauses:
     /// never the action blue, and never the danger tone reserved for future mandatory states. The
-    /// paused band tells a paused timer apart in words, and a finished stop turns quiet grey.
+    /// paused/completed wording tells states apart without relying on color.
     private var statusColor: Color {
-        safetyStop.status == .completed ? DiveWatchTheme.secondary : DiveWatchTheme.caution
+        DiveWatchTheme.caution
     }
 
     /// A paused timer is told apart by words as well as amber, so it still reads in Always-On.
     @ViewBuilder
     private var pausedBand: some View {
-        if isTimerPaused {
+        if safetyStop.status == .completed {
+            Label(String(localized: "Stop complete"), systemImage: "checkmark")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(statusColor)
+        } else if isTimerPaused {
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2, style: .continuous)
                     .fill(DiveWatchTheme.caution.opacity(0.7))
                     .frame(width: 3, height: 10)
 
                 Text(String(localized: "Timer paused"))
-                    .font(.system(size: 10, weight: .semibold))
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.caution)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                    .minimumScaleFactor(1)
             }
             .accessibilityElement(children: .combine)
         }
@@ -769,26 +803,42 @@ private struct LiveInstrumentMetric: View {
     /// Always-On keeps only the values read at a glance (depth and time); the rest are hidden.
     var keepsInAlwaysOn = false
 
+    @Environment(\.compactRecordingReadout) private var compact
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
         if keepsInAlwaysOn || !isLuminanceReduced {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-
-                Text(value)
-                    .font(DiveWatchTheme.metricFont(size: 18, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.48)
+            ViewThatFits(in: .horizontal) {
+                if compact {
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        metricLabel.fixedSize()
+                        metricValue.fixedSize()
+                    }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    metricLabel
+                    metricValue
+                }
             }
+            .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
+    }
+
+    private var metricLabel: some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(DiveWatchTheme.mutedText)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var metricValue: some View {
+        Text(value)
+            .font(DiveWatchTheme.metricFont(size: compact ? 14 : 18, weight: .semibold))
+            .foregroundStyle(DiveWatchTheme.text)
+            .lineLimit(2)
+            .minimumScaleFactor(compact ? 11.0 / 14.0 : 11.0 / 18.0)
     }
 }
 
@@ -800,30 +850,31 @@ private struct BigMetricText: View {
     var unit: String?
     let color: Color
     let accessibilityTitle: String
-    var size: CGFloat = 50
+    var size: CGFloat = 38
 
+    @Environment(\.compactRecordingReadout) private var compact
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let caption {
-                Text(caption.uppercased())
-                    .font(.system(size: 10, weight: .semibold))
+                Text(caption)
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
+                    .lineLimit(2)
+                    .minimumScaleFactor(1)
             }
 
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(value)
-                    .font(DiveWatchTheme.metricFont(size: size, weight: .semibold))
+                    .font(DiveWatchTheme.metricFont(size: compact ? min(size, 30) : size, weight: .semibold))
                     .foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.5)
+                    .minimumScaleFactor(0.8)
 
                 if let unit {
                     Text(unit)
-                        .font(.system(size: size * 0.36, weight: .semibold, design: .rounded))
+                        .font(.system(size: max(11, size * 0.36), weight: .semibold, design: .rounded))
                         .foregroundStyle(DiveWatchTheme.mutedText)
                         .lineLimit(1)
                         .fixedSize()
@@ -889,7 +940,7 @@ private struct FreeLastDiveMetrics: View {
     let lastSegment: FreeDiveSegment?
 
     var body: some View {
-        HStack(spacing: 7) {
+        RecordingSecondaryMetrics {
             LiveInstrumentMetric(
                 title: String(localized: "Last duration"),
                 value: DiveFormatters.duration(lastSegment?.durationSeconds)
@@ -921,7 +972,7 @@ private struct ScubaDetailsInstrument: View {
         ) {
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
 
-            HStack(spacing: 7) {
+            RecordingSecondaryMetrics {
                 LiveInstrumentMetric(
                     title: String(localized: "Max"),
                     value: DiveFormatters.depth(maxDepthMeters)
@@ -954,7 +1005,7 @@ private struct FreeSessionDetailsInstrument: View {
                 value: "\(max(0, snapshot.diveCount))",
                 color: DiveWatchTheme.text,
                 accessibilityTitle: String(localized: "Dive count"),
-                size: 40
+                size: 34
             )
 
             LiveInstrumentMetric(title: String(localized: "Last dive"), value: lastDiveText)
@@ -981,6 +1032,8 @@ private struct EndPageInstrument: View {
     let scaleDepthMeters: Double
     let sensorDisplayLimitMeters: Double
 
+    @Environment(\.compactRecordingReadout) private var compact
+
     var body: some View {
         InstrumentDepthLayout(
             currentDepthMeters: currentDepthMeters,
@@ -989,17 +1042,23 @@ private struct EndPageInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            StatusPill(title: String(localized: "End & save"), color: DiveWatchTheme.secondary)
-
-            BigMetricText(
-                value: DiveFormatters.duration(elapsedTime),
-                color: DiveWatchTheme.text,
-                accessibilityTitle: String(localized: "Time")
-            )
-
+            let guidance = RecordingEndGuidance(hasActionButton: ActionButtonHint.current.isLikelyUltra)
+            if !compact {
+                Image(systemName: guidance.symbol)
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .accessibilityHidden(true)
+            }
+            Text(guidance.text)
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.text)
+                .minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel(guidance.accessibilityText)
             LiveInstrumentMetric(
-                title: String(localized: "Max"),
-                value: DiveFormatters.depth(maxDepthMeters)
+                title: String(localized: "Log time"),
+                value: DiveFormatters.duration(elapsedTime),
+                keepsInAlwaysOn: true
             )
         }
     }

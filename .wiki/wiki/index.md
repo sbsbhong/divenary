@@ -58,7 +58,7 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략(1초·4초·10초, 정적 스켈레톤, 최소 표시 시간 없음), 편집기·상세·목록 패턴, 결과 배너, 로그인 버튼 쌍, 워치 안내 chip·화면·Always-On·Home 규칙을 둔다. | 2026-10-22 |
+| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략(1초·4초·10초, 정적 스켈레톤, 최소 표시 시간 없음), 편집기·상세·목록 패턴, 결과 배너, 로그인 버튼 쌍, 워치 11pt 하한·비인증 표식·허용 수심 게이지·종료 안내·Dynamic Type·VoiceOver와 Always-On 규칙을 둔다. | 2026-10-22 |
 
 ## decisions
 

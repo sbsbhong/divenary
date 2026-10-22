@@ -946,6 +946,38 @@
         }
       }
     },
+    "Depth chart: %@ to %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth chart: %1$@ to %2$@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 그래프: %1$@~%2$@"
+          }
+        }
+      }
+    },
+    "Depth chart: --" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Depth chart: --"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수심 그래프: --"
+          }
+        }
+      }
+    },
     "Depth gauge" : {
       "localizations" : {
         "en" : {
@@ -1894,6 +1926,70 @@
         }
       }
     },
+    "Log only · Not certified" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log only · Not certified"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록용 · 인증 장비 아님"
+          }
+        }
+      }
+    },
+    "Log time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 시간"
+          }
+        }
+      }
+    },
+    "Log time: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Log time: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록 시간: %@"
+          }
+        }
+      }
+    },
+    "Maximum depth: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Maximum depth: %@"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "최대 수심: %@"
+          }
+        }
+      }
+    },
     "Not recording yet" : {
       "localizations" : {
         "en" : {
@@ -1906,6 +2002,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "아직 기록을 시작하지 않았습니다."
+          }
+        }
+      }
+    },
+    "Observed time" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Observed time"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "확인된 시간"
+          }
+        }
+      }
+    },
+    "Press Action Button\nEnd & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press Action Button\nEnd & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼을 누르면\n기록 종료·저장"
+          }
+        }
+      }
+    },
+    "Press the Action Button to end and save the log." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Press the Action Button to end and save the log."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "동작 버튼을 눌러 기록을 끝내고 저장하세요."
           }
         }
       }
@@ -1942,6 +2086,22 @@
         }
       }
     },
+    "Save retry pending" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save retry pending"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "저장 재시도 대기"
+          }
+        }
+      }
+    },
     "Select a plan for starts from Home. Tap again to clear." : {
       "localizations" : {
         "en" : {
@@ -1970,6 +2130,54 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "홈 화면에서 기록을 시작하세요."
+          }
+        }
+      }
+    },
+    "Stop complete" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop complete"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "권장 스탑 완료"
+          }
+        }
+      }
+    },
+    "Water Lock off\nEnd & save" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Lock off\nEnd & save"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 잠금 해제 시\n기록 종료·저장"
+          }
+        }
+      }
+    },
+    "Water Lock off ends log" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Water Lock off ends log"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "수중 잠금 해제 시 기록 종료"
           }
         }
       }

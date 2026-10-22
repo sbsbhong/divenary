@@ -18,6 +18,27 @@ enum DiveFormatters {
         return formatter
     }()
 
+    static func sessionAccessibilitySummary(_ session: DiveSessionRecord, summary: DiveSessionSummary) -> String {
+        let date = sessionDate.string(from: session.startedAt)
+        let depthText = depth(summary.maxDepthMeters)
+        let time = duration(summary.durationSeconds)
+        var parts = [session.diveMode.label, date,
+                     String(localized: "Maximum depth: \(depthText)"),
+                     String(localized: "Log time: \(time)"), session.syncStatus.label]
+        if let marker = session.captureProvenanceLabel { parts.append(marker) }
+        if let recovery = session.recoveryLabel { parts.append(recovery) }
+        if session.exceedsSupportedDepth { parts.append(String(localized: "Outside watch support")) }
+        return parts.joined(separator: ", ")
+    }
+
+    static func profileAccessibilitySummary(samples: [DepthSample]) -> String {
+        let depths = samples.map(\.depthMeters).filter { $0.isFinite && $0 >= 0 }
+        guard let minimum = depths.min(), let maximum = depths.max() else {
+            return String(localized: "Depth chart: --")
+        }
+        return String(localized: "Depth chart: \(depth(minimum)) to \(depth(maximum))")
+    }
+
     static func duration(_ seconds: TimeInterval) -> String {
         let totalSeconds = max(0, Int(seconds.rounded()))
         let hours = totalSeconds / 3600
@@ -104,7 +125,7 @@ enum DiveWatchTheme {
     }
 
     static func labelFont() -> Font {
-        .system(size: 11, weight: .semibold, design: .default)
+        .system(.caption2, design: .default, weight: .semibold)
     }
 }
 
@@ -151,21 +172,23 @@ struct MetricCard: View {
     var prominent = false
     var compact = false
 
+    @ScaledMetric(relativeTo: .title2) private var reviewMetricSize: CGFloat = 24
+
     var body: some View {
         InstrumentCard(accent: prominent ? accent : nil) {
             VStack(alignment: .leading, spacing: compact ? 3 : 5) {
                 Text(title.uppercased())
                     .font(DiveWatchTheme.labelFont())
                     .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(1)
+                    .lineLimit(2)
                     .minimumScaleFactor(0.72)
 
                 Text(value)
-                    .font(DiveWatchTheme.metricFont(size: metricSize, weight: .semibold))
+                    .font(DiveWatchTheme.metricFont(size: reviewMetricSize, weight: .semibold))
                     .foregroundStyle(prominent ? accent : DiveWatchTheme.text)
                     .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.45)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
 
                 if let footnote {
                     Text(footnote)
@@ -178,12 +201,6 @@ struct MetricCard: View {
         }
         .accessibilityElement(children: .combine)
     }
-
-    private var metricSize: CGFloat {
-        if prominent { return 34 }
-        if compact { return 18 }
-        return 23
-    }
 }
 
 struct SummaryRow: View {
@@ -192,23 +209,21 @@ struct SummaryRow: View {
     var accent: Color?
 
     var body: some View {
-        HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title.uppercased())
                 .font(DiveWatchTheme.labelFont())
                 .foregroundStyle(DiveWatchTheme.mutedText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-
-            Spacer(minLength: 4)
+                .fixedSize(horizontal: false, vertical: true)
+                .minimumScaleFactor(1)
 
             Text(value)
-                .font(DiveWatchTheme.metricFont(size: 14, weight: .semibold))
+                .font(.system(.body, design: .rounded, weight: .semibold).monospacedDigit())
                 .foregroundStyle(accent ?? DiveWatchTheme.text)
                 .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.55)
+                .fixedSize(horizontal: false, vertical: true)
+                .minimumScaleFactor(1)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
@@ -240,15 +255,15 @@ struct StatusPill: View {
     var color: Color = DiveWatchTheme.primary
 
     var body: some View {
-        Text(title.uppercased())
+        Text(title)
             .font(DiveWatchTheme.labelFont())
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .fixedSize(horizontal: false, vertical: true)
+            .minimumScaleFactor(1)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(
-                Capsule()
+                RoundedRectangle(cornerRadius: 6)
                     .fill(color.opacity(0.16))
             )
     }
@@ -259,11 +274,11 @@ struct DiveDisclaimer: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.82))
+            .font(.system(.caption2, weight: .semibold))
+            .foregroundStyle(DiveWatchTheme.mutedText)
             .multilineTextAlignment(.center)
-            .lineLimit(3)
-            .minimumScaleFactor(0.72)
+            .fixedSize(horizontal: false, vertical: true)
+            .minimumScaleFactor(1)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 4)
     }
@@ -328,7 +343,7 @@ struct DivePressStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .opacity(isEnabled ? 1 : 0.45)
+                .opacity(isEnabled ? 1 : 0.7)
                 .scaleEffect(configuration.isPressed ? 0.95 : 1)
         }
     }
@@ -368,6 +383,8 @@ struct DepthProfileSparkline: View {
             }
         }
         .frame(minHeight: 34)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(DiveFormatters.profileAccessibilitySummary(samples: samples))
     }
 
     private func profilePoints(in size: CGSize) -> [CGPoint] {

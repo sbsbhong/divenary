@@ -1,5 +1,45 @@
 import SwiftUI
 
+/// Presentation only: the rail never extrapolates beyond the authorized sensor range.
+/// A one-meter minimum span avoids division by zero; ticks and values still respect a smaller limit.
+struct RecordingGaugeScale {
+    let upperBound: Double
+    let displayLimit: Double
+
+    init(maximumDepthMeters: Double?, fallbackMeters: Double) {
+        let fallback = fallbackMeters.isFinite ? max(1, fallbackMeters) : 30
+        if let maximumDepthMeters, maximumDepthMeters.isFinite, maximumDepthMeters > 0 {
+            displayLimit = min(maximumDepthMeters, DiveDepthSupport.supportedWatchDepthLimitMeters)
+            upperBound = max(1, displayLimit)
+        } else {
+            displayLimit = fallback
+            upperBound = fallback
+        }
+    }
+
+    var ticks: [Double] {
+        // At most four well-spaced labels, rounded to whole 1/2/5/10/20-meter steps.
+        let step = [1.0, 2, 5, 10, 20, 50, 100].first { $0 >= upperBound / 3 } ?? upperBound
+        return stride(from: 0.0, through: min(upperBound, displayLimit), by: step).map { $0 }
+    }
+
+    func displayedDepth(_ depth: Double?) -> Double? {
+        guard let depth, depth.isFinite else { return nil }
+        return min(max(depth, 0), displayLimit)
+    }
+}
+
+private struct RecordingAuthorizedMaximumKey: EnvironmentKey {
+    static let defaultValue: Double? = nil
+}
+
+extension EnvironmentValues {
+    var recordingAuthorizedMaximum: Double? {
+        get { self[RecordingAuthorizedMaximumKey.self] }
+        set { self[RecordingAuthorizedMaximumKey.self] = newValue }
+    }
+}
+
 /// The left depth rail of every recording page. It is kept narrow so the live value beside it can
 /// stay large; tick labels sit inside the same width. Always-On draws it as an outline.
 struct DepthGaugeRail: View {
@@ -10,6 +50,7 @@ struct DepthGaugeRail: View {
     let stopZone: ClosedRange<Double>?
     let targetDepthMeters: Double?
 
+    @Environment(\.recordingAuthorizedMaximum) private var authorizedMaximum
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
     private let railX: CGFloat = 26
@@ -33,7 +74,7 @@ struct DepthGaugeRail: View {
                     stopZoneBox(stopZone, height: height)
                 }
 
-                if let targetDepthMeters {
+                if let targetDepthMeters, targetDepthMeters <= scale.displayLimit {
                     targetLine(at: targetDepthMeters, height: height)
                 }
 
@@ -41,7 +82,7 @@ struct DepthGaugeRail: View {
                     tickMark(for: tick, height: height)
                 }
 
-                if let depthMeters {
+                if let depthMeters = scale.displayedDepth(depthMeters) {
                     currentDepthMarker(depthMeters: depthMeters, height: height)
                 }
             }
@@ -50,7 +91,7 @@ struct DepthGaugeRail: View {
         .frame(maxHeight: .infinity)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Text("Depth gauge"))
-        .accessibilityValue(Text(depthMeters.map(DiveFormatters.depth) ?? String(localized: "Depth unavailable")))
+        .accessibilityValue(Text(scale.displayedDepth(depthMeters).map(DiveFormatters.depth) ?? String(localized: "Depth unavailable")))
     }
 
     private var deepBlueGradient: LinearGradient {
@@ -65,21 +106,12 @@ struct DepthGaugeRail: View {
         )
     }
 
-    private var scaleUpperBound: Double {
-        guard maxScaleMeters.isFinite else { return 1 }
-        return max(maxScaleMeters, 1)
+    private var scale: RecordingGaugeScale {
+        RecordingGaugeScale(maximumDepthMeters: authorizedMaximum, fallbackMeters: maxScaleMeters)
     }
 
-    private var tickValues: [Double] {
-        let baseTicks: [Double]
-        if scaleUpperBound <= 12 {
-            baseTicks = [0, 3, 5, 6, scaleUpperBound]
-        } else {
-            baseTicks = [0, 10, 20, scaleUpperBound]
-        }
-
-        return Array(Set(baseTicks.map(sanitizedDepth))).sorted()
-    }
+    private var scaleUpperBound: Double { scale.upperBound }
+    private var tickValues: [Double] { scale.ticks }
 
     private func yPosition(for depth: Double, height: CGFloat) -> CGFloat {
         let clampedDepth = sanitizedDepth(depth)
@@ -92,11 +124,11 @@ struct DepthGaugeRail: View {
 
         return HStack(spacing: 2) {
             Text(tickLabel(for: depth))
-                .font(DiveWatchTheme.metricFont(size: 9, weight: .semibold))
+                .font(DiveWatchTheme.metricFont(size: 11, weight: .semibold))
                 .foregroundStyle(DiveWatchTheme.mutedText)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(width: 16, alignment: .trailing)
+                .minimumScaleFactor(1)
+                .frame(width: 21, alignment: .trailing)
 
             Rectangle()
                 .fill(Color.white.opacity(0.55))
@@ -166,7 +198,7 @@ struct DepthGaugeRail: View {
 
     private func sanitizedDepth(_ depth: Double) -> Double {
         guard depth.isFinite else { return 0 }
-        return min(max(depth, 0), scaleUpperBound)
+        return min(max(depth, 0), scale.displayLimit)
     }
 }
 

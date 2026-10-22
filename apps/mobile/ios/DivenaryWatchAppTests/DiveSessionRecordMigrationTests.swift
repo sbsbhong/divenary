@@ -3,6 +3,39 @@ import XCTest
 @testable import DivenaryWatchApp
 
 final class DiveSessionRecordMigrationTests: XCTestCase {
+    func testSavedRowSummaryIncludesDateMetricsSyncAndProvenance() {
+        for mode in [DiveCaptureMode.real, .demo] {
+            let record = Self.debugScubaRecord(captureMode: mode)
+            let text = DiveFormatters.sessionAccessibilitySummary(record, summary: record.summary)
+            XCTAssertTrue(text.contains(DiveFormatters.sessionDate.string(from: record.startedAt)))
+            XCTAssertTrue(text.contains(DiveFormatters.depth(record.summary.maxDepthMeters)))
+            XCTAssertTrue(text.contains(DiveFormatters.duration(record.summary.durationSeconds)))
+            XCTAssertTrue(text.contains(record.syncStatus.label))
+            XCTAssertTrue(text.contains(record.diveMode.label))
+            if let marker = record.captureProvenanceLabel { XCTAssertTrue(text.contains(marker)) }
+        }
+        XCTAssertFalse(DiveMode.scuba.listBadgeLabel.isEmpty)
+        XCTAssertFalse(DiveMode.freedive.listBadgeLabel.isEmpty)
+    }
+
+    func testSavedRowSummaryKeepsTestSupportRecoveryAndAllSyncMarkers() throws {
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(Self.debugScubaRecord())) as? [String: Any])
+        object["tags"] = [DiveSessionRecord.debugTestTag]
+        object["unsupportedDepth"] = ["exceeded": true, "limitMeters": 40, "maxDepthMeters": 42]
+        object["profile"] = ["formatVersion": 1, "contentRevision": "test", "sampleIntervalSeconds": 1,
+                             "sampleCount": 3, "interrupted": true]
+        for status in [DiveSyncStatus.pending, .synced, .failed] {
+            object["syncStatus"] = status.rawValue
+            let record = try JSONDecoder().decode(DiveSessionRecord.self, from: JSONSerialization.data(withJSONObject: object))
+            let text = DiveFormatters.sessionAccessibilitySummary(record, summary: record.summary)
+            XCTAssertTrue(text.contains(String(localized: "Test")))
+            XCTAssertTrue(text.contains(String(localized: "Outside watch support")))
+            XCTAssertTrue(text.contains(String(localized: "Recovered after interruption")))
+            XCTAssertTrue(text.contains(status.label))
+        }
+    }
+
     func testPlansDoNotInventDepthAndPreserveIndividualBuddyIDs() throws {
         let plan = try JSONDecoder().decode(WatchPlannedDive.self, from: Data(
             #"{"localId":"reef","buddyIds":["Buddy A","Buddy,B"],"tags":[]}"#.utf8

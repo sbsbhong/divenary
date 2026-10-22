@@ -10,7 +10,7 @@ struct SessionListView: View {
                     InstrumentCard(accent: DiveWatchTheme.secondary) {
                         VStack(alignment: .leading, spacing: 7) {
                             Text(String(localized: "Could not read saved records."))
-                                .font(.system(size: 12))
+                                .font(.body)
                                 .foregroundStyle(DiveWatchTheme.text)
                             Button(String(localized: "Retry")) { store.retryLoadingHistory() }
                                 .buttonStyle(DiveActionButtonStyle(kind: .secondary))
@@ -48,10 +48,10 @@ private struct EmptySessionsView: View {
             VStack(alignment: .leading, spacing: 7) {
                 StatusPill(title: String(localized: "No logs"), color: DiveWatchTheme.secondary)
                 Text("No saved sessions")
-                    .font(DiveWatchTheme.metricFont(size: 20, weight: .semibold))
+                    .font(.title3)
                     .foregroundStyle(DiveWatchTheme.text)
                 Text("Start a recreational capture to create a watch log.")
-                    .font(.system(size: 12, weight: .regular))
+                    .font(.body)
                     .foregroundStyle(DiveWatchTheme.mutedText)
             }
         }
@@ -62,72 +62,56 @@ private struct SessionRow: View {
     let session: DiveSessionRecord
 
     var body: some View {
-        // The summary replays the depth profile, so it is computed once per render.
         let summary = session.summary
-        let profileColor = Self.profileColor(maxDepthMeters: summary.maxDepthMeters)
         InstrumentCard {
-            HStack(alignment: .center, spacing: 7) {
-                DepthProfileSparkline(samples: session.samples, color: profileColor)
-                    .frame(width: 44, height: 38)
+            VStack(alignment: .leading, spacing: 7) {
+                // The date owns the entire row width and can wrap at larger text sizes.
+                Text(DiveFormatters.sessionDate.string(from: session.startedAt))
+                    .font(.system(.caption, weight: .semibold))
+                    .foregroundStyle(DiveWatchTheme.text)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-
-                    HStack(spacing: 5) {
-                        SessionMetadataPill(title: session.diveMode.listBadgeLabel, color: profileColor)
-                        if let captureProvenanceLabel = session.captureProvenanceLabel {
-                            SessionMetadataPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
-                        }
-                        SessionSyncStatusPill(syncStatus: session.syncStatus)
-                    }
-                    if let recoveryLabel = session.recoveryLabel {
-                        Text(recoveryLabel)
-                            .font(.system(size: 10))
-                            .foregroundStyle(DiveWatchTheme.secondary)
-                    }
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) { metrics(summary) }
+                    VStack(alignment: .leading, spacing: 3) { metrics(summary) }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .layoutPriority(1)
+                .font(.system(.body, design: .rounded, weight: .semibold).monospacedDigit())
 
-                VStack(alignment: .trailing, spacing: 3) {
-                    HStack(spacing: 2) {
-                        if session.exceedsSupportedDepth {
-                            Image(systemName: "exclamationmark.triangle.fill")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(DiveWatchTheme.caution)
-                                .accessibilityLabel(Text("Outside watch support"))
-                        }
-                        Text(DiveFormatters.depth(summary.maxDepthMeters))
-                            .font(DiveWatchTheme.metricFont(size: 16, weight: .semibold))
-                            .foregroundStyle(profileColor)
-                            .monospacedDigit()
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.5)
-                    }
-                    Text(DiveFormatters.duration(summary.durationSeconds))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .monospacedDigit()
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 5) { badges }
+                    VStack(alignment: .leading, spacing: 4) { badges }
                 }
-                .frame(width: 62, alignment: .trailing)
+                if let recoveryLabel = session.recoveryLabel {
+                    Text(recoveryLabel)
+                        .font(.caption2)
+                        .foregroundStyle(DiveWatchTheme.secondary)
+                }
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(DiveFormatters.sessionAccessibilitySummary(session, summary: summary))
     }
 
-    private static func profileColor(maxDepthMeters: Double) -> Color {
-        if maxDepthMeters >= 20 {
-            return DiveWatchTheme.primary
-        }
+    @ViewBuilder
+    private func metrics(_ summary: DiveSessionSummary) -> some View {
+        Text(DiveFormatters.depth(summary.maxDepthMeters))
+            .foregroundStyle(DiveWatchTheme.text)
+        Text(DiveFormatters.duration(summary.durationSeconds))
+            .foregroundStyle(DiveWatchTheme.mutedText)
+    }
 
-        if maxDepthMeters >= 10 {
-            return DiveWatchTheme.primary
+    @ViewBuilder
+    private var badges: some View {
+        SessionMetadataPill(title: session.diveMode.listBadgeLabel, color: DiveWatchTheme.secondary)
+        if let captureProvenanceLabel = session.captureProvenanceLabel {
+            SessionMetadataPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
         }
-
-        return DiveWatchTheme.primary.opacity(0.78)
+        SessionSyncStatusPill(syncStatus: session.syncStatus)
+        if session.exceedsSupportedDepth {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(DiveWatchTheme.caution)
+                .accessibilityLabel(String(localized: "Outside watch support"))
+        }
     }
 }
 
@@ -136,17 +120,13 @@ private struct SessionMetadataPill: View {
     let color: Color
 
     var body: some View {
-        Text(title.uppercased())
-            .font(.system(size: 8, weight: .semibold))
+        Text(title)
+            .font(.system(.caption2, weight: .semibold))
             .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.7)
+            .fixedSize()
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
-            .background(
-                Capsule()
-                    .fill(color.opacity(0.16))
-            )
+            .background(Capsule().fill(color.opacity(0.16)))
     }
 }
 
@@ -154,23 +134,15 @@ private struct SessionSyncStatusPill: View {
     let syncStatus: DiveSyncStatus
 
     var body: some View {
-        Text(syncStatus.shortLabel)
-            .font(.system(size: 8, weight: .semibold))
+        Image(systemName: syncStatus.symbol)
+            .font(.system(.caption, weight: .semibold))
             .foregroundStyle(syncStatus.tint)
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 3)
-            .frame(minWidth: 42, minHeight: 16, alignment: .center)
-            .background(
-                Capsule()
-                    .fill(syncStatus.tint.opacity(0.16))
-            )
+            .fixedSize()
             .accessibilityLabel(syncStatus.label)
     }
 }
 
-private extension DiveMode {
+extension DiveMode {
     var listBadgeLabel: String {
         switch self {
         case .scuba:
@@ -184,6 +156,14 @@ private extension DiveMode {
 /// Short sync badges for narrow rows: the saved list and the latest log card on Home. VoiceOver
 /// reads the full `label`.
 extension DiveSyncStatus {
+    var symbol: String {
+        switch self {
+        case .pending: return "clock"
+        case .synced: return "checkmark.icloud"
+        case .failed: return "exclamationmark.icloud"
+        }
+    }
+
     var shortLabel: String {
         switch self {
         case .pending:

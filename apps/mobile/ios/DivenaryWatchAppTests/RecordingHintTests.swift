@@ -125,6 +125,50 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(hint.kind, .endRejected)
     }
 
+    func testAuthorizedGaugeUsesSixMeterRangeAndCleanSparseTicks() {
+        let scale = RecordingGaugeScale(maximumDepthMeters: 6, fallbackMeters: 30)
+        XCTAssertEqual(scale.upperBound, 6)
+        XCTAssertEqual(scale.ticks, [0, 2, 4, 6])
+        XCTAssertEqual(scale.displayedDepth(8), 6)
+        XCTAssertNil(scale.displayedDepth(nil))
+        XCTAssertNil(scale.displayedDepth(.nan))
+    }
+
+    func testGaugeFallbackMinimumAndFractionalAuthorizationNeverInventRange() {
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: nil, fallbackMeters: 30).upperBound, 30)
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: .nan, fallbackMeters: 30).upperBound, 30)
+        let fractional = RecordingGaugeScale(maximumDepthMeters: 5.7, fallbackMeters: 30)
+        XCTAssertEqual(fractional.upperBound, 5.7)
+        XCTAssertEqual(fractional.ticks, [0, 2, 4])
+        XCTAssertEqual(fractional.displayedDepth(6), 5.7)
+        let shallow = RecordingGaugeScale(maximumDepthMeters: 0.5, fallbackMeters: 30)
+        XCTAssertEqual(shallow.upperBound, 1)
+        XCTAssertTrue(shallow.ticks.allSatisfy { $0 <= 0.5 })
+        XCTAssertEqual(shallow.displayedDepth(1), 0.5)
+        XCTAssertEqual(RecordingGaugeScale(maximumDepthMeters: 100, fallbackMeters: 30).upperBound, 40)
+    }
+
+    func testEndGuidanceNamesTheAvailableHardwarePath() {
+        XCTAssertEqual(RecordingEndGuidance(hasActionButton: true).text,
+                       String(localized: "Press Action Button\nEnd & save"))
+        XCTAssertEqual(RecordingEndGuidance(hasActionButton: false).text,
+                       String(localized: "Water Lock off\nEnd & save"))
+        let fallback = hint(page: .end, pages: [.live, .details, .end], availability: .available,
+                            water: .notSubmerged, hasActionButton: false)
+        XCTAssertEqual(fallback.kind, .waterLockToEnd)
+        XCTAssertEqual(fallback.text, String(localized: "Water Lock off ends log"))
+        XCTAssertNotEqual(RecordingEndGuidance(hasActionButton: true).symbol,
+                          RecordingEndGuidance(hasActionButton: false).symbol)
+    }
+
+    func testChartSummaryDescribesDepthRangeAndUnknownWithoutMeasurementCounts() {
+        XCTAssertEqual(DiveFormatters.profileAccessibilitySummary(samples: []),
+                       String(localized: "Depth chart: --"))
+        let samples = [EngineTestFixtures.sample(0, depth: 2), EngineTestFixtures.sample(1, depth: 6)]
+        XCTAssertEqual(DiveFormatters.profileAccessibilitySummary(samples: samples),
+                       String(localized: "Depth chart: \(DiveFormatters.depth(2)) to \(DiveFormatters.depth(6))"))
+    }
+
     private func hint(
         page: RecordingPage,
         pages: [RecordingPage] = [.live, .details],

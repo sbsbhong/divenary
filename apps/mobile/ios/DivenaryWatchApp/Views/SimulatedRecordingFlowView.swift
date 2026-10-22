@@ -281,8 +281,8 @@ struct SimulatedRecordingFlowView: View {
             }
             if recordingMode == .demo, lifecycle.showsRecordingControls {
                 Text(String(localized: "Adjust depth with the Digital Crown"))
-                    .font(.system(size: 9, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.76))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(DiveWatchTheme.mutedText)
                     .frame(maxWidth: .infinity)
                     .allowsHitTesting(false)
             }
