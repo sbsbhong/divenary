@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Path, Svg } from 'react-native-svg';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { HStack } from '../../components/ui/hstack';
 import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
+import { ProfileRevealChart } from '../../components/charts/profile-reveal-chart';
+import { MOTION_TIMING } from '../../constants/motion';
 import type { WatchDepthSample } from '../../types/dive-session';
 import { buildProfileRenderModel } from '../../utils/session-profile-chart';
 import { formatLogDepth, formatLogTemperature } from './log-formatters';
@@ -18,18 +19,26 @@ const TEMPERATURE_CHART_HEIGHT = 40;
  * A quiet profile line drawn straight on the group surface, without a box of its own. Depth uses
  * the accent; temperature is lower and thinner in the warm tone so it reads as secondary.
  * VoiceOver reads the title and the range.
+ *
+ * The first time an entry's chart is shown in this runtime it draws from left to right, and the
+ * depth chart's logo rides the line. `animationKey` names that first show: the entry's localId for
+ * depth, and a suffixed key for temperature. Showing the same key again starts at the end state.
  */
 export function LogEntryProfile(props: {
   samples: WatchDepthSample[];
   kind: 'depth' | 'temperature';
   title: string;
   testID: string;
+  animationKey: string;
 }): React.JSX.Element | null {
   const { t } = useTranslation();
   const palette = useGluestackColors();
   const isDepth = props.kind === 'depth';
   const height = isDepth ? DEPTH_CHART_HEIGHT : TEMPERATURE_CHART_HEIGHT;
-  const chart = buildProfileRenderModel({ samples: props.samples, kind: props.kind, width: CHART_WIDTH, height });
+  const chart = useMemo(
+    () => buildProfileRenderModel({ samples: props.samples, kind: props.kind, width: CHART_WIDTH, height }),
+    [props.samples, props.kind, height],
+  );
 
   if (!chart.isAvailable || !chart.path) {
     return null;
@@ -53,26 +62,21 @@ export function LogEntryProfile(props: {
           </Text>
         )}
       </HStack>
-      <VStack className={isDepth ? 'h-16 overflow-hidden' : 'h-10 overflow-hidden'}>
-        <Svg
-          testID={`${props.testID}-chart`}
-          width="100%"
-          height="100%"
-          viewBox={`0 0 ${CHART_WIDTH} ${height}`}
-          preserveAspectRatio="none">
-          {isDepth && chart.areaPath ? <Path d={chart.areaPath} fill={lineColor} fillOpacity={0.08} /> : null}
-          <Path
-            d={chart.path}
-            fill="none"
-            stroke={lineColor}
-            strokeOpacity={isDepth ? 1 : 0.7}
-            strokeWidth={isDepth ? 2.5 : 1.5}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        </Svg>
-      </VStack>
+      <ProfileRevealChart
+        key={props.animationKey}
+        testID={`${props.testID}-chart`}
+        chart={chart}
+        width={CHART_WIDTH}
+        height={height}
+        animationKey={props.animationKey}
+        drawDuration={MOTION_TIMING.chartDraw}
+        drawDelay={MOTION_TIMING.chartAfterPush + (isDepth ? 0 : MOTION_TIMING.chartSecondaryDelay)}
+        lineColor={lineColor}
+        lineOpacity={isDepth ? 1 : 0.7}
+        lineWidth={isDepth ? 2.5 : 1.5}
+        areaColor={isDepth ? lineColor : undefined}
+        logoColor={isDepth ? lineColor : undefined}
+      />
     </VStack>
   );
 }

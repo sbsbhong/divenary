@@ -16,7 +16,7 @@
   - `pressIn` 90 ms ease-out, 놓을 때 spring `{ duration: 320, dampingRatio: 0.85 }`
   - `PRESS_SCALE.control` 0.95(버튼, 알약, 탭, 뒤로), `PRESS_SCALE.card` 0.97(카드 하나가 통째로 눌리는 행: 로그북 행, Home 최근 기록 카드, 계획 행)
   - `fade` 180 ms, `appear` 240 ms와 `appearOffset` 8 pt, `dismiss` 160 ms, `stagger` 40 ms
-  - `chartDraw` 900 ms, `sparklineDraw` 600 ms, `chartAreaDelay` 200 ms, `chartSecondaryDelay` 150 ms
+  - `chartDraw` 900 ms, `sparklineDraw` 600 ms, `chartAreaDelay` 200 ms, `chartAreaFill` 600 ms, `chartSecondaryDelay` 150 ms
   - `reducedMotionFade` 200 ms
   - 연결 상태 확인 깜박임 `{ dim: 120, back: 240, opacity: 0.3 }`(이미 `settings/screen.tsx`에 숫자로 들어가 있으니 이 상수로 옮긴다)
 - 동작 줄이기는 reanimated `useReducedMotion()`으로 읽는다. 이동·크기·그리기 애니메이션은 `reducedMotionFade` 투명도 전환으로 바뀐다. 누름 크기 반응은 손가락 바로 아래의 작은 직접 반응이라 동작 줄이기에서도 유지한다.
@@ -25,7 +25,7 @@
 ## M2. 누름 반응
 
 - 지금 `style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}`처럼 순간적으로 튀는 곳을 모두 같은 hook(`usePressScale(kind)`: `onPressIn`, `onPressOut`, animated style)으로 바꾼다. 누르면 90 ms에 줄고, 놓으면 spring으로 돌아온다. 비활성일 때는 줄지 않는다.
-- 대상: `InstrumentButton`, `ScreenBackButton`, `SelectorPill`, 탭 `NavTab`, 소셜 로그인 버튼, Home 날씨 새로고침, 폼 picker·badge 필드, 기록 편집기와 워치 필드의 누름 요소, `picker-sheet`, 자동 가져오기 토스트 안 버튼은 `control`. 로그북 `SessionListItem`, Home 최근 기록 카드, 계획 행은 `card`.
+- 대상: `InstrumentButton`, `ScreenBackButton`, `SelectorPill`, 탭 `NavTab`, 소셜 로그인 버튼, Home 날씨 새로고침, 폼 picker·badge 필드, 기록 편집기와 워치 필드의 누름 요소, `picker-sheet`은 `control`. 로그북 `SessionListItem`, Home 최근 기록 카드, 계획 행, 통째로 눌리는 워치 자동 가져오기 토스트는 `card`.
 - grouped-list `Row`와 `active:bg-muted`만 쓰는 행은 iOS 목록처럼 배경 강조를 그대로 둔다.
 
 ## M3. 나타나기와 사라지기
@@ -38,12 +38,12 @@
 
 ## M4. 탭 막대
 
-- 탭을 눌러 선택이 바뀌면 새로 선택된 아이콘이 한 번 작게 튄다(1 → 0.86 → 1 spring, 약 350 ms, SF Symbols bounce와 비슷하게). 처음 그릴 때와 이미 선택된 탭을 다시 누를 때는 없다. 동작 줄이기에서는 없다. 글자·색 바뀜은 즉시다.
+- 탭을 눌러 선택이 바뀌면 새로 선택된 아이콘이 한 번 작게 튄다(1 → 0.86 → 1 spring, 약 350 ms, SF Symbols bounce와 비슷하게). 처음 그릴 때와 이미 선택된 탭을 다시 누를 때는 없다. 탭 뒤 500 ms(`TAB_BOUNCE.tapWindow`) 안에 선택이 바뀌지 않으면 그 탭은 잊는다. 코드가 나중에 탭을 바꿀 때 튀지 않게 하기 위해서다. 동작 줄이기에서는 없다. 글자·색 바뀜은 즉시다.
 
 ## M5. 차트 그리기
 
-- 기록 상세의 수심 그래프(`LogEntryProfile` depth): 그 기록의 그래프가 이번 앱 실행에서 처음 보일 때 한 번, 선이 왼쪽에서 오른쪽으로 `chartDraw` 동안 그려진다(ease-in-out). `preserveAspectRatio="none"`과 `vectorEffect="non-scaling-stroke"`가 있으니 stroke dash 대신 왼쪽에서 넓어지는 clip 사각형으로 드러낸다. 영역 채움은 `chartAreaDelay` 뒤 600 ms 동안 0에서 원래 투명도로 밝아진다. 같은 기록을 다시 열면 바로 끝 상태다. 기록 식별자는 prop(`animationKey`)으로 받는다.
-- 이때 실제 로고(`docs/superpowers/specs/2026-10-23-watch-plumb-redesign/LOGO.md`의 경로만, 손으로 그린 가오리 금지)가 드러나는 선 끝을 따라간다. 워치 D16a와 같이 좌우로 뒤집어 머리가 진행 방향을 향한다: 화면 좌표의 선 기울기 각도를 `line`이라 하면 `transform: [{ rotate: line + 57 deg }, { scaleX: -1 }]`(CSS 순서, 뒤집기가 먼저 적용된다). 기울기는 viewBox가 아니라 실제 그려진 폭·높이로 계산한다(가로세로가 따로 늘어난다). 크기 18 pt, 색은 선 색, 그리기가 끝나면 `fade` 동안 사라진다. 접근성에서 숨긴다.
+- 기록 상세의 수심 그래프(`LogEntryProfile` depth): 그 기록의 그래프가 이번 앱 실행에서 처음 보일 때 한 번, 화면 전환이 끝나도록 `chartAfterPush`(300 ms)를 기다린 뒤 선이 왼쪽에서 오른쪽으로 `chartDraw` 동안 그려진다(ease-in-out). `preserveAspectRatio="none"`과 `vectorEffect="non-scaling-stroke"`가 있으니 stroke dash 대신 왼쪽에서 넓어지는 clip 사각형으로 드러낸다. 영역 채움은 `chartAreaDelay` 뒤 600 ms 동안 0에서 원래 투명도로 밝아진다. 같은 기록을 다시 열면 바로 끝 상태다. 기록 식별자는 prop(`animationKey`)으로 받는다.
+- 이때 실제 로고(`docs/superpowers/specs/2026-10-23-watch-plumb-redesign/LOGO.md`의 경로만, 손으로 그린 가오리 금지)가 드러나는 선 끝을 따라간다. 워치 D16a와 같이 좌우로 뒤집어 머리가 진행 방향을 향한다: 화면 좌표의 선 기울기 각도를 `line`이라 하면 `transform: [{ rotate: line + 57 deg }, { scaleX: -1 }]`(CSS 순서, 뒤집기가 먼저 적용된다). 기울기는 viewBox가 아니라 실제 그려진 폭·높이로 계산한다(가로세로가 따로 늘어난다). 크기 22 pt(18 pt는 실제 화면에서 모양이 읽히지 않았다), 색은 선 색, 그리기가 끝나면 `fade` 동안 사라진다. 접근성에서 숨긴다.
 - 같은 화면의 수온 그래프는 `chartSecondaryDelay` 뒤 같은 방식으로 그려지고 로고는 없다.
 - Home 최근 기록 카드의 `DepthSparkline`: 그 기록이 이번 실행에서 처음 보일 때 `sparklineDraw` 동안 같은 clip 방식으로 그려진다. 로고는 없다.
 - 동작 줄이기: 그리기와 로고 없이 그래프가 `reducedMotionFade` 동안 나타난다.

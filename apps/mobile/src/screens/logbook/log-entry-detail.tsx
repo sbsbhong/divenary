@@ -192,7 +192,13 @@ function SummaryGroup(props: {
         </Text>
       ) : null}
       {samples.length ? (
-        <LogEntryProfile samples={samples} kind="depth" title={t('logbook.depthProfile')} testID="log-entry-detail-depth-profile" />
+        <LogEntryProfile
+          samples={samples}
+          kind="depth"
+          title={t('logbook.depthProfile')}
+          testID="log-entry-detail-depth-profile"
+          animationKey={props.entry.localId}
+        />
       ) : props.isProfileLoading && isWatchEntry ? (
         <LogEntryProfileSkeleton scope={props.entry.localId} title={t('logbook.depthProfile')} />
       ) : null}
@@ -261,6 +267,7 @@ function WatchRecordGroup(props: { entry: DiveLogEntry; profileSamples?: WatchSe
               kind="temperature"
               title={t('logbook.temperatureProfile')}
               testID="log-entry-detail-temperature-profile"
+              animationKey={`${props.entry.localId}:temperature`}
             />
           </VStack>
         </VStack>

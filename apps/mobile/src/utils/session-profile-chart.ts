@@ -179,3 +179,95 @@ function sortAndDedupeProfilePoints(points: ProfileSourcePoint[]): ProfileSource
 function round(value: number): number {
   return Math.round(value * 100) / 100;
 }
+
+/** A point in chart units (the viewBox the path is drawn in), before it is mapped onto the screen. */
+export type ProfileChartPoint = {
+  x: number;
+  y: number;
+};
+
+/**
+ * How the chart's viewBox is stretched onto the measured box. The SVG uses `preserveAspectRatio="none"`,
+ * so the two axes scale by different factors and a slope must be measured in screen units.
+ */
+export type ProfileScreenMap = {
+  viewBoxWidth: number;
+  viewBoxHeight: number;
+  width: number;
+  height: number;
+};
+
+/** The reveal edge on screen: where the drawn line ends, and the line's direction there (down is positive). */
+export type ProfileTip = {
+  x: number;
+  y: number;
+  angleDegrees: number;
+};
+
+/**
+ * The mirrored logo's nose direction before any rotation, from the watch's `LogoRiderHeading`
+ * (DivePostDive.swift). Turning the mirrored mark by `line - this` puts its nose along the line.
+ */
+export const LOGO_RIDER_MIRRORED_NOSE_DEGREES = -57;
+
+/**
+ * The point where the reveal edge crosses the line, and the line's screen angle there.
+ *
+ * `progress` is the clip width as a fraction of the chart width, so the edge sits at
+ * `progress * viewBoxWidth` in chart units. The segment that contains that x gives the point, by
+ * linear interpolation along x, and its direction is measured after the stretch. Vertical segments
+ * have no x extent, so they are skipped. The function runs on the UI thread, hence the directive.
+ */
+export function profileTipAtProgress(
+  points: readonly ProfileChartPoint[],
+  progress: number,
+  map: ProfileScreenMap,
+): ProfileTip | undefined {
+  'worklet';
+  if (points.length === 0 || map.viewBoxWidth <= 0 || map.viewBoxHeight <= 0 || map.width <= 0 || map.height <= 0) {
+    return undefined;
+  }
+
+  const clamped = Number.isFinite(progress) ? Math.min(Math.max(progress, 0), 1) : 0;
+  const scaleX = map.width / map.viewBoxWidth;
+  const scaleY = map.height / map.viewBoxHeight;
+  const edgeX = clamped * map.viewBoxWidth;
+
+  for (let index = 1; index < points.length; index += 1) {
+    const start = points[index - 1]!;
+    const end = points[index]!;
+    const dx = end.x - start.x;
+    if (dx <= 0 || end.x < edgeX) {
+      continue;
+    }
+
+    const t = Math.min(Math.max((edgeX - start.x) / dx, 0), 1);
+    const dy = end.y - start.y;
+    return {
+      x: (start.x + dx * t) * scaleX,
+      y: (start.y + dy * t) * scaleY,
+      angleDegrees: (Math.atan2(dy * scaleY, dx * scaleX) * 180) / Math.PI,
+    };
+  }
+
+  // The edge is past every drawn segment (rounding at the far end): hold the last point, with the
+  // direction of the last segment that has an x extent.
+  const last = points[points.length - 1]!;
+  let angleDegrees = 0;
+  for (let index = points.length - 1; index >= 1; index -= 1) {
+    const start = points[index - 1]!;
+    const end = points[index]!;
+    if (end.x - start.x > 0) {
+      angleDegrees = (Math.atan2((end.y - start.y) * scaleY, (end.x - start.x) * scaleX) * 180) / Math.PI;
+      break;
+    }
+  }
+
+  return { x: last.x * scaleX, y: last.y * scaleY, angleDegrees };
+}
+
+/** The rotation that lays the mirrored logo along a line running at `lineAngleDegrees` (the +57 rule). */
+export function logoRiderRotationDegrees(lineAngleDegrees: number): number {
+  'worklet';
+  return lineAngleDegrees - LOGO_RIDER_MIRRORED_NOSE_DEGREES;
+}

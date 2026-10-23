@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Path, Svg } from 'react-native-svg';
+import { ProfileRevealChart } from '../../components/charts/profile-reveal-chart';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { HStack } from '../../components/ui/hstack';
@@ -11,6 +11,7 @@ import { PressScalePressable } from '../../components/ui/press-scale';
 import { SkeletonBlock } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
+import { MOTION_TIMING } from '../../constants/motion';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { MobileDiveSession } from '../../types/dive-session';
 import { buildProfileRenderModel } from '../../utils/session-profile-chart';
@@ -95,7 +96,7 @@ export function LatestLogCard(props: {
           {dateLabel}
         </Text>
       </VStack>
-      <DepthSparkline session={props.session} />
+      <DepthSparkline session={props.session} animationKey={`${props.entry?.localId ?? props.session.localSessionId}:sparkline`} />
       <HStack space="md">
         <LatestLogFact label={t('home.maxDepth')} value={maxDepthLabel} valueTestID="home-latest-max-depth" />
         <LatestLogFact label={t('home.diveTime')} value={diveTimeLabel} valueTestID="home-latest-dive-time" />
@@ -280,8 +281,11 @@ function LatestLogFactSkeleton(props: { label: string; visible: boolean }): Reac
   );
 }
 
-/** One low, quiet depth line. Without samples it is left out rather than drawn empty. */
-function DepthSparkline(props: { session: MobileDiveSession }): React.JSX.Element | null {
+/**
+ * One low, quiet depth line. Without samples it is left out rather than drawn empty. The first time
+ * this entry's line is shown in the runtime it draws in; there is no logo here.
+ */
+function DepthSparkline(props: { session: MobileDiveSession; animationKey: string }): React.JSX.Element | null {
   const palette = useGluestackColors();
   const chart = buildProfileRenderModel({
     samples: props.session.samples ?? [],
@@ -300,18 +304,18 @@ function DepthSparkline(props: { session: MobileDiveSession }): React.JSX.Elemen
       className="h-14 overflow-hidden"
       accessibilityElementsHidden
       importantForAccessibility="no-hide-descendants">
-      <Svg width="100%" height="100%" viewBox={`0 0 ${SPARKLINE_WIDTH} ${SPARKLINE_HEIGHT}`} preserveAspectRatio="none">
-        {chart.areaPath ? <Path d={chart.areaPath} fill={palette.primary} fillOpacity={0.08} /> : null}
-        <Path
-          d={chart.path}
-          fill="none"
-          stroke={palette.primary}
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
-      </Svg>
+      <ProfileRevealChart
+        key={props.animationKey}
+        testID="home-latest-profile-chart"
+        chart={chart}
+        width={SPARKLINE_WIDTH}
+        height={SPARKLINE_HEIGHT}
+        animationKey={props.animationKey}
+        drawDuration={MOTION_TIMING.sparklineDraw}
+        lineColor={palette.primary}
+        lineWidth={2.5}
+        areaColor={palette.primary}
+      />
     </VStack>
   );
 }

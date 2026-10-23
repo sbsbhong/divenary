@@ -32,6 +32,10 @@ export const MOTION_TIMING = {
   sparklineDraw: 600,
   /** Delay before the chart fill starts brightening, so the line leads. */
   chartAreaDelay: 200,
+  /** The chart fill brightening from 0 to its resting opacity. */
+  chartAreaFill: 600,
+  /** A detail chart waits for the screen's push to finish, so the draw is seen from its start. */
+  chartAfterPush: 300,
   /** Delay before the secondary (water temperature) chart starts drawing. */
   chartSecondaryDelay: 150,
   /** The only motion left under Reduce Motion: a plain opacity change. */
