@@ -51,6 +51,8 @@ struct RecordingHint: Equatable {
     let pageCount: Int
     /// Turning off Water Lock ends a real recording, so the note shows at the surface only.
     let showsWaterLockNote: Bool
+    /// Whether this watch probably has an Action Button, which decides how the End page reads.
+    let hasActionButton: Bool
 
     static func make(
         page: RecordingPage,
@@ -92,7 +94,8 @@ struct RecordingHint: Equatable {
             kind: kind,
             pageIndex: index,
             pageCount: cycle.count,
-            showsWaterLockNote: waterState == .notSubmerged
+            showsWaterLockNote: waterState == .notSubmerged,
+            hasActionButton: hasActionButton
         )
     }
 
@@ -101,10 +104,11 @@ struct RecordingHint: Equatable {
         kind == .endRejected || kind == .switchRejected
     }
 
-    /// The Water Lock line in the instrument's bottom slot. The End page leaves it out: its large
-    /// instruction already says how the recording ends (DECISIONS D20).
+    /// The Water Lock line in the instrument's bottom slot, out of the water. On the End page it stays
+    /// with the Action Button, as the other way to end at the surface; without the button the large
+    /// instruction already says to turn off Water Lock, so the line is left out (DECISIONS D20).
     func showsWaterLockLine(on page: RecordingPage) -> Bool {
-        showsWaterLockNote && page != .end
+        showsWaterLockNote && (page != .end || hasActionButton)
     }
 
     /// The chip's text, or `nil` for dots only: on the End page of a watch without the Action Button
@@ -353,24 +357,5 @@ struct RecordingWaterLockNote: View {
             .opacity(isLuminanceReduced ? 0.6 : 1)
             .lineLimit(2)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// "Action ▸ Start next dive" on a saved summary, when this watch probably has an Action Button.
-/// Underwater the diver cannot close the summary, and the next press starts a new dive.
-struct NextDiveActionHint: View {
-    var body: some View {
-        Text(String(localized: "Action ▸ Start next dive"))
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.mutedText)
-            .lineLimit(2)
-            .minimumScaleFactor(1)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(DiveWatchTheme.surfaceRaised)
-            )
-            .frame(maxWidth: .infinity)
     }
 }

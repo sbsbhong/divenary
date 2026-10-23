@@ -7,6 +7,8 @@ struct RealRecordingFlowView: View {
     /// Chooses the Wet Ready start copy. Home reads it from watchOS.
     var autoLaunchStatus: DepthAutoLaunchStatus = .unknown
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @State private var systemBottomInset: CGFloat = 0
 
     var body: some View {
@@ -32,11 +34,17 @@ struct RealRecordingFlowView: View {
                     waterState: water.latestState,
                     pages: coordinator.recordingPages
                 )
+                // RC-END: the instrument stays visible at 30 % under the ending line. Nothing
+                // moves; the dim and the line only fade.
+                .opacity(coordinator.isEnding ? 0.3 : 1)
                 .overlay {
                     if coordinator.isEnding {
                         endingView
+                            .transition(.opacity)
                     }
                 }
+                .animation(DiveMotion.animation(.ending, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
+                           value: coordinator.isEnding)
             case .completing:
                 savingView
             case .savedSummary(let session):
@@ -108,14 +116,17 @@ struct RealRecordingFlowView: View {
                 BusyPressNote(pages: coordinator.recordingPages)
             }
         }
+        .reservingFailureBanner(coordinator.failureFeedback != nil)
     }
 
     /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire. It
-    /// covers the instrument completely, so no digits show while the log is ended (spec F #27).
+    /// has no background, so the dimmed instrument stays behind it, and it sits centred over the
+    /// readout column, right of the gauge (spec F #27, RC-END, DECISIONS D20).
     private var endingView: some View {
-        DiveFlowProgress(title: String(localized: "Ending recording")) {
+        DiveFlowProgress(title: String(localized: "Ending recording"), coversContent: false) {
             BusyPressNote(pages: coordinator.recordingPages)
         }
+        .padding(.leading, RecordingInstrumentView.readoutColumnLeading)
     }
 
     private var savingView: some View {

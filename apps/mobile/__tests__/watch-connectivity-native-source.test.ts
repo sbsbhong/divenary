@@ -1077,9 +1077,11 @@ describe('WatchConnectivity native source contract', () => {
     // Wet Ready names a screen the watch has (the Dive screen), never "Home" or a dive session.
     expect(korean('Dive')).toBe('다이빙');
     expect(korean('Recording starts when watchOS starts the dive session.')).toBe('자동 실행이 켜져 있어 기록이 자동으로 시작됩니다.');
-    expect(korean('If you assigned Divenary to the Action Button, press it to start recording.')).toBe(
+    // The wording is unchanged; a word joiner keeps "Divenary" and its particle on one line (D20).
+    expect(korean('If you assigned Divenary to the Action Button, press it to start recording.')?.replace(/⁠/g, '')).toBe(
       '동작 버튼에 Divenary를 지정했다면 눌러서 기록을 시작하세요.',
     );
+    expect(korean('If you assigned Divenary to the Action Button, press it to start recording.')).toContain('Divenary⁠를');
     expect(korean('Start from Home before entering the water.')).toBe('입수 전에 다이빙 화면에서 기록을 시작하세요.');
     expect(english('Start from Home before entering the water.')).toBe('Start recording on the Dive screen before you get in.');
     // The guide states the real end guard: 3 minutes of recording and the watch out of the water.
@@ -1512,8 +1514,10 @@ describe('WatchConnectivity native source contract', () => {
     );
     // C4, C15: the save status says where the log is; a scuba dive's time is "다이빙 시간", a
     // freediving session's length "총 기록 시간".
-    expect(summary).toContain('session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration")');
-    expect(detail).toContain('session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration")');
+    // One helper picks the label for both screens.
+    expect(postDive).toContain('self == .scuba ? String(localized: "Log time") : String(localized: "Duration")');
+    expect(summary).toContain('Text(session.diveMode.savedTimeTitle)');
+    expect(detail).toContain('Text(session.diveMode.savedTimeTitle)');
     // D3: the full sync words on the summary and detail; the list rows keep the glyph only.
     expect(summary).toContain('DiveSyncStatusLine(status: session.syncStatus)');
     expect(detail).toContain('DiveSyncStatusLine(status: session.syncStatus)');

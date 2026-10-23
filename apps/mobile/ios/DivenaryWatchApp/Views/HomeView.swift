@@ -311,16 +311,14 @@ struct HomeView: View {
         }
     }
 
-    /// Starts at once; the card's ring traces alongside, never before it (spec HM-ARM).
+    /// Starts at once; the card's ring traces alongside, never before it (spec HM-ARM). The chosen
+    /// plan and dive type are kept only when the recording started.
     private func startRealDive(mode diveMode: DiveMode) {
         let startPlan = explicitStartPlan(for: diveMode)
+        guard realCoordinator.startManual(plan: startPlan) else { return }
         plan = startPlan
         store.updatePreferredDiveMode(diveMode)
         armingMode = diveMode
-        realCoordinator.startManual(plan: startPlan)
-        if !realCoordinator.phase.presentsRecordingFlow {
-            armingMode = nil
-        }
     }
 
     private func apply(plannedDive: WatchPlannedDive) {
@@ -624,7 +622,6 @@ private struct StartSessionCard: View {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var ringProgress: CGFloat = 0
-    @State private var isWaiting = false
 
     private let metrics = DiveLayout.StartCard(.current)
 
@@ -641,19 +638,16 @@ private struct StartSessionCard: View {
             .contentShape(RoundedRectangle(cornerRadius: metrics.radius, style: .continuous))
             .animation(DiveMotion.animation(.ready, reduceMotion: reduceMotion, alwaysOn: false), value: isEnabled)
             .accessibilityElement(children: .combine)
+            // The ring traces only after a start that was accepted, while the recording slides in
+            // over Home, so it never needs a waiting state of its own.
             .task(id: isArming) {
                 guard isArming else {
                     ringProgress = 0
-                    isWaiting = false
                     return
                 }
                 withAnimation(DiveMotion.animation(.arm, reduceMotion: reduceMotion, alwaysOn: false)) {
                     ringProgress = 1
                 }
-                // A start that has not shown after a second gets a spinner instead of the ring.
-                try? await Task.sleep(for: .seconds(1))
-                guard !Task.isCancelled else { return }
-                isWaiting = true
             }
     }
 
@@ -685,18 +679,12 @@ private struct StartSessionCard: View {
 
     @ViewBuilder
     private var armingIndicator: some View {
-        if isArming {
-            if isWaiting {
-                ProgressView()
-                    .tint(DiveWatchTheme.ink)
-                    .frame(width: metrics.armingRing, height: metrics.armingRing)
-            } else if DiveMotion.allowsMovement(.arm, reduceMotion: reduceMotion, alwaysOn: false) {
-                Circle()
-                    .trim(from: 0, to: ringProgress)
-                    .stroke(DiveWatchTheme.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: metrics.armingRing, height: metrics.armingRing)
-            }
+        if isArming, DiveMotion.allowsMovement(.arm, reduceMotion: reduceMotion, alwaysOn: false) {
+            Circle()
+                .trim(from: 0, to: ringProgress)
+                .stroke(DiveWatchTheme.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .frame(width: metrics.armingRing, height: metrics.armingRing)
         }
     }
 }
@@ -763,9 +751,7 @@ private struct LatestSessionCard: View {
     init(session: DiveSessionRecord) {
         self.session = session
         summary = session.summary
-        profilePoints = MiniDepthProfile.normalizedPoints(
-            depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 120)
-        )
+        profilePoints = DiveProfilePointCache.shared.points(for: session, maximumCount: 120)
     }
 
     var body: some View {

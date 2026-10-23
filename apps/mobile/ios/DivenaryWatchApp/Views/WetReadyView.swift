@@ -115,6 +115,7 @@ struct WetReadyView: View {
                     Button(action: onHome) {
                         Image(systemName: "chevron.backward")
                     }
+                    .buttonStyle(DivePressStyle(motion: .waterPress))
                     .accessibilityLabel(Text(String(localized: "Back to Home")))
                 }
             }
@@ -259,7 +260,8 @@ struct WetReadyView: View {
             .clipShape(tile)
             .contentShape(tile)
         }
-        .buttonStyle(DivePressStyle())
+        // The press settles without overshooting: Wet Ready can be underwater.
+        .buttonStyle(DivePressStyle(motion: .waterPress))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

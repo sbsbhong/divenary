@@ -531,8 +531,9 @@ final class DiveDesignSystemTests: XCTestCase {
     }
 
     func testProfilePointsSkipUnreadableDepthsAndNeverDivideByZero() {
+        // The gap keeps its place: the readings stay at their sample positions (x = 1/4, 2/4, 4/4).
         assertPoints(MiniDepthProfile.normalizedPoints(depths: [.nan, 5, -1, .infinity, 10]),
-                     [(0, 5.0 / 11), (0.5, 0), (1, 10.0 / 11)])
+                     [(0.25, 5.0 / 11), (0.5, 0), (1, 10.0 / 11)])
         XCTAssertEqual(MiniDepthProfile.normalizedPoints(depths: []), [])
         assertPoints(MiniDepthProfile.normalizedPoints(depths: [0, 0]), [(0, 0), (1, 0)])
         assertPoints(MiniDepthProfile.normalizedPoints(depths: [7]), [(0, 1 / 1.1)])
@@ -550,6 +551,18 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(MiniDepthProfile.thinnedDepths([0, 4, 9, 4, 0], maximumCount: 100), [0, 4, 9, 4, 0])
         XCTAssertEqual(MiniDepthProfile.thinnedDepths([], maximumCount: 100), [])
         XCTAssertEqual(MiniDepthProfile.thinnedDepths([1, 2, 3], maximumCount: 0), [])
+    }
+
+    func testAStretchWithNoReadingKeepsItsPlaceWithoutSqueezingTheRest() {
+        // Five stretches of two readings; the second has none and stays in place as a gap.
+        let thinned = MiniDepthProfile.thinnedDepths([1, 2, .nan, .nan, 5, 6, 7, 8, 9, 3], maximumCount: 5)
+        XCTAssertEqual(thinned.count, 5)
+        XCTAssertEqual(thinned[0], 2)
+        XCTAssertTrue(thinned[1].isNaN)
+        XCTAssertEqual(Array(thinned.dropFirst(2)), [6, 8, 9])
+        // The gap is skipped, and the readings after it keep their places along the dive (x = 0.5, 0.75, 1).
+        assertPoints(MiniDepthProfile.normalizedPoints(depths: thinned),
+                     [(0, 2 / 9.9), (0.5, 6 / 9.9), (0.75, 8 / 9.9), (1, 9 / 9.9)])
     }
 
     @MainActor

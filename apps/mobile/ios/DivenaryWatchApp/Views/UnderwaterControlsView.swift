@@ -148,7 +148,7 @@ private struct GuideText: View {
 
 /// The guide's hardware drawings (spec F8–F10, DECISIONS D17), all at one scale so the watch reads
 /// as one object across pages: the watch with a waterline rising in its lower half, the Digital
-/// Crown with an arc that turns a quarter, and the Action Button pressing in. Each plays once when
+/// Crown with an arc that turns a quarter, and the Action Button pressing in and back out. Each plays once when
 /// its page shows (GD-ILLUS); Reduce Motion and Always-On show the finished drawing.
 private struct GuideIllustration: View {
     enum Kind {
@@ -158,12 +158,14 @@ private struct GuideIllustration: View {
     }
 
     /// The drawing's steps. `rest` is the finished drawing and comes first, so the drawing rests
-    /// there until its page shows.
+    /// there until its page shows. `release` lets the Action Button back out (1 → 0.88 → 1) before
+    /// the drawing settles; the crown's arc and the waterline stay where `action` left them.
     enum Phase: CaseIterable {
         case rest
         case hidden
         case highlight
         case action
+        case release
     }
 
     let kind: Kind
@@ -205,6 +207,9 @@ private struct GuideIllustration: View {
             return kind == .actionButton
                 ? .smooth(duration: 0.2)
                 : DiveMotion.animation(.illustration, reduceMotion: false, alwaysOn: false)
+        case .release:
+            // The button comes back out in the other half; nothing else changes.
+            return .smooth(duration: 0.2)
         case .rest:
             return .smooth(duration: 0.2)
         }
@@ -213,11 +218,13 @@ private struct GuideIllustration: View {
     @ViewBuilder
     private func drawing(_ phase: Phase) -> some View {
         let highlight: Double = phase == .hidden ? 0 : 1
+        // The arc and the waterline hold their finished place from `action` on.
+        let settled: Double = phase == .rest || phase == .action || phase == .release ? 1 : 0
         switch kind {
         case .autoLaunch:
-            AutoLaunchDrawing(highlight: highlight, waterRise: phase == .rest || phase == .action ? 1 : 0)
+            AutoLaunchDrawing(highlight: highlight, waterRise: settled)
         case .crown:
-            CrownDrawing(highlight: highlight, turn: phase == .rest || phase == .action ? 1 : 0)
+            CrownDrawing(highlight: highlight, turn: settled)
         case .actionButton:
             ActionButtonDrawing(highlight: highlight, pressed: phase == .action)
         }

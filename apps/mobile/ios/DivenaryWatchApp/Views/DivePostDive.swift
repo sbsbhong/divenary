@@ -67,6 +67,16 @@ enum DiveValueParts {
     }
 }
 
+// MARK: - Saved dive time label
+
+extension DiveMode {
+    /// The saved dive's time label on the summary and the detail (COPY C15): a scuba dive's time is
+    /// "다이빙 시간"; a freediving session's whole length stays "총 기록 시간".
+    var savedTimeTitle: String {
+        self == .scuba ? String(localized: "Log time") : String(localized: "Duration")
+    }
+}
+
 // MARK: - Failure notes
 
 /// A failure note with its attempt counter set apart, so "(2)" can be drawn in grey (spec C18):
@@ -111,28 +121,53 @@ enum DiveProfileGeometry {
         let degrees: Double
     }
 
+    /// The profile line mapped into a drawing once, so the finale's rider can find the drawing tip on
+    /// every animation frame without building arrays.
+    struct Track {
+        fileprivate struct Segment {
+            let start: CGPoint
+            let end: CGPoint
+            let length: CGFloat
+        }
+
+        private let first: CGPoint?
+        /// The segments with a length; a repeated point has no direction.
+        private let segments: [Segment]
+        private let total: CGFloat
+
+        init(points: [CGPoint], size: CGSize) {
+            let mapped = points.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }
+            first = mapped.first
+            segments = zip(mapped, mapped.dropFirst())
+                .map { start, end in Segment(start: start, end: end, length: hypot(end.x - start.x, end.y - start.y)) }
+                .filter { $0.length > 0 }
+            total = segments.reduce(0) { $0 + $1.length }
+        }
+
+        /// The point `fraction` of the way along the line by length, as `trim(from: 0, to: fraction)`
+        /// draws it, so a rider placed here sits on the drawing tip.
+        func tip(at fraction: Double) -> Tip? {
+            guard let first else { return nil }
+            guard total > 0, let last = segments.last else {
+                return Tip(point: first, degrees: 0)
+            }
+
+            let clamped = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+            var remaining = CGFloat(clamped) * total
+            for segment in segments {
+                if remaining <= segment.length {
+                    return DiveProfileGeometry.point(on: segment, at: remaining / segment.length)
+                }
+                remaining -= segment.length
+            }
+            return DiveProfileGeometry.point(on: last, at: 1)
+        }
+    }
+
     /// The point `fraction` of the way along the line by length, as `trim(from: 0, to: fraction)`
     /// draws it, so a rider placed here sits on the drawing tip.
     static func tip(of points: [CGPoint], in size: CGSize, fraction: Double) -> Tip? {
-        let mapped = points.map { CGPoint(x: $0.x * size.width, y: $0.y * size.height) }
-        guard let first = mapped.first else { return nil }
-        let segments = zip(mapped, mapped.dropFirst()).map { start, end in
-            (start: start, end: end, length: hypot(end.x - start.x, end.y - start.y))
-        }
-        let total = segments.reduce(0) { $0 + $1.length }
-        guard total > 0, let last = segments.last(where: { $0.length > 0 }) else {
-            return Tip(point: first, degrees: 0)
-        }
-
-        let clamped = fraction.isFinite ? min(max(fraction, 0), 1) : 0
-        var remaining = CGFloat(clamped) * total
-        for segment in segments where segment.length > 0 {
-            if remaining <= segment.length {
-                return point(on: segment, at: remaining / segment.length)
-            }
-            remaining -= segment.length
-        }
-        return point(on: last, at: 1)
+        Track(points: points, size: size).tip(at: fraction)
     }
 
     /// The deepest point's depth label: just above and to the right of the point, in the water, or
@@ -154,7 +189,7 @@ enum DiveProfileGeometry {
         )
     }
 
-    private static func point(on segment: (start: CGPoint, end: CGPoint, length: CGFloat), at fraction: CGFloat) -> Tip {
+    fileprivate static func point(on segment: Track.Segment, at fraction: CGFloat) -> Tip {
         let t = min(max(fraction, 0), 1)
         let dx = segment.end.x - segment.start.x
         let dy = segment.end.y - segment.start.y
@@ -177,13 +212,14 @@ enum StopRecordRow: Hashable {
     case completedAt
 }
 
-/// The recommended-stop record as rows of one or two stats (COPY C6). The "권장 사항" and "완료 여부"
-/// rows are gone; what remained shows only when the stop was not completed, and a time shows only
-/// when it was recorded.
+/// The recommended-stop record as rows of one or two stats (COPY C6, DECISIONS D20): "상태" on its
+/// own row, then "스탑 구간 시간" (beside "남은 시간" only when the stop was not completed), "목표 수심 /
+/// 스탑 구간" on its own row, then "시작" | "완료 시각". The "권장 사항" and "완료 여부" rows are gone,
+/// and a time shows only when it was recorded.
 enum StopRecordLayout {
     static func rows(for record: SafetyStopRecord) -> [[StopRecordRow]] {
         var rows: [[StopRecordRow]] = record.status == .completed
-            ? [[.status, .timeInZone]]
+            ? [[.status], [.timeInZone]]
             : [[.status], [.remaining, .timeInZone]]
         rows.append([.targetZone])
 
@@ -245,6 +281,10 @@ struct DiveFinalePlan: Equatable {
 
 /// Post-dive and saved-log sizes in points (spec C3, C12, C15, D16).
 enum PostDiveLayout {
+    /// The bottom room a flow message keeps for the failure banner that rises over the screen's
+    /// bottom edge: its two lines, the 8 pt inset and a gap, so the last button scrolls clear of it.
+    static let failureBannerReserve: CGFloat = 64
+
     /// Capsule buttons, full width.
     static func buttonHeight(_ sizeClass: DiveType.SizeClass) -> CGFloat {
         sizeClass == .regular ? 47 : 44
@@ -496,13 +536,16 @@ struct DiveFailureNote: View {
 // MARK: - Flow screens
 
 /// The ending and saving screens (spec F #27, #28, PD-SPIN): a white spinner and one line, shown at
-/// once. Saving holds the main thread, so a delay timer could not fire.
+/// once. Saving holds the main thread, so a delay timer could not fire. Over the ending recording it
+/// draws no background of its own, so the dimmed instrument stays visible behind it (RC-END).
 struct DiveFlowProgress<Footer: View>: View {
     let title: String
+    let coversContent: Bool
     let footer: Footer
 
-    init(title: String, @ViewBuilder footer: () -> Footer) {
+    init(title: String, coversContent: Bool = true, @ViewBuilder footer: () -> Footer) {
         self.title = title
+        self.coversContent = coversContent
         self.footer = footer()
     }
 
@@ -518,13 +561,17 @@ struct DiveFlowProgress<Footer: View>: View {
         }
         .padding(.horizontal, PostDiveLayout.textGutter(.current))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.canvas.ignoresSafeArea())
+        .background {
+            if coversContent {
+                DiveWatchTheme.canvas.ignoresSafeArea()
+            }
+        }
     }
 }
 
 extension DiveFlowProgress where Footer == EmptyView {
-    init(title: String) {
-        self.init(title: title) { EmptyView() }
+    init(title: String, coversContent: Bool = true) {
+        self.init(title: title, coversContent: coversContent) { EmptyView() }
     }
 }
 
@@ -546,6 +593,8 @@ struct DiveFlowMessage<Glyph: View, Actions: View>: View {
     var detail: String?
     let glyph: Glyph
     let actions: Actions
+    /// Whether the flow draws a failure banner over the bottom edge, so the buttons keep clear of it.
+    private(set) var reservesFailureBanner = false
 
     init(
         title: String,
@@ -587,9 +636,17 @@ struct DiveFlowMessage<Glyph: View, Actions: View>: View {
             .padding(.top, 6)
             .padding(.horizontal, DiveLayout.platterInset(.current))
             .frame(maxWidth: .infinity)
+            .padding(.bottom, reservesFailureBanner ? PostDiveLayout.failureBannerReserve : 0)
         }
         .ignoresSafeArea(.container, edges: .horizontal)
         .background(DiveWatchTheme.canvas.ignoresSafeArea())
+    }
+
+    /// The same message with room kept at the bottom for the failure banner, when one is showing.
+    func reservingFailureBanner(_ reserves: Bool) -> DiveFlowMessage {
+        var message = self
+        message.reservesFailureBanner = reserves
+        return message
     }
 }
 
@@ -735,7 +792,7 @@ struct DiveProfileChart: View {
                 }
                 // Always in place while it may ride, so it follows the same animated progress as the line.
                 if ridesLogo {
-                    ProfileLogoRider(progress: progress, points: points, size: size)
+                    ProfileLogoRider(progress: progress, track: DiveProfileGeometry.Track(points: points, size: size))
                         .opacity(riderOpacity)
                 }
             }
@@ -746,11 +803,11 @@ struct DiveProfileChart: View {
 }
 
 /// The white Divenary logo on the profile's drawing tip, turned to follow the line (LOGO.md: the
-/// mark heads up and to the right, so it turns 20° further than the line).
+/// mark heads up and to the right, so it turns 20° further than the line). Its body runs on every
+/// animation frame, so the line comes in already mapped.
 private struct ProfileLogoRider: View, Animatable {
     var progress: CGFloat
-    let points: [CGPoint]
-    let size: CGSize
+    let track: DiveProfileGeometry.Track
 
     var animatableData: CGFloat {
         get { progress }
@@ -758,7 +815,7 @@ private struct ProfileLogoRider: View, Animatable {
     }
 
     var body: some View {
-        if let tip = DiveProfileGeometry.tip(of: points, in: size, fraction: Double(progress)) {
+        if let tip = track.tip(at: Double(progress)) {
             LogoMark()
                 .fill(DiveWatchTheme.ink, style: LogoMark.fillStyle)
                 .frame(width: PostDiveLayout.riderLogoWidth,

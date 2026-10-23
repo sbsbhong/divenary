@@ -131,6 +131,8 @@ struct RecordingInstrumentView: View {
     @State private var hasEntered = false
 
     static let horizontalPadding: CGFloat = 4
+    /// Where the readout column starts, right of the gauge, measured from the screen's leading edge.
+    static var readoutColumnLeading: CGFloat { horizontalPadding + RecordingColumn.leading }
 
     var body: some View {
         if let pages {
@@ -183,8 +185,8 @@ struct RecordingInstrumentView: View {
                     }
                 }
                 // The bottom slot, anchored to the instrument: the storage footer, or out of the water
-                // the Water Lock line (not on the End page), so the gauge never resizes when the diver
-                // surfaces.
+                // the Water Lock line (on the End page only with the Action Button, D20), so the gauge
+                // never resizes when the diver surfaces.
                 .overlay(alignment: .bottomLeading) {
                     Group {
                         if bottomSlot == .storageError {

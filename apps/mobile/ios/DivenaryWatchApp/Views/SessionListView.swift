@@ -119,9 +119,7 @@ private struct SessionRow: View {
     init(session: DiveSessionRecord) {
         self.session = session
         summary = session.summary
-        profilePoints = MiniDepthProfile.normalizedPoints(
-            depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 90)
-        )
+        profilePoints = DiveProfilePointCache.shared.points(for: session, maximumCount: 90)
     }
 
     var body: some View {

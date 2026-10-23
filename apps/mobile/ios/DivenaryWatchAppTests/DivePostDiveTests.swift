@@ -153,11 +153,13 @@ final class DivePostDiveTests: XCTestCase {
 
     // MARK: - Recommended-stop record rows (COPY C6)
 
-    func testCompletedStopRecordDropsRemainingAndPairsStatusWithTimeInZone() {
+    /// C6, D20: the status runs the full width, the time in the zone has its own row, the target and
+    /// zone run the full width, then the start and finish times side by side.
+    func testCompletedStopRecordDropsRemainingAndGivesStatusAndTimeInZoneTheirOwnRows() {
         let record = stopRecord(status: .completed, completed: true,
                                 startedAt: date(2026, 10, 22, 10, 39), completedAt: date(2026, 10, 22, 10, 42))
         XCTAssertEqual(StopRecordLayout.rows(for: record),
-                       [[.status, .timeInZone], [.targetZone], [.started, .completedAt]])
+                       [[.status], [.timeInZone], [.targetZone], [.started, .completedAt]])
     }
 
     func testUnfinishedStopRecordShowsWhatRemained() {

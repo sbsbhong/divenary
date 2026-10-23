@@ -36,9 +36,7 @@ struct SessionSummaryContent: View {
         self.footer = footer
         self.showsNextDiveHint = showsNextDiveHint
         summary = session.summary
-        profilePoints = MiniDepthProfile.normalizedPoints(
-            depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 160)
-        )
+        profilePoints = DiveProfilePointCache.shared.points(for: session, maximumCount: 160)
         profileAccessibility = DiveFormatters.profileAccessibilitySummary(samples: session.samples)
     }
 
@@ -141,7 +139,7 @@ struct SessionSummaryContent: View {
 
     private var diveTimeRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(diveTimeTitle)
+            Text(session.diveMode.savedTimeTitle)
                 .diveFont(.eyebrow)
                 .foregroundStyle(DiveWatchTheme.ink2)
             DiveValueText(
@@ -151,11 +149,6 @@ struct SessionSummaryContent: View {
             )
         }
         .accessibilityElement(children: .combine)
-    }
-
-    /// A scuba dive's time is "다이빙 시간"; a freediving session's whole length stays "총 기록 시간" (C15).
-    private var diveTimeTitle: String {
-        session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration")
     }
 
     /// Where the log was saved, shown once (C4). The send direction is the sync line below the fold.
@@ -306,7 +299,8 @@ struct SessionSummaryContent: View {
 
     /// The pinned bottom chip (DECISIONS D11): what the next Action Button press does, drawn as the
     /// recording hint chip without page dots, 8 pt above the screen's edge on a band that hides the
-    /// rows scrolling under it. It stands in for RecordingHint.swift's text-only chip of this name.
+    /// rows scrolling under it. Underwater the diver cannot close the summary, and the next press
+    /// starts a new dive.
     private struct NextDiveActionHint: View {
         var body: some View {
             RecordingHintChip(text: String(localized: "Action ▸ Start next dive"))
@@ -430,14 +424,19 @@ struct SafetyStopRecordStats: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             ForEach(StopRecordLayout.rows(for: safetyStop).enumerated().map { Line(id: $0.offset, rows: $0.element) }) { line in
-                DiveStatPair {
-                    stat(line.rows[0])
-                } trailing: {
-                    if line.rows.count > 1 {
+                if line.rows.count > 1 {
+                    DiveStatPair {
+                        stat(line.rows[0])
+                    } trailing: {
                         stat(line.rows[1])
                     }
+                    .diveScrollEdge()
+                } else {
+                    // A row with one value (the status, the stop time, the target) runs the full width.
+                    stat(line.rows[0])
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .diveScrollEdge()
                 }
-                .diveScrollEdge()
             }
         }
     }

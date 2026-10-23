@@ -43,24 +43,14 @@ enum DiveFormatters {
             [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)
         ).day ?? 0
 
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-
         if (-1...1).contains(days) {
-            let relative = RelativeDateTimeFormatter()
-            relative.locale = locale
-            relative.calendar = calendar
-            relative.dateTimeStyle = .named
-            relative.formattingContext = .beginningOfSentence
-            formatter.setLocalizedDateFormatFromTemplate("jmm")
-            return "\(relative.localizedString(from: DateComponents(day: days))) \(formatter.string(from: date))"
+            let relative = DiveDateFormatterCache.relativeDayFormatter(calendar: calendar, locale: locale)
+            let time = formatted(date, template: "jmm", calendar: calendar, locale: locale)
+            return "\(relative.localizedString(from: DateComponents(day: days))) \(time)"
         }
 
         let sameYear = calendar.isDate(date, equalTo: now, toGranularity: .year)
-        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMdjmm" : "yMMMdjmm")
-        return formatter.string(from: date)
+        return formatted(date, template: sameYear ? "MMMdjmm" : "yMMMdjmm", calendar: calendar, locale: locale)
     }
 
     /// A dive's length at a glance on the Home card: whole hours and minutes ("48분", "1시간 5분"), or
@@ -105,12 +95,7 @@ enum DiveFormatters {
     }
 
     private static func formatted(_ date: Date, template: String, calendar: Calendar, locale: Locale) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = locale
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.setLocalizedDateFormatFromTemplate(template)
-        return formatter.string(from: date)
+        DiveDateFormatterCache.dateFormatter(template: template, calendar: calendar, locale: locale).string(from: date)
     }
 
     static func profileAccessibilitySummary(samples: [DepthSample]) -> String {
@@ -174,6 +159,43 @@ enum DiveFormatters {
     static func ascentRate(_ metersPerMinute: Double?) -> String {
         guard let metersPerMinute else { return "--.- m/min" }
         return ascentRate(metersPerMinute)
+    }
+}
+
+/// Date formatters are costly to make, and the Home card, plan rows and saved list format a date on
+/// every update, so each one is made once per pattern, language, calendar and time zone and then
+/// reused. A change of language or time zone gets a new formatter. `NSCache` is safe to share.
+private enum DiveDateFormatterCache {
+    private static let dateFormatters = NSCache<NSString, DateFormatter>()
+    private static let relativeDayFormatters = NSCache<NSString, RelativeDateTimeFormatter>()
+
+    static func dateFormatter(template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
+        let key = cacheKey(template, calendar: calendar, locale: locale)
+        if let formatter = dateFormatters.object(forKey: key) { return formatter }
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        dateFormatters.setObject(formatter, forKey: key)
+        return formatter
+    }
+
+    /// "오늘", "어제", "내일" at the start of a line.
+    static func relativeDayFormatter(calendar: Calendar, locale: Locale) -> RelativeDateTimeFormatter {
+        let key = cacheKey("relativeDay", calendar: calendar, locale: locale)
+        if let formatter = relativeDayFormatters.object(forKey: key) { return formatter }
+        let formatter = RelativeDateTimeFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.dateTimeStyle = .named
+        formatter.formattingContext = .beginningOfSentence
+        relativeDayFormatters.setObject(formatter, forKey: key)
+        return formatter
+    }
+
+    private static func cacheKey(_ pattern: String, calendar: Calendar, locale: Locale) -> NSString {
+        "\(pattern)|\(locale.identifier)|\(calendar.identifier)|\(calendar.timeZone.identifier)" as NSString
     }
 }
 

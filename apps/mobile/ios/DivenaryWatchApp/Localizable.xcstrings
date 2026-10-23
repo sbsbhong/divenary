@@ -966,7 +966,6 @@
       }
     },
     "Debug depth control" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1847,7 +1846,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "동작 버튼에 Divenary를 지정했다면 눌러서 기록을 시작하세요."
+            "value" : "동작 버튼에 Divenary⁠를 지정했다면 눌러서 기록을 시작하세요."
           }
         }
       }
@@ -1863,7 +1862,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "동작 버튼에 Divenary를 지정했다면 처음 누를 때 기록을 시작하고, 그다음부터는 누를 때마다 화면을 넘깁니다. 기록 시작 후 3분이 지났고 워치가 물 밖에 있으면 마지막 화면에서 눌러 종료하고 저장합니다."
+            "value" : "동작 버튼에 Divenary⁠를 지정했다면 처음 누를 때 기록을 시작하고, 그다음부터는 누를 때마다 화면을 넘깁니다. 기록 시작 후 3분이 지났고 워치가 물 밖에 있으면 마지막 화면에서 눌러 종료하고 저장합니다."
           }
         }
       }
@@ -1879,7 +1878,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "설정 앱의 동작 버튼 항목에서 다이빙을 고른 뒤 Divenary를 선택하세요."
+            "value" : "설정 앱의 동작 버튼 항목에서 다이빙을 고른 뒤 Divenary⁠를 선택하세요."
           }
         }
       }
@@ -1895,7 +1894,7 @@
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "설정 앱의 자동 실행 항목에서 물에 잠겼을 때 실행할 앱으로 Divenary를 선택하세요. 그러면 물에 들어갈 때 Divenary가 열리고 기록을 시작합니다."
+            "value" : "설정 앱의 자동 실행 항목에서 물에 잠겼을 때 실행할 앱으로 Divenary⁠를 선택하세요. 그러면 물에 들어갈 때 Divenary⁠가 열리고 기록을 시작합니다."
           }
         }
       }
@@ -2051,13 +2050,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Log time: %@"
+            "value" : "Dive time: %@"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록 시간: %@"
+            "value" : "다이빙 시간: %@"
           }
         }
       }
@@ -4151,7 +4150,6 @@
       }
     },
     "Test Freedive" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4168,7 +4166,6 @@
       }
     },
     "Test Large Sync" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4185,7 +4182,6 @@
       }
     },
     "Test Scuba" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

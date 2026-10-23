@@ -465,6 +465,9 @@ enum DiveMotion {
     enum Kind: CaseIterable {
         /// A card, row, tile or button press (on land).
         case press
+        /// A press on a screen that can be underwater (Wet Ready): the same scale, settling without
+        /// overshooting.
+        case waterPress
         /// The diver pages with the Action Button or the Digital Crown.
         case diverPage
         /// An automatic change of page or state.
@@ -482,6 +485,9 @@ enum DiveMotion {
         /// A small element fades: a tick label stepping back from the depth index, a stop minute
         /// index filling.
         case quickFade
+        /// The diver ended the recording: the instrument dims to 30 % and the ending line fades in
+        /// over it (RC-END).
+        case ending
 
         // On land, before a dive.
 
@@ -506,6 +512,7 @@ enum DiveMotion {
         fileprivate var curve: Curve {
             switch self {
             case .press: return .snappy(duration: 0.25)
+            case .waterPress: return .smooth(duration: 0.25)
             case .diverPage: return .smooth(duration: 0.35)
             case .autoFade: return .easeInOut(duration: 0.45)
             case .chip: return .easeInOut(duration: 0.35)
@@ -514,6 +521,7 @@ enum DiveMotion {
             case .recordingStart: return .smooth(duration: 0.5)
             case .signal: return .easeOut(duration: 0.3)
             case .quickFade: return .easeInOut(duration: 0.2)
+            case .ending: return .easeOut(duration: 0.15)
             case .homeEnter: return .smooth(duration: 0.5)
             case .ready: return .easeInOut(duration: 0.25)
             case .arm: return .easeInOut(duration: 0.6)
@@ -527,10 +535,10 @@ enum DiveMotion {
 
         fileprivate var moves: Bool {
             switch self {
-            case .press, .diverPage, .rangeChange, .finale, .recordingStart, .homeEnter, .arm, .profileDraw,
+            case .press, .waterPress, .diverPage, .rangeChange, .finale, .recordingStart, .homeEnter, .arm, .profileDraw,
                  .modeSlide, .illustration:
                 return true
-            case .autoFade, .chip, .signal, .quickFade, .ready, .selection, .screenEnter:
+            case .autoFade, .chip, .signal, .quickFade, .ending, .ready, .selection, .screenEnter:
                 return false
             }
         }
@@ -697,14 +705,18 @@ struct DivePressStyle: ButtonStyle {
     /// A start card draws its own disabled look (dimmed glyph and title, grey play disc), so it turns
     /// this off.
     var dimsWhenDisabled = true
+    /// `.press` on land springs back with a slight overshoot; `.waterPress` settles without one, for
+    /// a screen that can be underwater (D13).
+    var motion: DiveMotion.Kind = .press
 
     func makeBody(configuration: Configuration) -> some View {
-        PressableLabel(configuration: configuration, dimsWhenDisabled: dimsWhenDisabled)
+        PressableLabel(configuration: configuration, dimsWhenDisabled: dimsWhenDisabled, motion: motion)
     }
 
     private struct PressableLabel: View {
         let configuration: Configuration
         let dimsWhenDisabled: Bool
+        let motion: DiveMotion.Kind
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @Environment(\.isLuminanceReduced) private var isLuminanceReduced
@@ -714,7 +726,7 @@ struct DivePressStyle: ButtonStyle {
                 .opacity((isEnabled || !dimsWhenDisabled ? 1 : 0.7) * (reduceMotion && configuration.isPressed ? 0.7 : 1))
                 .scaleEffect(!reduceMotion && configuration.isPressed ? 0.95 : 1)
                 .animation(
-                    DiveMotion.press(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
+                    DiveMotion.animation(motion, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
                     value: configuration.isPressed
                 )
         }
@@ -1244,14 +1256,18 @@ struct MiniDepthProfile: Shape {
 
     static let depthHeadroom = 1.1
 
-    /// Unreadable depths are skipped; a reading above the surface counts as the surface.
+    /// Unreadable depths are skipped where they are: the readings around them keep their place
+    /// across the dive, so a gap never squeezes the rest of the line. A reading above the surface
+    /// counts as the surface.
     static func normalizedPoints(depths: [Double]) -> [CGPoint] {
-        let readable = depths.filter(\.isFinite).map { max(0, $0) }
-        guard let deepest = readable.max() else { return [] }
+        let readable = depths.enumerated().compactMap { index, depth in
+            depth.isFinite ? (index: index, depth: max(0, depth)) : nil
+        }
+        guard let deepest = readable.map(\.depth).max() else { return [] }
         let axis = deepest > 0 ? deepest * depthHeadroom : 1
-        let lastIndex = Double(max(readable.count - 1, 1))
-        return readable.enumerated().map { index, depth in
-            CGPoint(x: Double(index) / lastIndex, y: depth / axis)
+        let lastIndex = Double(max(depths.count - 1, 1))
+        return readable.map { reading in
+            CGPoint(x: Double(reading.index) / lastIndex, y: reading.depth / axis)
         }
     }
 
@@ -1261,7 +1277,9 @@ struct MiniDepthProfile: Shape {
     }
 
     /// A long profile cut into at most `maximumCount` stretches, each kept as its deepest readable
-    /// depth, so a small drawing stays cheap and never loses a dive's bottom.
+    /// depth, so a small drawing stays cheap and never loses a dive's bottom. A stretch with no
+    /// readable depth stays in place as `nan`, so `normalizedPoints(depths:)` skips it without moving
+    /// the stretches after it.
     static func thinnedDepths(_ depths: [Double], maximumCount: Int) -> [Double] {
         guard maximumCount > 0 else { return [] }
         guard depths.count > maximumCount else { return depths }
@@ -1309,6 +1327,35 @@ final class DiveProfileDrawLog {
     /// True the first time it is asked for `id`; it then counts as drawn.
     func claimFirstDraw(_ id: UUID) -> Bool {
         drawnIDs.insert(id).inserted
+    }
+}
+
+/// A saved log's samples do not change, so its small profile is thinned and normalized once per
+/// drawing size and reused by the Home card, the saved list rows, the summary and the detail,
+/// rather than on every view update.
+@MainActor
+final class DiveProfilePointCache {
+    static let shared = DiveProfilePointCache()
+
+    private struct Key: Hashable {
+        let id: UUID
+        let sampleCount: Int
+        let maximumCount: Int
+    }
+
+    /// Room for a long saved list at every drawing size; past it the cache starts over.
+    private static let capacity = 512
+    private var entries: [Key: [CGPoint]] = [:]
+
+    func points(for session: DiveSessionRecord, maximumCount: Int) -> [CGPoint] {
+        let key = Key(id: session.id, sampleCount: session.samples.count, maximumCount: maximumCount)
+        if let cached = entries[key] { return cached }
+        let points = MiniDepthProfile.normalizedPoints(
+            depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: maximumCount)
+        )
+        if entries.count >= Self.capacity { entries.removeAll(keepingCapacity: true) }
+        entries[key] = points
+        return points
     }
 }
 

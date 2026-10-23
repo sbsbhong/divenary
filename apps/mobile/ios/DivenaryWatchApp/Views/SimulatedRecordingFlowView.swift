@@ -379,6 +379,7 @@ struct SimulatedRecordingFlowView: View {
             }
             .buttonStyle(DiveActionButtonStyle(kind: .secondary))
         }
+        .reservingFailureBanner(lifecycle.failureFeedback != nil)
     }
 
     /// Leaving the demo could not cancel its recording; the banner says what failed.

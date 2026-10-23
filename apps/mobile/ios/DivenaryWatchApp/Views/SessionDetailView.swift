@@ -80,9 +80,7 @@ struct SessionDetailView: View {
             }
 
             DiveDrawnProfile(
-                points: MiniDepthProfile.normalizedPoints(
-                    depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 160)
-                ),
+                points: DiveProfilePointCache.shared.points(for: session, maximumCount: 160),
                 accessibilityText: DiveFormatters.profileAccessibilitySummary(samples: session.samples)
             )
             .frame(height: PostDiveLayout.detailProfileHeight(sizeClass, sendFailed: session.syncStatus == .failed))
@@ -100,7 +98,7 @@ struct SessionDetailView: View {
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 // A scuba dive's time is "다이빙 시간"; a freediving session's length "총 기록 시간" (C15).
-                Text(session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration"))
+                Text(session.diveMode.savedTimeTitle)
                     .diveFont(.eyebrow)
                     .foregroundStyle(DiveWatchTheme.ink2)
                 DiveValueText(
