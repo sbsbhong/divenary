@@ -1,6 +1,7 @@
 import React from 'react';
 import type { FlatList as RNFlatList } from 'react-native';
 import { useTranslation } from 'react-i18next';
+import Animated from 'react-native-reanimated';
 import { useAppFeedback } from '../../components/feedback/app-feedback';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { ListStateCard } from '../../components/ui/list-state-card';
@@ -15,9 +16,12 @@ import { ListStatusBadge } from '../../components/ui/list-status-badge';
 import { PressScalePressable } from '../../components/ui/press-scale';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
+import { arrivalEntering, fadeEntering } from '../../components/ui/motion-entering';
 import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
+import { MOTION_TIMING } from '../../constants/motion';
+import { useFirstLoadReveal } from '../../hooks/use-first-load-reveal';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DiveSessionFilter } from '../../types/dive-session';
 import type { WatchSyncActionResult } from '../../states/use-dive-logbook';
@@ -59,6 +63,7 @@ type LogbookScreenProps = {
 const LOGBOOK_PAGE_SIZE = 20;
 const LOADING_ROW_COUNT = 3;
 const TAIL_ROW_COUNT = 2;
+const NO_ARRIVALS: ReadonlySet<string> = new Set();
 
 export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Element {
   const { t } = useTranslation();
@@ -82,6 +87,11 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   // Pages cut from memory appear at once and show nothing. Only cloud pages that are still
   // arriving are real waiting, and they get a delayed tail skeleton at the true end of the list.
   const isWaitingForCloudTail = Boolean(props.isCloudLoading) && pagedEntries.length > 0 && !hasMorePages;
+  // Rows of the first load fade in as one reveal. Rows that arrive later are judged in the hook below.
+  const revealRows = useFirstLoadReveal(Boolean(props.isLoading) && totalEntryCount === 0);
+  const arrivedIds = useRowArrivals(visibleEntries, shownCount);
+  // A first load reveals all of its rows together; a later arrival fades only its own row.
+  const rowEntering = (localId: string) => (revealRows ? fadeEntering : arrivedIds.has(localId) ? arrivalEntering : undefined);
   const showLoadingSkeleton = useContentLoading(Boolean(props.isLoading), 'logbook-list');
   const showTailSkeleton = useContentLoading(isWaitingForCloudTail, 'logbook-tail');
   const showNextPage = React.useCallback(() => {
@@ -225,11 +235,14 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
         data={pagedEntries}
         keyExtractor={entry => entry.localId}
         renderItem={({ item }) => (
-          <SessionListItem
-            entry={item}
-            showsDeviceOnlyBadge={Boolean(props.isAuthenticated && item.ownerUserId === undefined)}
-            onOpen={props.onOpenEntry}
-          />
+          // Entering is read once, when the row mounts. A row scrolled back into view later has none.
+          <Animated.View entering={rowEntering(item.localId)}>
+            <SessionListItem
+              entry={item}
+              showsDeviceOnlyBadge={Boolean(props.isAuthenticated && item.ownerUserId === undefined)}
+              onOpen={props.onOpenEntry}
+            />
+          </Animated.View>
         )}
         ItemSeparatorComponent={ListItemSeparator}
         initialNumToRender={LOGBOOK_PAGE_SIZE}
@@ -273,6 +286,47 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
       />
     </VStack>
   );
+}
+
+/**
+ * Ids of rows that arrived while the list already showed rows (a watch import, a cloud page). Only
+ * these fade in. The first rows, paged-in rows and rows scrolled back into view are not arrivals.
+ * An arrival below the shown page is not in the set, so paging it in shows it without animation.
+ * The set empties after the appear time, so a row scrolled into view later does not fade.
+ */
+function useRowArrivals(entries: DiveLogEntry[], shownCount: number): ReadonlySet<string> {
+  const [tracker, setTracker] = React.useState(() => ({
+    entries,
+    seen: new Set(entries.map(entry => entry.localId)),
+    arrived: NO_ARRIVALS,
+  }));
+  let current = tracker;
+
+  // Set during render, so the arrival is in place on the render that mounts its row.
+  if (entries !== tracker.entries) {
+    const hadRows = tracker.seen.size > 0;
+    const seen = new Set(tracker.seen);
+    const incoming = new Set<string>();
+    entries.forEach((entry, index) => {
+      if (hadRows && index < shownCount && !seen.has(entry.localId)) {
+        incoming.add(entry.localId);
+      }
+      seen.add(entry.localId);
+    });
+    current = { entries, seen, arrived: incoming };
+    setTracker(current);
+  }
+
+  const arrived = current.arrived;
+  React.useEffect(() => {
+    if (arrived.size === 0) {
+      return;
+    }
+    const timer = setTimeout(() => setTracker(state => ({ ...state, arrived: NO_ARRIVALS })), MOTION_TIMING.appear);
+    return () => clearTimeout(timer);
+  }, [arrived]);
+
+  return arrived;
 }
 
 function ListItemSeparator(): React.JSX.Element {

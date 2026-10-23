@@ -1,5 +1,8 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { MOTION_TIMING } from '../../constants/motion';
+import { useFirstLoadReveal } from '../../hooks/use-first-load-reveal';
 import { Box } from '../../components/ui/box';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { Section, Row } from '../../components/ui/grouped-list';
@@ -12,6 +15,8 @@ import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
 import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
+import { FadeInView } from '../../components/ui/fade-in-view';
+import { appearEntering, fadeEntering } from '../../components/ui/motion-entering';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { type HomeConditionsProvider } from '../../conditions/home-conditions';
@@ -25,6 +30,7 @@ import { formatDateTimeParts } from '../common/form/date-time-field';
 import { planTitle, selectNextPlan } from '../planning/plan-status';
 import { HomeConditionsCard } from './conditions-card';
 import { LatestLogCard, LatestLogEmptyCard, LatestLogErrorCard, LatestLogLoadingCard } from './latest-log-card';
+import { hasHomeIntroPlayed, markHomeIntroPlayed } from './home-intro';
 
 type HomeScreenProps = {
   sessions: MobileDiveSession[];
@@ -85,6 +91,21 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
   // whose time has passed must drop off on the next render (foreground, refresh, tab change).
   const nextPlan = selectNextPlan(props.plans ?? [], Date.now() / 1000);
   const isEmpty = !isFirstLoad && !hasFirstLoadError && !hasLogs;
+  const revealLatest = useFirstLoadReveal(isFirstLoad);
+
+  // The intro belongs to the first Home mount in this JS runtime. Its blocks are decided on the first
+  // render, and a block that appears later (such as the next dive row) only fades in.
+  const reduceMotion = useReducedMotion();
+  const [playsIntro] = React.useState(() => !hasHomeIntroPlayed());
+  const [isFirstRender, setIsFirstRender] = React.useState(true);
+  React.useEffect(() => {
+    markHomeIntroPlayed();
+    setIsFirstRender(false);
+  }, []);
+  const introEntering = (index: number) =>
+    playsIntro && isFirstRender
+      ? appearEntering(reduceMotion, reduceMotion ? 0 : index * MOTION_TIMING.stagger)
+      : undefined;
 
   // Pull-to-refresh and tab reselect refresh the logbook and the conditions together.
   const refreshAll = React.useCallback(async () => {
@@ -124,97 +145,112 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
       }
       contentInsetAdjustmentBehavior="automatic">
       <VStack space="lg">
-        <VStack space="xs" className="pt-2">
-          <ScreenHeader
-            title={t('home.title')}
-            trailing={
-              props.showLogin === true && props.onOpenLogin !== undefined ? (
-                <PressScalePressable
-                  kind="control"
-                  testID="home-login-action"
-                  accessibilityLabel={t('home.login')}
-                  accessibilityRole="button"
-                  className="min-h-11 min-w-[52px] items-center justify-center bg-transparent px-1"
-                  onPress={props.onOpenLogin}>
-                  <Text className="text-base font-semibold text-primary">{t('home.login')}</Text>
-                </PressScalePressable>
-              ) : undefined
-            }
-          />
-          <HomeLogCount
-            count={props.sessions.length}
-            isLoading={isFirstLoad}
-            showPlaceholder={showLatestSkeleton}
-            hidden={hasFirstLoadError}
-          />
-        </VStack>
+        <Animated.View entering={introEntering(0)}>
+          <VStack space="xs" className="pt-2">
+            <ScreenHeader
+              title={t('home.title')}
+              trailing={
+                props.showLogin === true && props.onOpenLogin !== undefined ? (
+                  <PressScalePressable
+                    kind="control"
+                    testID="home-login-action"
+                    accessibilityLabel={t('home.login')}
+                    accessibilityRole="button"
+                    className="min-h-11 min-w-[52px] items-center justify-center bg-transparent px-1"
+                    onPress={props.onOpenLogin}>
+                    <Text className="text-base font-semibold text-primary">{t('home.login')}</Text>
+                  </PressScalePressable>
+                ) : undefined
+              }
+            />
+            <HomeLogCount
+              count={props.sessions.length}
+              isLoading={isFirstLoad}
+              showPlaceholder={showLatestSkeleton}
+              hidden={hasFirstLoadError}
+            />
+          </VStack>
+        </Animated.View>
 
         {props.recovery ? <HomeRecoveryCard {...props.recovery} /> : null}
 
-        {isFirstLoad ? (
-          <LatestLogLoadingCard visible={showLatestSkeleton} />
-        ) : hasFirstLoadError ? (
-          <LatestLogErrorCard isRetrying={Boolean(props.isRefreshing)} onRetry={onRefresh} />
-        ) : recentSession ? (
-          <VStack space="sm">
-            <LatestLogCard
-              session={recentSession}
-              entry={latestEntry}
-              locale={locale}
-              onOpen={latestEntry && onOpenLog ? () => onOpenLog(latestEntry) : undefined}
-            />
-            {props.loadError ? (
-              <Text testID="home-latest-refresh-failed" size="xs" className="px-1 leading-4 text-muted-foreground">
-                {t('home.refreshFailed')}
-              </Text>
-            ) : null}
-          </VStack>
-        ) : (
-          <LatestLogEmptyCard onCreateLog={props.onCreateLog} />
-        )}
+        <Animated.View entering={introEntering(1)}>
+          {isFirstLoad ? (
+            <LatestLogLoadingCard visible={showLatestSkeleton} />
+          ) : (
+            // The card replaces the loading card once the first read lands; later reads never fade.
+            <FadeInView animate={revealLatest}>
+              {hasFirstLoadError ? (
+                <LatestLogErrorCard isRetrying={Boolean(props.isRefreshing)} onRetry={onRefresh} />
+              ) : recentSession ? (
+                <VStack space="sm">
+                  <LatestLogCard
+                    session={recentSession}
+                    entry={latestEntry}
+                    locale={locale}
+                    onOpen={latestEntry && onOpenLog ? () => onOpenLog(latestEntry) : undefined}
+                  />
+                  {props.loadError ? (
+                    <Text testID="home-latest-refresh-failed" size="xs" className="px-1 leading-4 text-muted-foreground">
+                      {t('home.refreshFailed')}
+                    </Text>
+                  ) : null}
+                </VStack>
+              ) : (
+                <LatestLogEmptyCard onCreateLog={props.onCreateLog} />
+              )}
+            </FadeInView>
+          )}
+        </Animated.View>
 
         {nextPlan ? (
-          <Section title={t('home.nextPlan')}>
-            <Row
-              testID="home-next-plan-row"
-              separated={false}
-              icon={CalendarDaysIcon}
-              label={planTitle(nextPlan, t)}
-              detail={describeNextPlan(nextPlan, locale)}
-              onPress={onOpenPlan ? () => onOpenPlan(nextPlan) : undefined}
-            />
-          </Section>
+          <Animated.View entering={introEntering(2) ?? fadeEntering}>
+            <Section title={t('home.nextPlan')}>
+              <Row
+                testID="home-next-plan-row"
+                separated={false}
+                icon={CalendarDaysIcon}
+                label={planTitle(nextPlan, t)}
+                detail={describeNextPlan(nextPlan, locale)}
+                onPress={onOpenPlan ? () => onOpenPlan(nextPlan) : undefined}
+              />
+            </Section>
+          </Animated.View>
         ) : null}
 
         {/* Quiet shortcuts; the tab bar already covers moving between tabs. The empty card above
             carries its own write action, so the line drops it there. */}
-        <HStack space="sm">
-          {isEmpty ? null : (
+        <Animated.View entering={introEntering(3)}>
+          <HStack space="sm">
+            {isEmpty ? null : (
+              <InstrumentButton
+                testID="home-quick-create-log"
+                label={t('home.createLog')}
+                icon={AddIcon}
+                className="flex-1"
+                onPress={props.onCreateLog}
+              />
+            )}
             <InstrumentButton
-              testID="home-quick-create-log"
-              label={t('home.createLog')}
-              icon={AddIcon}
+              testID="home-quick-create-plan"
+              label={t('home.createPlan')}
+              icon={CalendarDaysIcon}
               className="flex-1"
-              onPress={props.onCreateLog}
+              onPress={props.onCreatePlan}
             />
-          )}
-          <InstrumentButton
-            testID="home-quick-create-plan"
-            label={t('home.createPlan')}
-            icon={CalendarDaysIcon}
-            className="flex-1"
-            onPress={props.onCreatePlan}
-          />
-        </HStack>
+          </HStack>
+        </Animated.View>
 
-        <HomeConditionsCard
-          snapshot={conditionsController.snapshot}
-          isRefreshing={conditionsController.isRefreshing}
-          refreshFailed={conditionsController.refreshFailed}
-          locale={locale}
-          onRetry={conditionsController.retry}
-          onOpenSettings={conditionsController.openSettings}
-        />
+        <Animated.View entering={introEntering(4)}>
+          <HomeConditionsCard
+            snapshot={conditionsController.snapshot}
+            isRefreshing={conditionsController.isRefreshing}
+            refreshFailed={conditionsController.refreshFailed}
+            locale={locale}
+            onRetry={conditionsController.retry}
+            onOpenSettings={conditionsController.openSettings}
+          />
+        </Animated.View>
 
         <SafetyText>{t('home.safetyText')}</SafetyText>
       </VStack>

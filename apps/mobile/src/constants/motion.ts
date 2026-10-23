@@ -51,6 +51,8 @@ export const TAB_BOUNCE = {
   dip: 100,
   /** Spring back to 1; a 0.5 damping ratio gives the small rebound. */
   rebound: { duration: 250, dampingRatio: 0.5 },
+  /** A selection change counts as the tap's only if it lands this soon after the tap. */
+  tapWindow: 500,
 } as const;
 
 /** The connection check on the device page dims the status row once to show it ran. */

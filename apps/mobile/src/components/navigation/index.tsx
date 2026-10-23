@@ -21,7 +21,7 @@ import {
   type NativeStackScreenProps,
 } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
-import { AccessibilityInfo, AppState, Platform } from 'react-native';
+import { AccessibilityInfo, AppState, Platform, type LayoutChangeEvent } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -33,7 +33,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
-import { TAB_BOUNCE } from '../../constants/motion';
+import { MOTION_TIMING, TAB_BOUNCE } from '../../constants/motion';
 import type { DiveLogbookSection } from '../../types/dive-session';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DivePlan } from '../../types/dive-plan';
@@ -53,14 +53,18 @@ import { useAuth, type AuthState } from '../../states/auth';
 import { useDiveLogbook } from '../../states/use-dive-logbook';
 import { useDivePlans } from '../../states/use-dive-plans';
 import { WatchSyncProvider } from '../../states/watch-sync';
+import { useFirstLoadReveal } from '../../hooks/use-first-load-reveal';
+import { useLeavingValue } from '../../hooks/use-leaving-value';
 import { confirmDestructiveAction } from '../../utils/confirm-destructive-action';
 import { createBlankDiveLogEntry } from '../../utils/create-dive-log-entry';
 import { createBlankDivePlan } from '../../utils/create-dive-plan';
 import { divePlanToDiveLogEntryDraft } from '../../utils/dive-plan-to-log-entry';
 import { toCompletedDivePlan, toPlannedDivePlan, withDivePlanChecklist } from '../../utils/update-dive-plan';
 import { useAppFeedbackBottomInset } from '../feedback/app-feedback';
+import { FeedbackLayer } from '../feedback/feedback-layer';
 import { Box } from '../ui/box';
 import { DetailSkeleton } from '../ui/detail-skeleton';
+import { FadeInView } from '../ui/fade-in-view';
 import { HStack } from '../ui/hstack';
 import { BookIcon, CalendarDaysIcon, HomeIcon, Icon, SettingsIcon } from '../ui/icon';
 import { InstrumentButton } from '../ui/instrument';
@@ -215,6 +219,8 @@ export default function RootNavigation(): React.JSX.Element {
   const [navigationReady, setNavigationReady] = React.useState(false);
   const [visibleStackRoute, setVisibleStackRoute] = React.useState<keyof RootStackParamList>('tabs');
   const [autoImportToastHeight, setAutoImportToastHeight] = React.useState(0);
+  // A replaced or closed toast keeps fading for the dismiss time, without taking touches.
+  const leavingAutoImportToast = useLeavingValue(autoImportToast, MOTION_TIMING.dismiss);
   const chromeBottomOffset = visibleStackRoute === 'tabs' ? TAB_BAR_OVERLAY_OFFSET : 0;
   // App feedback stacks above the watch toast instead of covering its buttons.
   useAppFeedbackBottomInset(
@@ -230,6 +236,7 @@ export default function RootNavigation(): React.JSX.Element {
     settings: 0,
   });
   const insets = useSafeAreaInsets();
+  const autoImportToastArea = { bottom: insets.bottom, left: insets.left, right: insets.right, top: insets.top };
   const palette = useGluestackColors();
   const logbook = useDiveLogbook();
   const planning = useDivePlans();
@@ -768,54 +775,30 @@ export default function RootNavigation(): React.JSX.Element {
             </Stack.Screen>
           </Stack.Navigator>
         </NavigationContainer>
-        {autoImportToast ? (
-          <Box
-            testID="watch-auto-import-toast-safe-area"
-            pointerEvents="box-none"
+        {leavingAutoImportToast ? (
+          <FeedbackLayer
+            key={leavingAutoImportToast.entryLocalId}
+            leaving
             className="absolute z-10 overflow-hidden"
-            style={{
-              bottom: insets.bottom,
-              left: insets.left,
-              right: insets.right,
-              top: insets.top,
-            }}>
+            style={autoImportToastArea}>
+            <WatchAutoImportToastCard bottomOffset={AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset} inert />
+          </FeedbackLayer>
+        ) : null}
+        {autoImportToast ? (
+          <FeedbackLayer
+            key={autoImportToast.entryLocalId}
+            testID="watch-auto-import-toast-safe-area"
+            className="absolute z-10 overflow-hidden"
+            style={autoImportToastArea}>
             {/* Unlike app feedback this carries an action, so it stays until the diver closes it.
-                It uses the same inverted surface so it never blends into the list cards below.
                 Not one accessibility element: VoiceOver reaches each button on its own. */}
-            <PressScalePressable
-              kind="control"
-              testID="watch-auto-import-toast"
-              accessible={false}
-              onPress={openImportedLogToast}
+            <WatchAutoImportToastCard
+              bottomOffset={AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset}
+              onOpen={openImportedLogToast}
+              onDismiss={() => setAutoImportToast(undefined)}
               onLayout={event => setAutoImportToastHeight(event.nativeEvent.layout.height)}
-              className="absolute left-4 right-4 rounded-2xl bg-foreground px-4 py-3"
-              style={{ bottom: AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset }}>
-              <VStack space="sm">
-                <Text testID="watch-auto-import-message" className="text-sm font-semibold text-background">
-                  {t('watchSync.autoImportedTitle', {
-                    defaultValue: 'Watch log saved',
-                  })}
-                </Text>
-                <HStack space="sm" className="pt-1">
-                  <InstrumentButton
-                    testID="watch-auto-import-open-log"
-                    label={t('watchSync.openImportedLog', {
-                      defaultValue: 'View log',
-                    })}
-                    variant="primary"
-                    onPress={openImportedLogToast}
-                    className="min-h-11 flex-1 px-4 py-2"
-                  />
-                  <InstrumentButton
-                    testID="watch-auto-import-dismiss"
-                    label={t('watchSync.dismiss', { defaultValue: 'Close' })}
-                    onPress={() => setAutoImportToast(undefined)}
-                    className="min-h-11 flex-1 px-4 py-2"
-                  />
-                </HStack>
-              </VStack>
-            </PressScalePressable>
-          </Box>
+            />
+          </FeedbackLayer>
         ) : null}
       </VStack>
     </WatchSyncProvider>
@@ -907,6 +890,68 @@ function AppTabNavigator({ children, initialRouteName, onRouteReselect }: AppTab
   );
 }
 
+/**
+ * The watch import card. It uses the inverted app-feedback surface, so it never blends into the
+ * list cards below. A leaving copy is inert: no press and no test IDs.
+ */
+function WatchAutoImportToastCard(props: {
+  bottomOffset: number;
+  inert?: boolean;
+  onOpen?: () => void;
+  onDismiss?: () => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
+}): React.JSX.Element {
+  const { t } = useTranslation();
+  const { bottomOffset, inert = false, onOpen, onDismiss, onLayout } = props;
+  const body = (
+    <VStack space="sm">
+      <Text testID={inert ? undefined : 'watch-auto-import-message'} className="text-sm font-semibold text-background">
+        {t('watchSync.autoImportedTitle', {
+          defaultValue: 'Watch log saved',
+        })}
+      </Text>
+      <HStack space="sm" className="pt-1">
+        <InstrumentButton
+          testID={inert ? undefined : 'watch-auto-import-open-log'}
+          label={t('watchSync.openImportedLog', {
+            defaultValue: 'View log',
+          })}
+          variant="primary"
+          onPress={onOpen}
+          className="min-h-11 flex-1 px-4 py-2"
+        />
+        <InstrumentButton
+          testID={inert ? undefined : 'watch-auto-import-dismiss'}
+          label={t('watchSync.dismiss', { defaultValue: 'Close' })}
+          onPress={onDismiss}
+          className="min-h-11 flex-1 px-4 py-2"
+        />
+      </HStack>
+    </VStack>
+  );
+
+  if (inert) {
+    return (
+      <Box className="absolute left-4 right-4 rounded-2xl bg-foreground px-4 py-3" style={{ bottom: bottomOffset }}>
+        {body}
+      </Box>
+    );
+  }
+
+  return (
+    <PressScalePressable
+      kind="card"
+      testID="watch-auto-import-toast"
+      accessible={false}
+      onPress={onOpen}
+      onLayout={onLayout}
+      className="absolute left-4 right-4 rounded-2xl bg-foreground px-4 py-3"
+      style={{ bottom: bottomOffset }}>
+      {body}
+    </PressScalePressable>
+  );
+}
+
 function LogbookCreateRoute(
   props: NativeStackScreenProps<RootStackParamList, 'logbookCreate'> & {
     logbook: ReturnType<typeof useDiveLogbook>;
@@ -952,6 +997,8 @@ function LogbookDetailRoute(
   }));
   const { loadWatchProfile } = props.logbook;
   const accountData = useOptionalAccountData();
+  // The detail replaces the skeleton once the list has the log. A refetch or an edit never fades.
+  const revealDetail = useFirstLoadReveal(!entry && Boolean(props.logbook.isLoading));
 
   React.useEffect(() => {
     let mounted = true;
@@ -977,32 +1024,34 @@ function LogbookDetailRoute(
 
   return (
     <RoutedScrollScreen>
-      <LogEntryDetail
-        entry={entry}
-        profileSamples={profile.samples}
-        isProfileLoading={profile.isLoading}
-        onBack={() => props.navigation.goBack()}
-        onEdit={nextEntry =>
-          props.navigation.navigate('logbookEdit', {
-            localId: nextEntry.localId,
-          })
-        }
-        onDelete={async localId => {
-          setDeletingEntry(entry);
-          try {
-            await props.logbook.deleteEntry(localId);
-          } catch (error) {
-            setDeletingEntry(undefined);
-            throw error;
+      <FadeInView animate={revealDetail}>
+        <LogEntryDetail
+          entry={entry}
+          profileSamples={profile.samples}
+          isProfileLoading={profile.isLoading}
+          onBack={() => props.navigation.goBack()}
+          onEdit={nextEntry =>
+            props.navigation.navigate('logbookEdit', {
+              localId: nextEntry.localId,
+            })
           }
-          props.navigation.goBack();
-        }}
-        onResolveConflict={
-          accountData?.resolveConflict
-            ? choice => accountData.resolveConflict!('log', entry.localId, choice)
-            : undefined
-        }
-      />
+          onDelete={async localId => {
+            setDeletingEntry(entry);
+            try {
+              await props.logbook.deleteEntry(localId);
+            } catch (error) {
+              setDeletingEntry(undefined);
+              throw error;
+            }
+            props.navigation.goBack();
+          }}
+          onResolveConflict={
+            accountData?.resolveConflict
+              ? choice => accountData.resolveConflict!('log', entry.localId, choice)
+              : undefined
+          }
+        />
+      </FadeInView>
     </RoutedScrollScreen>
   );
 }
@@ -1099,6 +1148,8 @@ function PlanningDetailRoute(
   const hasExistingConvertedLog = Boolean(
     plan?.convertedLogLocalId && props.logbook.entries.some(entry => entry.localId === plan.convertedLogLocalId),
   );
+  // The plan detail replaces the skeleton once the list has the plan. A refetch or an edit never fades.
+  const revealPlan = useFirstLoadReveal(!plan && Boolean(props.planning.isLoading));
 
   if (!plan) {
     return <MissingRouteScreen navigation={props.navigation} kind="planning" list={props.planning} />;
@@ -1106,33 +1157,35 @@ function PlanningDetailRoute(
 
   return (
     <RoutedScrollScreen>
-      <PlanDetail
-        plan={plan}
-        onBack={() => props.navigation.goBack()}
-        onEdit={nextPlan =>
-          props.navigation.navigate('planningEdit', {
-            localId: nextPlan.localId,
-          })
-        }
-        // The detail checks the required fields before it calls this.
-        onPromote={nextPlan => props.planning.savePlan(toPlannedDivePlan(nextPlan))}
-        onComplete={nextPlan => props.planning.savePlan(toCompletedDivePlan(nextPlan))}
-        onDelete={async localId => {
-          await props.planning.deletePlan(localId);
-          props.navigation.goBack();
-        }}
-        onCreateLogFromPlan={props.onCreateLogFromPlan}
-        hasExistingConvertedLog={hasExistingConvertedLog}
-        onOpenConvertedLog={localId => props.navigation.navigate('logbookDetail', { localId })}
-        onSaveChecklist={checklistItems => props.planning.savePlan(withDivePlanChecklist(plan, checklistItems))}
-        watchSyncStatus={props.planning.plannedWatchSyncStatus}
-        watchSentPlanVersions={props.planning.plannedWatchSentVersions}
-        onResolveConflict={
-          accountData?.resolveConflict
-            ? choice => accountData.resolveConflict!('plan', plan.localId, choice)
-            : undefined
-        }
-      />
+      <FadeInView animate={revealPlan}>
+        <PlanDetail
+          plan={plan}
+          onBack={() => props.navigation.goBack()}
+          onEdit={nextPlan =>
+            props.navigation.navigate('planningEdit', {
+              localId: nextPlan.localId,
+            })
+          }
+          // The detail checks the required fields before it calls this.
+          onPromote={nextPlan => props.planning.savePlan(toPlannedDivePlan(nextPlan))}
+          onComplete={nextPlan => props.planning.savePlan(toCompletedDivePlan(nextPlan))}
+          onDelete={async localId => {
+            await props.planning.deletePlan(localId);
+            props.navigation.goBack();
+          }}
+          onCreateLogFromPlan={props.onCreateLogFromPlan}
+          hasExistingConvertedLog={hasExistingConvertedLog}
+          onOpenConvertedLog={localId => props.navigation.navigate('logbookDetail', { localId })}
+          onSaveChecklist={checklistItems => props.planning.savePlan(withDivePlanChecklist(plan, checklistItems))}
+          watchSyncStatus={props.planning.plannedWatchSyncStatus}
+          watchSentPlanVersions={props.planning.plannedWatchSentVersions}
+          onResolveConflict={
+            accountData?.resolveConflict
+              ? choice => accountData.resolveConflict!('plan', plan.localId, choice)
+              : undefined
+          }
+        />
+      </FadeInView>
     </RoutedScrollScreen>
   );
 }
@@ -1362,15 +1415,17 @@ function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolea
   const reduceMotion = useReducedMotion();
   const iconScale = useSharedValue(1);
   const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: iconScale.get() }] }));
-  // Only a tap that moves the selection bounces the icon. Re-taps and selection set elsewhere do not.
-  const tappedRef = React.useRef(false);
+  // Only a tap that moves the selection bounces the icon. Re-taps and selection set elsewhere do not;
+  // a tap whose dispatch changed nothing expires instead of bouncing a later programmatic selection.
+  const tappedAtRef = React.useRef<number | undefined>(undefined);
 
   React.useEffect(() => {
-    if (!props.selected || !tappedRef.current) {
+    const tappedAt = tappedAtRef.current;
+    if (!props.selected || tappedAt === undefined) {
       return;
     }
-    tappedRef.current = false;
-    if (reduceMotion) {
+    tappedAtRef.current = undefined;
+    if (reduceMotion || Date.now() - tappedAt > TAB_BOUNCE.tapWindow) {
       return;
     }
     iconScale.set(
@@ -1383,7 +1438,7 @@ function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolea
 
   const handlePress = () => {
     if (!props.selected) {
-      tappedRef.current = true;
+      tappedAtRef.current = Date.now();
     }
     props.onPress();
   };

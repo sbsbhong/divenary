@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { FadeInView } from './fade-in-view';
 import { InstrumentButton } from './instrument';
 import { Text } from './text';
 import { VStack } from './vstack';
@@ -30,32 +31,35 @@ export function SyncConflictBanner(props: {
     [onResolve],
   );
 
+  // A late conditional block, so it fades in wherever it is shown.
   return (
-    <VStack space="sm" className="rounded-2xl bg-muted px-4 py-4" accessibilityRole="summary">
-      <Text testID="sync-conflict-title" className="text-base font-semibold text-card-foreground">
-        {t('common.syncConflict.title')}
-      </Text>
-      <Text size="sm" className="leading-5 text-muted-foreground">
-        {t('common.syncConflict.message')}
-      </Text>
-      {hasFailed ? (
-        <Text testID="sync-conflict-error" size="sm" className="leading-5 text-destructive">
-          {t('common.syncConflict.failed')}
+    <FadeInView>
+      <VStack space="sm" className="rounded-2xl bg-muted px-4 py-4" accessibilityRole="summary">
+        <Text testID="sync-conflict-title" className="text-base font-semibold text-card-foreground">
+          {t('common.syncConflict.title')}
         </Text>
-      ) : null}
-      <InstrumentButton
-        testID="sync-conflict-keep-local"
-        label={t('common.syncConflict.keepLocal')}
-        variant="primary"
-        disabled={isResolving}
-        onPress={() => resolve('keepLocal')}
-      />
-      <InstrumentButton
-        testID="sync-conflict-use-remote"
-        label={t('common.syncConflict.useRemote')}
-        disabled={isResolving}
-        onPress={() => resolve('useRemote')}
-      />
-    </VStack>
+        <Text size="sm" className="leading-5 text-muted-foreground">
+          {t('common.syncConflict.message')}
+        </Text>
+        {hasFailed ? (
+          <Text testID="sync-conflict-error" size="sm" className="leading-5 text-destructive">
+            {t('common.syncConflict.failed')}
+          </Text>
+        ) : null}
+        <InstrumentButton
+          testID="sync-conflict-keep-local"
+          label={t('common.syncConflict.keepLocal')}
+          variant="primary"
+          disabled={isResolving}
+          onPress={() => resolve('keepLocal')}
+        />
+        <InstrumentButton
+          testID="sync-conflict-use-remote"
+          label={t('common.syncConflict.useRemote')}
+          disabled={isResolving}
+          onPress={() => resolve('useRemote')}
+        />
+      </VStack>
+    </FadeInView>
   );
 }

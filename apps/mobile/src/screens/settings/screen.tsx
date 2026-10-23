@@ -12,6 +12,7 @@ import { ScrollView } from '../../components/ui/scroll-view';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { useContentLoading } from '../../components/ui/skeleton-block';
+import { FadeInView } from '../../components/ui/fade-in-view';
 import type { SupportedLanguage } from '../../i18n';
 import type { SocialProvider } from '../../auth/native-social-auth';
 import { WATCH_STATUS_BLINK } from '../../constants/motion';
@@ -459,22 +460,24 @@ export default function SettingsScreen({
           onPress={refreshLinkedWatchInfoFromButton}
         />
         {rejectedWatchPayloads.length > 0 ? (
-          <VStack space="sm" className="rounded-2xl bg-card px-4 py-4">
-            <Text testID="settings-rejected-watch-title" className="text-base font-semibold text-card-foreground">
-              {t('settings.devices.rejected.title', { count: rejectedWatchPayloads.length })}
-            </Text>
-            <Text testID="settings-rejected-watch-guidance" size="sm" className="leading-5 text-muted-foreground">
-              {t('settings.devices.rejected.guidance')}
-            </Text>
-            <Pressable
-              testID="settings-rejected-watch-clear"
-              accessibilityRole="button"
-              accessibilityLabel={t('settings.devices.rejected.clear')}
-              className="min-h-11 justify-center self-start"
-              onPress={() => rejectedWatchPayloadStore.clear()}>
-              <Text className="text-base text-primary">{t('settings.devices.rejected.clear')}</Text>
-            </Pressable>
-          </VStack>
+          <FadeInView>
+            <VStack space="sm" className="rounded-2xl bg-card px-4 py-4">
+              <Text testID="settings-rejected-watch-title" className="text-base font-semibold text-card-foreground">
+                {t('settings.devices.rejected.title', { count: rejectedWatchPayloads.length })}
+              </Text>
+              <Text testID="settings-rejected-watch-guidance" size="sm" className="leading-5 text-muted-foreground">
+                {t('settings.devices.rejected.guidance')}
+              </Text>
+              <Pressable
+                testID="settings-rejected-watch-clear"
+                accessibilityRole="button"
+                accessibilityLabel={t('settings.devices.rejected.clear')}
+                className="min-h-11 justify-center self-start"
+                onPress={() => rejectedWatchPayloadStore.clear()}>
+                <Text className="text-base text-primary">{t('settings.devices.rejected.clear')}</Text>
+              </Pressable>
+            </VStack>
+          </FadeInView>
         ) : null}
       </SettingsScaffold>
     );

@@ -13,10 +13,12 @@ import { PressScalePressable } from '../../components/ui/press-scale';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
+import { FadeInView } from '../../components/ui/fade-in-view';
 import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import type { DivePlan, DivePlanStatus } from '../../types/dive-plan';
+import { useFirstLoadReveal } from '../../hooks/use-first-load-reveal';
 import { formatDateTimeParts } from '../common/form/date-time-field';
 import { isPlanDatePassed, planTitle, selectNextPlan } from './plan-status';
 
@@ -60,6 +62,7 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
   const isFirstLoad = Boolean(props.isLoading) && !hasPlans;
   const hasFirstLoadError = !isFirstLoad && !hasPlans && Boolean(props.loadError);
   const showSkeleton = useContentLoading(isFirstLoad);
+  const revealPlans = useFirstLoadReveal(isFirstLoad);
   // The pull spinner belongs to the pull gesture. A tab reselect or a retry refreshes with the
   // content kept on screen and no second spinner.
   const [isPullRefreshing, setIsPullRefreshing] = React.useState(false);
@@ -143,38 +146,43 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
 
           {isFirstLoad ? (
             <PlanListSkeleton visible={showSkeleton} />
-          ) : hasFirstLoadError ? (
-            <ListStateCard
-              testID="planning-error-state"
-              title={t('planning.loadFailed')}
-              message={t('planning.loadFailedMessage')}
-              actionLabel={t('common.retry')}
-              actionPending={Boolean(props.isRefreshing)}
-              onAction={() => {
-                onRefresh();
-              }}
-            />
-          ) : !hasPlans ? (
-            <ListStateCard testID="planning-empty-state" title={t('planning.noPlans')} message={t('planning.noPlansMessage')} />
-          ) : !visiblePlans.length ? (
-            <ListStateCard
-              testID="planning-filter-empty-state"
-              title={t('planning.noFilteredPlans')}
-              actionLabel={t('planning.showAllPlans')}
-              onAction={() => setFilter('all')}
-            />
           ) : (
-            <VStack space="sm">
-              {visiblePlans.map(plan => (
-                <PlanRow
-                  key={plan.localId}
-                  plan={plan}
-                  locale={locale}
-                  showsDeviceOnlyBadge={Boolean(props.isAuthenticated && plan.ownerUserId === undefined)}
-                  onPress={() => props.onOpenPlan(plan)}
+            // The list replaces the skeleton once; a later refetch or filter change never fades.
+            <FadeInView animate={revealPlans}>
+              {hasFirstLoadError ? (
+                <ListStateCard
+                  testID="planning-error-state"
+                  title={t('planning.loadFailed')}
+                  message={t('planning.loadFailedMessage')}
+                  actionLabel={t('common.retry')}
+                  actionPending={Boolean(props.isRefreshing)}
+                  onAction={() => {
+                    onRefresh();
+                  }}
                 />
-              ))}
-            </VStack>
+              ) : !hasPlans ? (
+                <ListStateCard testID="planning-empty-state" title={t('planning.noPlans')} message={t('planning.noPlansMessage')} />
+              ) : !visiblePlans.length ? (
+                <ListStateCard
+                  testID="planning-filter-empty-state"
+                  title={t('planning.noFilteredPlans')}
+                  actionLabel={t('planning.showAllPlans')}
+                  onAction={() => setFilter('all')}
+                />
+              ) : (
+                <VStack space="sm">
+                  {visiblePlans.map(plan => (
+                    <PlanRow
+                      key={plan.localId}
+                      plan={plan}
+                      locale={locale}
+                      showsDeviceOnlyBadge={Boolean(props.isAuthenticated && plan.ownerUserId === undefined)}
+                      onPress={() => props.onOpenPlan(plan)}
+                    />
+                  ))}
+                </VStack>
+              )}
+            </FadeInView>
           )}
         </VStack>
 
