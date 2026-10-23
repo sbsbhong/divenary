@@ -384,8 +384,8 @@ final class DiveDesignSystemTests: XCTestCase {
     func testAlwaysOnSettlesForThreeHundredMillisecondsWithoutMoving() {
         XCTAssertEqual(DiveMotion.alwaysOnSettle, .easeInOut(duration: 0.3))
         // The settle is the only motion Always-On keeps, and Reduce Motion keeps it too: it only fades.
-        XCTAssertEqual(DiveMotion.alwaysOnSettleCurve(reduceMotion: false), .easeInOut(duration: 0.3))
-        XCTAssertEqual(DiveMotion.alwaysOnSettleCurve(reduceMotion: true), .easeInOut(duration: 0.3))
+        XCTAssertEqual(DiveMotion.alwaysOnSettle(reduceMotion: false), Animation.easeInOut(duration: 0.3))
+        XCTAssertEqual(DiveMotion.alwaysOnSettle(reduceMotion: true), Animation.easeInOut(duration: 0.3))
     }
 
     func testOnlyTheDiversOwnPageChangeSlides() {
@@ -489,6 +489,20 @@ final class DiveDesignSystemTests: XCTestCase {
         let lastDive = ValueRow(label: "직전 다이빙", formattedValue: "--:-- · --.- m")
         XCTAssertNil(lastDive.value)
         XCTAssertEqual(lastDive.placeholder, "--:-- · --.-")
+    }
+
+    /// VoiceOver reads each row once as "label, value" (D20): the value with its unit, and never the
+    /// grey dashes of an unknown value.
+    func testValueRowReadsItsValueAndAnUnknownValueAsNotAvailable() {
+        XCTAssertEqual(ValueRow(label: "수심", formattedValue: "5.2 m").accessibilityValue, "5.2 m")
+        XCTAssertEqual(ValueRow(label: "다이빙 시간", formattedValue: "21:40").accessibilityValue, "21:40")
+        XCTAssertEqual(ValueRow(label: "상승", formattedValue: "0.4 m/min").accessibilityValue, "0.4 m/min")
+        for unknown in ["--.- m", "--:--", "--:-- · --.- m"] {
+            XCTAssertEqual(ValueRow(label: "수심", formattedValue: unknown).accessibilityValue,
+                           String(localized: "Not available"), unknown)
+        }
+        XCTAssertEqual(ValueRow(label: "최대", value: nil, unit: "m").accessibilityValue,
+                       String(localized: "Not available"))
     }
 
     func testValueRowSlotsNeverCollideWhenLabelsRepeat() {
@@ -610,21 +624,64 @@ final class DiveDesignSystemTests: XCTestCase {
             .contains(CGPoint(x: 25, y: 30)))
     }
 
-    func testDiveModeGlyphsDrawTheMonofinAndTheTank() {
+    /// The spec C21 SVG paths, sampled just inside and just outside their edges on the 24-unit grid
+    /// (a 24 pt rect draws the grid 1:1). Core Graphics answers with the non-zero rule the fill uses.
+    func testDiveModeGlyphsDrawTheExactMonofinAndTank() {
         let rect = CGRect(x: 0, y: 0, width: 24, height: 24)
+
         let monofin = DiveModeGlyph(mode: .freedive).path(in: rect)
-        XCTAssertTrue(monofin.contains(CGPoint(x: 12, y: 8)))     // the stem
-        XCTAssertTrue(monofin.contains(CGPoint(x: 6, y: 19.5)))   // the blade
-        XCTAssertFalse(monofin.contains(CGPoint(x: 4, y: 6)))
+        assertFills(monofin, [
+            (12, 3), (12, 8),                 // the stem, under its rounded top at y 2.5
+            (9.8, 8), (14.2, 8),              // just inside the stem's sides at x 9.6 and 14.4
+            (8, 16.5),                        // inside the diagonal from (8.4, 14.8) to (4.6, 18.6)
+            (5, 19.6), (19, 19.6),            // the blade's rounded tips
+            (12, 20.3),                       // just above the blade's base at y 20.5
+        ], name: "monofin")
+        assertLeavesEmpty(monofin, [
+            (12, 2.3), (12, 20.7),            // above the top, below the base
+            (9.3, 8), (14.7, 8),              // just outside the stem
+            (6, 16.8),                        // just outside the diagonal
+            (4, 19.3), (20, 19.3),            // past the blade's rounded tips
+            (4, 6), (20, 6),
+        ], name: "monofin")
+        let monofinBounds = monofin.boundingRect
+        XCTAssertEqual(monofinBounds.minY, 2.5, accuracy: 0.01)
+        XCTAssertEqual(monofinBounds.maxY, 20.5, accuracy: 0.01)
+        XCTAssertEqual(monofinBounds.midX, 12, accuracy: 0.01)
+
         let tank = DiveModeGlyph(mode: .scuba).path(in: rect)
-        XCTAssertTrue(tank.contains(CGPoint(x: 12, y: 14)))       // the cylinder
-        XCTAssertTrue(tank.contains(CGPoint(x: 12, y: 4)))        // the valve
-        XCTAssertTrue(tank.contains(CGPoint(x: 18.8, y: 8.5)))    // the hose
-        XCTAssertFalse(tank.contains(CGPoint(x: 4, y: 4)))
+        assertFills(tank, [
+            (12, 14), (12, 21.8), (7.7, 11),  // the cylinder, x 7.5–16.5, y 6.5–22
+            (9, 8),                           // inside its circular rx 4.5 top (centre (12, 11))
+            (12, 4), (12, 2.7), (12, 6.8),    // the valve, x 10.3–13.7, y 2.5–7.1, and where it meets the cylinder
+            (13.3, 4.2), (13, 4.6),           // the hose's round end over the valve: filled, not notched
+            (15, 4.2),                        // h2.8
+            (18.13, 4.87),                    // the middle of the quarter circle about (16.5, 6.5)
+            (18.8, 8.5), (18.8, 10.6),        // V10 and its round end, 0.85 past y 10
+        ], name: "tank")
+        assertLeavesEmpty(tank, [
+            (12, 2.3), (12, 22.2), (7.3, 11),
+            (8.2, 8.2),                       // outside the circular top
+            (10.5, 2.7),                      // outside the valve's rx 1 corner
+            (18.8, 4.2),                      // the corner a sharp turn would fill: the arc stays 0.95 inside it
+            (17.5, 6), (16.5, 8.8),           // inside the bend, and where the long way round would pass
+            (18.8, 11),                       // past the hose's end
+            (4, 4), (20, 20),
+        ], name: "tank")
+        let tankBounds = tank.boundingRect
+        XCTAssertEqual(tankBounds.minX, 7.5, accuracy: 0.01)
+        XCTAssertEqual(tankBounds.maxX, 18.8 + 0.85, accuracy: 0.01)
+        XCTAssertEqual(tankBounds.minY, 2.5, accuracy: 0.01)
+        XCTAssertEqual(tankBounds.maxY, 22, accuracy: 0.01)
+
         // The 24-unit grid is fitted and centred in a wider frame; the monofin is symmetric on it.
         let wide = DiveModeGlyph(mode: .freedive).path(in: CGRect(x: 0, y: 0, width: 48, height: 24)).boundingRect
-        XCTAssertEqual(wide.midX, 24, accuracy: 0.2)
-        XCTAssertEqual(wide.height, 18, accuracy: 0.5)
+        XCTAssertEqual(wide.midX, 24, accuracy: 0.01)
+        XCTAssertEqual(wide.height, 18, accuracy: 0.01)
+        // At 44 pt the grid scales by 44 / 24 about the centre.
+        let large = DiveModeGlyph(mode: .scuba).path(in: CGRect(x: 0, y: 0, width: 44, height: 44))
+        XCTAssertTrue(large.cgPath.contains(CGPoint(x: 18.8 * 44 / 24, y: 8.5 * 44 / 24), using: .winding))
+        XCTAssertFalse(large.cgPath.contains(CGPoint(x: 18.8 * 44 / 24, y: 4.2 * 44 / 24), using: .winding))
     }
 
     func testDivenarySymbolNamesDrawTheCustomGlyphs() {
@@ -760,6 +817,22 @@ final class DiveDesignSystemTests: XCTestCase {
     }
 
     // MARK: - Helpers
+
+    private func assertFills(_ path: Path, _ points: [(CGFloat, CGFloat)], name: String,
+                             file: StaticString = #filePath, line: UInt = #line) {
+        for (x, y) in points {
+            XCTAssertTrue(path.cgPath.contains(CGPoint(x: x, y: y), using: .winding),
+                          "\(name) should fill (\(x), \(y))", file: file, line: line)
+        }
+    }
+
+    private func assertLeavesEmpty(_ path: Path, _ points: [(CGFloat, CGFloat)], name: String,
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        for (x, y) in points {
+            XCTAssertFalse(path.cgPath.contains(CGPoint(x: x, y: y), using: .winding),
+                           "\(name) should leave (\(x), \(y)) empty", file: file, line: line)
+        }
+    }
 
     private var seoulCalendar: Calendar {
         var calendar = Calendar(identifier: .gregorian)

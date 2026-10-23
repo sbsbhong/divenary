@@ -36,6 +36,7 @@ struct RecordingHint: Equatable {
         case endAvailableIn(seconds: Int)
         /// The End page: the next press ends and saves.
         case pressToEnd
+        /// The End page on a watch that probably has no Action Button: the chip shows its dots only.
         case waterLockToEnd
         /// A press on the End page that could not end the recording. Shown briefly.
         case endRejected
@@ -100,7 +101,15 @@ struct RecordingHint: Equatable {
         kind == .endRejected || kind == .switchRejected
     }
 
-    var text: String {
+    /// The Water Lock line in the instrument's bottom slot. The End page leaves it out: its large
+    /// instruction already says how the recording ends (DECISIONS D20).
+    func showsWaterLockLine(on page: RecordingPage) -> Bool {
+        showsWaterLockNote && page != .end
+    }
+
+    /// The chip's text, or `nil` for dots only: on the End page of a watch without the Action Button
+    /// the large instruction already says to turn off Water Lock, so the chip does not repeat it (D20).
+    var text: String? {
         let position = pageIndex + 1
         switch kind {
         case .nextPage(.details, .actionButton):
@@ -120,7 +129,7 @@ struct RecordingHint: Equatable {
         case .pressToEnd:
             return String(localized: "Press to end & save")
         case .waterLockToEnd:
-            return String(localized: "Water Lock off ends log")
+            return nil
         case .endRejected:
             return String(localized: "End not available")
         case let .pressToSwitch(mode):
@@ -295,8 +304,9 @@ struct CrownFocusKeeper: ViewModifier {
 }
 
 /// The hint chip under a real recording: vertical page dots and what the next press does, the End
-/// page included. It has no tap target: the touchscreen is locked while recording, and ending never
-/// happens by touch. The Water Lock note sits in the instrument's bottom slot instead.
+/// page included (dots only there on a watch without the Action Button). It has no tap target: the
+/// touchscreen is locked while recording, and ending never happens by touch. The Water Lock note
+/// sits in the instrument's bottom slot instead.
 struct RecordingHintBar: View {
     let hint: RecordingHint
 

@@ -151,7 +151,7 @@ struct RecordingInstrumentView: View {
                 showsStorageError: recorder.recordingPersistenceError != nil
             )
             let key = RecordingContentKey(page: page, kind: instrumentKind(for: page))
-            let bottomSlot = bottomSlot(hint: hint)
+            let bottomSlot = bottomSlot(page: page, hint: hint)
 
             VStack(spacing: 3) {
                 // The status band is always reserved, so the instrument under it never moves.
@@ -176,13 +176,15 @@ struct RecordingInstrumentView: View {
                 .environment(\.recordingBottomSlotOccupied, bottomSlot != .empty)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // One gauge for every page: it takes the page's range and stop zone, and never pages.
+                // Every entry carries its page's key; while pages swap, the showing page's gauge wins.
                 .overlayPreferenceValue(RecordingGaugeKey.self, alignment: .topLeading) { entries in
-                    if let rail = (entries.last { $0.key == key } ?? entries.last)?.rail {
+                    if let rail = entries.last(where: { $0.key == key })?.rail {
                         rail
                     }
                 }
                 // The bottom slot, anchored to the instrument: the storage footer, or out of the water
-                // the Water Lock line, so the gauge never resizes when the diver surfaces.
+                // the Water Lock line (not on the End page), so the gauge never resizes when the diver
+                // surfaces.
                 .overlay(alignment: .bottomLeading) {
                     Group {
                         if bottomSlot == .storageError {
@@ -287,11 +289,11 @@ struct RecordingInstrumentView: View {
         return context
     }
 
-    private func bottomSlot(hint: RecordingHint?) -> RecordingBottomSlot {
+    private func bottomSlot(page: RecordingPage, hint: RecordingHint?) -> RecordingBottomSlot {
         if recorder.recordingPersistenceError != nil {
             return .storageError
         }
-        return hint?.showsWaterLockNote == true ? .waterLock : .empty
+        return hint?.showsWaterLockLine(on: page) == true ? .waterLock : .empty
     }
 
     private func readoutStatus(for page: RecordingPage) -> LiveReadoutStatus {

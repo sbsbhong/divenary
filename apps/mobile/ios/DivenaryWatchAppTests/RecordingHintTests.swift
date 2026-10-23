@@ -246,9 +246,42 @@ final class RecordingHintTests: XCTestCase {
         let fallback = hint(page: .end, pages: [.live, .details, .end], availability: .available,
                             water: .notSubmerged, hasActionButton: false)
         XCTAssertEqual(fallback.kind, .waterLockToEnd)
-        XCTAssertEqual(fallback.text, String(localized: "Water Lock off ends log"))
         XCTAssertNotEqual(RecordingEndGuidance(hasActionButton: true).symbol,
                           RecordingEndGuidance(hasActionButton: false).symbol)
+    }
+
+    /// DECISIONS D20: the End page says how the recording ends in large type, so the instrument's
+    /// bottom slot drops the Water Lock line there, and without the Action Button the chip keeps its
+    /// dots only. With the Action Button the chip still names the press.
+    func testEndPageSaysTheWaterLockLineOnlyOnce() {
+        let cycle: [RecordingPage] = [.live, .details, .end]
+        let withoutButton = hint(page: .end, pages: cycle, availability: .available, water: .notSubmerged,
+                                 hasActionButton: false)
+        XCTAssertEqual(withoutButton.kind, .waterLockToEnd)
+        XCTAssertNil(withoutButton.text)
+        XCTAssertEqual(withoutButton.pageIndex, 2)
+        XCTAssertEqual(withoutButton.pageCount, 3)
+        XCTAssertTrue(withoutButton.showsWaterLockNote)
+        XCTAssertFalse(withoutButton.showsWaterLockLine(on: .end))
+        XCTAssertEqual(RecordingEndGuidance(hasActionButton: false).text,
+                       String(localized: "Water Lock off\nEnd & save"))
+
+        let withButton = hint(page: .end, pages: cycle, availability: .available, water: .notSubmerged)
+        XCTAssertEqual(withButton.kind, .pressToEnd)
+        XCTAssertEqual(withButton.text, String(localized: "Press to end & save"))
+        XCTAssertFalse(withButton.showsWaterLockLine(on: .end))
+
+        // A refused press on the End page still shows its note, and the line stays off.
+        let refused = hint(page: .end, pages: cycle, availability: .available, water: .notSubmerged,
+                           hasActionButton: false, showsRejection: true)
+        XCTAssertEqual(refused.text, String(localized: "End not available"))
+        XCTAssertFalse(refused.showsWaterLockLine(on: .end))
+
+        // Every other page keeps the line out of the water, and no page shows it underwater.
+        let details = hint(page: .details, pages: cycle, availability: .available, water: .notSubmerged)
+        XCTAssertTrue(details.showsWaterLockLine(on: .details))
+        let underwater = hint(page: .live, availability: .notAtSurface, water: .submerged)
+        XCTAssertFalse(underwater.showsWaterLockLine(on: .live))
     }
 
     func testChartSummaryDescribesDepthRangeAndUnknownWithoutMeasurementCounts() {

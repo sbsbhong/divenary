@@ -270,6 +270,10 @@ struct DepthGaugeRail: View {
     private enum Lane {
         static let labelWidth: CGFloat = 19
         static let pointerCenter: CGFloat = 23.5
+        /// The pointer is 10 pt tall with a heavy stroke (spec C8: 20 px, 6 px stroke). The heaviest
+        /// `chevron.right` at 10.5 pt draws a mark 10 pt tall and 6 pt wide with a 2.4 pt stroke,
+        /// the nearest the symbol comes.
+        static let pointerFontSize: CGFloat = 10.5
         static let railX: CGFloat = 28
         static let railWidth: CGFloat = 14
         /// The rail sits 1 pt inside the gauge frame at both ends.
@@ -451,7 +455,7 @@ struct DepthGaugeRail: View {
 
         return ZStack {
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .bold))
+                .font(.system(size: Lane.pointerFontSize, weight: .black))
                 .foregroundStyle(handColor)
                 .position(x: Lane.pointerCenter, y: y)
 

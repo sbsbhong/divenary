@@ -622,14 +622,11 @@ enum DiveMotion {
         animation(.finale, reduceMotion: reduceMotion, alwaysOn: alwaysOn)
     }
 
-    /// The Always-On settle is a fade, so Reduce Motion keeps it. Use it at the parent, keyed on
+    /// The Always-On settle is a fade, so Reduce Motion keeps it unchanged: `reduceMotion` is taken
+    /// only so the call reads like every other motion. Use it at the parent, keyed on
     /// `isLuminanceReduced`.
-    static func alwaysOnSettleCurve(reduceMotion: Bool) -> Curve {
-        alwaysOnSettle
-    }
-
-    static func alwaysOnSettle(reduceMotion: Bool) -> Animation {
-        alwaysOnSettleCurve(reduceMotion: reduceMotion).animation
+    static func alwaysOnSettle(reduceMotion _: Bool) -> Animation {
+        alwaysOnSettle.animation
     }
 
     /// When item `index` (0 first) starts rising on Home's first appearance.
@@ -826,6 +823,8 @@ struct RecordingHintChip: View {
         .frame(maxWidth: DiveSpacing.hintChipMaxWidth(type.sizeClass))
         .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: isEmphasized)
         .accessibilityElement(children: .combine)
+        // Dots alone say nothing to VoiceOver; the page's own text already reads.
+        .accessibilityHidden(text == nil)
     }
 }
 
@@ -947,11 +946,19 @@ extension ValueRow {
         }
         return (String(formatted[..<space]), String(unit))
     }
+
+    /// The value as VoiceOver reads it after the label. Grey dashes are never read out: an unknown
+    /// value says it is not available.
+    var accessibilityValue: String {
+        guard let value else { return String(localized: "Not available") }
+        guard let unit, !unit.isEmpty else { return value }
+        return "\(value) \(unit)"
+    }
 }
 
 /// Up to two secondary rows. Inline and quiet rows share one grid, so their values start on the same
 /// edge; a stacked row spans the grid. Always-On keeps the rows it is told to keep at 80% and makes
-/// the rest transparent without moving anything.
+/// the rest transparent without moving anything. VoiceOver reads each row once, "label, value".
 struct ValueRows: View {
     /// One row in its place. The id is the row's position, so two rows never share one.
     struct Slot: Identifiable {
@@ -976,15 +983,20 @@ struct ValueRows: View {
                 let row = slot.row
                 switch row.style {
                 case .inline, .quiet, .small:
+                    // A grid row cannot become one element without leaving the grid, so the value
+                    // cell carries the whole row and the label cell stays silent.
                     GridRow {
                         label(row)
+                            .accessibilityHidden(true)
                         value(row)
+                            .modifier(ValueRowAccessibility(row: row))
                     }
                 case .stacked:
                     VStack(alignment: .leading, spacing: 0) {
                         label(row)
                         value(row)
                     }
+                    .modifier(ValueRowAccessibility(row: row))
                 }
             }
         }
@@ -1030,6 +1042,18 @@ struct ValueRows: View {
         .lineLimit(1)
         .minimumScaleFactor(0.8)
         .opacity(opacity(row))
+    }
+}
+
+/// One VoiceOver element for a value row: the label, then the value or "Not available".
+private struct ValueRowAccessibility: ViewModifier {
+    let row: ValueRow
+
+    func body(content: Content) -> some View {
+        content
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text(row.label))
+            .accessibilityValue(Text(row.accessibilityValue))
     }
 }
 
@@ -1140,9 +1164,9 @@ struct DepthColumnGlyph: Shape {
     }
 }
 
-/// The dive-type glyphs (spec C21, DECISIONS D19): the monofin for freediving and the tank for scuba.
-/// Drawn on a 24-unit grid, fitted to the rect without stretching and centred. Fill it with the
-/// foreground colour.
+/// The dive-type glyphs (spec C21, DECISIONS D19, D20): the monofin for freediving and the tank for
+/// scuba, the exact SVG paths of the approved canvas on its 24-unit grid, written out in absolute
+/// points. Fitted to the rect without stretching and centred. Fill it with the foreground colour.
 struct DiveModeGlyph: Shape {
     let mode: DiveMode
 
@@ -1155,34 +1179,54 @@ struct DiveModeGlyph: Shape {
         return glyph.applying(placement)
     }
 
-    private static var monofin: Path {
+    /// `M12 2.5c-1.5 0-2.4 1.2-2.4 2.8v6.6c0 1.1-.4 2.1-1.2 2.9L4.6 18.6c-.7.7-.2 1.9.8 1.9h13.2
+    /// c1 0 1.5-1.2.8-1.9l-3.8-3.8c-.8-.8-1.2-1.8-1.2-2.9V5.3c0-1.6-.9-2.8-2.4-2.8z`
+    private static let monofin: Path = {
         var path = Path()
-        path.move(to: CGPoint(x: 12, y: 2.5))
-        path.addCurve(to: CGPoint(x: 9.6, y: 5.3), control1: CGPoint(x: 10.5, y: 2.5), control2: CGPoint(x: 9.6, y: 3.7))
-        path.addLine(to: CGPoint(x: 9.6, y: 11.9))
-        path.addCurve(to: CGPoint(x: 8.4, y: 14.8), control1: CGPoint(x: 9.6, y: 13), control2: CGPoint(x: 9.2, y: 14))
-        path.addLine(to: CGPoint(x: 4.6, y: 18.6))
-        path.addCurve(to: CGPoint(x: 5.4, y: 20.5), control1: CGPoint(x: 3.9, y: 19.3), control2: CGPoint(x: 4.4, y: 20.5))
-        path.addLine(to: CGPoint(x: 18.6, y: 20.5))
-        path.addCurve(to: CGPoint(x: 19.4, y: 18.6), control1: CGPoint(x: 19.6, y: 20.5), control2: CGPoint(x: 20.1, y: 19.3))
-        path.addLine(to: CGPoint(x: 15.6, y: 14.8))
-        path.addCurve(to: CGPoint(x: 14.4, y: 11.9), control1: CGPoint(x: 14.8, y: 14), control2: CGPoint(x: 14.4, y: 13))
-        path.addLine(to: CGPoint(x: 14.4, y: 5.3))
-        path.addCurve(to: CGPoint(x: 12, y: 2.5), control1: CGPoint(x: 14.4, y: 3.7), control2: CGPoint(x: 13.5, y: 2.5))
-        path.closeSubpath()
+        path.move(to: CGPoint(x: 12, y: 2.5))                                       // M12 2.5
+        path.addCurve(to: CGPoint(x: 9.6, y: 5.3),                                  // c-1.5 0-2.4 1.2-2.4 2.8
+                      control1: CGPoint(x: 10.5, y: 2.5), control2: CGPoint(x: 9.6, y: 3.7))
+        path.addLine(to: CGPoint(x: 9.6, y: 11.9))                                  // v6.6
+        path.addCurve(to: CGPoint(x: 8.4, y: 14.8),                                 // c0 1.1-.4 2.1-1.2 2.9
+                      control1: CGPoint(x: 9.6, y: 13), control2: CGPoint(x: 9.2, y: 14))
+        path.addLine(to: CGPoint(x: 4.6, y: 18.6))                                  // L4.6 18.6
+        path.addCurve(to: CGPoint(x: 5.4, y: 20.5),                                 // c-.7.7-.2 1.9.8 1.9
+                      control1: CGPoint(x: 3.9, y: 19.3), control2: CGPoint(x: 4.4, y: 20.5))
+        path.addLine(to: CGPoint(x: 18.6, y: 20.5))                                 // h13.2
+        path.addCurve(to: CGPoint(x: 19.4, y: 18.6),                                // c1 0 1.5-1.2.8-1.9
+                      control1: CGPoint(x: 19.6, y: 20.5), control2: CGPoint(x: 20.1, y: 19.3))
+        path.addLine(to: CGPoint(x: 15.6, y: 14.8))                                 // l-3.8-3.8
+        path.addCurve(to: CGPoint(x: 14.4, y: 11.9),                                // c-.8-.8-1.2-1.8-1.2-2.9
+                      control1: CGPoint(x: 14.8, y: 14), control2: CGPoint(x: 14.4, y: 13))
+        path.addLine(to: CGPoint(x: 14.4, y: 5.3))                                  // V5.3
+        path.addCurve(to: CGPoint(x: 12, y: 2.5),                                   // c0-1.6-.9-2.8-2.4-2.8
+                      control1: CGPoint(x: 14.4, y: 3.7), control2: CGPoint(x: 13.5, y: 2.5))
+        path.closeSubpath()                                                         // z
         return path
-    }
+    }()
 
-    private static var tank: Path {
-        var path = Path(roundedRect: CGRect(x: 7.5, y: 6.5, width: 9, height: 15.5), cornerRadius: 4.5)
-        path.addPath(Path(roundedRect: CGRect(x: 10.3, y: 2.5, width: 3.4, height: 4.6), cornerRadius: 1))
+    /// `<rect x="7.5" y="6.5" width="9" height="15.5" rx="4.5"/>`,
+    /// `<rect x="10.3" y="2.5" width="3.4" height="4.6" rx="1"/>` and the hose
+    /// `<path d="M13.7 4.2h2.8a2.3 2.3 0 0 1 2.3 2.3V10" stroke-width="1.7"/>` with round ends.
+    private static let tank: Path = {
+        // SVG `rx` corners are circular arcs, not SwiftUI's default continuous corners.
+        let cylinder = Path(roundedRect: CGRect(x: 7.5, y: 6.5, width: 9, height: 15.5), cornerRadius: 4.5, style: .circular)
+        let valve = Path(roundedRect: CGRect(x: 10.3, y: 2.5, width: 3.4, height: 4.6), cornerRadius: 1, style: .circular)
+
         var hose = Path()
-        hose.move(to: CGPoint(x: 13.7, y: 4.2))
-        hose.addArc(tangent1End: CGPoint(x: 18.8, y: 4.2), tangent2End: CGPoint(x: 18.8, y: 10), radius: 2.3)
-        hose.addLine(to: CGPoint(x: 18.8, y: 10))
-        path.addPath(hose.strokedPath(StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round)))
-        return path
-    }
+        hose.move(to: CGPoint(x: 13.7, y: 4.2))                                     // M13.7 4.2
+        hose.addLine(to: CGPoint(x: 16.5, y: 4.2))                                  // h2.8
+        // a2.3 2.3 0 0 1 2.3 2.3: the quarter circle about (16.5, 6.5) from its top to its right.
+        // Angles grow clockwise on screen, so SwiftUI's `clockwise: false` draws this short way round.
+        hose.addArc(center: CGPoint(x: 16.5, y: 6.5), radius: 2.3,
+                    startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+        hose.addLine(to: CGPoint(x: 18.8, y: 10))                                   // V10
+        let hoseOutline = hose.strokedPath(StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round))
+
+        // The SVG fills each element on its own. As one path the hose's round end over the valve
+        // winds the other way and would cut a notch there, so the parts are joined as a union.
+        return cylinder.union(valve).union(hoseOutline)
+    }()
 }
 
 /// A dive profile drawn small, with the surface at the top (spec C15). `points` are normalized:
