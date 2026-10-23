@@ -16,6 +16,8 @@ Sources: 워치 수정 커밋 2df2bd1·90d3874와 현재 코드 대조, 2026-10-
 Raw: [2026-10-22 워치 기록 정확도와 화면 흐름 수정](../../raw/architecture/2026-10-22-watch-accuracy-and-flow-fixes.md)
 Sources: 워치 리디자인 'Plumb · 측심' 구현 커밋 b75ba8e·d4baae0·89e6b5c·0240824·b760320과 현재 코드, 2026-10-23
 Raw: [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md)
+Sources: 워치 Plumb polish 리뷰 반영(D20·C6·C12·C15)과 커밋 c57f311, 2026-10-23
+Raw: [2026-10-23 워치 Plumb polish 리뷰](../../raw/design/2026-10-23-watch-plumb-polish-review.md)
 Updated: 2026-10-23
 
 ## 요약
@@ -120,7 +122,7 @@ Action Button의 모든 누르기는 단계를 아는 intent 하나로 처리한
 - 프리다이빙 단계(`수면 대기`, `다이빙 중`, `요약`)는 별도 줄이 아니라 게이지 위 상태 chip 줄의 첫 chip이다. `다이빙 중`만 primary 색이고, 수면 휴식은 큰 값의 caption이 말하므로 chip이 없다. 종료 화면과 스쿠버에는 단계 chip이 없다.
 - 기록 화면은 시스템 하단 안전 영역까지 쓰고 하단 8pt 여백만 둔다. 보조 값은 한 줄에 하나씩 쌓고, 이름과 값이 한 줄에 안 들어갈 때만 이름 아래에 값을 둔다.
 - 게이지 범위는 다이빙을 따라간다. Live·세부·프리다이빙·종료 화면은 30 m에서 시작해 최대 수심이 넘을 때 10 m씩 넓어지고 다이빙 중에는 줄지 않는다. 권장 스탑 화면은 스탑 구간이 크게 보이도록 보통 0–10 m다. 센서 허용 최대 수심은 상한이라 그 너머를 그리지 않는다(`RecordingGaugeScale`).
-- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 페이지 점은 칩 안에 세로로 쌓인다. 수중 잠금 줄은 `notSubmerged`일 때만 값 열 아래 칸에 보이고, 동작 버튼 힌트가 없는 기기의 종료 화면에서는 큰 안내와 겹치므로 숨긴다(`RecordingHint.showsWaterLockLine(on:)`). 동작 버튼 힌트가 없는 기기의 종료 화면 칩은 점만 보인다. chip, 바꾸기 화면, 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
+- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 페이지 점은 칩 안에 세로로 쌓인다. 수중 잠금 줄은 `notSubmerged`일 때만 값 열 아래 칸에 보인다. 종료 화면에서는 동작 버튼 힌트가 있는 기기에서만 보이고, 힌트가 없는 기기에서는 큰 안내와 겹치므로 숨긴다(`RecordingHint.showsWaterLockLine(on:)`, D20). 동작 버튼 힌트가 없는 기기의 종료 화면 칩은 점만 보인다. chip, 바꾸기 화면, 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
 - Always-On(`isLuminanceReduced`)이면 `RecordingPageModel` 자체를 Live로 돌리고 그 상태를 유지하며, 동작 버튼·크라운의 화면 이동 요청을 무시한다. 화면은 항상 `pages.page`를 그리므로 보이는 화면과 입력 대상이 일치한다. `setAlwaysOn(false)` 뒤에 화면 이동을 다시 허용한다. 권장 스탑 라벨과 일시정지 문구, 상태 chip, Demo/Test 표식은 남긴다.
 - `ActionButtonHint`는 모델 식별자(`hw.machine`, 시뮬레이터는 `SIMULATOR_MODEL_IDENTIFIER`)가 `Watch6,18`, `Watch7,5`, `Watch7,12` 중 하나면 Ultra 계열로 본다. 이 판단은 힌트일 뿐이다. Divenary가 Action Button에 지정됐는지는 알 수 없으므로 문구는 조건형이고, Ultra 힌트가 없으면 안내 chip은 회전 방향까지 명시한 크라운 안내를 쓴다(`크라운 앞으로 ▸ 상세`, `크라운 뒤로 ▸ 실시간`). 식별자 목록은 실기기 확인 대상이다.
 - `DepthAutoLaunchAuthorization`은 `WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus` 결과를 `DepthAutoLaunchStatus`(`active`, `inactive`, `unknown`)로 읽고 오류는 `unknown`으로 둔다. Wet Ready 시작 안내는 이 상태와 Ultra 힌트로 고르며, `unknown`이거나 `inactive`인데 Ultra 힌트가 없으면 입수 전에 직접 시작하라는 안내를 쓴다.
@@ -143,7 +145,7 @@ real recording에는 touch end control이 없다. 종료 화면에도 탭 대상
 2. Action Button end는 종료 화면에서 누를 때만 요청된다. 종료 화면은 물 밖·180초 조건에서만 순환에 들어가므로 종료는 항상 두 번 이상의 의도된 누르기다. `requestActionButtonEnd()`는 latest state가 `notSubmerged`이고 elapsed time이 `>=180s (3 minutes)`일 때만 runtime invalidation을 요청한다. 수중, unknown state, `180s` 미만 rejection은 diver interaction이 아니라 `RealDiveSessionCoordinatorTests.testActionButtonEndRejectsSubmergedUnknownAndTooShortRecordings`와 `testActionButtonEndRejectsUnknownWaterStateEvenNearTheSurface`로 확인한다. 2026-10-21 전 코드는 unknown state에서 마지막 수심이 1m 이하면 허용했지만, 이 계약에 맞춰 지웠다. 2026-10-22 개편은 `minimumHardwareEndElapsedSeconds = 180`과 이 guard를 바꾸지 않았다.
 3. watchOS는 계속 out-of-water 상태가 `>600s (10 minutes)`이면 runtime을 invalidate한다.
 
-종료 조건을 만족한 누르기는 runtime invalidation 전에 `isEnding`을 설정해 즉시 종료 중 화면을 보인다. 같은 종료 요청은 재실행하지 않으며, 종료 대기 중 동작 버튼 누르기는 `.rejected(.busy)`와 잠시 기다리라는 안내로 처리한다.
+종료 조건을 만족한 누르기는 runtime invalidation 전에 `isEnding`을 설정해 즉시 종료 중 화면을 보인다. 종료 중 화면은 기록 계기를 30 %로 남기고 그 위에 spinner와 `기록을 종료하고 있습니다.`를 페이드로 올린다. 계기는 움직이지 않는다(RC-END, D20). 같은 종료 요청은 재실행하지 않으며, 종료 대기 중 동작 버튼 누르기는 `.rejected(.busy)`와 잠시 기다리라는 안내로 처리한다.
 
 단일 `notSubmerged` event는 종료하지 않고, Divenary에는 app-side `600-second (10-minute)` timer가 없다. 이 부재는 `RealDiveSessionCoordinator.swift`의 timer-symbol static search와 `RealDiveSessionCoordinatorTests.testWaterStateChangesDoNotStopOrReplaceRecording`으로 감사한다. `600s (10 minutes)` 전에 resubmerge하면 기존 recorder와 local session ID가 계속 사용된다.
 
@@ -179,8 +181,8 @@ demo/debug의 system back은 recording, summary, unresolved cleanup 동안 lifec
 - `Views/DiveFormatters.swift`: `DiveWatchTheme`에 팔레트 토큰(플래터·chip·표식 면, ink/ink2/ink3, action, caution 계열, danger, water와 수심 고정 `waterStops`)이 있다. 이전 토큰 이름은 새 값의 별칭으로 남아 호출부가 그대로다.
 - `Views/DiveDesignSystem.swift`(새 파일): 기록 화면 글자 크기 `DiveType`(regular/compact/tight), 기록 화면 밖 글자 `DiveUIType`(Dynamic Type), `DiveRadius`·`DiveSpacing`·`DiveLayout`, 모션 규칙 `DiveMotion`(동작 줄이기·Always-On 처리), 누름 스타일 `DivePressStyle`, 표시 전용 부품(`StatusChip`, `MarkerChip`, `RecordingHintChip`, `MetricHero`, `ValueRows`, `GlyphDisc`, `LogoMark`, `DepthColumnGlyph`, `DiveModeGlyph`, `MiniDepthProfile`, `DepthSparkline`과 기록별로 한 번만 그리게 하는 `DiveProfileDrawLog`, `DiveSymbol`)이 있다. 기록 화면 부품에는 탭 대상과 햅틱이 없다.
 - `Views/DepthGaugeRail.swift`: `RecordingGaugeScale` 옆에 순수 계산 `RecordingGaugeGeometry`(y 위치, 수심 고정 그라데이션 stop, 라벨 물러남, 최소 18pt 스탑 구간, tide marks, 표시선 숨김 거리)와 `RecommendedStopProgress`(권장 스탑 분 표시)가 있고, `DepthGaugeRail` view가 이를 그린다.
-- `Views/RecordingView.swift`: `RecordingInstrumentView`가 실제·데모 기록 화면의 고정 골격을 그리고 페이지별 계기는 값 열만 채운다. `Views/RecordingHint.swift`는 칩 문구와 수중 잠금 줄 표시 여부를 정한다.
-- `Views/DivePostDive.swift`(새 파일): 다이빙 뒤 화면과 저장 기록이 함께 쓰는 부분이다. 숫자와 단위 나누기(`DiveValueParts`, `DiveValueText`), 통계 쌍(`DiveStatPair`), 전송 상태 줄(`DiveSyncStatusLine`), 별점(`DiveStarRating`), 실패 안내·배너(`DiveFailureMessage`, `DiveFailureNote`), 흐름 화면(`DiveFlowProgress`, `DiveFlowMessage`, `DiveSaveFailureView`), 권장 스탑 기록 행(`StopRecordRow`, `StopRecordLayout`), 저장 뒤 마무리 계획(`DiveFinalePlan`)과 로고가 선을 따라가는 그래프(`DiveProfileChart`), 크기(`PostDiveLayout`)가 있다. 예전 요약 카드와 sparkline view는 지웠다.
+- `Views/RecordingView.swift`: `RecordingInstrumentView`가 실제·데모 기록 화면의 고정 골격을 그리고 페이지별 계기는 값 열만 채운다. 종료 중에는 이 골격을 투명도 30 %로 남긴다. `Views/RecordingHint.swift`는 칩 문구와 수중 잠금 줄 표시 여부를 정한다.
+- `Views/DivePostDive.swift`(새 파일): 다이빙 뒤 화면과 저장 기록이 함께 쓰는 부분이다. 숫자와 단위 나누기(`DiveValueParts`, `DiveValueText`), 통계 쌍(`DiveStatPair`), 전송 상태 줄(`DiveSyncStatusLine`), 별점(`DiveStarRating`), 실패 안내·배너(`DiveFailureMessage`, `DiveFailureNote`), 흐름 화면(`DiveFlowProgress`, `DiveFlowMessage`와 배너 자리를 남기는 `reservingFailureBanner(_:)`, `DiveSaveFailureView`), 권장 스탑 기록 행(`StopRecordRow`, `StopRecordLayout`; 한 칸짜리 행은 전체 폭, D20), 저장 뒤 마무리 계획(`DiveFinalePlan`)과 로고가 선을 따라가는 그래프(`DiveProfileChart`), 크기(`PostDiveLayout`)가 있다. 예전 요약 카드와 sparkline view는 지웠다.
 - 새 Swift 파일은 `project.pbxproj`의 워치 target Sources phase에만 등록하고 iPhone target에는 넣지 않는다. 순수 계산은 `DiveDesignSystemTests`, `DivePostDiveTests` XCTest가 검사한다. jest source pin(`apps/mobile/__tests__/watch-connectivity-native-source.test.ts`)과 `apps/mobile/scripts/check-watch-ui-language.mjs`는 로직·안전·흐름 고정값과 문구 규칙을 그대로 잡고, 디자인이 의도적으로 바꾼 시각 고정값(파란 큰 숫자, 가로 페이지 점, 칩 아래 수중 잠금 안내, Wet Ready 홈 버튼 등)만 같은 의도를 확인하는 새 단언으로 바꿨다.
 - 상태 띠의 고정 위치(Ultra급 36pt, 42mm급 31pt, 위쪽 안전 영역 무시)와 크기 단계 경계(폭 195pt)는 40/41/44/46mm 시뮬레이터와 실기기에서 아직 확인하지 않았다.
 

@@ -1,7 +1,7 @@
 # Mobile/Watch UI 언어
 
-Sources: 2026-10-22 워치 가독성 개선 요청; pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21; 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22; 워치 리디자인 'Plumb · 측심' 설계 묶음·결정(D1–D20, C1–C15)과 구현 커밋 b75ba8e·d4baae0·89e6b5c·0240824·b760320, 2026-10-23
-Raw: [워치 가독성 개선 요구사항](../../raw/design/2026-10-22-watch-readability.md); [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md); [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md); [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md)
+Sources: 2026-10-22 워치 가독성 개선 요청; pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21; 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22; 워치 리디자인 'Plumb · 측심' 설계 묶음·결정(D1–D20, C1–C15)과 구현 커밋 b75ba8e·d4baae0·89e6b5c·0240824·b760320, polish 리뷰 반영 커밋 c57f311, 2026-10-23
+Raw: [워치 가독성 개선 요구사항](../../raw/design/2026-10-22-watch-readability.md); [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md); [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md); [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md); [2026-10-23 워치 Plumb polish 리뷰](../../raw/design/2026-10-23-watch-plumb-polish-review.md)
 Updated: 2026-10-23
 
 ## 요약
@@ -59,7 +59,7 @@ watchOS 앱의 기준은 다음과 같다.
 - 화면 문구는 다이버가 자연스럽게 읽는 말로 쓴다. 동기화 대상, outbox, claim, principal, import, provider, sample, runtime, session, guest 같은 개발자·시스템 용어는 화면과 접근성 문구에 내보내지 않는다. 오류 코드나 원본 오류 문자열도 화면에 그리지 않는다.
 - 개념 하나에는 용어 하나만 쓴다. 기준 용어는 다이빙 기록(기록)/Dive log, 다이빙/Dive, 다이빙 시간/Dive time, 다이빙 포인트/Dive site, 다이빙 종류/Dive type, 수심 그래프/Depth chart, 워치 기록 가져오기/Get watch logs, 다시 보내기/Send again, iPhone에 저장됨/Saved on iPhone, 로그인 전 기록/Records made before sign-in, 계정으로 옮기기/Move to account, 기록 백업/Backup, 이 기기에만 저장, 수중 상태/Water conditions, 호흡 기체/Breathing gas, 훈련 목표/Training goal, 로그인/Sign in, 권장 스탑/Recommended stop, 스탑 구간/Stop zone이다. 워치에서는 저장한 기록/Saved logs, 워치에 저장됨/Saved on Watch, 계획 최대 수심/Planned max depth, 스탑 구간 시간/Time in stop zone을 더 쓴다(아래 워치 문구 결정).
 - 스쿠버 압력은 탱크 압력/Tank pressure, 시작 압력/Start pressure, 종료 압력/End pressure다. 시작 값에 `잔압`을 쓰지 않는다. 계획의 예상 압력은 `탱크 압력 메모` 아래에 두고 탱크 압력 판단 기준이 아니라고 적는다.
-- 워치 한국어는 동작 버튼/Action Button, 수중 잠금/Water Lock을 쓰고, 크라운은 문장에서 `디지털 크라운`, 짧은 chip에서 `크라운 ▸`로 쓴다. 한국어 권장 스탑은 `스탑`으로 쓰고 `스톱`, `세이프티`를 쓰지 않는다.
+- 워치 한국어는 동작 버튼/Action Button, 수중 잠금/Water Lock을 쓰고, 크라운은 문장에서 `디지털 크라운`, 짧은 chip에서 `크라운 ▸`로 쓴다. 한국어 값에서 `Divenary` 뒤 조사 앞에는 단어 결합 문자 U+2060(word joiner)을 넣어 줄바꿈에서 이름과 조사가 떨어지지 않게 한다. 문구 자체는 바꾸지 않는다(D20). 한국어 권장 스탑은 `스탑`으로 쓰고 `스톱`, `세이프티`를 쓰지 않는다.
 - 문장은 대상 → 확인된 상태 → 필요한 행동 순서로 쓴다. 확인된 원인만 말하고, 실제로 가능한 복구 행동만 안내하며, 버튼은 실제 행동과 범위를 말한다. 저장 위치와 전송 방향(워치 → iPhone 저장과 계정 백업)을 섞지 않고, 전송 요청을 상대 기기의 수신 확인처럼 쓰지 않는다.
 - 한국어는 `합니다/세요` 체로 쓰고 `해 주세요`처럼 띄어 쓴다. 영어는 sentence case다.
 - 모르는 값은 `--`다. 단위를 가진 자리는 `-- m`, `-- bar`, `--분`처럼 단위를 남기고, 워치 실시간 값은 `--.- m`와 상태 chip을 쓴다. 0이나 정상 상태로 채우지 않는다.
@@ -194,7 +194,7 @@ watchOS는 같은 제품 언어를 더 압축해서 쓴다. 현재 기준은 202
 - 상태 띠는 비어 있어도 자리를 지킨다. 위쪽 안전 영역과 상관없이 시계 아래 고정 위치(Ultra급 36pt, 42mm급 31pt)에 둔다. 상태 chip과 Demo/Test 표식이 왼쪽부터 놓이고, 프리다이빙 단계 chip(`수면 대기`, `다이빙 중`, `요약`)이 첫 chip이다. 같은 문구의 수심 상태 chip과 범위 밖 chip은 한 번만 그린다. 데모의 xmark 툴바 원이 있으면 chip은 그 옆에서 시작한다.
 - 값 열의 칸 순서는 캡션 → 큰 숫자 → (권장 스탑 화면만) 상태 → 행 1 → 행 2 → 아래 칸이다. 캡션 칸은 비어도 자리를 지켜 큰 숫자의 기준선이 화면마다 같다. 큰 숫자와 단위는 따로 된 Text이고 같은 기준선에 놓이며 숫자는 rounded·고정폭이다.
 - 보조 값은 한 줄에 하나씩 쌓고, 이름과 값이 한 줄에 안 들어갈 때만(`직전 다이빙 시간`, 프리다이빙 세부의 `직전 다이빙`) 이름 아래에 값을 둬 `2.1 m/min` 같은 값이 쪼개지지 않게 한다. 각 값 행은 VoiceOver 요소 하나(`라벨, 값`)이고 모르는 값은 `정보 없음`으로 읽는다(D20).
-- 아래 칸은 계기 아래쪽에 붙어 있다. 물 밖(`notSubmerged`)이면 수중 잠금 줄 `수중 잠금 해제 시 기록 종료`가 여기에 보여, 수면에 올라와도 게이지 크기가 바뀌지 않는다. 동작 버튼 힌트가 없는 기기의 종료 화면에서는 큰 안내가 이미 수중 잠금 해제를 말하므로 이 줄을 숨긴다(D20). 저장이 불확실하면 같은 칸에 회색 `저장 재시도 대기`가 오고 글자와 간격이 한 단계 작아진다(tight).
+- 아래 칸은 계기 아래쪽에 붙어 있다. 물 밖(`notSubmerged`)이면 수중 잠금 줄 `수중 잠금 해제 시 기록 종료`가 여기에 보여, 수면에 올라와도 게이지 크기가 바뀌지 않는다. 종료 화면에서는 동작 버튼 힌트가 있는 기기에서만 이 줄을 유지한다. 동작 버튼도 수면에서 기록을 끝내는 방법이기 때문이다. 동작 버튼 힌트가 없는 기기의 종료 화면에서는 큰 안내가 이미 수중 잠금 해제를 말하므로 이 줄을 숨긴다(D20, `RecordingHint.showsWaterLockLine(on:)`). 저장이 불확실하면 같은 칸에 회색 `저장 재시도 대기`가 오고 글자와 간격이 한 단계 작아진다(tight).
 - 크기 단계는 화면 폭 195pt 이상이 regular(Ultra급), 그보다 좁으면 compact이고, 저장 재시도 표시가 함께 있으면 tight다. 기록 화면 글자는 Dynamic Type을 따르지 않는 고정 크기이며 실제 표시 크기 11pt가 하한이다. 작은 화면에서는 문구를 줄이거나 중복 요소를 빼고, 글자를 하한 아래로 줄이지 않는다.
 - 안내 칩은 아래 가운데에 있고 최대 폭은 184pt(compact 168pt)다. 페이지 점은 칩 안 왼쪽에 watchOS 세로 페이지처럼 세로로 쌓이고 현재 점만 흰색이다. 가로로 늘어놓던 이전 페이지 점은 대체됐다. 칩에는 탭 대상이 없다. 거부된 누르기는 2초 동안 칩 글자를 흰색으로 바꾼다. Always-On에서는 점을 숨기고 글자를 75%로 낮춘다.
 
@@ -239,7 +239,7 @@ watchOS는 같은 제품 언어를 더 압축해서 쓴다. 현재 기준은 202
 
 #### 다이빙 뒤 화면과 저장 기록
 
-- 종료 중·저장 중 화면은 흰 spinner와 한 줄 문구를 즉시 보이고 숫자는 보이지 않는다. 기록 없음 결과는 빈 수심 기둥 글리프, `물속 기록이 없습니다`, `기록된 값이 없어 저장하지 않았습니다.`, `완료`다(C14).
+- 저장 중 화면은 흰 spinner와 한 줄 문구를 즉시 보이고 숫자는 보이지 않는다. 종료 중에는 기록 계기를 30 %로 남기고 그 위에 흰 spinner와 `기록을 종료하고 있습니다.`를 페이드로 올린다. 계기는 자리를 움직이지 않고 어두워지기만 한다(RC-END, D20). 기록 없음 결과는 빈 수심 기둥 글리프, `물속 기록이 없습니다`, `기록된 값이 없어 저장하지 않았습니다.`, `완료`다(C14).
 - 시작 오류와 데모 시작·정리 오류는 오류 아이콘, 제목, 설명, 캡슐 버튼이다. `(n)` 번호 안내는 플래터 배너로 튐 없이 올라와 화면 아래 둥근 모서리 안쪽에 4초 동안 머문다. 저장 실패는 출시 문구, 자동으로 숨지 않는 번호 있는 안내, `다시 저장`과 `홈 화면으로`, 그 아래 다음에 일어날 일 순서다.
 - 저장 요약은 최대 수심과 다이빙 시간을 먼저 두고 상태는 한 곳에만 보인다(D11). 툴바 뒤로 원과 제목 `요약` 아래 최대 수심(가장 큰 흰 숫자) → 다이빙 시간(스쿠버 `다이빙 시간`, 프리다이빙 `총 기록 시간`) → 최대 수심 라벨이 붙은 그래프 → 체크와 `워치에 저장됨` 순서이고, 실제 기록에서 동작 버튼 힌트가 있으면 아래에 점 없는 칩 `동작 버튼 ▸ 다음 다이빙 시작`을 고정한다. 아래 칩은 항상 다음 동작 버튼 누르기가 하는 일을 말한다. 스크롤하면 전체 전송 문구 줄, 권장 스탑 요약(참고 문장 먼저, C6 행) 또는 프리다이빙 요약, 통계, iPhone 안내, 비인증 문장이 온다. 데모 요약은 섹션 제목 옆에 `데모` 표식을 단다. 수심 측정 횟수는 상세 화면에만 둔다.
 - 저장 목록은 최신순 플래터 행이다. 날짜(전체 폭, 글자 크기에 따라 줄바꿈)와 오른쪽 전송 아이콘, `22.4 m · 42분` 같은 값, 작은 그래프, 회색 평문 다이빙 종류와 표식 순서다. 목록과 Home 최근 기록은 날짜·최대 수심·시간·전송 상태·표식을 하나의 VoiceOver 요약으로 읽고 수심 그래프는 범위만 읽는다. 첫 읽기 실패는 오류 블록과 그 바깥의 `다시 시도`만 보이고 행을 그리지 않는다(C10). 빈 목록은 회색 실제 로고와 `아직 저장한 기록이 없습니다`다. 목록 끝에 비인증 문장을 둔다. 스크롤 가장자리의 행은 살짝 작아지고 흐려진다.
@@ -258,7 +258,7 @@ watchOS는 같은 제품 언어를 더 압축해서 쓴다. 현재 기준은 202
 
 - 개념 하나에 용어 하나다. 다이빙 종류는 `프리다이빙`/`스쿠버`이고 시작 카드도 `스쿠버`다(C1). `스쿠버 다이빙`이나 `프리` 같은 줄임은 쓰지 않는다(D4).
 - 스쿠버의 경과 시간은 기록 화면 행, 권장 스탑 화면, 종료 화면, Always-On, 요약·상세 모두 `다이빙 시간`(Dive time)이다. 프리다이빙 한 번의 시간도 `다이빙 시간`이고 프리다이빙 세션 전체는 `총 기록 시간`, `직전 다이빙 시간`·`최장 다이빙`은 그대로다(C15). 이전 기록 화면의 `시간`·`기록 시간`과 스쿠버 저장 화면의 `총 기록 시간`은 대체됐다.
-- 권장 스탑 기록은 `상태`, `스탑 구간 시간`, `목표 수심 / 스탑 구간`, `시작`·`완료 시각`이다. `권장 사항`(권장 판단 주장처럼 읽힘)과 `완료 여부`(상태와 중복) 행은 없고, `남은 시간`은 완료하지 않았을 때만 보인다(C6). 참고 문장 `권장 스탑 참고 기록입니다. 안전 판단에 사용하지 마세요.`는 섹션 제목 바로 아래, 값보다 먼저 둔다(C12).
+- 권장 스탑 기록은 `상태`, `스탑 구간 시간`, `목표 수심 / 스탑 구간`, `시작`·`완료 시각`이다. 완료한 스탑은 `상태`, `스탑 구간 시간`, `목표 수심 / 스탑 구간`이 각각 한 줄 전체를 쓰고 `시작` | `완료 시각`이 마지막 줄에 나란히 온다. 완료하지 않은 스탑만 `남은 시간`과 `스탑 구간 시간`을 한 줄에 나란히 둔다(C6, D20). `권장 사항`(권장 판단 주장처럼 읽힘)과 `완료 여부`(상태와 중복) 행은 없고, `남은 시간`은 완료하지 않았을 때만 보인다(C6). 참고 문장 `권장 스탑 참고 기록입니다. 안전 판단에 사용하지 마세요.`는 섹션 제목 바로 아래, 값보다 먼저 둔다(C12).
 - 저장 기록은 `저장한 기록`이다(Home 행, 빈 상태 `아직 저장한 기록이 없습니다`, 읽기 실패 `저장한 기록을 읽지 못했습니다.`)(C10).
 - 계획 행은 `계획 최대 수심`이다. `계획 수심`은 쓰지 않는다(C11).
 - 비인증 문장은 `다이빙 기록·복기용입니다. 인증된 다이브 컴퓨터가 아닙니다.` 하나다(문장 경계에서 두 줄 가능). Home 하단, Wet Ready, 수중 조작 안내 마지막 페이지, 요약(스크롤 아래), 저장 목록 끝, 상세 마지막에 ink3 작은 글씨로 두고 같은 화면의 안내보다 크게 쓰지 않는다. 다른 변형 문장은 쓰지 않는다(C3).
@@ -280,6 +280,7 @@ watchOS는 같은 제품 언어를 더 압축해서 쓴다. 현재 기준은 202
 
 #### 검증하지 않은 것
 
+- polish 리뷰 반영 커밋 `c57f311`(2026-10-23)의 시작 오류 배너 여백(`PostDiveLayout.failureBannerReserve`, 64pt), 종료 중 30 % 계기, 한 칸짜리 기록 행의 전체 폭은 빌드, XCTest, 문구 검사까지만 확인했다. 시뮬레이터 캡처는 하지 않았다.
 - 이 문서 작성 시점(2026-10-23)에 리디자인 마지막 단계(Task 6)인 Ultra 3(49mm)·Series 11(42mm) 시뮬레이터와 캔버스 비교, 동작 줄이기·Always-On 시뮬레이터 확인, 상태 띠 고정 위치(36/31pt)와 툴바가 있는 데모 화면의 40/41/44/46mm 시뮬레이터 확인은 끝나지 않았다(D20).
 - 실기기에서만 확인할 수 있는 것: 41/42mm에서 한글 폭(종료 안내, 안내 칩 줄), 실제 sample 주기에서 게이지가 따라가는 느낌, 초록 물·밤·눈부심 속 남색 채움과 흰 지시선 가독성, Always-On 전환과 실제 밝기, 41/42/46/49mm 배치, 수중 잠금 중 크라운과 동작 버튼 연결, watchOS 26/27의 Liquid Glass 렌더링. simulator, XCTest, build 성공은 이 행동의 증거가 아니며 [열린 질문](../questions/open-questions.md)에 남긴다.
 

@@ -1281,3 +1281,10 @@
 - Recorded: Watch 앱 구조에 `DiveDesignSystem.swift`·`DivePostDive.swift`·`RecordingGaugeGeometry`의 책임과 `RecordingPageModel`·햅틱·guard 불변을 적었다. 안전 규칙에 모션이 안전 상태나 권장 스탑 완료를 알리는 신호가 아니라는 교차 참조를 더했다.
 - Clarified: Watch 앱 구조의 프리다이빙 보조 표시명은 `확인된 시간`(`Observed time`)이고(`마지막 확인`은 카탈로그에서 stale), 종료 화면의 큰 글자는 경과 시간이 아니라 종료·저장 안내다. 안전 규칙의 "워치 완료 상태는 회색"은 저장 기록에 한정하고 실시간 완료는 앰버와 체크로 바로잡았다.
 - Pending: 리디자인 마지막 단계(시뮬레이터·캔버스 비교, 상태 띠 36/31pt 위치의 40/41/44/46mm 확인)와 실기기 항목(한글 폭, 게이지 따라감, 물속 가독성, Always-On, 크기별 배치, 크라운·동작 버튼, Liquid Glass)은 검증하지 않았다.
+
+## [2026-10-23] ingest | Mobile/Watch UI 언어
+- Added: 2026-10-23 워치 Plumb polish 리뷰 raw source(D20·C6·C12·C15 원문과 소유자 수정 요청 14개)
+- Updated: Watch 앱 구조
+- Updated: Knowledge Base Index
+- Recorded: 종료 화면의 수중 잠금 줄은 동작 버튼 힌트가 있는 기기에서만 남고, 없으면 `RecordingHint.showsWaterLockLine(on:)`이 숨긴다. 종료 중 화면은 기록 계기를 30 %로 남기고 그 위에 spinner와 `기록을 종료하고 있습니다.`를 페이드로 올린다(RC-END). 권장 스탑 기록의 한 칸짜리 행은 전체 폭을 쓰고 `시작` | `완료 시각`만 한 줄에 둔다(C6). 한국어 `Divenary` 뒤 조사 앞에는 단어 결합 문자 U+2060을 넣는다.
+- Recorded: 구현 커밋 `c57f311`(fix(watch): polish the Plumb redesign after review). 빌드, XCTest(Apple Watch Ultra 3 49mm와 Series 11 42mm 각 442개 통과), 문구 검사, jest(1305개 통과)까지 확인했다. 시작 오류 배너 여백과 종료 중 30 % 계기의 시뮬레이터 캡처는 하지 않았다.
