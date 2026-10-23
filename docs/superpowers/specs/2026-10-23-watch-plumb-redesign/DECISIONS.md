@@ -111,6 +111,13 @@ Apple's Depth app is called "수심" in Korean and has its own demo mode driven 
 - `divenary.scuba`: a scuba diver lying level with a tank on the back and fins (replaces the tank-only object so the pair reads as one set).
 - Both drawn in the same weights (head r 2.6, torso 4.6, legs 2.9, arms 1.9, filled fin wedge) and checked at the 44px start-card size. The monofin and tank glyphs are retired everywhere (start cards, Wet Ready tiles, type-switch page, plan rows, design sheet, record board, prototype).
 
+## D20. Implementation review decisions (Task 2)
+- End page without an Action Button: the large instruction already says "수중 잠금 해제 / 기록 종료·저장", so the column's bottom-slot Water Lock line is hidden on the End page and the hint chip shows dots only for `.waterLockToEnd`. With an Action Button the chip shows "동작 버튼 ▸ 기록 종료·저장".
+- Each value row is one VoiceOver element ("라벨, 값"); unknown values read "정보 없음" (key `Not available`).
+- The max-depth ghost line hides while the current-depth index is within 3 pt of it (they would overlap).
+- `DiveModeGlyph` uses the exact spec §C21 monofin and tank paths (the glyphs on the approved canvas), not hand-drawn approximations.
+- The fixed status-band offset (36 pt Ultra / 31 pt 42 mm, ignoring the top safe area) must be checked on 40/41/44/46 mm simulators and on the demo screen with its toolbar in Task 6.
+
 ## D11. Summary layout (OVERRIDES spec §F #32 / #51 positions)
 The bottom chip always says what the next Action Button press does — on recording pages and on the summary alike.
 REVISED (round 2) to obey the wiki rule "저장 요약은 최대 수심과 시간을 먼저 두고 상태는 한 곳에만 보인다":
