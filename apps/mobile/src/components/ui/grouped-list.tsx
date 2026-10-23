@@ -5,6 +5,7 @@ import { HStack } from './hstack';
 import { CheckIcon, ChevronRightIcon, Icon } from './icon';
 import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
 import { Pressable } from './pressable';
+import { SkeletonBlock } from './skeleton-block';
 import { Spinner } from './spinner';
 import { Switch } from './switch';
 import { Text } from './text';
@@ -46,6 +47,8 @@ type RowAccessory =
 type RowProps = {
   label: string;
   value?: string;
+  /** The value is still being read: a short placeholder holds its place while `value` is empty. */
+  valueLoading?: boolean;
   /** Extra line under the label, e.g. a short explanation. */
   detail?: string;
   icon?: React.ElementType;
@@ -88,6 +91,7 @@ export function Row(props: RowProps): React.JSX.Element {
           {props.value}
         </Text>
       ) : null}
+      {props.valueLoading && !props.value ? <SkeletonBlock className="h-4 w-24" /> : null}
       {showSpinner ? (
         <Spinner
           testID={props.testID ? `${props.testID}-spinner` : undefined}

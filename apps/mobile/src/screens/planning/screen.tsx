@@ -9,7 +9,7 @@ import { AddIcon, CalendarDaysIcon, ChevronRightIcon, Icon } from '../../compone
 import { InstrumentButton, SafetyText, SelectorPill, StatusPill } from '../../components/ui/instrument';
 import { ListStateCard } from '../../components/ui/list-state-card';
 import { ListStatusBadge } from '../../components/ui/list-status-badge';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
@@ -179,14 +179,14 @@ export default function PlanningScreen(props: PlanningScreenProps): React.JSX.El
         </VStack>
 
         <VStack space="md" className="items-center">
-          <Pressable
+          <PressScalePressable
+            kind="control"
             testID="planning-open-logbook-action"
             accessibilityRole="button"
             onPress={props.onOpenLogbook}
-            className="min-h-11 justify-center px-3"
-            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+            className="min-h-11 justify-center px-3">
             <Text className="text-sm font-semibold text-primary">{t('planning.openLogbook')}</Text>
-          </Pressable>
+          </PressScalePressable>
           <SafetyText>{t('planning.safetyText')}</SafetyText>
         </VStack>
       </VStack>
@@ -242,13 +242,13 @@ function PlanRow(props: {
     .join(', ');
 
   return (
-    <Pressable
+    <PressScalePressable
+      kind="card"
       testID={`planning-plan-row-${props.plan.localId}`}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       onPress={props.onPress}
-      className="rounded-2xl bg-card px-4 py-3"
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+      className="rounded-2xl bg-card px-4 py-3">
       <HStack space="md" className="min-h-12 items-center">
         <Box className="h-9 w-9 items-center justify-center rounded-full bg-muted">
           <Icon as={CalendarDaysIcon} className="text-muted-foreground" />
@@ -271,7 +271,7 @@ function PlanRow(props: {
         {chip ? <StatusPill testID={`planning-plan-row-${props.plan.localId}-chip`} label={chip} tone="muted" /> : null}
         <Icon as={ChevronRightIcon} className="text-muted-foreground" />
       </HStack>
-    </Pressable>
+    </PressScalePressable>
   );
 }
 

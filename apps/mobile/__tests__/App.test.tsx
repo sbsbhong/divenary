@@ -347,6 +347,49 @@ describe('App navigation', () => {
     expect(root.findByProps({ testID: 'settings-screen-title' }).props.children).toBe('설정');
   });
 
+  test('bounces only the tab icon that a tap selects, and not under Reduce Motion', async () => {
+    const reanimated = jest.requireMock<typeof import('react-native-reanimated')>('react-native-reanimated');
+    const withSequence = jest.spyOn(reanimated, 'withSequence');
+    const useReducedMotion = jest.spyOn(reanimated, 'useReducedMotion').mockReturnValue(false);
+    let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
+
+    await ReactTestRenderer.act(async () => {
+      renderer = ReactTestRenderer.create(<App />);
+      renderers.push(renderer);
+    });
+    const root = renderer!.root;
+    // The first render is not a tap, so no bounce.
+    expect(withSequence).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'nav-tab-logbook' }).props.onPress();
+    });
+    expect(withSequence).toHaveBeenCalledTimes(1);
+
+    // Tapping the tab that is already selected changes nothing, so it does not bounce.
+    await ReactTestRenderer.act(async () => {
+      root.findByProps({ testID: 'nav-tab-logbook' }).props.onPress();
+    });
+    expect(withSequence).toHaveBeenCalledTimes(1);
+
+    useReducedMotion.mockReturnValue(true);
+    let reducedRenderer: ReactTestRenderer.ReactTestRenderer | undefined;
+    await ReactTestRenderer.act(async () => {
+      reducedRenderer = ReactTestRenderer.create(<App />);
+      renderers.push(reducedRenderer);
+    });
+    await ReactTestRenderer.act(async () => {
+      reducedRenderer!.root.findByProps({ testID: 'nav-tab-planning' }).props.onPress();
+    });
+    expect(reducedRenderer!.root.findByProps({ testID: 'nav-tab-planning' }).props.accessibilityState).toEqual({
+      selected: true,
+    });
+    expect(withSequence).toHaveBeenCalledTimes(1);
+
+    withSequence.mockRestore();
+    useReducedMotion.mockRestore();
+  });
+
   test('uses React Navigation as the top-level navigation container', async () => {
     let renderer: ReactTestRenderer.ReactTestRenderer | undefined;
 
@@ -1096,7 +1139,7 @@ describe('App navigation', () => {
       }),
     );
 
-    const toastStyle = root.findByProps({ testID: 'watch-auto-import-toast' }).props.style({ pressed: false })[0];
+    const toastStyle = root.findByProps({ testID: 'watch-auto-import-toast' }).props.style;
     expect(toastStyle).toEqual(expect.objectContaining({ bottom: 84 }));
   });
 

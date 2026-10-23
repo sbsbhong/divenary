@@ -232,7 +232,7 @@ describe('Apple design system mapping', () => {
   test('uses a lightweight text Pressable for the Home login entry', () => {
     const source = readSource('src', 'screens', 'home', 'screen.tsx');
 
-    expect(source).toMatch(/<Pressable[\s\S]*?testID="home-login-action"/);
+    expect(source).toMatch(/<(?:Pressable|PressScalePressable)[\s\S]*?testID="home-login-action"/);
     expect(source).not.toMatch(/<InstrumentButton[\s\S]{0,200}?testID="home-login-action"/);
   });
 

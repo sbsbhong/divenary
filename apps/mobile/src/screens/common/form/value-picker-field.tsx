@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { HStack } from '../../../components/ui/hstack';
 import { NumberWheelPicker } from '../../../components/ui/number-wheel-picker';
 import { PickerSheet } from '../../../components/ui/picker-sheet';
-import { Pressable } from '../../../components/ui/pressable';
+import { PressScalePressable } from '../../../components/ui/press-scale';
 import { Text } from '../../../components/ui/text';
 import { clamp, formatNumber, roundToStep } from '../../../components/ui/wheel-picker-core';
 import { DepthWheelPicker, DurationWheelPicker, formatDurationDraft } from './compound-number-wheel-fields';
@@ -137,17 +137,17 @@ function QuickValueChips(props: {
         const selected = props.selectedValue === chip.value;
 
         return (
-          <Pressable
+          <PressScalePressable
+            kind="control"
             key={chip.key}
             testID={`${props.testID}-chip-${chip.key}`}
             accessibilityRole="button"
             accessibilityLabel={chip.label}
             accessibilityState={{ selected }}
             onPress={() => props.onPick(chip.value)}
-            className={`min-h-11 justify-center rounded-full px-4 ${selected ? 'bg-primary/10' : 'bg-card'}`}
-            style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+            className={`min-h-11 justify-center rounded-full px-4 ${selected ? 'bg-primary/10' : 'bg-card'}`}>
             <Text className={selected ? 'text-base font-semibold text-primary' : 'text-base text-foreground'}>{chip.label}</Text>
-          </Pressable>
+          </PressScalePressable>
         );
       })}
     </HStack>

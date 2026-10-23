@@ -7,6 +7,7 @@ import { HStack } from '../../components/ui/hstack';
 import { AddIcon, CalendarDaysIcon } from '../../components/ui/icon';
 import { InstrumentButton, SafetyText } from '../../components/ui/instrument';
 import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { ScrollView } from '../../components/ui/scroll-view';
@@ -128,15 +129,15 @@ export default function HomeScreen(props: HomeScreenProps): React.JSX.Element {
             title={t('home.title')}
             trailing={
               props.showLogin === true && props.onOpenLogin !== undefined ? (
-                <Pressable
+                <PressScalePressable
+                  kind="control"
                   testID="home-login-action"
                   accessibilityLabel={t('home.login')}
                   accessibilityRole="button"
                   className="min-h-11 min-w-[52px] items-center justify-center bg-transparent px-1"
-                  style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}
                   onPress={props.onOpenLogin}>
                   <Text className="text-base font-semibold text-primary">{t('home.login')}</Text>
-                </Pressable>
+                </PressScalePressable>
               ) : undefined
             }
           />

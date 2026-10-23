@@ -4,6 +4,7 @@ import { AccessibilityInfo, Alert, AppState, type AlertButton, type AppStateStat
 import i18n from '../src/i18n';
 import { CheckIcon } from '../src/components/ui/icon';
 import { Switch } from '../src/components/ui/switch';
+import { SkeletonBlock } from '../src/components/ui/skeleton-block';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import SettingsScreen, { type SettingsRoute } from '../src/screens/settings/screen';
 import type { LinkedWatchInfo } from '../src/companion/watch-link';
@@ -392,6 +393,118 @@ describe('SettingsScreen', () => {
       await Promise.resolve();
     });
     expect(signOutRow().props.accessibilityState).toEqual({ busy: false, disabled: false });
+  });
+
+  test('marks sign-out busy at once while the unsent count is read, with a spinner only after 1 s', async () => {
+    jest.useFakeTimers();
+    let finishCount: ((count: number) => void) | undefined;
+    const loadPendingChangeCount = jest
+      .fn<Promise<number>, []>()
+      .mockResolvedValueOnce(0)
+      .mockImplementationOnce(
+        () =>
+          new Promise<number>(resolve => {
+            finishCount = resolve;
+          }),
+      );
+    const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({ route: 'account', loadPendingChangeCount });
+    await flush();
+    const signOutRow = () => findControl(renderer.root, 'settings-account-sign-out');
+
+    let pendingPress: Promise<void> | undefined;
+    await ReactTestRenderer.act(async () => {
+      pendingPress = signOutRow().props.onPress();
+    });
+
+    expect(signOutRow().props.accessibilityState).toEqual({ busy: true, disabled: true });
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-sign-out-spinner' })).toHaveLength(0);
+    expect(alert).not.toHaveBeenCalled();
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-sign-out-spinner' }).length).toBeGreaterThan(0);
+
+    await ReactTestRenderer.act(async () => {
+      finishCount?.(2);
+      await pendingPress;
+    });
+
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][1]).toContain('아직 백업하지 못한 변경 2건');
+    expect(signOutRow().props.accessibilityState).toEqual({ busy: false, disabled: false });
+  });
+
+  test('holds the unsent-count value with a placeholder line only after 1 s while it is still being read', async () => {
+    jest.useFakeTimers();
+    let finishCount: ((count: number) => void) | undefined;
+    mockUseAuth.mockReturnValue(signedIn());
+    const renderer = await renderSettings({
+      route: 'account',
+      loadPendingChangeCount: () =>
+        new Promise<number>(resolve => {
+          finishCount = resolve;
+        }),
+    });
+    const placeholders = () => renderer.root.findAll(node => node.type === SkeletonBlock);
+    await flush();
+
+    expect(placeholders()).toHaveLength(0);
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(999);
+    });
+    expect(placeholders()).toHaveLength(0);
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1);
+    });
+    expect(placeholders()).toHaveLength(1);
+    expect(renderer.root.findAllByProps({ testID: 'settings-account-sync-status' })).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      finishCount?.(0);
+    });
+    await flush();
+
+    expect(placeholders()).toHaveLength(0);
+    expect(renderer.root.findByProps({ testID: 'settings-account-sync-status' }).props.children).toBe('백업 대기 없음');
+  });
+
+  test('disables the notification switch with a spinner only after 1 s while the permission request is open', async () => {
+    jest.useFakeTimers();
+    let answerPermission: ((granted: boolean) => void) | undefined;
+    const requestWatchSyncNotificationPermission = jest.fn(
+      () =>
+        new Promise<boolean>(resolve => {
+          answerPermission = resolve;
+        }),
+    );
+    const renderer = await renderSettings({ requestWatchSyncNotificationPermission });
+    const root = renderer.root;
+    const spinner = () => root.findAllByProps({ testID: 'settings-row-notifications-spinner' });
+    await flush();
+
+    await ReactTestRenderer.act(async () => {
+      notificationSwitch(root).props.onValueChange(true);
+    });
+
+    expect(requestWatchSyncNotificationPermission).toHaveBeenCalledTimes(1);
+    expect(notificationSwitch(root).props.disabled).toBe(true);
+    expect(spinner()).toHaveLength(0);
+
+    await ReactTestRenderer.act(async () => {
+      jest.advanceTimersByTime(1000);
+    });
+    expect(spinner().length).toBeGreaterThan(0);
+
+    await ReactTestRenderer.act(async () => {
+      answerPermission?.(true);
+    });
+    await flush();
+
+    expect(notificationSwitch(root).props.disabled).toBe(false);
+    expect(spinner()).toHaveLength(0);
   });
 
   test('shows the eligible device-data count in account detail and opens the claim sheet', async () => {

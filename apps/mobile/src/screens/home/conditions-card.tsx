@@ -1,12 +1,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
-import { Button, ButtonIcon, ButtonSpinner } from '../../components/ui/button';
+import { ButtonIcon, ButtonSpinner } from '../../components/ui/button';
 import { DiveSummaryCard } from '../../components/ui/dive-summary-card';
 import { useGluestackColors } from '../../components/ui/gluestack-ui-provider';
 import { HStack } from '../../components/ui/hstack';
 import { AlertCircleIcon, Icon, MapPinIcon, RepeatIcon, SettingsIcon, SunIcon, WavesIcon } from '../../components/ui/icon';
 import { InstrumentButton } from '../../components/ui/instrument';
+import { PressScaleButton } from '../../components/ui/press-scale';
 import { SkeletonBlock } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
@@ -129,7 +130,8 @@ function ReadyConditionsCard(props: {
               </Text>
             </VStack>
           </HStack>
-          <Button
+          <PressScaleButton
+            kind="control"
             testID="home-conditions-refresh-action"
             accessibilityLabel={props.isRefreshing ? t('home.conditions.refreshing') : t('home.conditions.refresh')}
             accessibilityState={{ busy: props.isRefreshing, disabled: props.isRefreshing }}
@@ -138,14 +140,13 @@ function ReadyConditionsCard(props: {
             hitSlop={4}
             disabled={props.isRefreshing}
             className="rounded-full bg-muted"
-            style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}
             onPress={props.onRefresh}>
             {showRefreshSpinner ? (
               <ButtonSpinner testID="home-conditions-refresh-spinner" color={palette.primary} />
             ) : (
               <ButtonIcon as={RepeatIcon} className="text-primary" />
             )}
-          </Button>
+          </PressScaleButton>
         </HStack>
 
         <HStack space="md">

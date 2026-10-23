@@ -7,7 +7,7 @@ import { HStack } from '../../components/ui/hstack';
 import { AddIcon, RepeatIcon } from '../../components/ui/icon';
 import { InstrumentButton, StatusPill } from '../../components/ui/instrument';
 import { ListStatusBadge } from '../../components/ui/list-status-badge';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { SkeletonBlock } from '../../components/ui/skeleton-block';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
@@ -112,16 +112,16 @@ export function LatestLogCard(props: {
   }
 
   return (
-    <Pressable
+    <PressScalePressable
+      kind="card"
       testID="home-latest-log-card"
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={t('home.openLatestLogHint')}
       className="rounded-2xl"
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}
       onPress={props.onOpen}>
       {card}
-    </Pressable>
+    </PressScalePressable>
   );
 }
 

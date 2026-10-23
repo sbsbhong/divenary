@@ -123,4 +123,8 @@ jest.mock('@invertase/react-native-apple-authentication', () => {
 
 // Reanimated's own mock runs animations to their end state at once, so tests read final values.
 jest.mock('react-native-worklets', () => require('react-native-worklets/src/mock'));
-jest.mock('react-native-reanimated', () => require('react-native-reanimated/mock'));
+// The mock leaves useReducedMotion unmodelled, so tests run with the system setting off.
+jest.mock('react-native-reanimated', () => ({
+  ...require('react-native-reanimated/mock'),
+  useReducedMotion: () => false,
+}));

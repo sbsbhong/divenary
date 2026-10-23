@@ -14,6 +14,7 @@ import { VStack } from '../../components/ui/vstack';
 import { useContentLoading } from '../../components/ui/skeleton-block';
 import type { SupportedLanguage } from '../../i18n';
 import type { SocialProvider } from '../../auth/native-social-auth';
+import { WATCH_STATUS_BLINK } from '../../constants/motion';
 import { defaultWatchLink } from '../../companion/default-watch-link';
 import type { LinkedWatchInfo } from '../../companion/watch-link';
 import {
@@ -89,9 +90,13 @@ export default function SettingsScreen({
   const [rejectedWatchPayloads, setRejectedWatchPayloads] = React.useState<RejectedWatchPayload[]>([]);
   const [isSigningOut, setIsSigningOut] = React.useState(false);
   const [pendingChangeCount, setPendingChangeCount] = React.useState<number | 'unknown'>();
+  // The sign-out row is busy while the unsent count is read, before the warning can open.
+  const [isReadingSignOutCount, setIsReadingSignOutCount] = React.useState(false);
+  const [isRequestingNotificationPermission, setIsRequestingNotificationPermission] = React.useState(false);
   const awaitingNotificationSettings = React.useRef(false);
   const notificationToggleBusy = React.useRef(false);
   const signOutInFlight = React.useRef(false);
+  const signOutCountInFlight = React.useRef(false);
   const loadPendingChangeCountRef = React.useRef(loadPendingChangeCount);
   loadPendingChangeCountRef.current = loadPendingChangeCount;
   const syncPendingChangesRef = React.useRef(syncPendingChanges);
@@ -196,7 +201,10 @@ export default function SettingsScreen({
       return;
     }
     // The check usually answers at once with the same status, so the row dims and returns to show it ran.
-    watchStatusOpacity.value = withSequence(withTiming(0.3, { duration: 120 }), withTiming(1, { duration: 240 }));
+    watchStatusOpacity.value = withSequence(
+      withTiming(WATCH_STATUS_BLINK.opacity, { duration: WATCH_STATUS_BLINK.dim }),
+      withTiming(1, { duration: WATCH_STATUS_BLINK.back }),
+    );
     AccessibilityInfo.announceForAccessibility(
       info ? getLinkedWatchStatusLabel(info, t) : t('settings.devices.status.lookupFailed'),
     );
@@ -273,6 +281,8 @@ export default function SettingsScreen({
   const showWatchStatusLoading = useContentLoading(watchStatusLoading, 'linked-watch');
   // A quick download keeps the last backup status; "loading" appears only after the shared delay.
   const showCloudRefreshing = useContentLoading(isCloudRefreshing, 'account-sync');
+  // The count is unknown until the first read; a short placeholder line holds its place after the delay.
+  const showPendingCountLoading = useContentLoading(pendingChangeCount === undefined, 'pending-change-count');
   const watchName = linkedWatchInfo?.name ?? t('settings.devices.appleWatch');
   // Nothing is shown for a fast lookup; "checking" appears only after the shared delay.
   const watchStatus = linkedWatchLookupFailed
@@ -294,7 +304,15 @@ export default function SettingsScreen({
         return;
       }
 
-      const permitted = await requestWatchSyncNotificationPermission();
+      setIsRequestingNotificationPermission(true);
+      let permitted: boolean;
+      try {
+        permitted = await requestWatchSyncNotificationPermission();
+      } finally {
+        if (isMountedRef.current) {
+          setIsRequestingNotificationPermission(false);
+        }
+      }
 
       if (permitted) {
         await setWatchSyncNotificationsEnabled(true);
@@ -342,14 +360,18 @@ export default function SettingsScreen({
   }, [auth]);
 
   const confirmSignOut = React.useCallback(async () => {
-    if (signOutInFlight.current) {
+    if (signOutInFlight.current || signOutCountInFlight.current) {
       return;
     }
     // Read the outbox again so the warning matches what is waiting right now.
+    signOutCountInFlight.current = true;
+    setIsReadingSignOutCount(true);
     const count = await readPendingChangeCount();
+    signOutCountInFlight.current = false;
     if (!isMountedRef.current) {
       return;
     }
+    setIsReadingSignOutCount(false);
     setPendingChangeCount(count);
     const message = [
       t('settings.account.signOutMessage'),
@@ -476,6 +498,7 @@ export default function SettingsScreen({
                 testID="settings-row-sync"
                 label={t('settings.account.sync')}
                 value={getSyncValue({ isOffline, isCloudRefreshing: showCloudRefreshing, pendingChangeCount }, t)}
+                valueLoading={showPendingCountLoading}
                 valueTestID="settings-account-sync-status"
                 detail={isOffline ? t('settings.account.offlineDescription') : undefined}
               />
@@ -490,12 +513,12 @@ export default function SettingsScreen({
               ) : null}
             </Section>
             <Section>
-              {/* Busy and disabled at once while signing out; the spinner shows only after the shared delay. */}
+              {/* Busy and disabled at once while reading the unsent count or signing out; the spinner shows only after the shared delay. */}
               <Row
                 testID="settings-account-sign-out"
                 label={t('settings.account.signOut')}
                 destructive
-                pending={isSigningOut}
+                pending={isSigningOut || isReadingSignOutCount}
                 accessory={{ kind: 'none' }}
                 onPress={confirmSignOut}
                 separated={false}
@@ -567,6 +590,8 @@ export default function SettingsScreen({
               void toggleWatchSyncNotifications();
             },
           }}
+          // Busy and disabled while the permission request is open; the spinner waits for the shared delay.
+          pending={isRequestingNotificationPermission}
           separated={false}
         />
       </Section>

@@ -4,7 +4,7 @@ import { Platform } from 'react-native';
 import type { SocialProvider } from '../../auth/native-social-auth';
 import { Box } from '../../components/ui/box';
 import { Image } from '../../components/ui/image';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { Spinner } from '../../components/ui/spinner';
 import { Text } from '../../components/ui/text';
 import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
@@ -85,12 +85,13 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
 
   return (
     <Box className="w-full">
-    <Pressable
+    <PressScalePressable
+      kind="control"
       testID={`auth-login-${props.provider}`}
       accessibilityLabel={props.accessibilityLabel}
       accessibilityRole="button"
       accessibilityState={{ busy: props.busy, disabled: props.disabled }}
-      className="w-full flex-row items-center active:scale-95"
+      className="w-full flex-row items-center"
       disabled={props.disabled}
       onPress={props.onPress}
       style={{
@@ -141,7 +142,7 @@ export function SocialLoginButton(props: SocialLoginButtonProps): React.JSX.Elem
           />
         ) : null}
       </Box>
-    </Pressable>
+    </PressScalePressable>
       {props.recentLabel ? (
         // Outside the button so the brand artwork and label stay as the brands draw them; the
         // button's accessibility label already says it was used last.

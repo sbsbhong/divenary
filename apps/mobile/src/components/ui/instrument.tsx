@@ -4,6 +4,7 @@ import { tva } from '@gluestack-ui/utils/nativewind-utils';
 import { Box } from './box';
 import { Button, ButtonIcon, ButtonSpinner, ButtonText } from './button';
 import { ChevronLeftIcon } from './icon';
+import { PressScaleButton } from './press-scale';
 import { Text } from './text';
 import type { InstrumentTone } from './theme';
 import { useLoadingFeedback } from '../../hooks/use-loading-feedback';
@@ -124,17 +125,18 @@ export function ScreenBackButton({
   ...pressableProps
 }: ScreenBackButtonProps): React.JSX.Element {
   return (
-    <Button
+    <PressScaleButton
       {...pressableProps}
+      kind="control"
       testID={testID}
       variant="ghost"
       size="icon"
       className={screenBackButtonStyles({ class: className })}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
+      style={style}>
       <Box testID={typeof testID === 'string' ? `${testID}-icon` : undefined} className="items-center justify-center">
         <ButtonIcon as={ChevronLeftIcon} className="text-primary" />
       </Box>
-    </Button>
+    </PressScaleButton>
   );
 }
 
@@ -160,13 +162,14 @@ export function InstrumentButton({
   const disabled = pending || Boolean(pressableProps.disabled) || Boolean(pressableProps.isDisabled);
 
   return (
-    <Button
+    <PressScaleButton
       {...pressableProps}
+      kind="control"
       disabled={disabled}
       accessibilityState={{ ...pressableProps.accessibilityState, busy: pending, disabled }}
       variant={instrumentButtonVariant[variant]}
       className={buttonStyles({ variant, class: className })}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
+      style={style}>
       {iconPlacement === 'leading' ? icon : null}
       <ButtonText className={buttonTextStyles({ variant })} style={contentStyle}>
         {label}
@@ -177,7 +180,7 @@ export function InstrumentButton({
           <ButtonSpinner testID={testID ? `${testID}-spinner` : undefined} className={buttonIconStyles({ variant })} />
         </Box>
       ) : null}
-    </Button>
+    </PressScaleButton>
   );
 }
 
@@ -222,14 +225,15 @@ export function SelectorPill({
   ...pressableProps
 }: SelectorPillProps): React.JSX.Element {
   return (
-    <Button
+    <PressScaleButton
       {...pressableProps}
+      kind="control"
       variant="ghost"
       accessibilityState={{ selected }}
       className={selectorPillStyles({ selected, class: className })}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }, style]}>
+      style={style}>
       <ButtonText className={selectorPillTextStyles({ selected })}>{label}</ButtonText>
-    </Button>
+    </PressScaleButton>
   );
 }
 

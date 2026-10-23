@@ -22,8 +22,18 @@ import {
 } from '@react-navigation/native-stack';
 import { useTranslation } from 'react-i18next';
 import { AccessibilityInfo, AppState, Platform } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { tva } from '@gluestack-ui/utils/nativewind-utils';
+import { TAB_BOUNCE } from '../../constants/motion';
 import type { DiveLogbookSection } from '../../types/dive-session';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
 import type { DivePlan } from '../../types/dive-plan';
@@ -55,7 +65,7 @@ import { HStack } from '../ui/hstack';
 import { BookIcon, CalendarDaysIcon, HomeIcon, Icon, SettingsIcon } from '../ui/icon';
 import { InstrumentButton } from '../ui/instrument';
 import { KeyboardAwareScrollView } from '../ui/keyboard-aware-scroll-view';
-import { Pressable } from '../ui/pressable';
+import { PressScalePressable } from '../ui/press-scale';
 import { Text } from '../ui/text';
 import { VStack } from '../ui/vstack';
 import { useGluestackColors } from '../ui/gluestack-ui-provider';
@@ -772,18 +782,14 @@ export default function RootNavigation(): React.JSX.Element {
             {/* Unlike app feedback this carries an action, so it stays until the diver closes it.
                 It uses the same inverted surface so it never blends into the list cards below.
                 Not one accessibility element: VoiceOver reaches each button on its own. */}
-            <Pressable
+            <PressScalePressable
+              kind="control"
               testID="watch-auto-import-toast"
               accessible={false}
               onPress={openImportedLogToast}
               onLayout={event => setAutoImportToastHeight(event.nativeEvent.layout.height)}
               className="absolute left-4 right-4 rounded-2xl bg-foreground px-4 py-3"
-              style={({ pressed }) => [
-                {
-                  bottom: AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
-                },
-              ]}>
+              style={{ bottom: AUTO_IMPORT_TOAST_EDGE_GAP + chromeBottomOffset }}>
               <VStack space="sm">
                 <Text testID="watch-auto-import-message" className="text-sm font-semibold text-background">
                   {t('watchSync.autoImportedTitle', {
@@ -808,7 +814,7 @@ export default function RootNavigation(): React.JSX.Element {
                   />
                 </HStack>
               </VStack>
-            </Pressable>
+            </PressScalePressable>
           </Box>
         ) : null}
       </VStack>
@@ -1353,17 +1359,48 @@ const navTabTextStyles = tva({
 });
 
 function NavTab(props: { id: DiveLogbookSection; label: string; selected: boolean; onPress: () => void }): React.JSX.Element {
+  const reduceMotion = useReducedMotion();
+  const iconScale = useSharedValue(1);
+  const iconStyle = useAnimatedStyle(() => ({ transform: [{ scale: iconScale.get() }] }));
+  // Only a tap that moves the selection bounces the icon. Re-taps and selection set elsewhere do not.
+  const tappedRef = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!props.selected || !tappedRef.current) {
+      return;
+    }
+    tappedRef.current = false;
+    if (reduceMotion) {
+      return;
+    }
+    iconScale.set(
+      withSequence(
+        withTiming(TAB_BOUNCE.scale, { duration: TAB_BOUNCE.dip, easing: Easing.out(Easing.quad) }),
+        withSpring(1, TAB_BOUNCE.rebound),
+      ),
+    );
+  }, [iconScale, props.selected, reduceMotion]);
+
+  const handlePress = () => {
+    if (!props.selected) {
+      tappedRef.current = true;
+    }
+    props.onPress();
+  };
+
   return (
-    <Pressable
-      onPress={props.onPress}
+    <PressScalePressable
+      kind="control"
+      onPress={handlePress}
       testID={`nav-tab-${props.id}`}
       accessibilityRole="tab"
       accessibilityLabel={props.label}
       accessibilityState={{ selected: props.selected }}
-      className={navTabStyles({ selected: props.selected })}
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
-      <Icon as={NAV_TAB_ICONS[props.id]} size="lg" className={navTabIconStyles({ selected: props.selected })} />
+      className={navTabStyles({ selected: props.selected })}>
+      <Animated.View style={iconStyle}>
+        <Icon as={NAV_TAB_ICONS[props.id]} size="lg" className={navTabIconStyles({ selected: props.selected })} />
+      </Animated.View>
       <Text className={navTabTextStyles({ selected: props.selected })}>{props.label}</Text>
-    </Pressable>
+    </PressScalePressable>
   );
 }

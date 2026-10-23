@@ -2,7 +2,7 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Box } from '../../components/ui/box';
 import { HStack } from '../../components/ui/hstack';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { Text } from '../../components/ui/text';
 import { VStack } from '../../components/ui/vstack';
 import { RowSeparator, rowAccessibilityLabel } from '../common/form/field-row';
@@ -48,16 +48,16 @@ export function WatchMeasuredRow(props: {
             {props.value ?? props.emptyText}
           </Text>
         </VStack>
-        <Pressable
+        <PressScalePressable
+          kind="control"
           testID={`${props.testID}-override`}
           accessibilityRole="button"
           accessibilityLabel={t('logbook.overrideWatchValueLabel', { label: props.label })}
           onPress={props.onOverride}
           hitSlop={8}
-          className="min-h-11 justify-center"
-          style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+          className="min-h-11 justify-center">
           <Text className="text-base text-primary">{t('logbook.overrideWatchValue')}</Text>
-        </Pressable>
+        </PressScalePressable>
       </HStack>
       {props.footer ? <Box className="px-4 pb-3">{props.footer}</Box> : null}
     </VStack>
@@ -81,16 +81,16 @@ export function RestoreWatchValueLine(props: {
       <Text className="flex-1 text-sm leading-5 text-muted-foreground">
         {t('logbook.watchValueNote', { value: props.watchValue })}
       </Text>
-      <Pressable
+      <PressScalePressable
+        kind="control"
         testID={props.restoreTestID}
         accessibilityRole="button"
         accessibilityLabel={t('logbook.restoreWatchValueLabel', { label: props.label, value: props.watchValue })}
         onPress={props.onRestore}
         hitSlop={8}
-        className="min-h-11 justify-center"
-        style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+        className="min-h-11 justify-center">
         <Text className="text-sm text-primary">{t('logbook.restoreWatchValue')}</Text>
-      </Pressable>
+      </PressScalePressable>
     </HStack>
   );
 }

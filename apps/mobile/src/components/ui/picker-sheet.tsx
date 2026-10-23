@@ -19,7 +19,7 @@ import { cssInterop } from 'nativewind';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { HStack } from './hstack';
 import { CloseCircleIcon, Icon } from './icon';
-import { Pressable } from './pressable';
+import { PressScalePressable } from './press-scale';
 import { Text } from './text';
 import { VStack } from './vstack';
 
@@ -135,19 +135,19 @@ function SheetHeaderButton(props: {
   emphasized?: boolean;
 }): React.JSX.Element {
   return (
-    <Pressable
+    <PressScalePressable
+      kind="control"
       testID={props.action.testID}
       accessibilityRole="button"
       accessibilityLabel={props.action.accessibilityLabel ?? props.action.label}
       hitSlop={8}
       onPress={props.action.onPress}
-      className="min-h-11 flex-row items-center justify-center gap-1 px-2"
-      style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+      className="min-h-11 flex-row items-center justify-center gap-1 px-2">
       {props.icon ? <Icon as={props.icon} size="sm" className="text-primary" /> : null}
       <Text className={props.emphasized ? 'text-base font-semibold text-primary' : 'text-base text-primary'}>
         {props.action.label}
       </Text>
-    </Pressable>
+    </PressScalePressable>
   );
 }
 

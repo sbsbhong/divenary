@@ -7,7 +7,7 @@ import { Section } from '../../components/ui/grouped-list';
 import { HStack } from '../../components/ui/hstack';
 import { InstrumentButton, SelectorPill } from '../../components/ui/instrument';
 import { Input, InputField } from '../../components/ui/input';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { Text } from '../../components/ui/text';
 import { Textarea, TextareaInput } from '../../components/ui/textarea';
 import type { DiveLogEntry } from '../../types/dive-log-entry';
@@ -477,16 +477,16 @@ function SiteSuggestions(props: { value: string; suggestions?: string[]; onPick:
   return (
     <HStack space="xs" className="flex-wrap">
       {matches.map(site => (
-        <Pressable
+        <PressScalePressable
+          kind="control"
           key={site}
           testID={`log-entry-editor-site-suggestion-${site}`}
           accessibilityRole="button"
           accessibilityLabel={t('logbook.useSuggestion', { value: site })}
           onPress={() => props.onPick(site)}
-          className="mb-1 mr-1 min-h-11 justify-center rounded-full bg-muted px-3"
-          style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}>
+          className="mb-1 mr-1 min-h-11 justify-center rounded-full bg-muted px-3">
           <Text className="text-sm text-foreground">{site}</Text>
-        </Pressable>
+        </PressScalePressable>
       ))}
     </HStack>
   );

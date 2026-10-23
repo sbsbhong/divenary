@@ -12,7 +12,7 @@ import { FlatList } from '../../components/ui/flat-list';
 import { EditIcon, Icon, SearchIcon, WatchIcon } from '../../components/ui/icon';
 import { Input, InputField, InputIcon, InputSlot } from '../../components/ui/input';
 import { ListStatusBadge } from '../../components/ui/list-status-badge';
-import { Pressable } from '../../components/ui/pressable';
+import { PressScalePressable } from '../../components/ui/press-scale';
 import { RefreshControl } from '../../components/ui/refresh-control';
 import { ScreenHeader } from '../../components/ui/screen-header';
 import { SkeletonBlock, useContentLoading } from '../../components/ui/skeleton-block';
@@ -393,14 +393,14 @@ const SessionListItem = React.memo(function SessionListItem(props: {
     .join(', ');
 
   return (
-    <Pressable
+    <PressScalePressable
+      kind="card"
       testID={`logbook-list-item-${siteName}`}
       accessibilityRole="button"
       onPress={openEntry}
       accessible
       accessibilityLabel={accessibilityLabel}
-      className="rounded-2xl bg-card px-4 py-3"
-      style={({ pressed }) => [{ transform: [{ scale: pressed ? 0.95 : 1 }] }]}>
+      className="rounded-2xl bg-card px-4 py-3">
       <HStack space="md" className="items-center">
         <Box
           testID={`logbook-list-source-icon-${siteName}`}
@@ -444,6 +444,6 @@ const SessionListItem = React.memo(function SessionListItem(props: {
           ) : null}
         </VStack>
       </HStack>
-    </Pressable>
+    </PressScalePressable>
   );
 });

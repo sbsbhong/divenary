@@ -5,7 +5,7 @@ import { Button, ButtonIcon } from '../../../components/ui/button';
 import { HStack } from '../../../components/ui/hstack';
 import { AddIcon, CloseIcon, Icon } from '../../../components/ui/icon';
 import { Input, InputField } from '../../../components/ui/input';
-import { Pressable } from '../../../components/ui/pressable';
+import { PressScalePressable } from '../../../components/ui/press-scale';
 import { Text } from '../../../components/ui/text';
 import { VStack } from '../../../components/ui/vstack';
 import { EditorField } from './editor-field';
@@ -146,18 +146,18 @@ export const BadgeListInput = React.forwardRef<BadgeListFieldHandle, BadgeListIn
       {suggestions.length ? (
         <HStack space="xs" className="flex-wrap">
           {suggestions.map(value => (
-            <Pressable
+            <PressScalePressable
+              kind="control"
               key={value}
               testID={`${props.badgeTestIDPrefix}-suggestion-${value}`}
               accessibilityRole="button"
               accessibilityLabel={t('form.addItem', { value })}
               onPress={() => commitTokens([value])}
               className="mb-1 mr-1 min-h-11 flex-row items-center gap-1 rounded-full bg-muted px-3"
-              style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.95 : 1 }] })}
             >
               <Icon as={AddIcon} size="xs" className="text-muted-foreground" />
               <Text className="text-sm text-foreground">{value}</Text>
-            </Pressable>
+            </PressScalePressable>
           ))}
         </HStack>
       ) : null}
