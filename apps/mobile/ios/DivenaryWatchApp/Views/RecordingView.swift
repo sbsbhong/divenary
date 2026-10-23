@@ -124,6 +124,9 @@ struct RecordingInstrumentView: View {
     var pages: RecordingPageModel?
     /// A hint chip without page dots for a recording that does not page: the demo's crown hint.
     var fixedHint: String?
+    /// The diver ended the recording (RC-END): the gauge and status band stay as a 30 % silhouette
+    /// and the readout column, hint and bottom slot fade to 0, so the ending line sits over no numbers.
+    var isEnding = false
 
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -131,6 +134,8 @@ struct RecordingInstrumentView: View {
     @State private var hasEntered = false
 
     static let horizontalPadding: CGFloat = 4
+    /// The ending silhouette (RC-END, DECISIONS D20): the gauge and status band at 30 %.
+    static let endingSilhouetteOpacity: Double = 0.3
     /// Where the readout column starts, right of the gauge, measured from the screen's leading edge.
     static var readoutColumnLeading: CGFloat { horizontalPadding + RecordingColumn.leading }
 
@@ -170,18 +175,20 @@ struct RecordingInstrumentView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: readoutStatus(for: page))
                 .opacity(hasEntered ? 1 : 0)
+                .opacity(isEnding ? Self.endingSilhouetteOpacity : 1)
 
                 RecordingPageTransition(key: key) {
                     pageInstrument(page)
                 }
                 .opacity(hasEntered ? 1 : 0)
+                .opacity(isEnding ? 0 : 1)
                 .environment(\.recordingBottomSlotOccupied, bottomSlot != .empty)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // One gauge for every page: it takes the page's range and stop zone, and never pages.
                 // Every entry carries its page's key; while pages swap, the showing page's gauge wins.
                 .overlayPreferenceValue(RecordingGaugeKey.self, alignment: .topLeading) { entries in
                     if let rail = entries.last(where: { $0.key == key })?.rail {
-                        rail
+                        rail.opacity(isEnding ? Self.endingSilhouetteOpacity : 1)
                     }
                 }
                 // The bottom slot, anchored to the instrument: the storage footer, or out of the water
@@ -197,6 +204,7 @@ struct RecordingInstrumentView: View {
                     }
                     .frame(minHeight: type.bottomSlotHeight, alignment: .bottomLeading)
                     .padding(.leading, RecordingColumn.leading)
+                    .opacity(isEnding ? 0 : 1)
                     .animation(DiveMotion.autoFade(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: bottomSlot)
                 }
                 .layoutPriority(1)
@@ -213,11 +221,13 @@ struct RecordingInstrumentView: View {
                         // The hint text and current dot cross-fade with the page (spec RC-PAGE).
                         .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: hint)
                         .opacity(hasEntered ? 1 : 0)
+                        .opacity(isEnding ? 0 : 1)
                 } else if let fixedHint {
                     RecordingHintChip(text: fixedHint)
                         .frame(maxWidth: .infinity)
                         .fixedSize(horizontal: false, vertical: true)
                         .opacity(hasEntered ? 1 : 0)
+                        .opacity(isEnding ? 0 : 1)
                 }
             }
             .environment(\.liveReadoutStatus, readoutStatus(for: page))

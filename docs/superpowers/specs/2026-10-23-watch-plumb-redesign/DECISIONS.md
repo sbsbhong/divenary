@@ -113,7 +113,8 @@ Apple's Depth app is called "수심" in Korean and has its own demo mode driven 
 
 ## D20. Implementation review decisions (Task 2)
 - End page without an Action Button: the large instruction already says "수중 잠금 해제 / 기록 종료·저장", so the column's bottom-slot Water Lock line is hidden on the End page and the hint chip shows dots only for `.waterLockToEnd`. With an Action Button the chip shows "동작 버튼 ▸ 기록 종료·저장" and the bottom-slot Water Lock line stays (it is the other way to end at the surface, as drawn on the canvas End board).
-- Ending overlay: the recording instrument stays visible at 30 % under the spinner and "기록을 종료하고 있습니다." (RC-END), not an opaque screen.
+- Ending overlay (RC-END): the gauge stays visible as a 30 % silhouette while the right value column fades to 0, so the spinner and "기록을 종료하고 있습니다." never sit on top of numbers; not an opaque screen.
+- Narrow watches (40/41 mm class): both start-card titles use the same, one-step-smaller title size so "프리다이빙" fits without shrinking below "스쿠버".
 - Recommended-stop record layout follows C6: "상태" full width, "스탑 구간 시간" on its own row, "목표 수심 / 스탑 구간" full width, then "시작" | "완료 시각".
 - Korean copy keeps "Divenary" and its particle on one line (word joiner U+2060 between "Divenary" and the particle in ko catalog values).
 - Each value row is one VoiceOver element ("라벨, 값"); unknown values read "정보 없음" (key `Not available`).

@@ -725,6 +725,7 @@ final class DiveDesignSystemTests: XCTestCase {
             (.cardDate, 14, .semibold, false), (.cardDetail, 14, .regular, false),
             (.cardUnit, 13, .semibold, true), (.cardMarker, 12, .regular, false),
             (.footnoteMetric, 13, .semibold, true),
+            (.narrowStartTitle, 11, .semibold, false),
         ]
         XCTAssertEqual(expected.count, DiveUIType.Role.allCases.count)
         for (role, size, weight, metric) in expected {
@@ -765,6 +766,18 @@ final class DiveDesignSystemTests: XCTestCase {
             // The arming ring sits 3 pt outside the play disc.
             XCTAssertEqual(card.armingRing, card.playDisc + 6)
         }
+    }
+
+    func testStartCardTitleSharesOneSmallerSizeOnTheNarrowestWatch() {
+        // 40 mm (162 pt) takes the narrow title; 42 mm and wider keep the headline.
+        XCTAssertEqual(DiveLayout.startCardTitleRole(screenWidth: 162), .narrowStartTitle)
+        XCTAssertEqual(DiveLayout.startCardTitleRole(screenWidth: 169), .narrowStartTitle)
+        XCTAssertEqual(DiveLayout.startCardTitleRole(screenWidth: 170), .headline)
+        XCTAssertEqual(DiveLayout.startCardTitleRole(screenWidth: 187), .headline)
+        XCTAssertEqual(DiveLayout.startCardTitleRole(screenWidth: 205), .headline)
+        // The narrow title is smaller than the headline and is one fixed size for both cards.
+        XCTAssertEqual(DiveUIType.baseSize(.narrowStartTitle), 11)
+        XCTAssertLessThan(DiveUIType.baseSize(.narrowStartTitle), DiveUIType.baseSize(.headline))
     }
 
     func testOffRecordingRowsTilesAndGutters() {

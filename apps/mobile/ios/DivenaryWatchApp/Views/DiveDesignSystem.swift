@@ -289,6 +289,9 @@ enum DiveUIType {
         case cardMarker
         /// A number inside footnote text, such as a plan's planned maximum depth.
         case footnoteMetric
+        /// The start card title on the narrowest watch (40 mm class): one size for both cards, smaller
+        /// than `headline`, so "프리다이빙" fits one line in the card's title width (DECISIONS D20).
+        case narrowStartTitle
     }
 
     /// Point size at the Large text size.
@@ -304,6 +307,7 @@ enum DiveUIType {
         case .metricM: return 20
         case .cardDepth: return 22
         case .cardDate, .cardDetail: return 14
+        case .narrowStartTitle: return 11
         }
     }
 
@@ -312,7 +316,8 @@ enum DiveUIType {
         case .body, .footnote, .wetGuide, .crownHint, .cardDetail, .cardMarker:
             return .regular
         case .headline, .footnoteEmphasis, .eyebrow, .title3, .wetMode, .wetTruth, .metricXL, .metricL, .metricM,
-             .statValue, .cardDepth, .listDepth, .unitL, .unitM, .cardDate, .cardUnit, .footnoteMetric:
+             .statValue, .cardDepth, .listDepth, .unitL, .unitM, .cardDate, .cardUnit, .footnoteMetric,
+             .narrowStartTitle:
             return .semibold
         }
     }
@@ -324,7 +329,7 @@ enum DiveUIType {
              .footnoteMetric:
             return true
         case .headline, .body, .footnote, .footnoteEmphasis, .eyebrow, .title3, .wetMode, .wetTruth, .wetGuide,
-             .crownHint, .cardDate, .cardDetail, .cardMarker:
+             .crownHint, .cardDate, .cardDetail, .cardMarker, .narrowStartTitle:
             return false
         }
     }
@@ -337,7 +342,7 @@ enum DiveUIType {
         case .title3, .statValue, .listDepth: return .title3
         case .metricXL, .metricL, .metricM, .cardDepth: return .title2
         case .footnote, .footnoteEmphasis, .eyebrow, .wetTruth, .wetGuide, .crownHint, .unitM, .cardUnit,
-             .cardMarker, .footnoteMetric:
+             .cardMarker, .footnoteMetric, .narrowStartTitle:
             return .footnote
         }
     }
@@ -409,6 +414,17 @@ enum DiveLayout {
 
         /// The arming ring's diameter: 3 pt outside the play disc.
         var armingRing: CGFloat { playDisc + 6 }
+    }
+
+    /// Narrower screens than this (the 40 mm class, 162 pt) get the narrow start title.
+    static let narrowStartCardScreenWidth: CGFloat = 170
+
+    /// The start card title's role by screen width. Only the 40 mm class needs the smaller title: its
+    /// title area is about 44 pt, and "프리다이빙" at the 16 pt headline needs about 62 pt. 42 mm and
+    /// wider keep the headline. 11 pt is the largest shared size that fits without scaling there; one
+    /// step smaller (13 pt) needs about 50 pt (DECISIONS D20).
+    static func startCardTitleRole(screenWidth: CGFloat) -> DiveUIType.Role {
+        screenWidth < narrowStartCardScreenWidth ? .narrowStartTitle : .headline
     }
 
     /// Platters sit this far in from the screen's sides.

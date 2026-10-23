@@ -32,14 +32,14 @@ struct RealRecordingFlowView: View {
                     maximumDepthMeters: water.maximumDepthMeters,
                     endControl: WatchRecordingMode.real.endControl,
                     waterState: water.latestState,
-                    pages: coordinator.recordingPages
+                    pages: coordinator.recordingPages,
+                    isEnding: coordinator.isEnding
                 )
-                // RC-END: the instrument stays visible at 30 % under the ending line. Nothing
-                // moves; the dim and the line only fade.
-                .opacity(coordinator.isEnding ? 0.3 : 1)
+                // RC-END: the gauge stays as a 30 % silhouette and the readout column fades to 0,
+                // inside RecordingInstrumentView. Nothing moves; the values and the line only fade.
                 .overlay {
                     if coordinator.isEnding {
-                        endingView
+                        RecordingEndingOverlay(pages: coordinator.recordingPages)
                             .transition(.opacity)
                     }
                 }
@@ -119,16 +119,6 @@ struct RealRecordingFlowView: View {
         .reservingFailureBanner(coordinator.failureFeedback != nil)
     }
 
-    /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire. It
-    /// has no background, so the dimmed instrument stays behind it, and it sits centred over the
-    /// readout column, right of the gauge (spec F #27, RC-END, DECISIONS D20).
-    private var endingView: some View {
-        DiveFlowProgress(title: String(localized: "Ending recording"), coversContent: false) {
-            BusyPressNote(pages: coordinator.recordingPages)
-        }
-        .padding(.leading, RecordingInstrumentView.readoutColumnLeading)
-    }
-
     private var savingView: some View {
         DiveFlowProgress(title: String(localized: "Saving log")) {
             BusyPressNote(pages: coordinator.recordingPages)
@@ -142,6 +132,20 @@ struct RealRecordingFlowView: View {
             onRetry: { coordinator.retryCompletedSessionSave() },
             onHome: { coordinator.returnHomeKeepingPendingRecord() }
         )
+    }
+}
+
+/// The ending line (spec F #27, RC-END, DECISIONS D20): shown at once, not after a delay, because
+/// saving holds the main thread. It has no background and sits centred over the readout column,
+/// right of the 30 % gauge, where the values have faded to 0.
+struct RecordingEndingOverlay: View {
+    @ObservedObject var pages: RecordingPageModel
+
+    var body: some View {
+        DiveFlowProgress(title: String(localized: "Ending recording"), coversContent: false) {
+            BusyPressNote(pages: pages)
+        }
+        .padding(.leading, RecordingInstrumentView.readoutColumnLeading)
     }
 }
 

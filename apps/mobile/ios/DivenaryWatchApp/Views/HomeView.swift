@@ -624,6 +624,8 @@ private struct StartSessionCard: View {
     @State private var ringProgress: CGFloat = 0
 
     private let metrics = DiveLayout.StartCard(.current)
+    /// Both cards read the same screen width, so they always share one title size.
+    private let titleRole = DiveLayout.startCardTitleRole(screenWidth: WKInterfaceDevice.current().screenBounds.width)
 
     var body: some View {
         content
@@ -659,11 +661,11 @@ private struct StartSessionCard: View {
             .opacity(isEnabled ? 1 : 0.45)
 
             Text(title)
-                .diveFont(.headline)
+                .diveFont(titleRole)
                 .foregroundStyle(DiveWatchTheme.ink)
                 .lineLimit(1)
-                // 40 mm leaves about 40 pt for the title ("프리다이빙" needs about 60 pt), so it shrinks
-                // to about two thirds there instead of ending in an ellipsis.
+                // On the 40 mm class both titles use the shared narrow size, which fits without scaling.
+                // The scale factor only backs up a longer localization, so the two cards stay one size.
                 .minimumScaleFactor(0.6)
                 .layoutPriority(1)
                 .opacity(isEnabled ? 1 : 0.45)
