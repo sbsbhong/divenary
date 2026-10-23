@@ -97,6 +97,7 @@
 - 목록: 날짜, 값, 미니 그래프, 전송 상태 아이콘(전체 문구 접근성 라벨), 종류는 평문, 데모 칩. 읽기 실패(C10, 행 없음), 빈 목록(실제 로고).
 - 상세: 세로 페이지 표시, 전체 전송 문구, C5 재전송 안내, C6 권장 스탑 기록, 별점 접근성.
 - 문구: C3 통일, C4, C5, C6, C10, C14, C15(스쿠버 저장 화면 "다이빙 시간").
+- 데모 전용 흐름(`SimulatedRecordingFlowView`): 저장 중, 데모 요약(요약 상단 상태 줄 옆이나 날짜 줄에 '데모' 표식 칩, 실제 요약과 같은 D11 순서), 데모 저장 실패(`The Action Button retries saving this demo log.` 문구 유지, 실제 저장 실패와 같은 레이아웃), 시작 실패(`persistenceErrorView`), 정리 오류(`cleanupErrorView`)를 실제 기록의 같은 화면 디자인으로 맞춘다. 데모 기록 화면은 Task 2에서 끝낸다(페이지 넘김 없음, 크라운으로 수심 조절, 툴바 닫기 버튼, 안내 칩 "크라운 ▸ 수심 바꾸기").
 - [ ] 게이트 + XCTest, 시뮬레이터에서 데모 다이빙 → 저장 → 요약 → 목록 → 상세 확인.
 - [ ] 커밋: `feat(watch): redesign the summary, saved logs and post-dive screens`
 
