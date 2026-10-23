@@ -84,13 +84,16 @@ describe('list and sync feedback states', () => {
     expect(textOf(renderer, 'app-feedback-message')).toBe('워치 기록 2개를 이 기기에 저장했습니다. 1개는 아직 가져오지 못했습니다.');
   });
 
-  test('keeps the empty logbook apart from loading and offers both ways to start', async () => {
+  test('keeps the empty logbook apart from loading and leaves the two ways to start in the header', async () => {
     const renderer = await render(<LogbookScreen {...logbookProps()} />);
 
     expect(renderer.root.findAllByProps({ testID: 'logbook-empty-state' }).length).toBeGreaterThan(0);
     expect(renderer.root.findAllByProps({ testID: 'logbook-loading-state' })).toHaveLength(0);
-    expect(renderer.root.findByProps({ testID: 'logbook-empty-create-action' }).props.label).toBe('기록 작성');
-    expect(renderer.root.findByProps({ testID: 'logbook-empty-sync-action' }).props.label).toBe('워치 기록 가져오기');
+    expect(renderer.root.findByProps({ testID: 'logbook-create-action' }).props.label).toBe('기록 작성');
+    expect(renderer.root.findByProps({ testID: 'logbook-import-action' }).props.label).toBe('워치 기록 가져오기');
+    // The empty card names both ways in without repeating the header buttons, whose labels wrapped there.
+    expect(renderer.root.findAllByProps({ testID: 'logbook-empty-create-action' })).toHaveLength(0);
+    expect(renderer.root.findAllByProps({ testID: 'logbook-empty-sync-action' })).toHaveLength(0);
   });
 
   test('distinguishes a search with no matches from an empty logbook', async () => {

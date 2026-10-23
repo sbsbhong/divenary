@@ -259,7 +259,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
               onAction={() => props.onFilterChange({ ...props.filter, query: '' })}
             />
           ) : (
-            <EmptyLogbook onCreate={props.onCreateEntry} onSyncWatch={syncWatch} isSyncingWatch={isSyncingWatch} />
+            <EmptyLogbook />
           )
         }
         ListFooterComponent={
@@ -279,35 +279,20 @@ function ListItemSeparator(): React.JSX.Element {
   return <Box className="h-2" />;
 }
 
-/** A first logbook: one short line covering both ways in, and both actions. */
-function EmptyLogbook(props: { onCreate: () => void; onSyncWatch: () => void; isSyncingWatch: boolean }): React.JSX.Element {
+/**
+ * A first logbook: one short line covering both ways in. The two actions it names sit just above
+ * in the header, so the card does not repeat them.
+ */
+function EmptyLogbook(): React.JSX.Element {
   const { t } = useTranslation();
 
   return (
     <DiveSummaryCard>
-      <VStack testID="logbook-empty-state" space="md">
-        <VStack space="xs">
-          <Text accessibilityRole="header" className="text-xl font-semibold leading-7 text-card-foreground">
-            {t('logbook.emptyTitle')}
-          </Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{t('logbook.emptyMessage')}</Text>
-        </VStack>
-        <HStack space="sm">
-          <InstrumentButton
-            testID="logbook-empty-create-action"
-            label={t('logbook.createManual')}
-            icon={EditIcon}
-            onPress={props.onCreate}
-            className="flex-1"
-          />
-          <InstrumentButton
-            testID="logbook-empty-sync-action"
-            label={t('logbook.syncWatch')}
-            onPress={props.onSyncWatch}
-            pending={props.isSyncingWatch}
-            className="flex-1"
-          />
-        </HStack>
+      <VStack testID="logbook-empty-state" space="xs">
+        <Text accessibilityRole="header" className="text-xl font-semibold leading-7 text-card-foreground">
+          {t('logbook.emptyTitle')}
+        </Text>
+        <Text className="text-sm leading-5 text-muted-foreground">{t('logbook.emptyMessage')}</Text>
       </VStack>
     </DiveSummaryCard>
   );

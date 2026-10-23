@@ -196,29 +196,6 @@ jest.mock('../src/companion/default-watch-link', () => ({
   },
 }));
 
-jest.mock('react-native-reanimated', () => {
-  const createAnimation = () => {
-    const animation = {} as {
-      duration: jest.Mock;
-      withInitialValues: jest.Mock;
-    };
-
-    animation.duration = jest.fn(() => animation);
-    animation.withInitialValues = jest.fn(() => animation);
-
-    return animation;
-  };
-
-  return {
-    __esModule: true,
-    default: {
-      createAnimatedComponent: (component: React.ComponentType) => component,
-    },
-    FadeOut: createAnimation(),
-    ZoomIn: createAnimation(),
-  };
-});
-
 jest.mock('react-native-safe-area-context', () => {
   const ReactModule = require('react') as typeof import('react');
   const actual = jest.requireActual('react-native-safe-area-context');

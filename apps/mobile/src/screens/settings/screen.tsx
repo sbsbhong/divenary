@@ -1,5 +1,6 @@
 import React from 'react';
-import { Alert, AppState, Linking } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, Linking } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSequence, withTiming } from 'react-native-reanimated';
 import { useTranslation } from 'react-i18next';
 import packageJson from '../../../package.json';
 import { Section, Row } from '../../components/ui/grouped-list';
@@ -161,34 +162,60 @@ export default function SettingsScreen({
     };
   }, []);
 
-  const refreshLinkedWatchInfo = React.useCallback(async () => {
+  const refreshLinkedWatchInfo = React.useCallback(async (): Promise<LinkedWatchInfo | undefined> => {
     try {
       const info = await loadLinkedWatchInfo();
       if (isMountedRef.current) {
         setLinkedWatchInfo(info);
         setLinkedWatchLookupFailed(false);
       }
+      return info;
     } catch {
       // A failed lookup is not the same as a missing bridge; keep it retryable.
       if (isMountedRef.current) {
         setLinkedWatchLookupFailed(true);
       }
+      return undefined;
     }
   }, [loadLinkedWatchInfo]);
 
+  const watchStatusOpacity = useSharedValue(1);
+  const watchStatusStyle = useAnimatedStyle(() => ({ opacity: watchStatusOpacity.value }));
+
   const refreshLinkedWatchInfoFromButton = React.useCallback(async () => {
     setIsRefreshingWatch(true);
+    let info: LinkedWatchInfo | undefined;
     try {
-      await refreshLinkedWatchInfo();
+      info = await refreshLinkedWatchInfo();
     } finally {
       if (isMountedRef.current) {
         setIsRefreshingWatch(false);
       }
     }
-  }, [refreshLinkedWatchInfo]);
+    if (!isMountedRef.current) {
+      return;
+    }
+    // The check usually answers at once with the same status, so the row dims and returns to show it ran.
+    watchStatusOpacity.value = withSequence(withTiming(0.3, { duration: 120 }), withTiming(1, { duration: 240 }));
+    AccessibilityInfo.announceForAccessibility(
+      info ? getLinkedWatchStatusLabel(info, t) : t('settings.devices.status.lookupFailed'),
+    );
+  }, [refreshLinkedWatchInfo, t, watchStatusOpacity]);
+
+  const isDevicesRoute = route === 'devices';
+  React.useEffect(() => {
+    // Read again on opening the device page: pairing may have finished since the first read.
+    void refreshLinkedWatchInfo();
+  }, [isDevicesRoute, refreshLinkedWatchInfo]);
 
   React.useEffect(() => {
-    void refreshLinkedWatchInfo();
+    // The watch app can be installed or paired while Divenary is in the background.
+    const subscription = AppState.addEventListener('change', nextState => {
+      if (nextState === 'active') {
+        void refreshLinkedWatchInfo();
+      }
+    });
+    return () => subscription.remove();
   }, [refreshLinkedWatchInfo]);
 
   React.useEffect(() => {
@@ -391,16 +418,18 @@ export default function SettingsScreen({
     return (
       <SettingsScaffold>
         <DetailHeader title={t('settings.devices.title')} onBack={closeRoute} />
-        <Section>
-          <Row
-            testID="settings-linked-watch"
-            icon={WatchIcon}
-            label={watchName}
-            value={watchStatus}
-            valueTestID="settings-linked-watch-status"
-            separated={false}
-          />
-        </Section>
+        <Animated.View style={watchStatusStyle}>
+          <Section>
+            <Row
+              testID="settings-linked-watch"
+              icon={WatchIcon}
+              label={watchName}
+              value={watchStatus}
+              valueTestID="settings-linked-watch-status"
+              separated={false}
+            />
+          </Section>
+        </Animated.View>
         <InstrumentButton
           testID="settings-linked-watch-refresh"
           label={t('settings.devices.refresh')}
@@ -698,5 +727,6 @@ function getLinkedWatchStatusLabel(linkedWatchInfo: LinkedWatchInfo | undefined,
     return t('settings.devices.status.appNotInstalled');
   }
 
-  return linkedWatchInfo.isReachable ? t('settings.devices.status.connected') : t('settings.devices.status.linked');
+  // Logs reach the phone in the background, so a paired watch with Divenary is connected even when its app is closed.
+  return t('settings.devices.status.connected');
 }

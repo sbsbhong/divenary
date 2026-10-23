@@ -1293,3 +1293,9 @@
 - Added: 2026-10-23 저장 뒤 마무리 로고 뒤집기 결정 raw source(D16a 원문)
 - Recorded: 저장 뒤 마무리에서 선 끝을 따라가는 로고만 좌우로 뒤집어 가오리 머리가 진행 방향을 향하게 했다(`LogoRiderHeading`, 원본 로고 기준 머리 방향 약 -120°, 뒤집은 뒤 약 -57°에서 회전). 다른 로고 자리는 원본 방향 그대로다.
 - Recorded: Ultra 3 49mm 임시 하네스로 선의 하강·바닥·상승 지점(진행률 0.2, 0.5, 0.8, 1.0)의 로고 방향을 캡처해 확인했다. 실제 애니메이션 속도의 프레임 캡처는 하지 않았다.
+
+## [2026-10-23] ingest | Mobile/Watch UI 언어
+- Added: 2026-10-23 모바일 워치 연결 상태와 빈 로그북 수정 raw source(소유자 보고 3건, 원인, 결정)
+- Recorded: 설정의 Apple Watch는 연동 + Divenary 설치면 `연결됨`이고 `isReachable`은 보이지 않는다(`지금은 연결되지 않음` 삭제). 연결 기기 페이지 진입과 앱 복귀 때 다시 읽고, `연결 상태 확인`이 끝나면 상태 행이 흐려졌다 돌아오며 VoiceOver가 결과를 읽는다.
+- Superseded: 빈 로그북 카드 안의 `기록 작성`·`워치 기록 가져오기` 버튼. 두 action은 머리 줄 버튼이 맡는다.
+- Recorded: jest가 `react-native-reanimated/mock`과 `react-native-worklets/src/mock`을 전역으로 쓰게 했고, 테스트 파일 3개의 부분 reanimated stub을 걷어냈다.

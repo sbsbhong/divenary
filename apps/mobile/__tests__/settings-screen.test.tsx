@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactTestRenderer from 'react-test-renderer';
-import { Alert, AppState, type AlertButton, type AppStateStatus } from 'react-native';
+import { AccessibilityInfo, Alert, AppState, type AlertButton, type AppStateStatus } from 'react-native';
 import i18n from '../src/i18n';
 import { CheckIcon } from '../src/components/ui/icon';
 import { Switch } from '../src/components/ui/switch';
@@ -698,9 +698,10 @@ describe('SettingsScreen', () => {
   });
 
   test('enables the switch after a physical-device permission change in iOS Settings', async () => {
-    let appStateListener: ((state: AppStateStatus) => void) | undefined;
+    // The screen listens for the return to the foreground more than once (permission, watch status).
+    const appStateListeners: Array<(state: AppStateStatus) => void> = [];
     jest.spyOn(AppState, 'addEventListener').mockImplementation((_event, listener) => {
-      appStateListener = listener;
+      appStateListeners.push(listener);
       return { remove: jest.fn() };
     });
     let settingsAction: (() => void) | undefined;
@@ -727,7 +728,7 @@ describe('SettingsScreen', () => {
     expect(openNotificationSettings).toHaveBeenCalledTimes(1);
 
     await ReactTestRenderer.act(async () => {
-      appStateListener?.('active');
+      appStateListeners.forEach(listener => listener('active'));
       await Promise.resolve();
     });
     await flush();
@@ -841,6 +842,27 @@ describe('SettingsScreen', () => {
     });
 
     expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('워치에 Divenary 설치 필요');
+  });
+
+  test('calls a paired watch with Divenary connected even while its app is closed', async () => {
+    const renderer = await renderSettings({
+      loadLinkedWatchInfo: () =>
+        Promise.resolve({ isSupported: true, isPaired: true, isWatchAppInstalled: true, isReachable: false }),
+    });
+
+    expect(renderer.root.findByProps({ testID: 'settings-linked-watch-status' }).props.children).toBe('연결됨');
+  });
+
+  test('announces the watch status after a check from the device page', async () => {
+    const announce = jest.spyOn(AccessibilityInfo, 'announceForAccessibility').mockImplementation(() => undefined);
+    const renderer = await renderSettings({ route: 'devices', loadLinkedWatchInfo: () => Promise.resolve(linkedWatchInfo) });
+
+    await ReactTestRenderer.act(async () => {
+      await renderer.root.findByProps({ testID: 'settings-linked-watch-refresh' }).props.onPress();
+    });
+
+    expect(announce).toHaveBeenCalledWith('연결됨');
+    announce.mockRestore();
   });
 
   test('explains when the iOS native watch bridge is missing from the installed app', async () => {

@@ -7,29 +7,6 @@ import MemoryScreen from '../src/screens/memory/screen';
 import { AppPreferencesProvider } from '../src/states/app-preferences';
 import type { MobileDiveSession } from '../src/types/dive-session';
 
-jest.mock('react-native-reanimated', () => {
-  const createAnimation = () => {
-    const animation = {} as {
-      duration: jest.Mock;
-      withInitialValues: jest.Mock;
-    };
-
-    animation.duration = jest.fn(() => animation);
-    animation.withInitialValues = jest.fn(() => animation);
-
-    return animation;
-  };
-
-  return {
-    __esModule: true,
-    default: {
-      createAnimatedComponent: (component: React.ComponentType) => component,
-    },
-    FadeOut: createAnimation(),
-    ZoomIn: createAnimation(),
-  };
-});
-
 const blankManualSession: MobileDiveSession = {
   localSessionId: 'manual-entry-no-metrics',
   startedAt: 1781350200,

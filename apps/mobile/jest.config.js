@@ -8,7 +8,7 @@ module.exports = {
     ),
   },
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|nativewind|react-native-css-interop|@gluestack-ui|@legendapp)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|nativewind|react-native-css-interop|@gluestack-ui|@legendapp|react-native-reanimated|react-native-worklets)/)',
   ],
   watchman: false,
 };

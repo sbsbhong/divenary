@@ -707,7 +707,7 @@ describe('Logbook list, editor and detail', () => {
       expect(loadingState().props.accessibilityLabel).toBe('Loading your logbook');
     });
 
-    test('offers both ways to start an empty logbook', async () => {
+    test('offers both ways to start an empty logbook from the header', async () => {
       const onCreateEntry = jest.fn();
       const onSyncWatch = jest.fn(async () => ({ importedCount: 0, receivedCount: 0, failedCount: 0, unavailable: false }));
       const renderer = await renderElement(<LogbookScreen {...listScreenProps({ onCreateEntry, onSyncWatch })} />);
@@ -715,8 +715,8 @@ describe('Logbook list, editor and detail', () => {
 
       expect(root.findAll(node => node.props.children === 'No dive logs yet').length).toBeGreaterThan(0);
 
-      await press(root, 'logbook-empty-create-action');
-      await press(root, 'logbook-empty-sync-action');
+      await press(root, 'logbook-create-action');
+      await press(root, 'logbook-import-action');
 
       expect(onCreateEntry).toHaveBeenCalledTimes(1);
       expect(onSyncWatch).toHaveBeenCalledTimes(1);
