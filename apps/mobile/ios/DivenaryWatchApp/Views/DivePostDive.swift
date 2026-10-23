@@ -613,7 +613,9 @@ struct DiveFlowMessage<Glyph: View, Actions: View>: View {
             VStack(spacing: 0) {
                 glyph
                     .accessibilityHidden(true)
-                    .padding(.bottom, 8)
+                    // With the banner up, the glyph and gaps tighten so the button ends above it (40 mm).
+                    .frame(height: reservesFailureBanner ? 22 : nil)
+                    .padding(.bottom, reservesFailureBanner ? 0 : 8)
                 Text(title)
                     .diveFont(.headline)
                     .foregroundStyle(DiveWatchTheme.ink)
@@ -626,14 +628,14 @@ struct DiveFlowMessage<Glyph: View, Actions: View>: View {
                         .foregroundStyle(DiveWatchTheme.ink2)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
+                        .padding(.top, reservesFailureBanner ? 0 : 2)
                 }
                 VStack(spacing: 6) {
                     actions
                 }
-                .padding(.top, 14)
+                .padding(.top, reservesFailureBanner ? 4 : 14)
             }
-            .padding(.top, 6)
+            .padding(.top, reservesFailureBanner ? 0 : 6)
             .padding(.horizontal, DiveLayout.platterInset(.current))
             .frame(maxWidth: .infinity)
             .padding(.bottom, reservesFailureBanner ? PostDiveLayout.failureBannerReserve : 0)

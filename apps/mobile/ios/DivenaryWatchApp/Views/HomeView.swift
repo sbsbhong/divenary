@@ -662,7 +662,10 @@ private struct StartSessionCard: View {
                 .diveFont(.headline)
                 .foregroundStyle(DiveWatchTheme.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.8)
+                // 40 mm leaves about 40 pt for the title ("프리다이빙" needs about 60 pt), so it shrinks
+                // to about two thirds there instead of ending in an ellipsis.
+                .minimumScaleFactor(0.6)
+                .layoutPriority(1)
                 .opacity(isEnabled ? 1 : 0.45)
 
             Spacer(minLength: 4)

@@ -180,31 +180,12 @@ struct WetReadyView: View {
     /// "Ready to record" beside the toolbar circle, and the live depth under the clock, on the
     /// recording status band's line (DECISIONS D10).
     private var statusBand: some View {
-        HStack(alignment: .center, spacing: 4) {
-            StatusChip(title: String(localized: "Ready"))
-
-            Spacer(minLength: 4)
-
-            if let currentDepthMeters {
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(String(localized: "Depth"))
-                        .font(type.font(.rowLabel))
-                        .foregroundStyle(DiveWatchTheme.ink2)
-                    Text(DiveFormatters.depthValue(currentDepthMeters))
-                        .font(DiveWatchTheme.metricFont(size: sizeClass == .regular ? 15 : 14))
-                        .foregroundStyle(DiveWatchTheme.ink)
-                        .contentTransition(.identity)
-                        .padding(.leading, 4)
-                    Text(verbatim: "m")
-                        .font(DiveWatchTheme.metricFont(size: type.size(.rowLabel)))
-                        .foregroundStyle(DiveWatchTheme.ink2)
-                        .padding(.leading, 2)
-                }
-                .lineLimit(1)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(Text(String(localized: "Depth")))
-                .accessibilityValue(Text(DiveFormatters.depth(currentDepthMeters)))
-            }
+        // The row keeps the label beside the depth when both fit; on the narrowest watch (40 mm) the
+        // label goes first, and then the depth moves under the chip rather than being cut short.
+        ViewThatFits(in: .horizontal) {
+            bandRow(showsLabel: true)
+            bandRow(showsLabel: false)
+            bandColumn
         }
         .environment(\.diveType, type)
         .frame(minHeight: DiveSpacing.chipHeight)
@@ -212,6 +193,54 @@ struct WetReadyView: View {
         // ends under the clock.
         .padding(.leading, type.toolbarClearance + RecordingInstrumentView.horizontalPadding)
         .padding(.trailing, sizeClass == .regular ? 17 : 14)
+    }
+
+    private func bandRow(showsLabel: Bool) -> some View {
+        HStack(alignment: .center, spacing: 4) {
+            StatusChip(title: String(localized: "Ready"))
+
+            Spacer(minLength: 4)
+
+            if let currentDepthMeters {
+                depthReadout(currentDepthMeters, showsLabel: showsLabel)
+            }
+        }
+    }
+
+    private var bandColumn: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            StatusChip(title: String(localized: "Ready"))
+
+            if let currentDepthMeters {
+                HStack {
+                    Spacer(minLength: 0)
+                    depthReadout(currentDepthMeters, showsLabel: true)
+                }
+            }
+        }
+    }
+
+    private func depthReadout(_ depthMeters: Double, showsLabel: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            if showsLabel {
+                Text(String(localized: "Depth"))
+                    .font(type.font(.rowLabel))
+                    .foregroundStyle(DiveWatchTheme.ink2)
+            }
+            Text(DiveFormatters.depthValue(depthMeters))
+                .font(DiveWatchTheme.metricFont(size: sizeClass == .regular ? 15 : 14))
+                .foregroundStyle(DiveWatchTheme.ink)
+                .contentTransition(.identity)
+                .padding(.leading, showsLabel ? 4 : 0)
+            Text(verbatim: "m")
+                .font(DiveWatchTheme.metricFont(size: type.size(.rowLabel)))
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .padding(.leading, 2)
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(String(localized: "Depth")))
+        .accessibilityValue(Text(DiveFormatters.depth(depthMeters)))
     }
 
     /// Touch works only before Water Lock is on, so the crown is the main way to choose. The blue
