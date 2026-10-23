@@ -1,139 +1,232 @@
 import SwiftUI
 
+/// One saved log on three system vertical pages (spec F #37–#41), titled with its date: the dive
+/// (type, time, sync, profile, maximum depth and time, and the resend when a send failed), the
+/// stats, then the recommended-stop record or the dive list with the conditions, memo and the
+/// non-certified sentence. A page longer than the screen scrolls before the next page.
 struct SessionDetailView: View {
     @ObservedObject var store: DiveSessionStore
     let savedSession: DiveSessionRecord
+
+    private let sizeClass = DiveType.SizeClass.current
 
     /// The store copy reflects sync changes, such as a resend, while this screen is open.
     private var session: DiveSessionRecord {
         store.sessions.first { $0.id == savedSession.id } ?? savedSession
     }
 
-    private var summary: DiveSessionSummary {
-        session.summary
-    }
-
     @ViewBuilder
     private var headerBadges: some View {
-        StatusPill(title: session.diveMode.label)
+        StatusChip(title: session.diveMode.label)
         if let captureProvenanceLabel = session.captureProvenanceLabel {
-            StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
+            MarkerChip(title: captureProvenanceLabel)
         }
+        Text(DiveFormatters.timeOfDay(session.startedAt))
+            .diveFont(.eyebrow)
+            .foregroundStyle(DiveWatchTheme.ink2)
+            .fixedSize()
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                InstrumentCard(accent: DiveWatchTheme.primary) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        ViewThatFits(in: .horizontal) {
-                            HStack(spacing: 5) { headerBadges }
-                            VStack(alignment: .leading, spacing: 4) { headerBadges }
-                        }
-                        Text(session.syncStatus.label)
-                            .font(.caption2)
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                            .fixedSize(horizontal: false, vertical: true)
+        // The summary replays the whole depth profile, so it is computed once per update.
+        let summary = session.summary
+        TabView {
+            DetailPage { divePage(summary: summary) }
+            DetailPage { statsPage(summary: summary) }
+            DetailPage { recordsPage }
+        }
+        .tabViewStyle(.verticalPage(transitionStyle: .blur))
+        .background(DiveWatchTheme.background.ignoresSafeArea())
+        .environment(\.diveType, sizeClass.postDiveType)
+        .navigationTitle(DiveFormatters.dayTitle(session.startedAt))
+    }
 
-                        if let recoveryLabel = session.recoveryLabel {
-                            Text(recoveryLabel)
-                                .font(.body)
-                                .foregroundStyle(DiveWatchTheme.secondary)
-                        }
+    // MARK: Page 1: the dive
 
-                        Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                            .font(.system(.title3, design: .rounded, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .minimumScaleFactor(1)
+    private func divePage(summary: DiveSessionSummary) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) { headerBadges }
+                VStack(alignment: .leading, spacing: 4) { headerBadges }
+            }
+            .accessibilityElement(children: .combine)
 
-                        DepthProfileSparkline(samples: session.samples)
-                            .frame(height: 44)
+            // Where the log is, in full words, under the badges (D3).
+            DiveSyncStatusLine(status: session.syncStatus)
+                .padding(.top, 6)
 
-                        if session.exceedsSupportedDepth {
-                            UnsupportedDepthNotice()
-                        }
-                    }
+            if let recoveryLabel = session.recoveryLabel {
+                Text(recoveryLabel)
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                    .padding(.top, 4)
+            }
+
+            if let feedback = store.syncRetryFeedback[session.id] {
+                DiveFailureNote(message: DiveFailureMessage(message: feedback), isBanner: false)
+                    .padding(.top, 6)
+            }
+
+            if session.syncStatus == .failed {
+                Button {
+                    store.retrySync(sessionID: session.id)
+                } label: {
+                    Text("Send Again")
                 }
+                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+                // Capsules run the platter width, wider than the text gutters (spec C12).
+                .padding(.horizontal, DiveLayout.platterInset(sizeClass) - PostDiveLayout.textGutter(sizeClass))
+                .padding(.top, 6)
+            }
 
-                if session.syncStatus == .failed {
-                    Button {
-                        store.retrySync(sessionID: session.id)
-                    } label: {
-                        Label("Send Again", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(DiveActionButtonStyle(kind: .secondary))
-                }
+            DiveDrawnProfile(
+                points: MiniDepthProfile.normalizedPoints(
+                    depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 160)
+                ),
+                accessibilityText: DiveFormatters.profileAccessibilitySummary(samples: session.samples)
+            )
+            .frame(height: PostDiveLayout.detailProfileHeight(sizeClass, sendFailed: session.syncStatus == .failed))
+            .padding(.top, 8)
 
-                if let feedback = store.syncRetryFeedback[session.id] {
-                    Text(feedback)
-                        .font(.system(.caption, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.danger)
-                        .multilineTextAlignment(.center)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(String(localized: "Max Depth"))
+                    .diveFont(.eyebrow)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                DiveValueText(value: DiveFormatters.depth(summary.maxDepthMeters), numberRole: .metricL, unitRole: .unitL)
+                    .padding(.vertical, -2)
+            }
+            .accessibilityElement(children: .combine)
+            .padding(.top, 8)
 
-                VStack(spacing: 8) {
-                    MetricCard(title: String(localized: "Max Depth"), value: DiveFormatters.depth(summary.maxDepthMeters), compact: true)
-                    MetricCard(title: String(localized: "Duration"), value: DiveFormatters.duration(summary.durationSeconds), compact: true)
-                }
-
-                InstrumentCard {
-                    VStack(spacing: 6) {
-                        SummaryRow(title: String(localized: "Average depth"), value: DiveFormatters.depth(summary.averageDepthMeters))
-                        if let averageTemperature = summary.averageWaterTemperatureCelsius {
-                            SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(averageTemperature))
-                        }
-                        // Saved sessions keep a short preview; the profile metadata has the full count.
-                        SummaryRow(
-                            title: String(localized: "Samples"),
-                            value: "\(session.profile?.sampleCount ?? summary.sampleCount)"
-                        )
-                        SummaryRow(
-                            title: String(localized: "Ascent reminder max"),
-                            value: DiveFormatters.ascentRate(summary.maxAscentRateMetersPerMinute)
-                        )
-                    }
-                }
-
-                modeDetailSection
-
-                metadataSection
-
-                InstrumentCard {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("NOTE")
-                            .font(DiveWatchTheme.labelFont())
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                        Text(session.notes ?? String(localized: "No note"))
-                            .font(.system(size: 12, weight: .regular))
-                            .foregroundStyle(DiveWatchTheme.text)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(5)
-                    }
-                }
-
-                DiveDisclaimer(
-                    text: String(localized: "This app is a log review aid, not certified dive equipment.")
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // A scuba dive's time is "다이빙 시간"; a freediving session's length "총 기록 시간" (C15).
+                Text(session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration"))
+                    .diveFont(.eyebrow)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                DiveValueText(
+                    value: DiveFormatters.savedDuration(summary.durationSeconds),
+                    numberRole: .metricM,
+                    unitRole: .unitM
                 )
             }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-            .padding(.vertical, 10)
+            .accessibilityElement(children: .combine)
+            .padding(.top, 2)
+
+            if session.exceedsSupportedDepth {
+                UnsupportedDepthNotice()
+                    .padding(.top, 10)
+            }
         }
-        .background(DiveWatchTheme.background.ignoresSafeArea())
-        .navigationTitle("Details")
+    }
+
+    // MARK: Page 2: stats
+
+    private func statsPage(summary: DiveSessionSummary) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            DiveStatPair {
+                SummaryRow(title: String(localized: "Average depth"), value: DiveFormatters.depth(summary.averageDepthMeters))
+            } trailing: {
+                if let averageTemperature = summary.averageWaterTemperatureCelsius {
+                    SummaryRow(title: String(localized: "Average temp"), value: DiveFormatters.temperature(averageTemperature))
+                } else {
+                    Color.clear.frame(height: 0)
+                }
+            }
+            .diveScrollEdge()
+
+            DiveStatPair {
+                SummaryRow(
+                    title: String(localized: "Ascent reminder max"),
+                    value: DiveFormatters.ascentRate(summary.maxAscentRateMetersPerMinute)
+                )
+            } trailing: {
+                // Saved sessions keep a short preview; the profile metadata has the full count.
+                SummaryRow(
+                    title: String(localized: "Samples"),
+                    value: (session.profile?.sampleCount ?? summary.sampleCount).formatted()
+                )
+            }
+            .diveScrollEdge()
+
+            metadataSection
+        }
     }
 
     private var metadataSection: some View {
-        InstrumentCard(accent: DiveWatchTheme.secondary) {
-            VStack(spacing: 6) {
+        VStack(alignment: .leading, spacing: 8) {
+            SummaryRow(title: String(localized: "Site"), value: session.siteName ?? String(localized: "Not set"),
+                       wordRole: .headline)
+                .diveScrollEdge()
+
+            DiveStatPair {
                 if session.diveMode == .scuba {
                     SummaryRow(title: String(localized: "Gas"), value: session.gasLabel ?? String(localized: "Not set"))
+                } else {
+                    ratingStat
                 }
-                SummaryRow(title: String(localized: "Site"), value: session.siteName ?? String(localized: "Not set"))
-                SummaryRow(title: String(localized: "Rating"), value: DiveFormatters.rating(session.rating))
-                SummaryRow(title: String(localized: "Visibility"), value: session.visibilityRating.map(String.init) ?? String(localized: "Not set"))
+            } trailing: {
+                if session.diveMode == .scuba {
+                    ratingStat
+                } else {
+                    Color.clear.frame(height: 0)
+                }
+            }
+            .diveScrollEdge()
+        }
+    }
+
+    /// "평점" over the stars, read as "평점, 5점 중 4점".
+    private var ratingStat: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(String(localized: "Rating"))
+                .diveFont(.eyebrow)
+                .foregroundStyle(DiveWatchTheme.ink2)
+            DiveStarRating(rating: session.rating)
+                .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    // MARK: Page 3: records, conditions and memo
+
+    private var recordsPage: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            modeDetailSection
+
+            DiveStatPair {
+                SummaryRow(
+                    title: String(localized: "Visibility"),
+                    value: session.visibilityRating.map { String(localized: "\($0)/5") } ?? String(localized: "Not set")
+                )
+            } trailing: {
                 SummaryRow(title: String(localized: "Water"), value: session.waterCondition.label)
             }
+            .diveScrollEdge()
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("NOTE")
+                    .diveFont(.eyebrow)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                Text(session.notes ?? String(localized: "No note"))
+                    .diveFont(.body)
+                    .foregroundStyle(session.notes == nil ? DiveWatchTheme.ink2 : DiveWatchTheme.ink)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, DiveLayout.platterPadding(sizeClass))
+            .padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: DiveRadius.row, style: .continuous)
+                    .fill(DiveWatchTheme.platter)
+            )
+            .accessibilityElement(children: .combine)
+            .diveScrollEdge()
+
+            DiveDisclaimer(
+                text: String(localized: "This app is a log review aid, not certified dive equipment.")
+            )
         }
     }
 
@@ -148,26 +241,43 @@ struct SessionDetailView: View {
     }
 }
 
+/// One detail page: its content scrolls when it is longer than the screen, inside the free-text
+/// gutters (spec B3) and clear of the page indicator.
+private struct DetailPage<Content: View>: View {
+    let content: Content
+
+    private let sizeClass = DiveType.SizeClass.current
+
+    init(@ViewBuilder content: () -> Content) {
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, PostDiveLayout.textGutter(sizeClass))
+                .padding(.bottom, 12)
+        }
+        .ignoresSafeArea(.container, edges: .horizontal)
+    }
+}
+
 private struct FreeSegmentListSection: View {
     let session: FreeDiveSession
 
     var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.primary) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Free Segment List")
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
+        VStack(alignment: .leading, spacing: 8) {
+            DiveSectionEyebrow(title: String(localized: "Free Segment List"))
 
-                if segmentRows.isEmpty {
-                    Text(String(localized: "No segments"))
-                        .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                } else {
-                    ForEach(segmentRows) { row in
-                        FreeSegmentRow(row: row)
-                    }
+            if segmentRows.isEmpty {
+                Text(String(localized: "No segments"))
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+            } else {
+                ForEach(segmentRows) { row in
+                    FreeSegmentRow(row: row)
+                        .diveScrollEdge()
                 }
             }
         }
@@ -203,6 +313,7 @@ private struct FreeSegmentRowModel: Identifiable {
     }
 }
 
+/// One freediving dive: its number, time and depth, then the surface interval before it.
 private struct FreeSegmentRow: View {
     let row: FreeSegmentRowModel
 
@@ -211,38 +322,28 @@ private struct FreeSegmentRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(segmentTitle)
-                    .font(.system(.caption, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
+                    .diveFont(.footnoteEmphasis)
+                    .foregroundStyle(DiveWatchTheme.ink)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.7)
-
                 Spacer(minLength: 4)
-
-                Text("\(DiveFormatters.duration(segment.durationSeconds)) · \(DiveFormatters.depth(segment.maxDepthMeters))")
-                    .font(DiveWatchTheme.metricFont(size: 12, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.58)
+                DiveValueText(
+                    value: "\(DiveFormatters.duration(segment.durationSeconds)) · \(DiveFormatters.depth(segment.maxDepthMeters))",
+                    numberRole: .footnoteMetric,
+                    unitRole: .unitM
+                )
             }
 
             if let surfaceIntervalSeconds = row.surfaceIntervalSeconds {
-                Text("\(String(localized: "Surface interval")): \(DiveFormatters.duration(surfaceIntervalSeconds))")
-                    .font(.system(.caption, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
+                Text(verbatim: "\(String(localized: "Surface interval")) \(DiveFormatters.duration(surfaceIntervalSeconds))")
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
                     .lineLimit(1)
-                    .minimumScaleFactor(0.68)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-        )
+        .accessibilityElement(children: .combine)
     }
 
     private var segmentTitle: String {
@@ -254,52 +355,13 @@ private struct FreeSegmentRow: View {
 private struct SafetyStopResultSection: View {
     let session: ScubaDiveSession
 
-    private var safetyStop: SafetyStopRecord {
-        session.safetyStop
-    }
-
     var body: some View {
-        InstrumentCard(accent: DiveWatchTheme.primary) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Safety Stop Result")
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.primary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.65)
-
-                VStack(spacing: 6) {
-                    SummaryRow(title: String(localized: "Status"), value: safetyStop.status.displayText, accent: statusColor)
-                    SummaryRow(title: String(localized: "Recommendation"), value: String(localized: "Recommended reminder"))
-                    SummaryRow(title: String(localized: "Completed"), value: safetyStop.status == .unknown ? "--" : localizedBoolean(safetyStop.completed))
-                    SummaryRow(title: String(localized: "Target / zone"), value: targetZoneText)
-                    SummaryRow(title: String(localized: "Remaining"), value: DiveFormatters.duration(safetyStop.reviewRemainingSeconds))
-                    SummaryRow(title: String(localized: "Time in zone"), value: DiveFormatters.duration(safetyStop.reviewTimeInZoneSeconds))
-                    if let startedAt = safetyStop.startedAt {
-                        SummaryRow(title: String(localized: "Started"), value: DiveFormatters.sessionDate.string(from: startedAt))
-                    }
-                    if let completedAt = safetyStop.completedAt {
-                        SummaryRow(title: String(localized: "Completed at"), value: DiveFormatters.sessionDate.string(from: completedAt))
-                    }
-                }
-
-                Text(String(localized: "Recommended safety stop reminder · no safety calculation"))
-                    .font(.system(.caption, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .minimumScaleFactor(0.72)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            DiveSectionEyebrow(title: String(localized: "Safety Stop Result"))
+            // The note sits first, so it is always on screen with the record (C12).
+            DiveSectionNote(text: String(localized: "Recommended safety stop reminder · no safety calculation"))
+            SafetyStopRecordStats(safetyStop: session.safetyStop)
+                .padding(.top, 2)
         }
-    }
-
-    private var targetZoneText: String {
-        "\(DiveFormatters.depth(safetyStop.targetDepthMeters)) · \(DiveFormatters.depth(safetyStop.minDepthMeters))-\(DiveFormatters.depth(safetyStop.maxDepthMeters))"
-    }
-
-    private var statusColor: Color {
-        safetyStop.status.reviewTint
-    }
-
-    private func localizedBoolean(_ value: Bool) -> String {
-        value ? String(localized: "Yes") : String(localized: "No")
     }
 }

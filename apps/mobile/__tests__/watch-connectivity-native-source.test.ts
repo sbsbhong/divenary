@@ -1029,8 +1029,21 @@ describe('WatchConnectivity native source contract', () => {
     expect(realFlow).toContain('autoLaunchStatus: autoLaunchStatus');
     expect(realFlow).toMatch(/onBack: coordinator\.dismissSavedSummary,\s*showsNextDiveHint: ActionButtonHint\.current\.isLikelyUltra/);
     // The summary leads with max depth and duration; the sample count lives on the detail screen.
-    expect(summaryHeader).toContain('if showsNextDiveHint {\n                    NextDiveActionHint()');
-    expect(summaryHeader.indexOf('"Max Depth"')).toBeLessThan(summaryHeader.indexOf('DepthProfileSparkline'));
+    // Plumb D11: maximum depth, dive time, the profile, then the save status once; the next Action
+    // Button press is the chip pinned at the bottom, outside the scroll.
+    const summaryBody = summary.slice(summary.indexOf('    var body: some View {'), summary.indexOf('    private var maxDepthBlock'));
+    const summaryOrder = ['maxDepthBlock', 'diveTimeRow', 'DiveProfileChart(', 'savedStatusRow', 'belowTheFold'].map((name) =>
+      summaryBody.indexOf(name),
+    );
+    expect(summaryHeader).toMatch(/ZStack\(alignment: \.bottom\) \{\s*ScrollView \{/);
+    expect(summaryHeader).toMatch(
+      /if showsNextDiveHint \{\s*NextDiveActionHint\(\)\s*\}\s*\}\s*(\/\/.*\s*)*\.ignoresSafeArea\(\.container, edges: \[\.horizontal, \.bottom\]\)/,
+    );
+    expect(summaryOrder.every((index) => index >= 0)).toBe(true);
+    expect([...summaryOrder].sort((a, b) => a - b)).toEqual(summaryOrder);
+    expect(summary.slice(summary.indexOf('private var maxDepthBlock'), summary.indexOf('private var diveTimeRow'))).toContain(
+      'String(localized: "Max Depth")',
+    );
     expect(summary).not.toContain('summary.sampleCount');
     expect(summary).not.toContain('StatusPill(title: safetyStop.status.displayText');
     expect(guide).toContain('autoLaunchStatus.displayText');
@@ -1229,7 +1242,11 @@ describe('WatchConnectivity native source contract', () => {
       'text: String(localized: "This app is a log review aid, not certified dive equipment.")',
     );
     expect(simulated).toContain('markerTitle: recordingMode.markerTitle');
-    expect(summary).toContain('Supplemental log · no safety calculation');
+    // COPY C3: the summary closes with the one non-certified sentence, once for scuba and freediving
+    // alike, so the freediving section no longer repeats it; the recommended-stop note stays first in
+    // its section (C12).
+    expect(summary.match(/DiveDisclaimer\(/g)).toHaveLength(1);
+    expect(summary).not.toContain('Supplemental log · no safety calculation');
     expect(summary).toContain('Recommended safety stop reminder · no safety calculation');
     expect(summary).toContain('SAVED LOG ONLY. NON-CERTIFIED ASSISTANT.');
     expect(watchUiCheck).toContain('safe to ascend');
@@ -1263,7 +1280,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(rows).not.toContain('.frame(width: 62');
     expect(rows).toContain('Image(systemName: syncStatus.symbol)');
     expect(detail).toContain('VStack(alignment: .leading, spacing: 4) { headerBadges }');
-    expect(formatters).toContain('profileAccessibilitySummary(samples: samples)');
+    // The saved profiles read their depth range only, never the sample count.
+    const postDive = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DivePostDive.swift');
+    const summary = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SummaryView.swift');
+    expect(summary).toContain('DiveFormatters.profileAccessibilitySummary(samples: session.samples)');
+    expect(detail).toContain('DiveFormatters.profileAccessibilitySummary(samples: session.samples)');
+    expect(postDive.slice(postDive.indexOf('struct DiveProfileChart'), postDive.indexOf('private struct ProfileLogoRider'))).toContain(
+      '.accessibilityLabel(accessibilityText)',
+    );
     expect(formatters).toContain('@ScaledMetric');
     const wet = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift');
     expect(wet).toContain('DiveDisclaimer()');
@@ -1442,5 +1466,114 @@ describe('WatchConnectivity native source contract', () => {
     expect(summary).not.toContain('Picker("Rating"');
     expect(summary).not.toContain('Picker("Exertion"');
     expect(summary).not.toContain('Picker("Visibility"');
+  });
+
+  it('draws the Plumb post-dive screens and saved logs with one term per concept', () => {
+    const summary = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SummaryView.swift');
+    const list = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionListView.swift');
+    const detail = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionDetailView.swift');
+    const realFlow = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift');
+    const simulated = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SimulatedRecordingFlowView.swift');
+    const postDive = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DivePostDive.swift');
+    const formatters = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DiveFormatters.swift');
+    const project = readRepoFile('apps/mobile/ios/Divenary.xcodeproj/project.pbxproj');
+    const catalog = JSON.parse(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Localizable.xcstrings')) as {
+      strings: Record<
+        string,
+        { localizations?: Record<'en' | 'ko', { stringUnit?: { value?: string } } | undefined> }
+      >;
+    };
+    const korean = (key: string) => catalog.strings[key]?.localizations?.ko?.stringUnit?.value;
+    const english = (key: string) => catalog.strings[key]?.localizations?.en?.stringUnit?.value;
+    const finale = summary.slice(summary.indexOf('private func startFinale'), summary.indexOf('private struct NextDiveActionHint'));
+    const rows = list.slice(list.indexOf('private struct SessionRow'), list.indexOf('private struct SessionSyncStatusPill'));
+
+    // The shared post-dive pieces belong to the watch target only.
+    expect(project).toContain('DivePostDive.swift in Sources');
+    expect(project).toContain('DivePostDiveTests.swift in Sources');
+    // D17: Divenary's own depth column on the no-samples screen, never Apple's water symbol.
+    for (const source of [summary, list, detail, realFlow, simulated, postDive]) {
+      expect(source).not.toContain('water.waves');
+    }
+    expect(realFlow.slice(realFlow.indexOf('private var noSamplesView'), realFlow.indexOf('private func startPersistenceErrorView'))).toContain(
+      'DepthColumnGlyph()',
+    );
+    // PD-FINALE: the logo rides the drawing line, the values never count up, and a tap, a crown turn
+    // or Always-On jumps to the end; Reduce Motion and Always-On come from the finale plan.
+    expect(summary).toContain('DiveFinalePlan(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced)');
+    expect(summary).toContain('ridesLogo: plan.ridesLogo');
+    expect(summary).not.toContain('numericText');
+    expect(finale).toContain('if plan.bounces { finale.bounceCount += 1 }');
+    expect(summary).toContain('.simultaneousGesture(TapGesture().onEnded { finishFinale() })');
+    expect(postDive).toMatch(/private struct ProfileLogoRider: View, Animatable[\s\S]*LogoMark\(\)/);
+    // D11: the pinned chip is the recording hint chip without page dots.
+    expect(summary.slice(summary.indexOf('private struct NextDiveActionHint'))).toContain(
+      'RecordingHintChip(text: String(localized: "Action ▸ Start next dive"))',
+    );
+    // C4, C15: the save status says where the log is; a scuba dive's time is "다이빙 시간", a
+    // freediving session's length "총 기록 시간".
+    expect(summary).toContain('session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration")');
+    expect(detail).toContain('session.diveMode == .scuba ? String(localized: "Log time") : String(localized: "Duration")');
+    // D3: the full sync words on the summary and detail; the list rows keep the glyph only.
+    expect(summary).toContain('DiveSyncStatusLine(status: session.syncStatus)');
+    expect(detail).toContain('DiveSyncStatusLine(status: session.syncStatus)');
+    expect(rows).not.toContain('syncStatus.label)');
+    // D4: the list shows the type in plain words, never an abbreviation or a chip.
+    expect(rows).toContain('Text(session.diveMode.label)');
+    expect(list).not.toContain('listBadgeLabel');
+    expect(rows).toContain('DepthSparkline(id: session.id');
+    // D16: the empty list shows the real logo.
+    expect(list.slice(list.indexOf('private struct EmptySessionsView'), list.indexOf('private struct SessionRow'))).toContain('LogoMark()');
+    // C6: no "권장 사항" or "완료 여부" rows; what remained shows only for an unfinished stop.
+    expect(summary).not.toContain('String(localized: "Recommendation")');
+    expect(summary).not.toContain('localizedBoolean');
+    expect(detail).not.toContain('String(localized: "Recommendation")');
+    expect(detail).toContain('SafetyStopRecordStats(safetyStop: session.safetyStop)');
+    expect(postDive).toContain(': [[.status], [.remaining, .timeInZone]]');
+    // C12: the recommended-stop note comes before the values.
+    for (const section of [
+      summary.slice(summary.indexOf('private struct SafetyStopSummarySection'), summary.indexOf('struct SafetyStopRecordStats')),
+      detail.slice(detail.indexOf('private struct SafetyStopResultSection')),
+    ]) {
+      expect(section.indexOf('Recommended safety stop reminder · no safety calculation')).toBeLessThan(
+        section.indexOf('SafetyStopRecordStats('),
+      );
+    }
+    // The detail pages vertically with the system page indicator, titled with the date; the rating is
+    // one VoiceOver value (D13).
+    expect(detail).toContain('.tabViewStyle(.verticalPage(transitionStyle: .blur))');
+    expect(detail).toContain('.navigationTitle(DiveFormatters.dayTitle(session.startedAt))');
+    expect(postDive).toContain('.accessibilityLabel(Text(String(localized: "Rated \\(filled) out of 5")))');
+    // C5: the resend note keeps its "(n)" counter in grey, above "다시 보내기".
+    expect(detail).toContain('DiveFailureNote(message: DiveFailureMessage(message: feedback), isBanner: false)');
+    expect(postDive).toContain('Text(verbatim: " \\(counter)").foregroundStyle(DiveWatchTheme.ink3)');
+    // C12 buttons: capsules; a secondary button's label is white, never a blue link.
+    expect(formatters).toContain('.foregroundStyle(DiveWatchTheme.ink)\n            .padding(.horizontal, 12)');
+    expect(formatters).not.toContain('case destructive');
+    // Copy.
+    expect(korean('Saved')).toBe('워치에 저장됨');
+    expect(english('Saved')).toBe('Saved on Watch');
+    expect(korean('Log time')).toBe('다이빙 시간');
+    expect(korean('Duration')).toBe('총 기록 시간');
+    expect(korean('Send failed. Try again.')).toBe('전송하지 못했습니다.\n다시 보내 주세요.');
+    expect(korean('Send Again')).toBe('다시 보내기');
+    expect(korean('Time in zone')).toBe('스탑 구간 시간');
+    expect(korean('Target / zone')).toBe('목표 수심 / 스탑 구간');
+    // C12, broken at the sentence as the canvas draws it.
+    expect(korean('Recommended safety stop reminder · no safety calculation')).toBe(
+      '권장 스탑 참고 기록입니다.\n안전 판단에 사용하지 마세요.',
+    );
+    expect(korean('Could not read saved records.')).toBe('저장한 기록을 읽지 못했습니다.');
+    expect(korean('No depth samples captured')).toBe('물속 기록이 없습니다');
+    expect(korean('No values were recorded, so nothing was saved.')).toBe('기록된 값이 없어 저장하지 않았습니다.');
+    expect(korean('Rated %lld out of 5')).toBe('5점 중 %lld점');
+    for (const key of [
+      'SAVED LOG ONLY. NON-CERTIFIED ASSISTANT.',
+      'This app is a log review aid, not certified dive equipment.',
+      'Supplemental log · no safety calculation',
+    ]) {
+      expect(korean(key)).toBe('다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다.');
+      expect(english(key)).toBe('For dive logging and review.\nNot a certified dive computer.');
+    }
   });
 });

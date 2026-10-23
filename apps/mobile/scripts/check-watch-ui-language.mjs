@@ -13,6 +13,7 @@ const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/SummaryView.swift',
   'ios/DivenaryWatchApp/Views/SessionDetailView.swift',
   'ios/DivenaryWatchApp/Views/SessionListView.swift',
+  'ios/DivenaryWatchApp/Views/DivePostDive.swift',
   'ios/DivenaryWatchApp/Views/HomeView.swift',
   'ios/DivenaryWatchApp/Views/WetReadyView.swift',
   'ios/DivenaryWatchApp/Views/RealRecordingFlowView.swift',
@@ -282,7 +283,8 @@ const checks = [
           summaryViewSource.indexOf('struct CapturedSessionSummaryView'),
         ),
       ) ||
-      !/struct SessionSummaryContent[\s\S]*DiveDisclaimer[\s\S]*if let footer[\s\S]*Text\(footer\)/.test(summaryViewSource),
+      // The iPhone footer, then the non-certified sentence closes the scroll (DECISIONS D11).
+      !/struct SessionSummaryContent[\s\S]*if let footer[\s\S]*Text\(footer\)[\s\S]*DiveDisclaimer\(/.test(summaryViewSource),
   },
   {
     name: 'watch string catalog includes English and Korean localizations',

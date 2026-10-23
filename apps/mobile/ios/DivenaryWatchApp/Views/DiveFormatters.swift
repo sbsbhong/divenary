@@ -75,6 +75,44 @@ enum DiveFormatters {
             .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated).locale(locale))
     }
 
+    /// A saved dive's length in whole units, as the summary and detail show it (spec G2): "42분 10초",
+    /// "3분", "0초". An unknown length shows dashes.
+    static func savedDuration(_ seconds: TimeInterval?, locale: Locale = .current) -> String {
+        guard let seconds, seconds.isFinite else { return "--" }
+        return Duration.seconds(max(0, Int(seconds.rounded())))
+            .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .abbreviated).locale(locale))
+    }
+
+    /// The saved detail's title (spec G2): "10월 22일", with the year only when it is not this year.
+    static func dayTitle(
+        _ date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let sameYear = calendar.isDate(date, equalTo: now, toGranularity: .year)
+        return formatted(date, template: sameYear ? "MMMd" : "yMMMd", calendar: calendar, locale: locale)
+    }
+
+    /// A clock time without the date: "오전 10:02".
+    static func timeOfDay(_ date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        formatted(date, template: "jmm", calendar: calendar, locale: locale)
+    }
+
+    /// How many of the five stars a rating fills; `nil` when the dive is not rated.
+    static func filledStars(_ rating: Int?) -> Int? {
+        rating.map { max(1, min(5, $0)) }
+    }
+
+    private static func formatted(_ date: Date, template: String, calendar: Calendar, locale: Locale) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.setLocalizedDateFormatFromTemplate(template)
+        return formatter.string(from: date)
+    }
+
     static func profileAccessibilitySummary(samples: [DepthSample]) -> String {
         let depths = samples.map(\.depthMeters).filter { $0.isFinite && $0 >= 0 }
         guard let minimum = depths.min(), let maximum = depths.max() else {
@@ -136,11 +174,6 @@ enum DiveFormatters {
     static func ascentRate(_ metersPerMinute: Double?) -> String {
         guard let metersPerMinute else { return "--.- m/min" }
         return ascentRate(metersPerMinute)
-    }
-
-    static func rating(_ value: Int?) -> String {
-        guard let value else { return String(localized: "Not rated") }
-        return String(repeating: "★", count: max(1, min(5, value)))
     }
 }
 
@@ -278,106 +311,46 @@ extension SafetyStopStatus {
     }
 }
 
-struct InstrumentCard<Content: View>: View {
-    var accent: Color?
-    var content: Content
-
-    init(accent: Color? = nil, @ViewBuilder content: () -> Content) {
-        self.accent = accent
-        self.content = content()
-    }
-
-    var body: some View {
-        content
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                    .fill(DiveWatchTheme.surfaceContainer)
-            )
-    }
-}
-
-struct MetricCard: View {
-    let title: String
-    let value: String
-    var footnote: String?
-    var accent: Color = DiveWatchTheme.primary
-    var prominent = false
-    var compact = false
-
-    @ScaledMetric(relativeTo: .title2) private var reviewMetricSize: CGFloat = 24
-
-    var body: some View {
-        InstrumentCard(accent: prominent ? accent : nil) {
-            VStack(alignment: .leading, spacing: compact ? 3 : 5) {
-                Text(title.uppercased())
-                    .font(DiveWatchTheme.labelFont())
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.72)
-
-                Text(value)
-                    .font(DiveWatchTheme.metricFont(size: reviewMetricSize, weight: .semibold))
-                    .foregroundStyle(prominent ? accent : DiveWatchTheme.text)
-                    .monospacedDigit()
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                if let footnote {
-                    Text(footnote)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-                }
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
+/// One stacked stat (spec C20): a grey label over a white value whose units draw small and grey.
+/// No platter; stats sit in a two-column flow on the summary and detail. A value of words, such as a
+/// status or a dive site, draws in `wordRole`. Label and value read as one element.
 struct SummaryRow: View {
     let title: String
     let value: String
     var accent: Color?
+    var wordRole: DiveUIType.Role = .statValue
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title.uppercased())
-                .font(DiveWatchTheme.labelFont())
-                .foregroundStyle(DiveWatchTheme.mutedText)
+        VStack(alignment: .leading, spacing: 1) {
+            Text(title)
+                .diveFont(.eyebrow)
+                .foregroundStyle(DiveWatchTheme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
-                .minimumScaleFactor(1)
 
-            Text(value)
-                .font(.system(.body, design: .rounded, weight: .semibold).monospacedDigit())
-                .foregroundStyle(accent ?? DiveWatchTheme.text)
-                .monospacedDigit()
-                .fixedSize(horizontal: false, vertical: true)
-                .minimumScaleFactor(1)
+            DiveValueText(value: value, wordRole: wordRole, color: accent ?? DiveWatchTheme.ink)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
     }
 }
 
-/// Marks a saved dive that went deeper than the app supports on Apple Watch.
+/// Marks a saved dive that went deeper than the app supports on Apple Watch (spec C16): the caution
+/// triangle with "지원 수심 밖", then what it means, without a platter.
 struct UnsupportedDepthNotice: View {
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Label("Outside watch support", systemImage: "exclamationmark.triangle.fill")
-                .font(DiveWatchTheme.labelFont())
-                .foregroundStyle(DiveWatchTheme.caution)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            Text("Deeper than this app supports on Apple Watch. Kept for review only.")
-                .font(.system(size: 10, weight: .regular))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-                .lineLimit(3)
-                .minimumScaleFactor(0.75)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(DiveWatchTheme.caution)
+                Text(String(localized: "Outside watch support"))
+                    .foregroundStyle(DiveWatchTheme.ink)
+            }
+            .diveFont(.footnoteEmphasis)
+
+            Text(String(localized: "Deeper than this app supports on Apple Watch. Kept for review only."))
+                .diveFont(.footnote)
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
@@ -438,103 +411,46 @@ struct DiveDisclaimer: View {
 enum DiveActionButtonKind {
     case primary
     case secondary
-    case destructive
 }
 
+/// Capsule buttons (spec C12): full width, 47 pt tall on Ultra and 44 pt on smaller watches, a
+/// white 600 label. Primary is the action blue; secondary is a platter with a white label, since a
+/// blue label would read as a link. There is no destructive style on the watch. Pressed: scale 0.95,
+/// or a dim under Reduce Motion; disabled: 45%.
 struct DiveActionButtonStyle: ButtonStyle {
     var kind: DiveActionButtonKind = .primary
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 14, weight: .regular))
-            .lineLimit(1)
-            .minimumScaleFactor(0.72)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .foregroundStyle(foregroundColor)
-            .background(
-                Capsule()
-                    .fill(fillColor)
-            )
-            .scaleEffect(configuration.isPressed ? 0.95 : 1)
-    }
-
-    private var fillColor: Color {
-        switch kind {
-        case .primary:
-            return DiveWatchTheme.primary
-        case .secondary:
-            return DiveWatchTheme.surfaceContainer
-        case .destructive:
-            return DiveWatchTheme.danger.opacity(0.18)
-        }
-    }
-
-    private var foregroundColor: Color {
-        switch kind {
-        case .primary:
-            return Color.white
-        case .secondary:
-            return DiveWatchTheme.primary
-        case .destructive:
-            return DiveWatchTheme.danger
-        }
+        DiveActionButtonLabel(configuration: configuration, kind: kind)
     }
 }
 
-struct DepthProfileSparkline: View {
-    let samples: [DepthSample]
-    var color: Color = DiveWatchTheme.primary
+private struct DiveActionButtonLabel: View {
+    let configuration: ButtonStyleConfiguration
+    let kind: DiveActionButtonKind
+
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @ScaledMetric(relativeTo: .headline) private var labelSize: CGFloat = 16
+    private let sizeClass = DiveType.SizeClass.current
 
     var body: some View {
-        GeometryReader { proxy in
-            let points = profilePoints(in: proxy.size)
-
-            ZStack {
-                RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                    .fill(DiveWatchTheme.surfaceRaised.opacity(0.76))
-
-                Path { path in
-                    guard let first = points.first else { return }
-                    path.move(to: first)
-                    for point in points.dropFirst() {
-                        path.addLine(to: point)
-                    }
-                }
-                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                Path { path in
-                    guard let first = points.first, let last = points.last else { return }
-                    path.move(to: CGPoint(x: first.x, y: proxy.size.height))
-                    for point in points {
-                        path.addLine(to: point)
-                    }
-                    path.addLine(to: CGPoint(x: last.x, y: proxy.size.height))
-                    path.closeSubpath()
-                }
-                .fill(color.opacity(0.14))
-            }
-        }
-        .frame(minHeight: 34)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(DiveFormatters.profileAccessibilitySummary(samples: samples))
-    }
-
-    private func profilePoints(in size: CGSize) -> [CGPoint] {
-        let depths = samples.map(\.depthMeters)
-        guard !depths.isEmpty else {
-            return [
-                CGPoint(x: 0, y: size.height * 0.68),
-                CGPoint(x: size.width, y: size.height * 0.68),
-            ]
-        }
-
-        let maxDepth = max(depths.max() ?? 1, 1)
-        let denominator = max(depths.count - 1, 1)
-
-        return depths.enumerated().map { index, depth in
-            let x = size.width * CGFloat(index) / CGFloat(denominator)
-            let y = size.height * CGFloat(depth / maxDepth)
-            return CGPoint(x: x, y: max(2, min(size.height - 2, y)))
-        }
+        configuration.label
+            .font(.system(size: labelSize, weight: .semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .foregroundStyle(DiveWatchTheme.ink)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: PostDiveLayout.buttonHeight(sizeClass))
+            .background(
+                Capsule()
+                    .fill(kind == .primary ? DiveWatchTheme.action : DiveWatchTheme.platter)
+            )
+            .contentShape(Capsule())
+            .opacity((isEnabled ? 1 : 0.45) * (reduceMotion && configuration.isPressed ? 0.7 : 1))
+            .scaleEffect(!reduceMotion && configuration.isPressed ? 0.95 : 1)
+            .animation(DiveMotion.press(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
+                       value: configuration.isPressed)
     }
 }

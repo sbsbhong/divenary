@@ -7,6 +7,7 @@ struct RealRecordingFlowView: View {
     /// Chooses the Wet Ready start copy. Home reads it from watchOS.
     var autoLaunchStatus: DepthAutoLaunchStatus = .unknown
     @Environment(\.scenePhase) private var scenePhase
+    @State private var systemBottomInset: CGFloat = 0
 
     var body: some View {
         Group {
@@ -59,9 +60,11 @@ struct RealRecordingFlowView: View {
             if case .savePersistenceError = coordinator.phase {
                 EmptyView()
             } else if let message = coordinator.failureFeedback {
-                WatchFlowFailureNote(message: message)
+                WatchFlowFailureNote(message: message, systemBottomInset: systemBottomInset)
             }
         }
+        // The banner sits 8 pt above the screen's edge, in the band the system leaves at the bottom.
+        .background { SystemBottomInsetReader(inset: $systemBottomInset) }
         .onChange(of: scenePhase) { _, nextPhase in
             if nextPhase == .active {
                 coordinator.retryCompletedSessionSave()
@@ -69,154 +72,112 @@ struct RealRecordingFlowView: View {
         }
     }
 
+    /// Nothing was recorded underwater, so nothing was saved (COPY C14): Divenary's depth column, not
+    /// a water symbol (D17).
     private var noSamplesView: some View {
-        VStack(spacing: 12) {
-            Text("No depth samples captured")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
-
-            Button("Done") {
+        DiveFlowMessage(
+            title: String(localized: "No depth samples captured"),
+            detail: String(localized: "No values were recorded, so nothing was saved.")
+        ) {
+            DepthColumnGlyph()
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .frame(width: PostDiveLayout.noSamplesGlyph, height: PostDiveLayout.noSamplesGlyph)
+        } actions: {
+            Button(String(localized: "Done")) {
                 coordinator.dismissNoSamples()
             }
             .buttonStyle(DiveActionButtonStyle(kind: .primary))
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
+    /// Recording could not start (spec F #30). The attempt note shows as the bottom banner.
     private func startPersistenceErrorView(allowsDismissal: Bool) -> some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
-
-            Text("Recording unavailable")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-
-            Text("Recording setup could not be completed.")
-                .font(.system(size: 11, weight: .regular))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
-                .minimumScaleFactor(0.75)
-
+        DiveFlowMessage(
+            title: String(localized: "Recording unavailable"),
+            detail: String(localized: "Recording setup could not be completed.")
+        ) {
+            DiveFlowErrorGlyph()
+        } actions: {
             if allowsDismissal {
-                Button("Done") {
+                Button(String(localized: "Done")) {
                     coordinator.dismissStartPersistenceError()
                 }
                 .buttonStyle(DiveActionButtonStyle(kind: .primary))
             } else {
-                ProgressView()
-                    .tint(DiveWatchTheme.primary)
+                DiveFlowSpinner()
                 BusyPressNote(pages: coordinator.recordingPages)
             }
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
-    /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire.
+    /// Shown at once, not after a delay: saving holds the main thread, so a timer could not fire. It
+    /// covers the instrument completely, so no digits show while the log is ended (spec F #27).
     private var endingView: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-                .tint(DiveWatchTheme.primary)
-            Text(String(localized: "Ending recording"))
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
+        DiveFlowProgress(title: String(localized: "Ending recording")) {
             BusyPressNote(pages: coordinator.recordingPages)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
     private var savingView: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-                .tint(DiveWatchTheme.primary)
-            Text("Saving log")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
+        DiveFlowProgress(title: String(localized: "Saving log")) {
             BusyPressNote(pages: coordinator.recordingPages)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
     private var savePersistenceErrorView: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                Image(systemName: "externaldrive.badge.exclamationmark")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.danger)
-
-                Text("Keeping your captured log.")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .multilineTextAlignment(.center)
-
-                Text(String(localized: "Kept for automatic save retry from Home."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-
-                Text(String(localized: "Action Button: retry save, then start a new dive."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-
-                if let message = coordinator.failureFeedback {
-                    WatchFlowFailureNote(message: message, dismissesAutomatically: false)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Button("Retry Save") {
-                    coordinator.retryCompletedSessionSave()
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                Button(String(localized: "Back to Home")) {
-                    coordinator.returnHomeKeepingPendingRecord()
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
-            }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
+        DiveSaveFailureView(
+            failureFeedback: coordinator.failureFeedback,
+            actionButtonNote: String(localized: "Action Button: retry save, then start a new dive."),
+            onRetry: { coordinator.retryCompletedSessionSave() },
+            onHome: { coordinator.returnHomeKeepingPendingRecord() }
+        )
     }
 }
 
-/// A new failure message includes its attempt number, so consecutive failed actions are visible.
-/// Outside save-failure content, the note expires to leave the recording readout clear.
+/// A failure note with its attempt number, so consecutive failed actions are visible (spec C18). At
+/// the bottom of a flow it is a banner that rises in and hides after 4 seconds; in the save-failure
+/// content it stays.
 struct WatchFlowFailureNote: View {
     let message: String
     var dismissesAutomatically = true
-    @State private var isVisible = true
+    /// The system's bottom inset under the flow, so the banner can sit in that band.
+    var systemBottomInset: CGFloat = 0
+    @State private var isVisible: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private let sizeClass = DiveType.SizeClass.current
+
+    init(message: String, dismissesAutomatically: Bool = true, systemBottomInset: CGFloat = 0) {
+        self.message = message
+        self.dismissesAutomatically = dismissesAutomatically
+        self.systemBottomInset = systemBottomInset
+        _isVisible = State(initialValue: !dismissesAutomatically)
+    }
 
     var body: some View {
-        Group {
+        ZStack {
             if isVisible {
-                Text(message)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, DiveWatchTheme.edgeMargin)
+                DiveFailureNote(message: DiveFailureMessage(message: message))
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 8)))
             }
         }
+        // The banner keeps clear of the display's rounded corners, 8 pt above the screen's edge.
+        .padding(.horizontal, dismissesAutomatically ? PostDiveLayout.textGutter(sizeClass) : 0)
+        .padding(.bottom, dismissesAutomatically ? 8 - systemBottomInset : 0)
         .task(id: message) {
-            isVisible = true
-            guard dismissesAutomatically else { return }
+            guard dismissesAutomatically else {
+                isVisible = true
+                return
+            }
+            // Rises in without overshooting: the diver may still be in the water.
+            withAnimation(reduceMotion ? DiveMotion.reducedMotionCurve.animation : .smooth(duration: 0.3)) {
+                isVisible = true
+            }
             try? await Task.sleep(for: .seconds(4))
             guard !Task.isCancelled else { return }
-            isVisible = false
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isVisible = false
+            }
         }
     }
 }
@@ -229,8 +190,8 @@ private struct BusyPressNote: View {
 
     var body: some View {
         Text(String(localized: "Please wait"))
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.mutedText)
+            .diveFont(.footnote)
+            .foregroundStyle(DiveWatchTheme.ink2)
             .lineLimit(1)
             .opacity(flashedPressID == nil ? 0 : 1)
             .accessibilityHidden(flashedPressID == nil)

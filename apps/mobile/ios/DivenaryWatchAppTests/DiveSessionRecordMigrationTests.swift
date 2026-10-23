@@ -14,8 +14,9 @@ final class DiveSessionRecordMigrationTests: XCTestCase {
             XCTAssertTrue(text.contains(record.diveMode.label))
             if let marker = record.captureProvenanceLabel { XCTAssertTrue(text.contains(marker)) }
         }
-        XCTAssertFalse(DiveMode.scuba.listBadgeLabel.isEmpty)
-        XCTAssertFalse(DiveMode.freedive.listBadgeLabel.isEmpty)
+        // Saved-list rows name the type in full words, never an abbreviation (DECISIONS D4).
+        XCTAssertFalse(DiveMode.scuba.label.isEmpty)
+        XCTAssertFalse(DiveMode.freedive.label.isEmpty)
     }
 
     func testSavedRowSummaryKeepsTestSupportRecoveryAndAllSyncMarkers() throws {

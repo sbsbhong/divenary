@@ -118,7 +118,6 @@
       }
     },
     "%lld/5" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -703,6 +702,7 @@
       }
     },
     "Completed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -739,13 +739,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Could not read saved records."
+            "value" : "Couldn’t read saved logs."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장된 기록을 읽지 못했습니다."
+            "value" : "저장한 기록을 읽지 못했습니다."
           }
         }
       }
@@ -1689,6 +1689,7 @@
       }
     },
     "FR" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1904,13 +1905,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Your log isn’t saved yet. Try saving again."
+            "value" : "Your log isn’t saved yet.\nTry saving again."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록을 아직 저장하지 못했습니다. 다시 저장해 주세요."
+            "value" : "기록을 아직 저장하지 못했습니다.\n다시 저장해 주세요."
           }
         }
       }
@@ -2208,6 +2209,7 @@
       }
     },
     "No" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2228,13 +2230,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "No depth recorded"
+            "value" : "Nothing recorded underwater"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "수심이 기록되지 않았습니다"
+            "value" : "물속 기록이 없습니다"
           }
         }
       }
@@ -2335,6 +2337,22 @@
         }
       }
     },
+    "No values were recorded, so nothing was saved." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing was recorded, so the log wasn’t saved."
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "기록된 값이 없어 저장하지 않았습니다."
+          }
+        }
+      }
+    },
     "None selected" : {
       "localizations" : {
         "en" : {
@@ -2420,7 +2438,7 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "NOTE"
+            "value" : "Note"
           }
         },
         "ko" : {
@@ -2710,6 +2728,22 @@
         }
       }
     },
+    "Rated %lld out of 5" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld out of 5"
+          }
+        },
+        "ko" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "5점 중 %lld점"
+          }
+        }
+      }
+    },
     "Rating" : {
       "localizations" : {
         "en" : {
@@ -2775,6 +2809,7 @@
       }
     },
     "Recommendation" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2791,6 +2826,7 @@
       }
     },
     "Recommended reminder" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2811,13 +2847,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Recommended stop record for review. Do not use for safety decisions."
+            "value" : "Recommended stop record for review.\nDo not use for safety decisions."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "권장 스탑 참고 기록입니다. 안전 판단에 사용하지 마세요."
+            "value" : "권장 스탑 참고 기록입니다.\n안전 판단에 사용하지 마세요."
           }
         }
       }
@@ -3253,13 +3289,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Save failed. Your log is kept."
+            "value" : "Save failed.\nYour log is kept."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장하지 못했습니다. 기록은 보관하고 있습니다."
+            "value" : "저장하지 못했습니다.\n기록은 보관하고 있습니다."
           }
         }
       }
@@ -3285,13 +3321,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Saved"
+            "value" : "Saved on Watch"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장됨"
+            "value" : "워치에 저장됨"
           }
         }
       }
@@ -3301,13 +3337,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "For reviewing saved logs. Not a certified dive computer."
+            "value" : "For dive logging and review.\nNot a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "저장한 기록의 복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -3361,6 +3397,7 @@
       }
     },
     "SC" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3462,13 +3499,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Send failed. Try again."
+            "value" : "Couldn’t send.\nSend it again."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "전송하지 못했습니다. 다시 시도하세요."
+            "value" : "전송하지 못했습니다.\n다시 보내 주세요."
           }
         }
       }
@@ -3884,17 +3921,18 @@
       }
     },
     "Supplemental log · no safety calculation" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "For log review. Not a certified dive computer."
+            "value" : "For dive logging and review.\nNot a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "기록 복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -4069,13 +4107,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Target / zone"
+            "value" : "Target depth / stop zone"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "목표 / 구간"
+            "value" : "목표 수심 / 스탑 구간"
           }
         }
       }
@@ -4184,13 +4222,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "For dive logging and review. Not a certified dive computer."
+            "value" : "For dive logging and review.\nNot a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "이 앱은 다이빙 기록·복기용이며, 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -4232,13 +4270,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Time in zone"
+            "value" : "Time in stop zone"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "구간 체류 시간"
+            "value" : "스탑 구간 시간"
           }
         }
       }
@@ -4639,6 +4677,7 @@
       }
     },
     "Yes" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

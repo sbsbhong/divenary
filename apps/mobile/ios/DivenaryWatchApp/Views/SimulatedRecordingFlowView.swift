@@ -223,6 +223,7 @@ struct SimulatedRecordingFlowView: View {
     @State private var actionButtonEndOverrideToken: UUID?
     @FocusState private var crownDepthControlFocused: Bool
     @Environment(\.dismiss) private var dismiss
+    @State private var systemBottomInset: CGFloat = 0
 
     init(
         store: DiveSessionStore,
@@ -277,9 +278,11 @@ struct SimulatedRecordingFlowView: View {
             if case .savePersistenceError = lifecycle.phase {
                 EmptyView()
             } else if let message = lifecycle.failureFeedback {
-                WatchFlowFailureNote(message: message)
+                WatchFlowFailureNote(message: message, systemBottomInset: systemBottomInset)
             }
         }
+        // The banner sits 8 pt above the screen's edge, in the band the system leaves at the bottom.
+        .background { SystemBottomInsetReader(inset: $systemBottomInset) }
         .onAppear {
             if lifecycle.handleFlowAppearance(plan: preparedPlan) {
                 dismiss()
@@ -353,61 +356,42 @@ struct SimulatedRecordingFlowView: View {
         recordingMode.prepare(plan: plan)
     }
 
+    /// The demo could not start (spec F #30): the same screen as a real start error, with a retry.
     private var persistenceErrorView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
-
-            Text("Recording unavailable")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-
-            HStack(spacing: 8) {
-                Button("Retry") {
-                    if lifecycle.retryStart(plan: preparedPlan) {
-                        recorder.setDemoDepthMeters(controlledDepthMeters)
-                        installActionButtonEndOverride()
-                        crownDepthControlFocused = true
-                    }
+        DiveFlowMessage(
+            title: String(localized: "Recording unavailable"),
+            detail: String(localized: "Recording setup could not be completed.")
+        ) {
+            DiveFlowErrorGlyph()
+        } actions: {
+            Button(String(localized: "Retry")) {
+                if lifecycle.retryStart(plan: preparedPlan) {
+                    recorder.setDemoDepthMeters(controlledDepthMeters)
+                    installActionButtonEndOverride()
+                    crownDepthControlFocused = true
                 }
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                Button("Done") {
-                    guard lifecycle.dismissPersistenceError() else { return }
-                    dismiss()
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
             }
+            .buttonStyle(DiveActionButtonStyle(kind: .primary))
+
+            Button(String(localized: "Done")) {
+                guard lifecycle.dismissPersistenceError() else { return }
+                dismiss()
+            }
+            .buttonStyle(DiveActionButtonStyle(kind: .secondary))
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
+    /// Leaving the demo could not cancel its recording; the banner says what failed.
     private var cleanupErrorView: some View {
-        VStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
-
-            Text("Cleanup required")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-
-            Button("Retry") {
+        DiveFlowMessage(title: String(localized: "Cleanup required")) {
+            DiveFlowErrorGlyph()
+        } actions: {
+            Button(String(localized: "Retry")) {
                 guard lifecycle.retryExternalCleanup() else { return }
                 dismiss()
             }
             .buttonStyle(DiveActionButtonStyle(kind: .primary))
         }
-        .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
     }
 
     @discardableResult
@@ -426,61 +410,22 @@ struct SimulatedRecordingFlowView: View {
         dismiss()
     }
 
+    /// Shown at once, like a real recording's saving screen (spec F #28).
     private var savingView: some View {
-        VStack(spacing: 10) {
-            ProgressView()
-                .tint(DiveWatchTheme.primary)
-            Text("Saving log")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
+        DiveFlowProgress(title: String(localized: "Saving log"))
     }
 
     private var savePersistenceErrorView: some View {
-        ScrollView {
-            VStack(spacing: 10) {
-                Image(systemName: "externaldrive.badge.exclamationmark")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.danger)
-
-                Text("Keeping your captured log.")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .multilineTextAlignment(.center)
-
-                Text(String(localized: "Kept for automatic save retry from Home."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-
-                Text(String(localized: "The Action Button retries saving this demo log."))
-                    .font(.system(size: 11))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-
-                if let message = lifecycle.failureFeedback {
-                    WatchFlowFailureNote(message: message, dismissesAutomatically: false)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Button("Retry Save") {
-                    _ = endDive()
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .primary))
-
-                Button(String(localized: "Back to Home")) {
-                    guard lifecycle.returnHomeKeepingPendingRecord(keepPendingRecord) else { return }
-                    removeActionButtonEndOverride()
-                    dismiss()
-                }
-                .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+        DiveSaveFailureView(
+            failureFeedback: lifecycle.failureFeedback,
+            actionButtonNote: String(localized: "The Action Button retries saving this demo log."),
+            onRetry: { _ = endDive() },
+            onHome: {
+                guard lifecycle.returnHomeKeepingPendingRecord(keepPendingRecord) else { return }
+                removeActionButtonEndOverride()
+                dismiss()
             }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
+        )
     }
 
     private func installActionButtonEndOverride() {

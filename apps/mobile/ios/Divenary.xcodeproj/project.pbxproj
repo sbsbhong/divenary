@@ -58,6 +58,8 @@
 		C70000000000000000000006 /* RecordingHintTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C70000000000000000000005 /* RecordingHintTests.swift */; };
 		C90000000000000000000002 /* DiveDesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000001 /* DiveDesignSystem.swift */; };
 		C90000000000000000000004 /* DiveDesignSystemTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C90000000000000000000003 /* DiveDesignSystemTests.swift */; };
+		CA0000000000000000000002 /* DivePostDive.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000001 /* DivePostDive.swift */; };
+		CA0000000000000000000004 /* DivePostDiveTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000003 /* DivePostDiveTests.swift */; };
 		C5B140EA62C6109A50CDBD42 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 541ADEAC3E7666DFDC1CF6AE /* Localizable.xcstrings */; };
 		C80000000000000000000002 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000001 /* InfoPlist.xcstrings */; };
 		C80000000000000000000004 /* InfoPlist.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = C80000000000000000000003 /* InfoPlist.xcstrings */; };
@@ -174,6 +176,8 @@
 		C70000000000000000000005 /* RecordingHintTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = RecordingHintTests.swift; sourceTree = "<group>"; };
 		C90000000000000000000001 /* DiveDesignSystem.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveDesignSystem.swift; sourceTree = "<group>"; };
 		C90000000000000000000003 /* DiveDesignSystemTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DiveDesignSystemTests.swift; sourceTree = "<group>"; };
+		CA0000000000000000000001 /* DivePostDive.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DivePostDive.swift; sourceTree = "<group>"; };
+		CA0000000000000000000003 /* DivePostDiveTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DivePostDiveTests.swift; sourceTree = "<group>"; };
 		D00000000000000000000001 /* WatchConnectivityInbox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityInbox.swift; path = Divenary/WatchConnectivityInbox.swift; sourceTree = "<group>"; };
 		D00000000000000000000002 /* WatchConnectivityModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WatchConnectivityModule.swift; path = Divenary/WatchConnectivityModule.swift; sourceTree = "<group>"; };
 		D00000000000000000000003 /* WatchConnectivityModuleBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = WatchConnectivityModuleBridge.m; path = Divenary/WatchConnectivityModuleBridge.m; sourceTree = "<group>"; };
@@ -386,6 +390,7 @@
 				9CEB2D5326C9497892A77546 /* DepthGaugeRail.swift */,
 				2A61ED43A6E3C7D8E1961D9A /* DiveFormatters.swift */,
 				C90000000000000000000001 /* DiveDesignSystem.swift */,
+				CA0000000000000000000001 /* DivePostDive.swift */,
 				6BE6A545437839029CC97811 /* HomeView.swift */,
 				F20000000000000000000001 /* WetReadyView.swift */,
 				D60000000000000000000006 /* RealRecordingFlowView.swift */,
@@ -441,6 +446,7 @@
 				C60000000000000000000005 /* UnderwaterInputModelTests.swift */,
 				C70000000000000000000005 /* RecordingHintTests.swift */,
 				C90000000000000000000003 /* DiveDesignSystemTests.swift */,
+				CA0000000000000000000003 /* DivePostDiveTests.swift */,
 			);
 			path = DivenaryWatchAppTests;
 			sourceTree = "<group>";
@@ -722,6 +728,7 @@
 				08D2A1EC41B84C58A469C241 /* DepthGaugeRail.swift in Sources */,
 				8097168CBD59D256F2B105FC /* DiveFormatters.swift in Sources */,
 				C90000000000000000000002 /* DiveDesignSystem.swift in Sources */,
+				CA0000000000000000000002 /* DivePostDive.swift in Sources */,
 				646EDA03C2ECC58782FDB5E0 /* HomeView.swift in Sources */,
 				F10000000000000000000001 /* WetReadyView.swift in Sources */,
 				D60000000000000000000005 /* RealRecordingFlowView.swift in Sources */,
@@ -755,6 +762,7 @@
 				C60000000000000000000006 /* UnderwaterInputModelTests.swift in Sources */,
 				C70000000000000000000006 /* RecordingHintTests.swift in Sources */,
 				C90000000000000000000004 /* DiveDesignSystemTests.swift in Sources */,
+				CA0000000000000000000004 /* DivePostDiveTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
