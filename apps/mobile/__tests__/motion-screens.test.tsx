@@ -167,6 +167,28 @@ describe('motion on screens', () => {
     jest.useRealTimers();
   });
 
+  test('a changed search or an emptied list never counts rows as arrivals', async () => {
+    const renderer = await renderIn(logbookElement({ entries: [logEntry('a'), logEntry('b')] }));
+
+    // A row that came in while a search hid it shows without animation once the search is cleared.
+    await ReactTestRenderer.act(async () => {
+      renderer.update(logbookElement({ filter: { query: 'a' }, entries: [logEntry('a')] }));
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(logbookElement({ entries: [logEntry('c'), logEntry('a'), logEntry('b')] }));
+    });
+    expect(enteringHosts(renderer)).toHaveLength(0);
+
+    // Sign-out empties the list; the next owner's rows are a fresh list, not arrivals.
+    await ReactTestRenderer.act(async () => {
+      renderer.update(logbookElement({ entries: [] }));
+    });
+    await ReactTestRenderer.act(async () => {
+      renderer.update(logbookElement({ entries: [logEntry('d'), logEntry('e')] }));
+    });
+    expect(enteringHosts(renderer)).toHaveLength(0);
+  });
+
   test('the first logbook render and paging add no animation', async () => {
     const entries = Array.from({ length: 25 }, (_, index) => logEntry(`entry-${index}`));
     const renderer = await renderIn(logbookElement({ entries }));

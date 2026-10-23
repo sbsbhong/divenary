@@ -116,7 +116,8 @@ function clipWidth(renderer: ReactTestRenderer.ReactTestRenderer): number {
 }
 
 function linePath(renderer: ReactTestRenderer.ReactTestRenderer): string | undefined {
-  return renderer.root.findAllByType(Path).find(node => node.props.clipPath !== undefined)?.props.d;
+  // The line is the clipped stroke; the area shares the clip but is filled.
+  return renderer.root.findAllByType(Path).find(node => node.props.clipPath !== undefined && node.props.fill === 'none')?.props.d;
 }
 
 function reportBoxLayout(renderer: ReactTestRenderer.ReactTestRenderer, width: number, height: number) {

@@ -100,8 +100,9 @@ export function ProfileRevealChart(props: ProfileRevealChartProps): React.JSX.El
               <AnimatedRect x={-CLIP_BLEED} y={-CLIP_BLEED} height={height + CLIP_BLEED * 2} animatedProps={clipProps} />
             </ClipPath>
           </Defs>
+          {/* The water fills in behind the line rather than showing the whole shape ahead of it. */}
           {props.areaColor && chart.areaPath ? (
-            <AnimatedPath d={chart.areaPath} fill={props.areaColor} animatedProps={areaProps} />
+            <AnimatedPath clipPath={`url(#${clipId})`} d={chart.areaPath} fill={props.areaColor} animatedProps={areaProps} />
           ) : null}
           <Path
             clipPath={`url(#${clipId})`}
@@ -116,7 +117,8 @@ export function ProfileRevealChart(props: ProfileRevealChartProps): React.JSX.El
           />
         </Svg>
       </Animated.View>
-      {props.logoColor && draw.drawsLine ? (
+      {/* A single sample draws no line, so there is nothing for the logo to ride. */}
+      {props.logoColor && draw.drawsLine && tipPoints.length > 1 ? (
         <ProfileLogoRider
           testID={`${testID}-logo-rider`}
           color={props.logoColor}

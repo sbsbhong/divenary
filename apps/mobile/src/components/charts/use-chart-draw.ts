@@ -4,6 +4,7 @@ import {
   useReducedMotion,
   useSharedValue,
   withDelay,
+  withSequence,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
@@ -36,7 +37,7 @@ export type ChartDraw = {
   progress: SharedValue<number>;
   /** 0 to 1. Multiplied by the area's own opacity; the area starts after `chartAreaDelay`. */
   areaProgress: SharedValue<number>;
-  /** 1 while the draw runs, then 0 after `fade`. Only the depth logo rider reads it. */
+  /** 0 until the line starts, 1 while it draws, then 0 after `fade`. Only the depth logo rider reads it. */
   riderOpacity: SharedValue<number>;
   /** 0 to 1 for the Reduce Motion fade of the whole chart. */
   fadeProgress: SharedValue<number>;
@@ -56,7 +57,7 @@ export function useChartDraw(options: ChartDrawOptions): ChartDraw {
 
   const progress = useSharedValue(drawsLine ? 0 : 1);
   const areaProgress = useSharedValue(drawsLine ? 0 : 1);
-  const riderOpacity = useSharedValue(1);
+  const riderOpacity = useSharedValue(0);
   const fadeProgress = useSharedValue(fadesIn ? 0 : 1);
 
   useEffect(() => {
@@ -70,7 +71,13 @@ export function useChartDraw(options: ChartDrawOptions): ChartDraw {
           withTiming(1, { duration: MOTION_TIMING.chartAreaFill, easing: CHART_DRAW_EASING }),
         ),
       );
-      riderOpacity.set(withDelay(drawDelay + drawDuration, withTiming(0, { duration: MOTION_TIMING.fade })));
+      // The logo appears with the line, not during the wait for the push, and leaves when the line is done.
+      riderOpacity.set(
+        withSequence(
+          withDelay(drawDelay, withTiming(1, { duration: MOTION_TIMING.fade })),
+          withDelay(drawDuration - MOTION_TIMING.fade, withTiming(0, { duration: MOTION_TIMING.fade })),
+        ),
+      );
     }
 
     if (fadesIn) {

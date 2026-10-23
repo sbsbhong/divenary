@@ -89,7 +89,7 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
   const isWaitingForCloudTail = Boolean(props.isCloudLoading) && pagedEntries.length > 0 && !hasMorePages;
   // Rows of the first load fade in as one reveal. Rows that arrive later are judged in the hook below.
   const revealRows = useFirstLoadReveal(Boolean(props.isLoading) && totalEntryCount === 0);
-  const arrivedIds = useRowArrivals(visibleEntries, shownCount);
+  const arrivedIds = useRowArrivals(visibleEntries, shownCount, filterKey);
   // A first load reveals all of its rows together; a later arrival fades only its own row.
   const rowEntering = (localId: string) => (revealRows ? fadeEntering : arrivedIds.has(localId) ? arrivalEntering : undefined);
   const showLoadingSkeleton = useContentLoading(Boolean(props.isLoading), 'logbook-list');
@@ -293,27 +293,30 @@ export default function LogbookScreen(props: LogbookScreenProps): React.JSX.Elem
  * these fade in. The first rows, paged-in rows and rows scrolled back into view are not arrivals.
  * An arrival below the shown page is not in the set, so paging it in shows it without animation.
  * The set empties after the appear time, so a row scrolled into view later does not fade.
+ * A changed search or tag only re-sorts what the diver asked for, so it never counts as an arrival,
+ * and an emptied list (sign-out, account switch) starts over so the next owner's rows are not arrivals.
  */
-function useRowArrivals(entries: DiveLogEntry[], shownCount: number): ReadonlySet<string> {
+function useRowArrivals(entries: DiveLogEntry[], shownCount: number, filterKey: string): ReadonlySet<string> {
   const [tracker, setTracker] = React.useState(() => ({
     entries,
+    filterKey,
     seen: new Set(entries.map(entry => entry.localId)),
     arrived: NO_ARRIVALS,
   }));
   let current = tracker;
 
   // Set during render, so the arrival is in place on the render that mounts its row.
-  if (entries !== tracker.entries) {
-    const hadRows = tracker.seen.size > 0;
-    const seen = new Set(tracker.seen);
+  if (entries !== tracker.entries || filterKey !== tracker.filterKey) {
+    const judgesArrivals = filterKey === tracker.filterKey && tracker.seen.size > 0;
+    const seen = entries.length === 0 ? new Set<string>() : new Set(tracker.seen);
     const incoming = new Set<string>();
     entries.forEach((entry, index) => {
-      if (hadRows && index < shownCount && !seen.has(entry.localId)) {
+      if (judgesArrivals && index < shownCount && !seen.has(entry.localId)) {
         incoming.add(entry.localId);
       }
       seen.add(entry.localId);
     });
-    current = { entries, seen, arrived: incoming };
+    current = { entries, filterKey, seen, arrived: incoming.size > 0 ? incoming : NO_ARRIVALS };
     setTracker(current);
   }
 
