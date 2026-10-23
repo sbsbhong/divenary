@@ -31,6 +31,161 @@ struct RecordingGaugeScale {
     }
 }
 
+/// One colour stop of the gauge water gradient, as a location over the visible range (0 = surface).
+struct GaugeWaterStop: Equatable {
+    let location: Double
+    let rgb: DiveRGB
+}
+
+/// A finished freedive's maximum depth, drawn as a short tick in the gauge's notch lane.
+struct GaugeTideMark: Equatable {
+    let depthMeters: Double
+    let opacity: Double
+}
+
+/// How strongly tide marks are drawn: quietly on live pages, stronger on freedive Details.
+enum GaugeTideEmphasis {
+    case live
+    case details
+
+    var newestOpacity: Double {
+        switch self {
+        case .live: return 0.8
+        case .details: return 1.0
+        }
+    }
+
+    var olderOpacity: Double {
+        switch self {
+        case .live: return 0.35
+        case .details: return 0.5
+        }
+    }
+}
+
+/// Presentation geometry for the Plumb depth gauge (spec C8, DECISIONS D1), kept apart from the view
+/// so it can be tested. The rail keeps a 7 pt inset at both ends, so 0 m and the bottom of the
+/// visible range never sit under the capsule's rounded caps. Nothing here judges the dive.
+struct RecordingGaugeGeometry {
+    static let railInset: CGFloat = 7
+    /// A tick label this close to the current-depth index steps back so the index stays readable.
+    static let labelYieldDistance: CGFloat = 8
+    static let yieldedLabelOpacity = 0.25
+    static let minimumStopZoneHeight: CGFloat = 18
+    static let tideMarkLimit = 5
+
+    let scale: RecordingGaugeScale
+
+    init(scale: RecordingGaugeScale) {
+        self.scale = scale
+    }
+
+    /// The deepest depth the rail can show: the visible range, never past the authorized limit.
+    private var visibleDepthLimit: Double {
+        min(scale.upperBound, scale.displayLimit)
+    }
+
+    private func visibleDepth(_ depth: Double) -> Double {
+        guard depth.isFinite else { return 0 }
+        return min(max(depth, 0), visibleDepthLimit)
+    }
+
+    func y(forDepth depth: Double, height: CGFloat) -> CGFloat {
+        let travel = max(0, height - 2 * Self.railInset)
+        return Self.railInset + CGFloat(visibleDepth(depth) / scale.upperBound) * travel
+    }
+
+    /// 0.25 when the tick label sits within 8 pt of the current-depth index, otherwise 1.
+    func labelOpacity(tick: Double, currentDepth: Double?, height: CGFloat) -> Double {
+        guard let currentDepth = scale.displayedDepth(currentDepth) else { return 1 }
+        let distance = abs(y(forDepth: tick, height: height) - y(forDepth: currentDepth, height: height))
+        return distance <= Self.labelYieldDistance ? Self.yieldedLabelOpacity : 1
+    }
+
+    /// The recommended-stop band from its shallow to its deep edge. A band shorter than
+    /// `minimumHeight` grows evenly around its centre and moves inside the gauge rather than
+    /// shrinking at an end. `nil` when the zone is outside the visible range.
+    func stopZoneFrame(
+        zone: ClosedRange<Double>,
+        height: CGFloat,
+        minimumHeight: CGFloat = RecordingGaugeGeometry.minimumStopZoneHeight
+    ) -> ClosedRange<CGFloat>? {
+        let shallow = visibleDepth(zone.lowerBound)
+        let deep = visibleDepth(zone.upperBound)
+        guard shallow < deep else { return nil }
+
+        var top = y(forDepth: shallow, height: height)
+        var bottom = y(forDepth: deep, height: height)
+        let missing = max(0, minimumHeight - (bottom - top))
+        top -= missing / 2
+        bottom += missing / 2
+        if top < 0 {
+            bottom = min(height, bottom - top)
+            top = 0
+        }
+        if bottom > height {
+            top = max(0, top - (bottom - height))
+            bottom = height
+        }
+        return top...bottom
+    }
+
+    /// Straight sRGB interpolation between the metre anchors; past 40 m it stays on the deepest colour.
+    static func waterColor(atDepth depth: Double) -> DiveRGB {
+        let anchors = DiveWatchTheme.waterStops
+        guard let first = anchors.first, let last = anchors.last else { return DiveRGB(hex: 0x1F5A99) }
+        guard depth.isFinite, depth > first.depthMeters else { return first.rgb }
+        guard depth < last.depthMeters else { return last.rgb }
+        for (shallow, deep) in zip(anchors, anchors.dropFirst()) where depth <= deep.depthMeters {
+            let fraction = (depth - shallow.depthMeters) / (deep.depthMeters - shallow.depthMeters)
+            return shallow.rgb.mixed(with: deep.rgb, fraction: fraction)
+        }
+        return last.rgb
+    }
+
+    /// The water colours for a visible range of `upperBound` metres: the surface colour at 0, each
+    /// metre anchor inside the range at its own location, and the colour of the range's bottom at 1.
+    static func waterColorStops(upperBound: Double) -> [GaugeWaterStop] {
+        let range = upperBound.isFinite ? max(1, upperBound) : 30
+        let inside = DiveWatchTheme.waterStops
+            .filter { $0.depthMeters > 0 && $0.depthMeters < range }
+            .map { GaugeWaterStop(location: $0.depthMeters / range, rgb: $0.rgb) }
+        return [GaugeWaterStop(location: 0, rgb: waterColor(atDepth: 0))]
+            + inside
+            + [GaugeWaterStop(location: 1, rgb: waterColor(atDepth: range))]
+    }
+
+    static func waterGradientStops(upperBound: Double) -> [Gradient.Stop] {
+        waterColorStops(upperBound: upperBound).map {
+            Gradient.Stop(color: $0.rgb.color, location: CGFloat($0.location))
+        }
+    }
+
+    /// The last five finished dives, oldest first; the newest is the brightest.
+    static func tideMarks(maxDepths: [Double], emphasis: GaugeTideEmphasis = .live) -> [GaugeTideMark] {
+        let recent = Array(maxDepths.filter { $0.isFinite && $0 > 0 }.suffix(tideMarkLimit))
+        return recent.enumerated().map { index, depth in
+            GaugeTideMark(
+                depthMeters: depth,
+                opacity: index == recent.count - 1 ? emphasis.newestOpacity : emphasis.olderOpacity
+            )
+        }
+    }
+}
+
+/// The three minute indices beside "Recommended stop" (proposal P2, adopted). Each index is a third
+/// of the stop, so one minute of the usual three-minute stop. A reminder only, never a requirement.
+enum RecommendedStopProgress {
+    static let indexCount = 3
+
+    static func completedMinutes(remaining: TimeInterval, total: TimeInterval) -> Int {
+        guard remaining.isFinite, total.isFinite, total > 0 else { return 0 }
+        let elapsed = min(max(total - remaining, 0), total)
+        let perIndex = total / Double(indexCount)
+        return min(indexCount, Int((elapsed / perIndex).rounded(.down)))
+    }
+}
+
 private struct RecordingAuthorizedMaximumKey: EnvironmentKey {
     static let defaultValue: Double? = nil
 }

@@ -7,6 +7,7 @@ const stringCatalogPath = join(root, 'ios/DivenaryWatchApp/Localizable.xcstrings
 const watchSourceFiles = [
   'ios/DivenaryWatchApp/Views/DepthGaugeRail.swift',
   'ios/DivenaryWatchApp/Views/DiveFormatters.swift',
+  'ios/DivenaryWatchApp/Views/DiveDesignSystem.swift',
   'ios/DivenaryWatchApp/Views/RecordingView.swift',
   'ios/DivenaryWatchApp/Views/RecordingHint.swift',
   'ios/DivenaryWatchApp/Views/SummaryView.swift',

@@ -100,17 +100,107 @@ enum DiveFormatters {
     }
 }
 
+/// An sRGB colour as plain numbers (0...1), so colour arithmetic such as the depth-anchored water
+/// gradient can be computed and tested without resolving a SwiftUI `Color`.
+struct DiveRGB: Equatable {
+    let red: Double
+    let green: Double
+    let blue: Double
+
+    init(red: Double, green: Double, blue: Double) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    /// `0x2F7FD1` style hex, as written in the design spec.
+    init(hex: UInt32) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255
+        )
+    }
+
+    var color: Color {
+        Color(.sRGB, red: red, green: green, blue: blue, opacity: 1)
+    }
+
+    /// Straight sRGB mix: 0 keeps this colour, 1 gives `other`.
+    func mixed(with other: DiveRGB, fraction: Double) -> DiveRGB {
+        let t = fraction.isFinite ? min(max(fraction, 0), 1) : 0
+        return DiveRGB(
+            red: red + (other.red - red) * t,
+            green: green + (other.green - green) * t,
+            blue: blue + (other.blue - blue) * t
+        )
+    }
+}
+
+/// A gauge water colour pinned to an absolute depth, so the fill's colour tells depth (DECISIONS D1).
+struct WaterColorAnchor: Equatable {
+    let depthMeters: Double
+    let rgb: DiveRGB
+}
+
+/// The Plumb palette (spec B1): black water, white data, grey labels, navy water column, blue for
+/// press and selection, amber for the recommended stop. Red only for real failures; never green.
 enum DiveWatchTheme {
-    static let background = Color(red: 0.0, green: 0.0, blue: 0.0)
-    static let surfaceContainer = Color(red: 0.165, green: 0.165, blue: 0.173)
-    static let surfaceRaised = Color(red: 0.145, green: 0.145, blue: 0.153)
-    static let primary = Color(red: 0.161, green: 0.592, blue: 1.0)
-    static let secondary = Color(red: 0.8, green: 0.8, blue: 0.8)
-    static let danger = Color(red: 1.0, green: 0.42, blue: 0.38)
+    static let canvas = Color(red: 0.0, green: 0.0, blue: 0.0)
+    /// Pressable surfaces: start cards, rows, the recent card, secondary buttons, banners.
+    static let platter = DiveRGB(hex: 0x262628).color
+    /// Status and hint chips and the empty gauge track; darker than a platter so it never looks pressable.
+    static let chip = DiveRGB(hex: 0x1C1C1E).color
+    /// Demo/Test marker chip, start-card glyph disc, disabled play disc.
+    static let marker = DiveRGB(hex: 0x3A3A3C).color
+    static let ink = Color.white
+    /// Labels, units, chip and hint text, tick labels.
+    static let ink2 = DiveRGB(hex: 0xAEAEB2).color
+    /// Fine print, the non-certified sentence, "--" placeholders, "(n)" counters.
+    static let ink3 = DiveRGB(hex: 0x8E8E93).color
+    /// Inactive page dots, empty stars, the unselected plan circle.
+    static let dotOff = DiveRGB(hex: 0x5A5A5E).color
+    /// Gauge tick hairlines only.
+    static let hairline = Color.white.opacity(0.18)
+    /// Only for press or selection, and the "Diving" chip text.
+    static let action = DiveRGB(hex: 0x2997FF).color
+    /// Selected plan row fill.
+    static let actionFill = action.opacity(0.30)
+    /// Depth fills only, never text or controls.
+    static let water = DiveRGB(hex: 0x1F5A99).color
+    /// Profile and sparkline area.
+    static let waterArea = water.opacity(0.60)
+    /// Gauge water colour by absolute depth: 0 m, 10 m, 40 m (DECISIONS D1).
+    static let waterStops: [WaterColorAnchor] = [
+        WaterColorAnchor(depthMeters: 0, rgb: DiveRGB(hex: 0x2F7FD1)),
+        WaterColorAnchor(depthMeters: 10, rgb: DiveRGB(hex: 0x1F5A99)),
+        WaterColorAnchor(depthMeters: 40, rgb: DiveRGB(hex: 0x0B2547)),
+    ]
     /// Supplementary tone for recommended reminders; never used for mandatory states.
-    static let caution = Color(red: 1.0, green: 0.78, blue: 0.3)
-    static let text = Color.white
-    static let mutedText = Color(red: 0.8, green: 0.8, blue: 0.8)
+    static let caution = DiveRGB(hex: 0xFFC74D).color
+    /// Stop-zone band fill.
+    static let cautionFill = caution.opacity(0.18)
+    /// Stop-zone top and bottom edge lines.
+    static let cautionLine = caution.opacity(0.60)
+    /// A recommended-stop minute index that has not finished yet.
+    static let cautionDim = caution.opacity(0.25)
+    /// Real failures: save, send, read and start errors, and the pinned storage footer.
+    static let danger = DiveRGB(hex: 0xFF6B61).color
+    /// Outline around the white depth index.
+    static let keyline = Color.black
+    /// Toolbar circles only (emulates Liquid Glass; flat platter on older watchOS).
+    static let glass = Color.white.opacity(0.14)
+    /// Always-On gauge outline.
+    static let aodStroke = Color.white.opacity(0.50)
+
+    // Earlier names, kept so every screen compiles until it moves to the Plumb names.
+    static let background = canvas
+    static let surfaceContainer = platter
+    static let surfaceRaised = chip
+    static let primary = action
+    static let secondary = ink2
+    static let text = ink
+    static let mutedText = ink2
 
     static let edgeMargin: CGFloat = 8
     static let cardRadius: CGFloat = 8
@@ -326,25 +416,6 @@ struct DiveActionButtonStyle: ButtonStyle {
             return DiveWatchTheme.primary
         case .destructive:
             return DiveWatchTheme.danger
-        }
-    }
-}
-
-/// Press feedback for cards and rows that are not drawn as capsule buttons. A disabled card, such
-/// as a real start card while the sensor check runs, is drawn dimmed.
-struct DivePressStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        PressableLabel(configuration: configuration)
-    }
-
-    private struct PressableLabel: View {
-        let configuration: Configuration
-        @Environment(\.isEnabled) private var isEnabled
-
-        var body: some View {
-            configuration.label
-                .opacity(isEnabled ? 1 : 0.7)
-                .scaleEffect(configuration.isPressed ? 0.95 : 1)
         }
     }
 }
