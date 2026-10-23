@@ -87,6 +87,9 @@ Recording screens keep the spec chassis (status band U y 72–112 / S 62–102 e
 - P6 wording: the scuba dive's elapsed time is "다이빙 시간" everywhere — recording rows ("시간" → "다이빙 시간"), the stop page and End page ("기록 시간" → "다이빙 시간"), Always-On, and the scuba summary/detail ("총 기록 시간" → "다이빙 시간", value "42분 10초"). A single freedive's time is "다이빙 시간" ("시간" → "다이빙 시간"); the freedive session total stays "총 기록 시간" (a different concept: the whole session). "직전 다이빙 시간", "최장 다이빙" stay.
 - The proposals board becomes a record: title "채택한 제안", subtitle "2026-10-23 모두 채택해 목업에 반영했습니다. 왼쪽은 이전 규칙, 오른쪽은 지금 디자인입니다.", left label "이전 규칙", right label "채택 · 목업 반영", pills "P2 채택" etc. in a neutral style (#3A3A3C fill, white text) instead of yellow.
 
+## D16a. Summary finale rider faces its direction of travel (owner, 2026-10-23)
+The logo mark that rides the profile line from left to right is mirrored horizontally (the logo's manta faces up-left; mirrored, it faces the way it swims). Only the rider is mirrored; the logo everywhere else (Home footer, empty list, design sheet) stays as the original.
+
 ## D16. Brand mark
 The only manta anywhere is the real logo traced in LOGO.md (same folder). Remove every hand-drawn manta. Home bottom footer: the real mark, monochrome ink3, 64px wide, above the non-certified sentence. Summary finale: the real mark in white, 28px wide, rides the profile line. Empty saved list: the real mark, ink3, 80px wide. Design sheet: replace the "divenary.manta" icon and the footnote example with the real mark and caption it "Divenary 로고 (실제 로고 윤곽)".
 

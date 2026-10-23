@@ -128,6 +128,25 @@ final class DivePostDiveTests: XCTestCase {
         assertTip(DiveProfileGeometry.tip(of: repeated, in: CGSize(width: 10, height: 10), fraction: 0), x: 0, y: 0, degrees: 0)
     }
 
+    // MARK: - Finale logo heading (DECISIONS D16a)
+
+    func testMirroredLogoNoseFacesUpRightBeforeItTurns() {
+        // The mirror turns the nose from up-left to up-right: a negative angle between -90 and 0.
+        XCTAssertGreaterThan(LogoRiderHeading.mirroredNoseDegrees, -90)
+        XCTAssertLessThan(LogoRiderHeading.mirroredNoseDegrees, 0)
+    }
+
+    func testLogoRiderTurnsToTheLineDirection() {
+        // A level line turns the nose to the right; a descent (down the screen) turns it further clockwise.
+        XCTAssertEqual(LogoRiderHeading.rotation(alongLine: 0), 57, accuracy: 0.0001)
+        XCTAssertEqual(LogoRiderHeading.rotation(alongLine: 90), 147, accuracy: 0.0001)
+        XCTAssertEqual(LogoRiderHeading.rotation(alongLine: -90), -33, accuracy: 0.0001)
+        for line in [-60.0, 0, 30, 53.13, 90] {
+            let nose = LogoRiderHeading.mirroredNoseDegrees + LogoRiderHeading.rotation(alongLine: line)
+            XCTAssertEqual(nose, line, accuracy: 0.0001)
+        }
+    }
+
     func testDepthLabelSitsAboveAndRightOfTheDeepestPoint() {
         let origin = DiveProfileGeometry.depthLabelOrigin(
             deepest: CGPoint(x: 45.5, y: 42.7), label: CGSize(width: 30, height: 12), bounds: CGSize(width: 175, height: 47)

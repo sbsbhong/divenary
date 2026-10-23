@@ -1288,3 +1288,8 @@
 - Updated: Knowledge Base Index
 - Recorded: 종료 화면의 수중 잠금 줄은 동작 버튼 힌트가 있는 기기에서만 남고, 없으면 `RecordingHint.showsWaterLockLine(on:)`이 숨긴다. 종료 중 화면은 기록 계기를 30 %로 남기고 그 위에 spinner와 `기록을 종료하고 있습니다.`를 페이드로 올린다(RC-END). 권장 스탑 기록의 한 칸짜리 행은 전체 폭을 쓰고 `시작` | `완료 시각`만 한 줄에 둔다(C6). 한국어 `Divenary` 뒤 조사 앞에는 단어 결합 문자 U+2060을 넣는다.
 - Recorded: 구현 커밋 `c57f311`(fix(watch): polish the Plumb redesign after review). 빌드, XCTest(Apple Watch Ultra 3 49mm와 Series 11 42mm 각 442개 통과), 문구 검사, jest(1305개 통과)까지 확인했다. 시작 오류 배너 여백과 종료 중 30 % 계기의 시뮬레이터 캡처는 하지 않았다.
+
+## [2026-10-23] ingest | Mobile/Watch UI 언어
+- Added: 2026-10-23 저장 뒤 마무리 로고 뒤집기 결정 raw source(D16a 원문)
+- Recorded: 저장 뒤 마무리에서 선 끝을 따라가는 로고만 좌우로 뒤집어 가오리 머리가 진행 방향을 향하게 했다(`LogoRiderHeading`, 원본 로고 기준 머리 방향 약 -120°, 뒤집은 뒤 약 -57°에서 회전). 다른 로고 자리는 원본 방향 그대로다.
+- Recorded: Ultra 3 49mm 임시 하네스로 선의 하강·바닥·상승 지점(진행률 0.2, 0.5, 0.8, 1.0)의 로고 방향을 캡처해 확인했다. 실제 애니메이션 속도의 프레임 캡처는 하지 않았다.

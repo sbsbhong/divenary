@@ -111,6 +111,21 @@ struct DiveFailureMessage: Equatable {
 
 // MARK: - Profile geometry
 
+/// The finale's logo rider heading (DECISIONS D16a). In the logo art the nose points up-left, about
+/// -120° (screen degrees, down is positive; the tail sits at the bottom right). Mirrored for the rider,
+/// the nose points up-right at about -57°, the middle of three estimates from the traced contour
+/// (tail to front, centroid to front, tail to centroid: -56°, -62°, -53°). Turning the mirrored mark
+/// by `line + 57°` puts its nose on the line's direction at the tip.
+enum LogoRiderHeading {
+    /// The mirrored mark's nose direction before any rotation.
+    static let mirroredNoseDegrees: Double = -57
+
+    /// The rotation that turns the mirrored mark's nose onto a line running at `degrees`.
+    static func rotation(alongLine degrees: Double) -> Double {
+        degrees - mirroredNoseDegrees
+    }
+}
+
 /// Where things sit on a saved profile (spec C15): the drawing tip the logo rides during the summary
 /// finale, and the deepest point's depth label. `points` are the normalized points of
 /// `MiniDepthProfile`.
@@ -804,9 +819,9 @@ struct DiveProfileChart: View {
     }
 }
 
-/// The white Divenary logo on the profile's drawing tip, turned to follow the line (LOGO.md: the
-/// mark heads up and to the right, so it turns 20° further than the line). Its body runs on every
-/// animation frame, so the line comes in already mapped.
+/// The white Divenary logo on the profile's drawing tip, mirrored and turned so it swims the way the
+/// line moves (DECISIONS D16a, `LogoRiderHeading`). Only the rider is mirrored; every other logo use
+/// stays as drawn. Its body runs on every animation frame, so the line comes in already mapped.
 private struct ProfileLogoRider: View, Animatable {
     var progress: CGFloat
     let track: DiveProfileGeometry.Track
@@ -822,7 +837,8 @@ private struct ProfileLogoRider: View, Animatable {
                 .fill(DiveWatchTheme.ink, style: LogoMark.fillStyle)
                 .frame(width: PostDiveLayout.riderLogoWidth,
                        height: PostDiveLayout.riderLogoWidth / LogoMark.aspectRatio)
-                .rotationEffect(.degrees(tip.degrees + 20))
+                .scaleEffect(x: -1, y: 1)
+                .rotationEffect(.degrees(LogoRiderHeading.rotation(alongLine: tip.degrees)))
                 .position(tip.point)
                 .accessibilityHidden(true)
         }
