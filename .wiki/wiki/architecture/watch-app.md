@@ -14,7 +14,9 @@ Sources: 워치 복구·실시간 값 후속 리뷰와 현재 구현, 2026-10-22
 Raw: [워치 복구·실시간 값 후속 리뷰](../../raw/architecture/2026-10-22-watch-review-recovery-and-live-values.md)
 Sources: 워치 수정 커밋 2df2bd1·90d3874와 현재 코드 대조, 2026-10-22
 Raw: [2026-10-22 워치 기록 정확도와 화면 흐름 수정](../../raw/architecture/2026-10-22-watch-accuracy-and-flow-fixes.md)
-Updated: 2026-10-22
+Sources: 워치 리디자인 'Plumb · 측심' 구현 커밋 b75ba8e·d4baae0·89e6b5c·0240824·b760320과 현재 코드, 2026-10-23
+Raw: [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md)
+Updated: 2026-10-23
 
 ## 요약
 
@@ -64,7 +66,7 @@ smoothed rate와 transient warning은 기록 화면의 비인증 보조 referenc
 
 sensor range를 넘었거나 sample 공백이 30초를 넘은 기록은 저장할 때 권장 스탑을 `unknown`으로 남긴다. 공백에는 기록 시작부터 첫 측정, 마지막 측정부터 종료까지도 포함한다. 실시간 수심이 없으면 권장 스탑 타이머를 일시정지로 표시하고, 저장 결과가 `unknown`이면 요약·상세의 완료 여부·남은 시간·구간 내 시간은 `--`로 보인다. 이는 비인증 보조 알림의 관측 불확실성 표시이며 안전 판단이 아니다. `unsupportedDepth`에는 sensor가 알려준 한계와 처음 넘은 시각을 기록한다. 권장 스탑의 진행·일시정지·미완료 상태는 caution 앰버 색과 Recommended stop 문구를 쓰고 `danger` 빨강이나 action 파랑은 쓰지 않으며, 완료는 보조 회색이다.
 
-프리다이빙의 잠수 구간에서 수심이 실시간 상태가 아니면 큰 숫자는 계속 흐르는 전체 기록 시간이다. 상태 표시는 `Dive active`를 유지해 큰 숫자의 기록 시간 라벨을 반복하지 않는다. 마지막 관측 잠수 시간은 짧은 표시명 `마지막 확인`(`Last seen`)으로 보조 항목에 남기며, 새 측정 없이 수심이나 수면 휴식 구간을 만들지 않는다. 실시간 수온은 센서의 실제 수온 측정 시각부터 60초가 되면 `--`로 바뀐다. 수심 측정에 같은 수온이 다시 실려 와도 유효 시간을 연장하지 않으며, 이 시각은 실시간 provider 경로에만 있고 저장·동기화 payload에는 추가하지 않는다.
+프리다이빙의 잠수 구간에서 수심이 실시간 상태가 아니면 큰 숫자는 계속 흐르는 전체 기록 시간이다. 상태 표시는 `Dive active`를 유지해 큰 숫자의 기록 시간 라벨을 반복하지 않는다. 마지막 관측 잠수 시간은 짧은 표시명 `확인된 시간`(`Observed time`)으로 보조 항목에 남기며, 새 측정 없이 수심이나 수면 휴식 구간을 만들지 않는다. 실시간 수온은 센서의 실제 수온 측정 시각부터 60초가 되면 `--`로 바뀐다. 수심 측정에 같은 수온이 다시 실려 와도 유효 시간을 연장하지 않으며, 이 시각은 실시간 provider 경로에만 있고 저장·동기화 payload에는 추가하지 않는다.
 
 ## 시작 규칙
 
@@ -114,11 +116,11 @@ Action Button의 모든 누르기는 단계를 아는 intent 하나로 처리한
 
 기록 화면(`RealRecordingPager`)은 다음을 따른다.
 
-- 모든 화면은 depth gauge, 수심 상태 chip과 Demo/Test 표식, 지원 수심 밖 경고를 유지한다. 화면마다 큰 숫자는 하나다. 스쿠버 Live·세부 화면과 프리다이빙 하강 중 화면(`DepthOrTimeMetric`)에서는 `liveDepthSignal == .live`일 때만 수심이고 그 밖에는 경과 시간이다. 권장 스탑 화면은 남은 스탑 시간, 프리다이빙 수면 대기는 기록 시간, 수면 휴식·요약은 수면 휴식 시간, 프리다이빙 세부 화면은 다이빙 횟수, 종료 화면은 경과 시간을 큰 숫자로 쓴다.
+- 모든 화면은 depth gauge, 수심 상태 chip과 Demo/Test 표식, 지원 수심 밖 경고를 유지한다. 화면마다 큰 숫자는 하나다. 스쿠버 Live·세부 화면과 프리다이빙 하강 중 화면(`DepthOrTimeMetric`)에서는 `liveDepthSignal == .live`일 때만 수심이고 그 밖에는 경과 시간이다. 권장 스탑 화면은 남은 스탑 시간, 프리다이빙 수면 대기는 기록 시간, 수면 휴식·요약은 수면 휴식 시간, 프리다이빙 세부 화면은 다이빙 횟수를 큰 숫자로 쓴다. 종료 화면은 기록을 끝내고 저장하는 방법이 가장 큰 글자이고 `다이빙 시간`은 보조 값이다. 모든 화면은 `RecordingInstrumentView` 골격(상태 띠, 게이지 하나, 값 열, 아래 칸, 안내 칩)을 공유하고 화면을 넘겨도 값 열만 바뀐다.
 - 프리다이빙 단계(`수면 대기`, `다이빙 중`, `요약`)는 별도 줄이 아니라 게이지 위 상태 chip 줄의 첫 chip이다. `다이빙 중`만 primary 색이고, 수면 휴식은 큰 값의 caption이 말하므로 chip이 없다. 종료 화면과 스쿠버에는 단계 chip이 없다.
 - 기록 화면은 시스템 하단 안전 영역까지 쓰고 하단 8pt 여백만 둔다. 보조 값은 한 줄에 하나씩 쌓고, 이름과 값이 한 줄에 안 들어갈 때만 이름 아래에 값을 둔다.
 - 게이지 범위는 다이빙을 따라간다. Live·세부·프리다이빙·종료 화면은 30 m에서 시작해 최대 수심이 넘을 때 10 m씩 넓어지고 다이빙 중에는 줄지 않는다. 권장 스탑 화면은 스탑 구간이 크게 보이도록 보통 0–10 m다. 센서 허용 최대 수심은 상한이라 그 너머를 그리지 않는다(`RecordingGaugeScale`).
-- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 수중 잠금 안내는 `notSubmerged`일 때만 보인다. chip, 바꾸기 화면, 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
+- 한 줄 안내 chip(`RecordingHint`)이 다음 누르기가 무엇을 하는지 말한다. 물 밖 180초 전에는(Ultra 힌트가 있을 때) 종료 가능까지 남은 시간, 종료 화면에서는 기록 종료·저장을 말한다. 거부된 누르기 뒤 2초 동안 종료할 수 없다는 안내를 보인다. 페이지 점은 칩 안에 세로로 쌓인다. 수중 잠금 줄은 `notSubmerged`일 때만 값 열 아래 칸에 보이고, 동작 버튼 힌트가 없는 기기의 종료 화면에서는 큰 안내와 겹치므로 숨긴다(`RecordingHint.showsWaterLockLine(on:)`). 동작 버튼 힌트가 없는 기기의 종료 화면 칩은 점만 보인다. chip, 바꾸기 화면, 종료 화면에는 탭 대상이 없다. 문구 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)를 따른다.
 - Always-On(`isLuminanceReduced`)이면 `RecordingPageModel` 자체를 Live로 돌리고 그 상태를 유지하며, 동작 버튼·크라운의 화면 이동 요청을 무시한다. 화면은 항상 `pages.page`를 그리므로 보이는 화면과 입력 대상이 일치한다. `setAlwaysOn(false)` 뒤에 화면 이동을 다시 허용한다. 권장 스탑 라벨과 일시정지 문구, 상태 chip, Demo/Test 표식은 남긴다.
 - `ActionButtonHint`는 모델 식별자(`hw.machine`, 시뮬레이터는 `SIMULATOR_MODEL_IDENTIFIER`)가 `Watch6,18`, `Watch7,5`, `Watch7,12` 중 하나면 Ultra 계열로 본다. 이 판단은 힌트일 뿐이다. Divenary가 Action Button에 지정됐는지는 알 수 없으므로 문구는 조건형이고, Ultra 힌트가 없으면 안내 chip은 회전 방향까지 명시한 크라운 안내를 쓴다(`크라운 앞으로 ▸ 상세`, `크라운 뒤로 ▸ 실시간`). 식별자 목록은 실기기 확인 대상이다.
 - `DepthAutoLaunchAuthorization`은 `WKExtendedRuntimeSession.requestAutoLaunchAuthorizationStatus` 결과를 `DepthAutoLaunchStatus`(`active`, `inactive`, `unknown`)로 읽고 오류는 `unknown`으로 둔다. Wet Ready 시작 안내는 이 상태와 Ultra 힌트로 고르며, `unknown`이거나 `inactive`인데 Ultra 힌트가 없으면 입수 전에 직접 시작하라는 안내를 쓴다.
@@ -166,9 +168,21 @@ demo/debug의 system back은 recording, summary, unresolved cleanup 동안 lifec
 
 - Home은 Dive Plans 행 하나로 선택된 계획을 보여 주고, 계획 화면은 선택이 Home에서 시작할 때만 적용되며 다시 누르면 해제된다고 안내한다. Home 표시, 계획 목록 변경, 시작 직전에 선택 ID를 현재 목록과 대조한다. 실제 기록 저장 성공으로 실행된 계획이나 목록에서 제거된 계획은 선택을 해제하고 모드만 남긴 기본 계획으로 되돌린다. 선택 계획과 다른 모드로 시작할 때도 기본 계획을 쓴다. 수심이 없는 계획은 `--.- m`로 보인다. 도메인 경계는 [다이브 계획 도메인](../domains/dive-planning.md)을 따른다.
 - Home의 실제 시작 카드는 프리다이빙과 스쿠버 두 개다. `DepthSensorAvailability` 확인이 끝나기 전(`sensorAvailability == nil`)에는 placeholder 없이 카드를 비활성으로 그리고, 지원하지 않는 기기는 빨간 오류 카드 대신 neutral 안내를 보인다. `수중 조작` 행은 자동 실행 상태를 보이고 `UnderwaterControlsView`(자동 실행 설정, 동작 버튼 지정 방법, 크라운 안내)로 들어간다. Demo는 시작 카드가 아니라 아래쪽 보조 행이다. 이전의 `launchPlaceholder`는 지웠다.
-- 저장 요약은 최대 수심과 시간을 먼저 두고 sample 수는 상세 화면에만 남긴다. 실제 기록의 요약이 보이면 `saved` 햅틱을 한 번 울리고, Ultra 힌트가 있으면 다음 누르기로 다음 다이빙을 시작한다는 안내를 보인다.
+- 저장 요약은 최대 수심과 시간을 먼저 두고 sample 수는 상세 화면에만 남긴다. 실제 기록의 요약이 보이면 `saved` 햅틱을 한 번 울리고(coordinator가 울리며 마무리 애니메이션은 햅틱을 부르지 않는다), Ultra 힌트가 있으면 다음 누르기로 다음 다이빙을 시작한다는 안내 칩을 아래에 고정한다.
 - 동기화 상태 값(`pending`, `synced`, `failed`)은 sync 계약에 있어 그대로 두고, 표시만 Waiting for iPhone, Saved on iPhone, Not sent to iPhone으로 한다. 실패한 세션 상세 화면의 Send Again은 그 artifact 하나를 다시 enqueue한다. 수동 재전송마다 세션별 시도 번호를 늘리고 manifest 읽기 실패·즉시 전송 실패·비동기 전송 실패를 번호와 함께 상세 화면에 표시한다. 전송 대기나 동기화 완료가 되면 실패 안내를 지우며, iPhone이 이미 확인한 기록을 늦은 실패로 되돌리지 않는다. 전송 완료와 iPhone 수신 확인 대기를 나누는 표시는 paired hardware 검증 전에는 하지 않는다.
 - 요약, 목록, 상세는 지원 수심을 넘은 기록에 Outside watch support 표식을 붙이고 리뷰용으로만 보관한다고 알린다. 기존 `profile.interrupted == true`인 기록에는 `중단 후 복구됨`(`Recovered after interruption`) 표식도 붙인다.
+
+## 화면 표현 계층 (2026-10-23 Plumb 리디자인)
+
+2026-10-23 리디자인 'Plumb · 측심'은 표현·모션·문구만 바꿨다. `RecordingPageModel`과 화면 판단, `RealDiveSessionCoordinator`와 lifecycle, Action Button chain, `WatchDiveHaptics` 5종, 1Hz 갱신, `RecordingGaugeScale` 범위 공식, 종료 guard는 그대로이고 view는 이들을 호출만 한다. 화면 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)의 watchOS 번역을 따른다.
+
+- `Views/DiveFormatters.swift`: `DiveWatchTheme`에 팔레트 토큰(플래터·chip·표식 면, ink/ink2/ink3, action, caution 계열, danger, water와 수심 고정 `waterStops`)이 있다. 이전 토큰 이름은 새 값의 별칭으로 남아 호출부가 그대로다.
+- `Views/DiveDesignSystem.swift`(새 파일): 기록 화면 글자 크기 `DiveType`(regular/compact/tight), 기록 화면 밖 글자 `DiveUIType`(Dynamic Type), `DiveRadius`·`DiveSpacing`·`DiveLayout`, 모션 규칙 `DiveMotion`(동작 줄이기·Always-On 처리), 누름 스타일 `DivePressStyle`, 표시 전용 부품(`StatusChip`, `MarkerChip`, `RecordingHintChip`, `MetricHero`, `ValueRows`, `GlyphDisc`, `LogoMark`, `DepthColumnGlyph`, `DiveModeGlyph`, `MiniDepthProfile`, `DepthSparkline`과 기록별로 한 번만 그리게 하는 `DiveProfileDrawLog`, `DiveSymbol`)이 있다. 기록 화면 부품에는 탭 대상과 햅틱이 없다.
+- `Views/DepthGaugeRail.swift`: `RecordingGaugeScale` 옆에 순수 계산 `RecordingGaugeGeometry`(y 위치, 수심 고정 그라데이션 stop, 라벨 물러남, 최소 18pt 스탑 구간, tide marks, 표시선 숨김 거리)와 `RecommendedStopProgress`(권장 스탑 분 표시)가 있고, `DepthGaugeRail` view가 이를 그린다.
+- `Views/RecordingView.swift`: `RecordingInstrumentView`가 실제·데모 기록 화면의 고정 골격을 그리고 페이지별 계기는 값 열만 채운다. `Views/RecordingHint.swift`는 칩 문구와 수중 잠금 줄 표시 여부를 정한다.
+- `Views/DivePostDive.swift`(새 파일): 다이빙 뒤 화면과 저장 기록이 함께 쓰는 부분이다. 숫자와 단위 나누기(`DiveValueParts`, `DiveValueText`), 통계 쌍(`DiveStatPair`), 전송 상태 줄(`DiveSyncStatusLine`), 별점(`DiveStarRating`), 실패 안내·배너(`DiveFailureMessage`, `DiveFailureNote`), 흐름 화면(`DiveFlowProgress`, `DiveFlowMessage`, `DiveSaveFailureView`), 권장 스탑 기록 행(`StopRecordRow`, `StopRecordLayout`), 저장 뒤 마무리 계획(`DiveFinalePlan`)과 로고가 선을 따라가는 그래프(`DiveProfileChart`), 크기(`PostDiveLayout`)가 있다. 예전 요약 카드와 sparkline view는 지웠다.
+- 새 Swift 파일은 `project.pbxproj`의 워치 target Sources phase에만 등록하고 iPhone target에는 넣지 않는다. 순수 계산은 `DiveDesignSystemTests`, `DivePostDiveTests` XCTest가 검사한다. jest source pin(`apps/mobile/__tests__/watch-connectivity-native-source.test.ts`)과 `apps/mobile/scripts/check-watch-ui-language.mjs`는 로직·안전·흐름 고정값과 문구 규칙을 그대로 잡고, 디자인이 의도적으로 바꾼 시각 고정값(파란 큰 숫자, 가로 페이지 점, 칩 아래 수중 잠금 안내, Wet Ready 홈 버튼 등)만 같은 의도를 확인하는 새 단언으로 바꿨다.
+- 상태 띠의 고정 위치(Ultra급 36pt, 42mm급 31pt, 위쪽 안전 영역 무시)와 크기 단계 경계(폭 195pt)는 40/41/44/46mm 시뮬레이터와 실기기에서 아직 확인하지 않았다.
 
 ## Signing과 실기기 경계
 
@@ -189,6 +203,7 @@ signed device build에서 code-signing entitlement와 embedded profile 모두를
 ## 관련 문서
 
 - [Diving App / QA and Test Plan](../project/diving-app-qa-test-plan.md)
+- [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)
 - [열린 질문](../questions/open-questions.md)
 - [실기기 검증 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md)
 - [안전 규칙](../domains/safety-rules.md)

@@ -14,7 +14,9 @@ Sources: 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21
 Raw: [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md)
 Sources: 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22
 Raw: [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md)
-Updated: 2026-10-22
+Sources: 워치 리디자인 Plumb · 측심 설계·결정과 구현, 2026-10-23
+Raw: [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md)
+Updated: 2026-10-23
 Last reviewed: 2026-10-22
 
 ## 요약
@@ -54,6 +56,7 @@ Last reviewed: 2026-10-22
 - Watch 저장 세션의 동기화 표시는 `pending`, `synced`, `failed`만 구분한다. 전송 완료 뒤 iPhone 수신 확인을 기다리는 상태를 따로 보일지, 보인다면 sync 계약 밖 transport 상태로 둘지는 paired hardware 검증과 함께 결정해야 한다.
 - 2026-10-21 리뷰의 실기기 항목(stale/오류 수심 표시, 연속 다이브 시작, 5초 스탑 적립, 수온 신선도, Send Again, Dive Plans 선택)은 [실기기 검증 체크리스트](../../../docs/2026-07-18-watch-underwater-runtime-device-checklist.md) D14-D19로 남아 있다.
 - 2026-10-22 워치 수중 입력 모델은 simulator, XCTest, build로만 확인했고 다음은 지원 hardware에서만 확인할 수 있다: 실제 Ultra에서 `DivenaryStartDiveIntent` → `DivenaryDiveActionIntent` chain, 수중 잠금 중 물속 화면 넘김, 물 밖 180초 뒤 종료 화면에서의 종료·저장과 거부 안내; 수중 잠금 중 크라운 회전이 앱에 오는지; 수중 extended runtime 중 햅틱 전달과 웻슈트 너머 체감; Always-On 진입 시 Live 복귀와 갱신 주기, 손목을 내린 상태의 10초 복귀 시점; 41/46/49mm에서 안내 chip·수중 잠금 안내·큰 숫자·세부 화면·권장 스탑 화면 배치; Ultra 모델 식별자(`Watch6,18`, `Watch7,5`, `Watch7,12`); 한국어 watchOS 메뉴 이름(동작 버튼, 자동 실행, 물에 잠겼을 때, 수중 잠금); `requestAutoLaunchAuthorizationStatus`의 실제 값. 체크리스트 D7은 화면 순환, 종료 화면에서만 종료, 크라운 회전, 자동 전환 무햅틱을 확인하도록 고쳤다. 나머지 항목(Always-On, 크기별 배치, 모델 식별자, 메뉴 이름, auto-launch 값)은 아직 체크리스트 행이 없다.
+- 2026-10-23 워치 리디자인 'Plumb · 측심'의 화면은 실기기에서 확인하지 않았다. 리디자인 마지막 단계의 시뮬레이터·캔버스 비교, 상태 띠 고정 위치(Ultra급 36pt, 42mm급 31pt)와 툴바가 있는 데모 화면의 40/41/44/46mm 확인이 남아 있다. 실기기에서는 41/42mm 한글 폭(종료 안내·안내 칩 줄), 실제 sample 주기에서 게이지가 따라가는 느낌, 초록 물·밤·눈부심 속 남색 채움과 흰 지시선 가독성, Always-On 전환과 실제 밝기, 41/42/46/49mm 배치, watchOS 26/27 Liquid Glass 렌더링을 확인해야 한다. 규칙은 [Mobile/Watch UI 언어](../design/mobile-watch-ui-language.md)에 있다.
 - planned dive context의 수신 확인은 아래 E3에서 소유자 결정 대기 백로그로 관리한다. 현재 표시는 `워치 전송 요청됨`까지다.
 - 2026-10-22에 iPhone target에 `InfoPlist.xcstrings`(위치 권한 문구 en/ko)를 더해 앱 bundle에 en/ko `.lproj`가 생겼다. 한국어 기기에서 앱 언어와 앱 안 시스템 UI가 한국어로 바뀔 수 있는데, 전체 iPhone build와 실기기에서 확인하지 않았다.
 - Home 날씨는 build에 Open-Meteo API key(`__OPEN_METEO_API_KEY__`)가 없으면 무료 endpoint(`api.open-meteo.com`, `marine-api.open-meteo.com`)를, 있으면 customer endpoint를 쓴다. 무료 endpoint는 비상업 조건이다. 출처는 링크 없는 작은 글자(`Open-Meteo 데이터`)로만 적는다. 공개 배포 전에 무료와 유료(customer) API 중 무엇을 쓸지, CC BY 4.0 표기에 링크가 필요한지 결정해야 한다.
