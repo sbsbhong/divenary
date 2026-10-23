@@ -1672,6 +1672,7 @@
       }
     },
     "Failed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2190,6 +2191,7 @@
       }
     },
     "Mode" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -2528,12 +2530,11 @@
       }
     },
     "PLANNED MAX" : {
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "PLANNED MAX"
+            "value" : "Planned max depth"
           }
         },
         "ko" : {
@@ -2955,13 +2956,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "For dive logging and review. Not a certified dive computer."
+            "value" : "For dive logging and review.\nNot a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이빙 기록·복기용입니다. 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -2971,13 +2972,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "For dive logging. Not a certified dive computer."
+            "value" : "For dive logging and review.\nNot a certified dive computer."
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "다이빙 기록용입니다. 인증된 다이브 컴퓨터가 아닙니다."
+            "value" : "다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다."
           }
         }
       }
@@ -3396,13 +3397,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Scuba diving"
+            "value" : "Scuba"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "스쿠버 다이빙"
+            "value" : "스쿠버"
           }
         }
       }
@@ -3559,13 +3560,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Simulated depth"
+            "value" : "Browse without recording"
           }
         },
         "ko" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "가상 수심"
+            "value" : "기록 없이 둘러보기"
           }
         }
       }
@@ -4030,6 +4031,7 @@
       }
     },
     "Synced" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -4491,6 +4493,7 @@
       }
     },
     "Waiting" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {

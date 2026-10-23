@@ -153,34 +153,23 @@ extension DiveMode {
     }
 }
 
-/// Short sync badges for narrow rows: the saved list and the latest log card on Home. VoiceOver
-/// reads the full `label`.
+/// The sync glyph for narrow rows: the saved list and the latest log card on Home show the glyph
+/// only, and VoiceOver reads the full `label` (DECISIONS D3). It says what happens: the log is on its
+/// way from the watch, saved on iPhone, or not sent to iPhone.
 extension DiveSyncStatus {
     var symbol: String {
         switch self {
-        case .pending: return "clock"
-        case .synced: return "checkmark.icloud"
-        case .failed: return "exclamationmark.icloud"
+        case .pending: return "applewatch.and.arrow.forward"
+        case .synced: return "iphone.gen3"
+        case .failed: return "iphone.gen3.slash"
         }
     }
 
-    var shortLabel: String {
-        switch self {
-        case .pending:
-            return String(localized: "Waiting")
-        case .synced:
-            return String(localized: "Synced")
-        case .failed:
-            return String(localized: "Failed")
-        }
-    }
-
+    /// Grey, apart from a failed send. Blue stays for actions and selection.
     var tint: Color {
         switch self {
-        case .pending:
-            return DiveWatchTheme.secondary
-        case .synced:
-            return DiveWatchTheme.primary
+        case .pending, .synced:
+            return DiveWatchTheme.ink2
         case .failed:
             return DiveWatchTheme.danger
         }

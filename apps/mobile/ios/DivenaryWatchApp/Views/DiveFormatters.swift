@@ -31,6 +31,50 @@ enum DiveFormatters {
         return parts.joined(separator: ", ")
     }
 
+    /// A date as a diver says it (spec C4, G2): "오늘 오전 10:02", "어제 오후 3:05", "내일 오전 9:00",
+    /// otherwise "10월 19일 오전 9:30", with the year only when it is not this year.
+    static func relativeDate(
+        _ date: Date,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: date)
+        ).day ?? 0
+
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+
+        if (-1...1).contains(days) {
+            let relative = RelativeDateTimeFormatter()
+            relative.locale = locale
+            relative.calendar = calendar
+            relative.dateTimeStyle = .named
+            relative.formattingContext = .beginningOfSentence
+            formatter.setLocalizedDateFormatFromTemplate("jmm")
+            return "\(relative.localizedString(from: DateComponents(day: days))) \(formatter.string(from: date))"
+        }
+
+        let sameYear = calendar.isDate(date, equalTo: now, toGranularity: .year)
+        formatter.setLocalizedDateFormatFromTemplate(sameYear ? "MMMdjmm" : "yMMMdjmm")
+        return formatter.string(from: date)
+    }
+
+    /// A dive's length at a glance on the Home card: whole hours and minutes ("48분", "1시간 5분"), or
+    /// seconds under a minute ("40초").
+    static func cardDuration(_ seconds: TimeInterval, locale: Locale = .current) -> String {
+        let wholeSeconds = max(0, Int(seconds.isFinite ? seconds : 0))
+        guard wholeSeconds >= 60 else {
+            return Duration.seconds(wholeSeconds)
+                .formatted(.units(allowed: [.seconds], width: .abbreviated).locale(locale))
+        }
+        return Duration.seconds(wholeSeconds / 60 * 60)
+            .formatted(.units(allowed: [.hours, .minutes], width: .abbreviated).locale(locale))
+    }
+
     static func profileAccessibilitySummary(samples: [DepthSample]) -> String {
         let depths = samples.map(\.depthMeters).filter { $0.isFinite && $0 >= 0 }
         guard let minimum = depths.min(), let maximum = depths.max() else {
@@ -341,10 +385,27 @@ struct UnsupportedDepthNotice: View {
 }
 
 struct StatusPill: View {
+    enum Style {
+        case tinted
+        /// The Demo/Test marker (spec C5): the brighter `MarkerChip`, so a practice log never reads
+        /// as a real one.
+        case marker
+    }
+
     let title: String
     var color: Color = DiveWatchTheme.primary
+    var style: Style = .tinted
 
     var body: some View {
+        switch style {
+        case .marker:
+            MarkerChip(title: title)
+        case .tinted:
+            tintedPill
+        }
+    }
+
+    private var tintedPill: some View {
         Text(title)
             .font(DiveWatchTheme.labelFont())
             .foregroundStyle(color)
@@ -359,18 +420,18 @@ struct StatusPill: View {
     }
 }
 
+/// The non-certified sentence (spec C17): fine print in the flow, leading-aligned, never white and
+/// never larger than the instructions around it.
 struct DiveDisclaimer: View {
     var text = DiveWatchTheme.safetyDisclaimer
 
     var body: some View {
         Text(text)
-            .font(.system(.caption2, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.mutedText)
-            .multilineTextAlignment(.center)
+            .diveFont(.footnote)
+            .foregroundStyle(DiveWatchTheme.ink3)
+            .multilineTextAlignment(.leading)
             .fixedSize(horizontal: false, vertical: true)
-            .minimumScaleFactor(1)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

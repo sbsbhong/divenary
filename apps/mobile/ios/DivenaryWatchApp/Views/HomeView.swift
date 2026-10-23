@@ -39,40 +39,60 @@ struct HomeView: View {
     /// `nil` while the first sensor check runs. The real start cards stay disabled until then, with
     /// no placeholder and no error card, because the check takes about one frame.
     @State private var sensorAvailability: DepthSensorAvailability?
+    /// False until Home first appears in this launch. The cards and rows then rise into place once;
+    /// coming back from another screen does not replay it (spec HM-ENTER).
+    @State private var hasEntered = false
+    /// The dive type whose start card was just pressed: its ring traces while the recording starts.
+    @State private var armingMode: DiveMode?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Space between Home's groups: the plan row, the latest log, the rows and the footer.
+    private static let groupGap: CGFloat = 6
+    private let sizeClass = DiveType.SizeClass.current
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(spacing: DiveSpacing.rowGap) {
+                        Button {
+                            startRealDive(mode: .freedive)
+                        } label: {
+                            StartSessionCard(
+                                title: "Freediving",
+                                systemImage: "divenary.freedive",
+                                accent: DiveWatchTheme.action,
+                                trailingSystemImage: "play.fill",
+                                isArming: armingMode == .freedive
+                            )
+                        }
+                        .buttonStyle(DivePressStyle(dimsWhenDisabled: false))
+                        .disabled(!canStartRealDive)
+                        .homeEntrance(0, hasEntered: hasEntered)
+
+                        Button {
+                            startRealDive(mode: .scuba)
+                        } label: {
+                            StartSessionCard(
+                                title: "Scuba Diving",
+                                systemImage: "divenary.scuba",
+                                accent: DiveWatchTheme.action,
+                                trailingSystemImage: "play.fill",
+                                isArming: armingMode == .scuba
+                            )
+                        }
+                        .buttonStyle(DivePressStyle(dimsWhenDisabled: false))
+                        .disabled(!canStartRealDive)
+                        .homeEntrance(1, hasEntered: hasEntered)
+                    }
+
+                    // A watch that cannot record real dives says so under the start cards (P13).
                     if let sensorAvailability, sensorAvailability.readiness != .ready {
                         HomeSensorNotice(sensorReadiness: sensorAvailability.readiness)
+                            .padding(.top, 10)
+                            .padding(.bottom, 6)
+                            .transition(.opacity)
                     }
-
-                    Button {
-                        startRealDive(mode: .freedive)
-                    } label: {
-                        StartSessionCard(
-                            title: "Freediving",
-                            systemImage: "figure.pool.swim",
-                            accent: DiveWatchTheme.primary,
-                            trailingSystemImage: "play.fill"
-                        )
-                    }
-                    .buttonStyle(DivePressStyle())
-                    .disabled(!canStartRealDive)
-
-                    Button {
-                        startRealDive(mode: .scuba)
-                    } label: {
-                        StartSessionCard(
-                            title: "Scuba Diving",
-                            systemImage: "drop.fill",
-                            accent: DiveWatchTheme.secondary,
-                            trailingSystemImage: "play.fill"
-                        )
-                    }
-                    .buttonStyle(DivePressStyle())
-                    .disabled(!canStartRealDive)
 
                     if !store.plannedDives.isEmpty {
                         NavigationLink {
@@ -84,91 +104,54 @@ struct HomeView: View {
                                 onClearSelection: clearPlannedDive
                             )
                         } label: {
-                            StartSessionCard(
+                            HomeRow(
                                 title: "Dive Plans",
-                                subtitle: selectedPlanSubtitle,
-                                systemImage: "list.bullet.clipboard",
-                                accent: DiveWatchTheme.primary,
-                                trailingSystemImage: "chevron.right"
+                                detail: selectedPlanSubtitle,
+                                systemImage: "list.bullet.clipboard"
                             )
                         }
                         .buttonStyle(DivePressStyle())
+                        .padding(.top, DiveSpacing.rowGap)
+                        .homeEntrance(2, hasEntered: hasEntered)
                     }
 
                     if let latestSession = store.sessions.first {
                         LatestSessionCard(session: latestSession)
+                            .padding(.top, Self.groupGap)
+                            .homeEntrance(3, hasEntered: hasEntered)
                     }
 
-                    NavigationLink {
-                        SessionListView(store: store)
-                    } label: {
-                        HomeRow(title: "Saved Sessions", systemImage: "list.bullet")
-                    }
-                    .buttonStyle(DivePressStyle())
-
-                    NavigationLink {
-                        UnderwaterControlsView(
-                            autoLaunchStatus: autoLaunchAuthorization.status,
-                            hasActionButton: ActionButtonHint.current.isLikelyUltra
-                        )
-                    } label: {
-                        HomeRow(
-                            title: "Underwater controls",
-                            detail: autoLaunchAuthorization.statusText,
-                            systemImage: "hand.tap"
-                        )
-                    }
-                    .buttonStyle(DivePressStyle())
-
-                    // A secondary row, so a demo log is never mistaken for a real start.
-                    NavigationLink {
-                        DeferredView {
-                            SimulatedRecordingFlowView(
-                                store: store,
-                                plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
-                                recordingMode: .demo,
-                                actionButtonBridge: actionButtonBridge,
-                                actionButtonDonor: actionButtonDonor,
-                                keepPendingRecord: realCoordinator.keepPendingRecordForRetry
-                            )
-                        }
-                    } label: {
-                        HomeRow(
-                            title: "Demo",
-                            detail: String(localized: "Simulated depth"),
-                            systemImage: "digitalcrown.arrow.clockwise"
-                        )
-                    }
-                    .buttonStyle(DivePressStyle())
-
-                    #if DEBUG
-                    if showsDebugControls {
+                    VStack(spacing: DiveSpacing.rowGap) {
                         NavigationLink {
-                            DeferredView {
-                                SimulatedRecordingFlowView(
-                                    store: store,
-                                    plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
-                                    recordingMode: .debugTest,
-                                    actionButtonBridge: actionButtonBridge,
-                                    actionButtonDonor: actionButtonDonor,
-                                    keepPendingRecord: realCoordinator.keepPendingRecordForRetry
-                                )
-                            }
+                            SessionListView(store: store)
+                        } label: {
+                            HomeRow(title: "Saved Sessions", systemImage: "list.bullet")
+                        }
+                        .buttonStyle(DivePressStyle())
+                        .homeEntrance(4, hasEntered: hasEntered)
+
+                        NavigationLink {
+                            UnderwaterControlsView(
+                                autoLaunchStatus: autoLaunchAuthorization.status,
+                                hasActionButton: ActionButtonHint.current.isLikelyUltra
+                            )
                         } label: {
                             HomeRow(
-                                title: "Test Freedive",
-                                detail: String(localized: "Debug depth control"),
-                                systemImage: "digitalcrown.arrow.clockwise"
+                                title: "Underwater controls",
+                                detail: autoLaunchAuthorization.statusText,
+                                systemImage: "hand.tap"
                             )
                         }
                         .buttonStyle(DivePressStyle())
+                        .homeEntrance(5, hasEntered: hasEntered)
 
+                        // A secondary row, so a demo log is never mistaken for a real start.
                         NavigationLink {
                             DeferredView {
                                 SimulatedRecordingFlowView(
                                     store: store,
                                     plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
-                                    recordingMode: .debugTest,
+                                    recordingMode: .demo,
                                     actionButtonBridge: actionButtonBridge,
                                     actionButtonDonor: actionButtonDonor,
                                     keepPendingRecord: realCoordinator.keepPendingRecordForRetry
@@ -176,27 +159,78 @@ struct HomeView: View {
                             }
                         } label: {
                             HomeRow(
-                                title: "Test Scuba",
-                                detail: String(localized: "Debug depth control"),
-                                systemImage: "digitalcrown.arrow.clockwise"
+                                title: "Demo",
+                                detail: String(localized: "Simulated depth"),
+                                systemImage: "divenary.column.half"
                             )
                         }
                         .buttonStyle(DivePressStyle())
+                        .homeEntrance(6, hasEntered: hasEntered)
 
-                        Button {
-                            store.save(DiveSessionRecord.largeDebugFixture(sampleCount: 8_000))
-                        } label: {
-                            Label("Test Large Sync", systemImage: "arrow.up.doc")
+                        #if DEBUG
+                        if showsDebugControls {
+                            NavigationLink {
+                                DeferredView {
+                                    SimulatedRecordingFlowView(
+                                        store: store,
+                                        plan: explicitStartPlan(for: .freedive).withoutPlannedDiveLink,
+                                        recordingMode: .debugTest,
+                                        actionButtonBridge: actionButtonBridge,
+                                        actionButtonDonor: actionButtonDonor,
+                                        keepPendingRecord: realCoordinator.keepPendingRecordForRetry
+                                    )
+                                }
+                            } label: {
+                                HomeRow(
+                                    title: "Test Freedive",
+                                    detail: String(localized: "Debug depth control"),
+                                    systemImage: "digitalcrown.arrow.clockwise"
+                                )
+                            }
+                            .buttonStyle(DivePressStyle())
+
+                            NavigationLink {
+                                DeferredView {
+                                    SimulatedRecordingFlowView(
+                                        store: store,
+                                        plan: explicitStartPlan(for: .scuba).withoutPlannedDiveLink,
+                                        recordingMode: .debugTest,
+                                        actionButtonBridge: actionButtonBridge,
+                                        actionButtonDonor: actionButtonDonor,
+                                        keepPendingRecord: realCoordinator.keepPendingRecordForRetry
+                                    )
+                                }
+                            } label: {
+                                HomeRow(
+                                    title: "Test Scuba",
+                                    detail: String(localized: "Debug depth control"),
+                                    systemImage: "digitalcrown.arrow.clockwise"
+                                )
+                            }
+                            .buttonStyle(DivePressStyle())
+
+                            Button {
+                                store.save(DiveSessionRecord.largeDebugFixture(sampleCount: 8_000))
+                            } label: {
+                                Label("Test Large Sync", systemImage: "arrow.up.doc")
+                            }
+                            .buttonStyle(DiveActionButtonStyle(kind: .secondary))
                         }
-                        .buttonStyle(DiveActionButtonStyle(kind: .secondary))
+                        #endif
                     }
-                    #endif
+                    .padding(.top, Self.groupGap)
 
                     HomeSafetyFooter()
+                        .padding(.top, Self.groupGap)
+                        .homeEntrance(7, hasEntered: hasEntered)
                 }
-                .padding(.horizontal, DiveWatchTheme.edgeMargin)
-                .padding(.vertical, 10)
+                .padding(.horizontal, DiveLayout.platterInset(sizeClass))
+                .padding(.bottom, 4)
+                .animation(DiveMotion.animation(.ready, reduceMotion: reduceMotion, alwaysOn: false),
+                           value: sensorAvailability?.readiness)
             }
+            // Platter insets are measured from the screen's edges (spec B3).
+            .ignoresSafeArea(.container, edges: .horizontal)
             .refreshable {
                 await store.refreshFromCompanion()
             }
@@ -217,12 +251,21 @@ struct HomeView: View {
                 realCoordinator.retryPendingRecords()
                 autoLaunchAuthorization.refresh()
                 realCoordinator.receiveWaterState(water.latestState)
+                if !hasEntered {
+                    hasEntered = true
+                }
             }
             .onReceive(water.$latestState.removeDuplicates().dropFirst()) { nextState in
                 realCoordinator.receiveWaterState(nextState)
             }
             .onChange(of: store.plannedDives) { _, plannedDives in
                 plan = HomePlanSelection.validated(plan, plannedDives: plannedDives)
+            }
+            .onChange(of: realCoordinator.phase.presentsRecordingFlow) { _, isPresented in
+                // The ring keeps tracing while the recording slides in; back on Home it is gone.
+                if !isPresented {
+                    armingMode = nil
+                }
             }
             .onChange(of: scenePhase) { _, nextPhase in
                 if nextPhase == .active {
@@ -268,11 +311,16 @@ struct HomeView: View {
         }
     }
 
+    /// Starts at once; the card's ring traces alongside, never before it (spec HM-ARM).
     private func startRealDive(mode diveMode: DiveMode) {
         let startPlan = explicitStartPlan(for: diveMode)
         plan = startPlan
         store.updatePreferredDiveMode(diveMode)
+        armingMode = diveMode
         realCoordinator.startManual(plan: startPlan)
+        if !realCoordinator.phase.presentsRecordingFlow {
+            armingMode = nil
+        }
     }
 
     private func apply(plannedDive: WatchPlannedDive) {
@@ -293,6 +341,33 @@ struct HomeView: View {
     }
 }
 
+private extension View {
+    /// Home's first appearance (spec HM-ENTER): item `index` fades in and rises 8 pt, 40 ms after the
+    /// one before it. Reduce Motion fades it in without the rise.
+    func homeEntrance(_ index: Int, hasEntered: Bool) -> some View {
+        modifier(HomeEntrance(index: index, hasEntered: hasEntered))
+    }
+}
+
+private struct HomeEntrance: ViewModifier {
+    let index: Int
+    let hasEntered: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let rises = DiveMotion.allowsMovement(.homeEnter, reduceMotion: reduceMotion, alwaysOn: false)
+        content
+            .opacity(hasEntered ? 1 : 0)
+            .offset(y: hasEntered || !rises ? 0 : DiveMotion.homeEnterOffset)
+            .animation(
+                DiveMotion.animation(.homeEnter, reduceMotion: reduceMotion, alwaysOn: false)?
+                    .delay(DiveMotion.homeEnterDelay(index: index)),
+                value: hasEntered
+            )
+    }
+}
+
 struct DivePlansView: View {
     let plannedDives: [WatchPlannedDive]
     let selectedPlanLocalId: String?
@@ -301,136 +376,221 @@ struct DivePlansView: View {
     let onClearSelection: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The row drawn as chosen. It changes at the tap, so the check shows before the screen closes.
+    @State private var shownSelection: String?
+    @State private var isClosing = false
+
+    private let sizeClass = DiveType.SizeClass.current
+
+    init(
+        plannedDives: [WatchPlannedDive],
+        selectedPlanLocalId: String?,
+        isSelectionEnabled: Bool,
+        onSelect: @escaping (WatchPlannedDive) -> Void,
+        onClearSelection: @escaping () -> Void
+    ) {
+        self.plannedDives = plannedDives
+        self.selectedPlanLocalId = selectedPlanLocalId
+        self.isSelectionEnabled = isSelectionEnabled
+        self.onSelect = onSelect
+        self.onClearSelection = onClearSelection
+        _shownSelection = State(initialValue: selectedPlanLocalId)
+    }
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 8) {
-                ForEach(plannedDives) { plannedDive in
-                    let isSelected = selectedPlanLocalId == plannedDive.localId
-                    Button {
-                        if isSelected {
-                            onClearSelection()
-                        } else {
-                            onSelect(plannedDive)
-                        }
-                        dismiss()
-                    } label: {
-                        PlannedDiveRow(plannedDive: plannedDive, isSelected: isSelected)
-                    }
-                    .buttonStyle(DivePressStyle())
-                    .disabled(!isSelectionEnabled)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
-                }
-
+            VStack(alignment: .leading, spacing: 0) {
                 Text(isSelectionEnabled
                     ? HomePlanSelection.instructions
                     : String(localized: "Plans start real dives on a supported Apple Watch."))
-                    .font(.system(.caption2, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, DiveLayout.platterPadding(sizeClass))
+
+                VStack(spacing: DiveSpacing.groupGap(sizeClass) / 2) {
+                    ForEach(plannedDives) { plannedDive in
+                        let isSelected = shownSelection == plannedDive.localId
+                        Button {
+                            choose(plannedDive, isSelected: isSelected)
+                        } label: {
+                            PlannedDiveRow(plannedDive: plannedDive, isSelected: isSelected)
+                        }
+                        .buttonStyle(DivePressStyle())
+                        .disabled(!isSelectionEnabled)
+                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                    }
+                }
+                .padding(.top, 15)
             }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
-            .padding(.vertical, 10)
+            .padding(.horizontal, DiveLayout.platterInset(sizeClass))
+            .padding(.bottom, 4)
         }
+        // The insets above are measured from the screen's edges.
+        .ignoresSafeArea(.container, edges: .horizontal)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .navigationTitle("Dive Plans")
     }
+
+    /// Shows the check (or clears it), then closes after a moment (spec PL-SELECT).
+    private func choose(_ plannedDive: WatchPlannedDive, isSelected: Bool) {
+        guard !isClosing else { return }
+        isClosing = true
+        withAnimation(DiveMotion.animation(.selection, reduceMotion: reduceMotion, alwaysOn: false)) {
+            shownSelection = isSelected ? nil : plannedDive.localId
+        }
+        if isSelected {
+            onClearSelection()
+        } else {
+            onSelect(plannedDive)
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(DiveMotion.planDismissDelay(reduceMotion: reduceMotion)))
+            dismiss()
+        }
+    }
 }
 
+/// One plan (COPY C11): the title, the dive type, the planned maximum depth and the date, each on its
+/// own line so nothing wraps. A chosen plan has the blue fill and a check that bounces once.
 private struct PlannedDiveRow: View {
     let plannedDive: WatchPlannedDive
     let isSelected: Bool
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    /// Counts this row's own selections, so only the newly chosen check bounces.
+    @State private var bounces = 0
+
+    private let sizeClass = DiveType.SizeClass.current
+
     var body: some View {
-        InstrumentCard(accent: isSelected ? DiveWatchTheme.primary : nil) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text(plannedDive.displayTitle)
-                        .font(.system(.headline, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.text)
-                        .lineLimit(2)
-                        .minimumScaleFactor(1)
-                    Spacer(minLength: 4)
-                    if isSelected {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(DiveWatchTheme.primary)
-                            .accessibilityHidden(true)
-                    }
-                }
+        let mode = plannedDive.diveMode ?? .scuba
+        let depth = ValueRow(
+            label: String(localized: "PLANNED MAX"),
+            formattedValue: DiveFormatters.depth(plannedDive.plannedMaxDepthMeters)
+        )
 
-                HStack(spacing: 8) {
-                    PlannedDiveMetric(title: String(localized: "Mode"), value: (plannedDive.diveMode ?? .scuba).label)
-                    PlannedDiveMetric(title: String(localized: "Max"), value: DiveFormatters.depth(plannedDive.plannedMaxDepthMeters))
-                }
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .top, spacing: 6) {
+                Text(plannedDive.displayTitle)
+                    .diveFont(.headline)
+                    .foregroundStyle(DiveWatchTheme.ink)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 4)
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20, weight: .regular))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        isSelected ? Self.checkCutout : DiveWatchTheme.dotOff,
+                        isSelected ? DiveWatchTheme.action : DiveWatchTheme.dotOff
+                    )
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: bounces)
+                    .accessibilityHidden(true)
+            }
 
-                if let plannedAt = plannedDive.plannedAt {
-                    Text(DiveFormatters.sessionDate.string(from: Date(timeIntervalSince1970: plannedAt)))
-                        .font(.system(.caption2, weight: .regular))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 4) {
+                DiveSymbol(name: mode == .freedive ? "divenary.freedive" : "divenary.scuba", size: 12)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                Text(mode.label)
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(depth.label)
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                Text(depth.value ?? depth.placeholder)
+                    .diveFont(.footnoteMetric)
+                    .foregroundStyle(depth.value == nil ? DiveWatchTheme.ink3 : DiveWatchTheme.ink)
+                if let unit = depth.unit {
+                    Text(unit)
+                        .diveFont(.footnote)
+                        .foregroundStyle(DiveWatchTheme.ink2)
                 }
             }
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
 
-private struct PlannedDiveMetric: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased())
-                .font(.system(.caption2, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-            Text(value)
-                .font(DiveWatchTheme.metricFont(size: 14, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .minimumScaleFactor(1)
+            if let plannedAt = plannedDive.plannedAt {
+                Text(DiveFormatters.relativeDate(Date(timeIntervalSince1970: plannedAt)))
+                    .diveFont(.footnote)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .padding(DiveLayout.platterPadding(sizeClass))
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DiveRadius.row, style: .continuous)
+                .fill(isSelected ? DiveWatchTheme.actionFill : DiveWatchTheme.platter)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: DiveRadius.row, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .onChange(of: isSelected) { _, nowSelected in
+            // The check bounces once on land; never under Reduce Motion or Always-On.
+            if nowSelected, DiveMotion.allowsLandBounce(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced) {
+                bounces += 1
+            }
+        }
     }
+
+    /// The check drawn in the selected fill's colour, as a cut-out of the blue circle (spec C3).
+    private static let checkCutout = DiveRGB(hex: 0x0C2D4D).color
 }
 
-/// Shown after the sensor check on a watch that cannot record real dives. It is a quiet notice,
-/// not an alarm: nothing is wrong, and the demo still works.
+/// Shown after the sensor check on a watch that cannot record real dives, under the start cards
+/// (P13). It is a quiet notice, not an alarm: nothing is wrong, and the demo still works.
 private struct HomeSensorNotice: View {
     let sensorReadiness: DepthSensorReadiness
 
-    var body: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(sensorReadiness.statusTitle)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .lineLimit(2)
-                    .minimumScaleFactor(1)
+    private let sizeClass = DiveType.SizeClass.current
 
-                Text(String(localized: "Real dives need a depth sensor. The demo still works."))
-                    .font(.system(.caption2, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(3)
-                    .minimumScaleFactor(1)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                Text(sensorReadiness.statusTitle)
+                    .diveFont(.footnoteEmphasis)
+                    .foregroundStyle(DiveWatchTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+
+            Text(String(localized: "Real dives need a depth sensor. The demo still works."))
+                .diveFont(.footnote)
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .fixedSize(horizontal: false, vertical: true)
         }
+        .padding(.horizontal, DiveLayout.platterPadding(sizeClass))
+        .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
 }
 
+/// The real Divenary mark over the non-certified sentence (spec C17, DECISIONS D16).
 private struct HomeSafetyFooter: View {
     var body: some View {
-        Text(String(localized: "Recreational capture and review. Not a certified dive computer."))
-            .font(.system(.caption2, weight: .regular))
-            .foregroundStyle(DiveWatchTheme.mutedText)
-            .multilineTextAlignment(.center)
-            .fixedSize(horizontal: false, vertical: true)
-            .minimumScaleFactor(1)
-            .frame(maxWidth: .infinity)
-            .padding(.top, 2)
-            .padding(.horizontal, 8)
+        VStack(spacing: 6) {
+            LogoMark()
+                .fill(DiveWatchTheme.ink3, style: LogoMark.fillStyle)
+                .aspectRatio(LogoMark.aspectRatio, contentMode: .fit)
+                .frame(width: DiveLayout.footerLogoWidth)
+                .accessibilityHidden(true)
+
+            Text(String(localized: "Recreational capture and review. Not a certified dive computer."))
+                .diveFont(.footnote)
+                .foregroundStyle(DiveWatchTheme.ink3)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 4)
     }
 }
 
@@ -447,180 +607,268 @@ private extension DepthSensorReadiness {
     }
 }
 
+/// A real start (spec C2): the dive-type glyph on a grey disc, the title, and a blue play disc. While
+/// the sensor check runs, and on a watch without depth sensing, the glyph and title dim and the play
+/// disc turns grey; the check finishing brightens them (HM-READY). A press traces a ring around the
+/// play disc while the recording starts (HM-ARM).
 private struct StartSessionCard: View {
     static let minimumHeight: CGFloat = 64
 
     let title: LocalizedStringKey
-    var subtitle: String?
-    var footnote: String?
+    /// An SF Symbol or a Divenary glyph name such as `divenary.freedive`.
     let systemImage: String
     let accent: Color
     let trailingSystemImage: String
+    var isArming = false
+
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var ringProgress: CGFloat = 0
+    @State private var isWaiting = false
+
+    private let metrics = DiveLayout.StartCard(.current)
 
     var body: some View {
-        InstrumentCard(accent: accent) {
-            HStack(alignment: .center, spacing: 10) {
-                Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundStyle(accent)
-                    .frame(width: 24)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.system(.headline, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.text)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .minimumScaleFactor(1)
-
-                    if let subtitle {
-                        Text(subtitle)
-                            .font(.system(.caption2, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .minimumScaleFactor(1)
-                    }
-
-                    if let footnote {
-                        Text(footnote)
-                            .font(.system(.caption2, weight: .regular))
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                            .lineLimit(2)
-                            .minimumScaleFactor(1)
-                    }
-                }
-
-                Spacer(minLength: 4)
-
-                Image(systemName: trailingSystemImage)
-                    .font(.system(.caption2, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-            }
+        content
+            .padding(.horizontal, metrics.padding)
+            .padding(.vertical, (metrics.height - metrics.glyphDisc) / 2)
+            .frame(maxWidth: .infinity)
             .frame(minHeight: Self.minimumHeight)
+            .background(
+                RoundedRectangle(cornerRadius: metrics.radius, style: .continuous)
+                    .fill(DiveWatchTheme.platter)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: metrics.radius, style: .continuous))
+            .animation(DiveMotion.animation(.ready, reduceMotion: reduceMotion, alwaysOn: false), value: isEnabled)
+            .accessibilityElement(children: .combine)
+            .task(id: isArming) {
+                guard isArming else {
+                    ringProgress = 0
+                    isWaiting = false
+                    return
+                }
+                withAnimation(DiveMotion.animation(.arm, reduceMotion: reduceMotion, alwaysOn: false)) {
+                    ringProgress = 1
+                }
+                // A start that has not shown after a second gets a spinner instead of the ring.
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                isWaiting = true
+            }
+    }
+
+    private var content: some View {
+        HStack(spacing: metrics.discToTitle) {
+            GlyphDisc(diameter: metrics.glyphDisc) {
+                DiveSymbol(name: systemImage, size: metrics.glyph)
+            }
+            .opacity(isEnabled ? 1 : 0.45)
+
+            Text(title)
+                .diveFont(.headline)
+                .foregroundStyle(DiveWatchTheme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .opacity(isEnabled ? 1 : 0.45)
+
+            Spacer(minLength: 4)
+
+            GlyphDisc(diameter: metrics.playDisc, fill: isEnabled ? accent : DiveWatchTheme.marker) {
+                Image(systemName: trailingSystemImage)
+                    .font(.system(size: metrics.playGlyph, weight: .semibold))
+                    .foregroundStyle(isEnabled ? DiveWatchTheme.ink : DiveWatchTheme.ink3)
+                    .offset(x: 1)
+            }
+            .overlay { armingIndicator }
+        }
+    }
+
+    @ViewBuilder
+    private var armingIndicator: some View {
+        if isArming {
+            if isWaiting {
+                ProgressView()
+                    .tint(DiveWatchTheme.ink)
+                    .frame(width: metrics.armingRing, height: metrics.armingRing)
+            } else if DiveMotion.allowsMovement(.arm, reduceMotion: reduceMotion, alwaysOn: false) {
+                Circle()
+                    .trim(from: 0, to: ringProgress)
+                    .stroke(DiveWatchTheme.ink, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                    .frame(width: metrics.armingRing, height: metrics.armingRing)
+            }
         }
     }
 }
 
-/// A compact secondary row: saved sessions, the underwater controls guide and the demo. It stays
-/// quieter than the real start cards above it.
+/// A row (spec C3): a grey glyph, the title and an optional detail on a platter. No chevron and no
+/// border, as watchOS rows have none.
 private struct HomeRow: View {
     let title: LocalizedStringKey
     var detail: String?
+    /// An SF Symbol or a Divenary glyph name such as `divenary.column.half`.
     let systemImage: String
 
+    private let sizeClass = DiveType.SizeClass.current
+
     var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(.headline, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-                .frame(width: 20)
+        HStack(spacing: 0) {
+            DiveSymbol(name: systemImage, size: DiveLayout.rowIcon(sizeClass))
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .frame(width: DiveLayout.rowIconColumn, alignment: .leading)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.system(.headline, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
+                    .diveFont(.body)
+                    .foregroundStyle(DiveWatchTheme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .minimumScaleFactor(1)
 
                 if let detail {
+                    // A plan picked on the plans screen cross-fades in (spec HM-SUB).
                     Text(detail)
-                        .font(.system(.caption2, weight: .regular))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
+                        .diveFont(.footnote)
+                        .foregroundStyle(DiveWatchTheme.ink2)
+                        .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
-                        .minimumScaleFactor(1)
+                        .contentTransition(.opacity)
+                        .animation(DiveMotion.animation(.selection, reduceMotion: false, alwaysOn: false), value: detail)
                 }
             }
 
-            Spacer(minLength: 4)
-
-            Image(systemName: "chevron.right")
-                .font(.system(.caption2, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
+            Spacer(minLength: 0)
         }
-        .padding(.horizontal, 10)
+        .padding(.horizontal, DiveLayout.platterPadding(sizeClass))
         .padding(.vertical, 6)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: DiveLayout.rowHeight(sizeClass, hasDetail: detail != nil), alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                .fill(DiveWatchTheme.surfaceContainer)
+            RoundedRectangle(cornerRadius: DiveRadius.row, style: .continuous)
+                .fill(DiveWatchTheme.platter)
         )
-        .contentShape(Rectangle())
+        .contentShape(RoundedRectangle(cornerRadius: DiveRadius.row, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 }
 
+/// The latest log (spec C4, DECISIONS D3, D4): the date, maximum depth and dive time, a small
+/// profile, and markers only when one applies. Sync is a glyph only; VoiceOver reads one summary
+/// with the full sync status. No dive type. Not tappable.
 private struct LatestSessionCard: View {
     let session: DiveSessionRecord
     /// The summary replays the depth profile, so it is computed once per view value.
     private let summary: DiveSessionSummary
+    private let profilePoints: [CGPoint]
+
+    private let sizeClass = DiveType.SizeClass.current
 
     init(session: DiveSessionRecord) {
         self.session = session
         summary = session.summary
+        profilePoints = MiniDepthProfile.normalizedPoints(
+            depths: MiniDepthProfile.thinnedDepths(session.samples.map(\.depthMeters), maximumCount: 120)
+        )
     }
 
     var body: some View {
-        InstrumentCard {
-            VStack(alignment: .leading, spacing: 8) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("LAST DIVE")
-                        .font(DiveWatchTheme.labelFont())
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .minimumScaleFactor(1)
-                    // The badges get their own row: squeezed beside the title, "Test" split across
-                    // two lines on a 49 mm watch.
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 4) { badges(keepsOneLine: true) }
-                        VStack(alignment: .leading, spacing: 4) { badges(keepsOneLine: false) }
-                    }
-                    Text(DiveFormatters.sessionDate.string(from: session.startedAt))
-                        .font(.system(.caption2, weight: .semibold))
-                        .foregroundStyle(DiveWatchTheme.text)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .minimumScaleFactor(1)
-                }
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: 4) {
+                Text("LAST DIVE")
+                    .diveFont(.eyebrow)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Image(systemName: session.syncStatus.symbol)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(session.syncStatus.tint)
+                    .contentTransition(.symbolEffect(.replace))
+                    .accessibilityLabel(session.syncStatus.label)
+            }
 
-                HStack(spacing: 8) {
-                    LatestMetric(title: String(localized: "Max"), value: DiveFormatters.depth(summary.maxDepthMeters))
-                    LatestMetric(title: String(localized: "Time"), value: DiveFormatters.duration(summary.durationSeconds))
+            Text(DiveFormatters.relativeDate(session.startedAt))
+                .diveFont(.cardDate)
+                .foregroundStyle(DiveWatchTheme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+
+            LatestMetric(maxDepthMeters: summary.maxDepthMeters, durationSeconds: summary.durationSeconds)
+
+            if !profilePoints.isEmpty {
+                DepthSparkline(id: session.id, points: profilePoints)
+                    .frame(height: DiveLayout.sparklineHeight(sizeClass))
+                    .padding(.top, 4)
+            }
+
+            if hasMarkers {
+                // The markers get their own row: squeezed together, "Test" split across two lines.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) { markers(keepsOneLine: true) }
+                    VStack(alignment: .leading, spacing: 4) { markers(keepsOneLine: false) }
                 }
+                .padding(.top, 4)
             }
         }
+        .padding(.horizontal, DiveLayout.platterPadding(sizeClass))
+        .padding(.top, 9)
+        .padding(.bottom, DiveLayout.platterPadding(sizeClass))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: DiveRadius.recentCard, style: .continuous)
+                .fill(DiveWatchTheme.platter)
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(DiveFormatters.sessionAccessibilitySummary(session, summary: summary))
     }
 
+    private var hasMarkers: Bool {
+        session.captureProvenanceLabel != nil || session.exceedsSupportedDepth || session.recoveryLabel != nil
+    }
+
     @ViewBuilder
-    private func badges(keepsOneLine: Bool) -> some View {
+    private func markers(keepsOneLine: Bool) -> some View {
         // A demo or test log never reads as a real dive on Home.
         if let captureProvenanceLabel = session.captureProvenanceLabel {
-            StatusPill(title: captureProvenanceLabel, color: DiveWatchTheme.secondary)
+            StatusPill(title: captureProvenanceLabel, style: .marker)
                 .fixedSize(horizontal: keepsOneLine, vertical: true)
         }
-        StatusPill(title: session.syncStatus.shortLabel, color: DiveWatchTheme.secondary)
+        if session.exceedsSupportedDepth {
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundStyle(DiveWatchTheme.caution)
+                Text(String(localized: "Outside watch support"))
+                    .diveFont(.cardMarker)
+                    .foregroundStyle(DiveWatchTheme.ink2)
+            }
             .fixedSize(horizontal: keepsOneLine, vertical: true)
-            .accessibilityLabel(session.syncStatus.label)
+        }
+        if let recoveryLabel = session.recoveryLabel {
+            Text(recoveryLabel)
+                .diveFont(.cardMarker)
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .fixedSize(horizontal: keepsOneLine, vertical: true)
+        }
     }
 }
 
+/// The latest log's values: the maximum depth with its unit, then the dive time in grey.
 private struct LatestMetric: View {
-    let title: String
-    let value: String
+    let maxDepthMeters: Double
+    let durationSeconds: TimeInterval
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title.uppercased())
-                .font(.system(.caption2, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-            Text(value)
-                .font(.system(.body, design: .rounded, weight: .semibold).monospacedDigit())
-                .foregroundStyle(DiveWatchTheme.text)
-                .monospacedDigit()
-                .fixedSize(horizontal: false, vertical: true)
-                .minimumScaleFactor(1)
+        HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text(DiveFormatters.depthValue(maxDepthMeters))
+                .diveFont(.cardDepth)
+                .foregroundStyle(DiveWatchTheme.ink)
+            Text(verbatim: "m")
+                .diveFont(.cardUnit)
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .padding(.leading, 2)
+            Text(DiveFormatters.cardDuration(durationSeconds))
+                .diveFont(.cardDetail)
+                .foregroundStyle(DiveWatchTheme.ink2)
+                .padding(.leading, 8)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     }
 }
 

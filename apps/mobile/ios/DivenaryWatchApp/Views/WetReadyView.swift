@@ -22,6 +22,10 @@ struct WetReadyStartGuidance {
 /// Shown when the watch is submerged before a recording starts. Submersion alone never starts a
 /// recording, so the screen says which start path this watch has: watchOS auto-launch, the Action
 /// Button (only a hint, the assignment cannot be read), or a return to Home to start.
+///
+/// It can be underwater, so nothing on it bounces or overshoots (DECISIONS D13). The water tint sits
+/// behind everything (P4); the status band holds the recording band's place, so the "Ready to record"
+/// chip stays put when recording starts.
 struct WetReadyView: View {
     let mode: DiveMode
     let currentDepthMeters: Double?
@@ -31,6 +35,13 @@ struct WetReadyView: View {
     let onHome: () -> Void
 
     @State private var crownValue: Double
+    /// False until the first frame; the content then fades in (spec WR-ENTER).
+    @State private var hasEntered = false
+    @Namespace private var selectionSpace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    private let sizeClass = DiveType.SizeClass.current
 
     init(
         mode: DiveMode,
@@ -50,69 +61,34 @@ struct WetReadyView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 6) {
-                HStack(spacing: 6) {
-                    StatusPill(title: String(localized: "Ready"), color: accent)
+        VStack(spacing: 0) {
+            // The band stays put while the rest scrolls, as it will on the recording.
+            statusBand
 
-                    Spacer(minLength: 4)
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        startContent
+                            // The non-certified sentence waits wholly below the fold, so the display's
+                            // corner never cuts it in half (DECISIONS D13).
+                            .frame(minHeight: proxy.size.height, alignment: .top)
 
-                    if let currentDepthMeters {
-                        Text(DiveFormatters.depth(currentDepthMeters))
-                            .font(DiveWatchTheme.metricFont(size: 13, weight: .semibold))
-                            .foregroundStyle(DiveWatchTheme.mutedText)
-                            .lineLimit(1)
+                        DiveDisclaimer()
+                            .padding(.horizontal, DiveLayout.wetGutter(sizeClass))
+                            // Scrolled to the end, it rests clear of the display's bottom corners.
+                            .padding(.bottom, 24)
                     }
                 }
-
-                HStack(spacing: 8) {
-                    Image(systemName: systemImage)
-                        .font(.system(size: 22, weight: .semibold))
-                        .foregroundStyle(accent)
-
-                    Text(mode.label)
-                        .font(.system(size: 26, weight: .semibold, design: .rounded))
-                        .foregroundStyle(DiveWatchTheme.text)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.6)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityElement(children: .combine)
-
-                HStack(spacing: 6) {
-                    modeButton(.freedive)
-                    modeButton(.scuba)
-                }
-
-                Text(WetReadyStartGuidance.notRecordingText)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-
-                Text("Rotate the Digital Crown to choose a mode.")
-                    .font(.system(size: 10, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText.opacity(0.82))
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-
-                Text(startGuidance.text)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .minimumScaleFactor(0.75)
-
-                DiveDisclaimer()
-
-                if startGuidance.showsHomeButton {
-                    Button(String(localized: "Back to Home"), action: onHome)
-                        .buttonStyle(DiveActionButtonStyle(kind: .secondary))
-                }
+                .modifier(NoTopScrollEdgeEffect())
             }
-            .padding(.horizontal, DiveWatchTheme.edgeMargin)
         }
+        .padding(.top, type.statusBandTop)
+        .opacity(hasEntered ? 1 : 0)
+        // The band sits just under the clock (D10), and every inset is measured from the screen's edges.
+        .ignoresSafeArea(.container, edges: .all)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(DiveWatchTheme.background.ignoresSafeArea())
+        // P4: the water tint fills the whole screen under the content, the clock included.
+        .containerBackground(Self.waterTint, for: .navigation)
         .modifier(CrownFocusKeeper())
         .digitalCrownRotation(
             $crownValue,
@@ -131,39 +107,183 @@ struct WetReadyView: View {
         .onChange(of: mode) { _, nextMode in
             crownValue = nextMode.crownValue
         }
-        .toolbar(.hidden, for: .navigationBar)
+        // P12: the way back to Home is the toolbar circle where the back button sits, not a capsule
+        // under the text, so it never covers the start guidance.
+        .toolbar {
+            if startGuidance.showsHomeButton {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(action: onHome) {
+                        Image(systemName: "chevron.backward")
+                    }
+                    .accessibilityLabel(Text(String(localized: "Back to Home")))
+                }
+            }
+        }
+        .onAppear {
+            guard !hasEntered else { return }
+            withAnimation(DiveMotion.animation(.screenEnter, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced)) {
+                hasEntered = true
+            }
+        }
+    }
+
+    /// The dive-type tiles, "Not recording yet", the start guidance and the Digital Crown line.
+    private var startContent: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                modeButton(.freedive)
+                modeButton(.scuba)
+            }
+            .padding(.top, sizeClass == .regular ? 6 : 5)
+            .padding(.horizontal, DiveLayout.platterInset(sizeClass))
+            .animation(DiveMotion.animation(.modeSlide, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
+                       value: mode)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(WetReadyStartGuidance.notRecordingText)
+                    .diveFont(.wetTruth)
+                    .foregroundStyle(DiveWatchTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text(startGuidance.text)
+                    .diveFont(.wetGuide)
+                    .foregroundStyle(DiveWatchTheme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "digitalcrown.arrow.clockwise")
+                        .font(.system(size: 12, weight: .regular))
+                        .foregroundStyle(DiveWatchTheme.ink2)
+                        .accessibilityHidden(true)
+                    Text("Rotate the Digital Crown to choose a mode.")
+                        .diveFont(.crownHint)
+                        .foregroundStyle(DiveWatchTheme.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.top, 6)
+            }
+            .padding(.top, 3)
+            .padding(.bottom, 8)
+            .padding(.horizontal, DiveLayout.wetGutter(sizeClass))
+        }
     }
 
     private var startGuidance: WetReadyStartGuidance {
         WetReadyStartGuidance(autoLaunchStatus: autoLaunchStatus, hasActionButton: hasActionButton)
     }
 
-    private var accent: Color {
-        mode == .freedive ? DiveWatchTheme.primary : DiveWatchTheme.secondary
+    private var type: DiveType {
+        DiveType(sizeClass: sizeClass, isTight: false)
     }
 
-    private var systemImage: String {
-        mode == .freedive ? "figure.pool.swim" : "drop.fill"
+    /// "Ready to record" beside the toolbar circle, and the live depth under the clock, on the
+    /// recording status band's line (DECISIONS D10).
+    private var statusBand: some View {
+        HStack(alignment: .center, spacing: 4) {
+            StatusChip(title: String(localized: "Ready"))
+
+            Spacer(minLength: 4)
+
+            if let currentDepthMeters {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    Text(String(localized: "Depth"))
+                        .font(type.font(.rowLabel))
+                        .foregroundStyle(DiveWatchTheme.ink2)
+                    Text(DiveFormatters.depthValue(currentDepthMeters))
+                        .font(DiveWatchTheme.metricFont(size: sizeClass == .regular ? 15 : 14))
+                        .foregroundStyle(DiveWatchTheme.ink)
+                        .contentTransition(.identity)
+                        .padding(.leading, 4)
+                    Text(verbatim: "m")
+                        .font(DiveWatchTheme.metricFont(size: type.size(.rowLabel)))
+                        .foregroundStyle(DiveWatchTheme.ink2)
+                        .padding(.leading, 2)
+                }
+                .lineLimit(1)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Text(String(localized: "Depth")))
+                .accessibilityValue(Text(DiveFormatters.depth(currentDepthMeters)))
+            }
+        }
+        .environment(\.diveType, type)
+        .frame(minHeight: DiveSpacing.chipHeight)
+        // The chip starts beside the toolbar circle, as the recording band's chips do; the depth
+        // ends under the clock.
+        .padding(.leading, type.toolbarClearance + RecordingInstrumentView.horizontalPadding)
+        .padding(.trailing, sizeClass == .regular ? 17 : 14)
     }
 
-    /// Touch works only before Water Lock is on, so the crown is the main way to choose.
+    /// Touch works only before Water Lock is on, so the crown is the main way to choose. The blue
+    /// selection fill slides between the tiles and settles without overshooting (WR-MODE).
     private func modeButton(_ candidate: DiveMode) -> some View {
-        Button {
+        let isSelected = candidate == mode
+        let slides = DiveMotion.allowsMovement(.modeSlide, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced)
+        let tile = RoundedRectangle(cornerRadius: DiveRadius.tile, style: .continuous)
+
+        return Button {
             onSelect(candidate)
         } label: {
-            Text(candidate.label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(candidate == mode ? DiveWatchTheme.text : DiveWatchTheme.mutedText)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .background(
-                    RoundedRectangle(cornerRadius: DiveWatchTheme.cardRadius, style: .continuous)
-                        .fill(candidate == mode ? accent.opacity(0.28) : DiveWatchTheme.surfaceRaised)
-                )
+            ZStack {
+                tile.fill(DiveWatchTheme.platter)
+
+                if isSelected {
+                    if isLuminanceReduced {
+                        // Always-On: the chosen tile is an outline, with no fill.
+                        tile.strokeBorder(DiveWatchTheme.action, lineWidth: 1.5)
+                    } else if slides {
+                        tile.fill(DiveWatchTheme.action)
+                            .matchedGeometryEffect(id: "selection", in: selectionSpace)
+                    } else {
+                        tile.fill(DiveWatchTheme.action)
+                    }
+                }
+
+                VStack(spacing: 0) {
+                    DiveSymbol(name: candidate == .freedive ? "divenary.freedive" : "divenary.scuba",
+                               size: sizeClass == .regular ? 22 : 20)
+                    Spacer(minLength: 2)
+                    Text(candidate.label)
+                        .diveFont(.wetMode)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .padding(.top, sizeClass == .regular ? 10 : 9)
+                .padding(.bottom, sizeClass == .regular ? 9 : 8)
+                .padding(.horizontal, 4)
+                // The glyph and label cross-fade to white; nothing bounces underwater.
+                .foregroundStyle(isSelected ? DiveWatchTheme.ink : DiveWatchTheme.ink2)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .frame(height: DiveLayout.wetTileHeight(sizeClass))
+            // Each tile clips the sliding fill, so it leaves one tile and enters the other.
+            .clipShape(tile)
+            .contentShape(tile)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(candidate == mode ? .isSelected : [])
+        .buttonStyle(DivePressStyle())
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// P4: the water tint, strongest at the top and gone by the bottom.
+    private static let waterTint = LinearGradient(
+        stops: [
+            Gradient.Stop(color: DiveWatchTheme.water.opacity(0.6), location: 0),
+            Gradient.Stop(color: DiveWatchTheme.water.opacity(0.22), location: 0.5),
+            Gradient.Stop(color: DiveWatchTheme.water.opacity(0), location: 1),
+        ],
+        startPoint: .top,
+        endPoint: .bottom
+    )
+}
+
+/// watchOS 26 softens whatever sits under the toolbar's row; the status band lives there and must
+/// stay crisp.
+private struct NoTopScrollEdgeEffect: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(watchOS 26.0, *) {
+            content.scrollEdgeEffectHidden(true, for: .top)
+        } else {
+            content
+        }
     }
 }
 

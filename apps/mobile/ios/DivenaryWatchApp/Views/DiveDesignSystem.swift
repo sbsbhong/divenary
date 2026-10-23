@@ -1,4 +1,5 @@
 import SwiftUI
+import WatchKit
 
 // The Plumb design system: the recording type scale, radii and spacing, motion rules, press
 // feedback and the shared pieces the screens are built from. Colours live in `DiveWatchTheme`.
@@ -235,6 +236,225 @@ enum DiveSpacing {
     }
 }
 
+// MARK: - Off-recording type and layout
+
+/// Type for the screens before and after a dive (spec B2, second table): Home, the plans, the
+/// controls guide, Wet Ready and the saved logs. Unlike the recording type it follows the wearer's
+/// text size. Base sizes are the Large text size, the 42 mm default; the Ultra's default xLarge
+/// scales them up to the spec's Ultra column. Weights are 400 and 600 only.
+enum DiveUIType {
+    enum Role: CaseIterable {
+        /// Card and plan titles.
+        case headline
+        /// Row titles.
+        case body
+        /// Row details, guide text, notices and the non-certified sentence.
+        case footnote
+        case footnoteEmphasis
+        /// Section labels such as "Latest log".
+        case eyebrow
+        /// Guide page titles.
+        case title3
+        /// Wet Ready's dive-type tile labels.
+        case wetMode
+        /// Wet Ready's "Not recording yet".
+        case wetTruth
+        /// Wet Ready's start guidance.
+        case wetGuide
+        /// Wet Ready's Digital Crown line.
+        case crownHint
+        /// Summary maximum depth.
+        case metricXL
+        /// Detail maximum depth.
+        case metricL
+        /// Summary and detail dive time.
+        case metricM
+        /// Stacked stats.
+        case statValue
+        /// The Home card's maximum depth.
+        case cardDepth
+        /// A saved-list row's maximum depth.
+        case listDepth
+        /// Units beside `metricXL` and `metricL`.
+        case unitL
+        /// Units beside `metricM`, stats and list values.
+        case unitM
+        /// The Home card's date.
+        case cardDate
+        /// The Home card's dive time.
+        case cardDetail
+        /// The "m" beside the Home card's depth.
+        case cardUnit
+        /// The Home card's markers: "Outside watch support", "Recovered after interruption".
+        case cardMarker
+        /// A number inside footnote text, such as a plan's planned maximum depth.
+        case footnoteMetric
+    }
+
+    /// Point size at the Large text size.
+    static func baseSize(_ role: Role) -> CGFloat {
+        switch role {
+        case .headline, .body: return 16
+        case .footnote, .footnoteEmphasis, .wetTruth, .wetGuide, .cardUnit, .footnoteMetric: return 13
+        case .eyebrow, .crownHint, .unitM, .cardMarker: return 12
+        case .title3, .statValue, .listDepth: return 19
+        case .wetMode, .unitL: return 15
+        case .metricXL: return 36
+        case .metricL: return 30
+        case .metricM: return 20
+        case .cardDepth: return 22
+        case .cardDate, .cardDetail: return 14
+        }
+    }
+
+    static func weight(_ role: Role) -> Font.Weight {
+        switch role {
+        case .body, .footnote, .wetGuide, .crownHint, .cardDetail, .cardMarker:
+            return .regular
+        case .headline, .footnoteEmphasis, .eyebrow, .title3, .wetMode, .wetTruth, .metricXL, .metricL, .metricM,
+             .statValue, .cardDepth, .listDepth, .unitL, .unitM, .cardDate, .cardUnit, .footnoteMetric:
+            return .semibold
+        }
+    }
+
+    /// Numbers and their units use rounded digits of equal width.
+    static func usesMetricDigits(_ role: Role) -> Bool {
+        switch role {
+        case .metricXL, .metricL, .metricM, .statValue, .cardDepth, .listDepth, .unitL, .unitM, .cardUnit,
+             .footnoteMetric:
+            return true
+        case .headline, .body, .footnote, .footnoteEmphasis, .eyebrow, .title3, .wetMode, .wetTruth, .wetGuide,
+             .crownHint, .cardDate, .cardDetail, .cardMarker:
+            return false
+        }
+    }
+
+    /// The text style the size scales with.
+    static func textStyle(_ role: Role) -> Font.TextStyle {
+        switch role {
+        case .headline: return .headline
+        case .body, .wetMode, .cardDate, .cardDetail, .unitL: return .body
+        case .title3, .statValue, .listDepth: return .title3
+        case .metricXL, .metricL, .metricM, .cardDepth: return .title2
+        case .footnote, .footnoteEmphasis, .eyebrow, .wetTruth, .wetGuide, .crownHint, .unitM, .cardUnit,
+             .cardMarker, .footnoteMetric:
+            return .footnote
+        }
+    }
+
+    static func font(_ role: Role, size: CGFloat) -> Font {
+        usesMetricDigits(role)
+            ? DiveWatchTheme.metricFont(size: size, weight: weight(role))
+            : .system(size: size, weight: weight(role))
+    }
+}
+
+private struct DiveUIFont: ViewModifier {
+    let role: DiveUIType.Role
+    @ScaledMetric private var size: CGFloat
+
+    init(_ role: DiveUIType.Role) {
+        self.role = role
+        _size = ScaledMetric(wrappedValue: DiveUIType.baseSize(role), relativeTo: DiveUIType.textStyle(role))
+    }
+
+    func body(content: Content) -> some View {
+        content.font(DiveUIType.font(role, size: size))
+    }
+}
+
+extension View {
+    /// Off-recording type that follows the wearer's text size (spec B2, second table).
+    func diveFont(_ role: DiveUIType.Role) -> some View {
+        modifier(DiveUIFont(role))
+    }
+}
+
+extension DiveType.SizeClass {
+    /// Off-recording screens take their size class from the screen: Ultra and the larger Series
+    /// watches are regular, 42 mm and smaller compact.
+    init(screenWidth: CGFloat) {
+        self = screenWidth >= DiveType.regularPageMinimumWidth ? .regular : .compact
+    }
+
+    static var current: DiveType.SizeClass {
+        DiveType.SizeClass(screenWidth: WKInterfaceDevice.current().screenBounds.width)
+    }
+}
+
+/// Geometry for the screens before and after a dive (spec B3, C2, C3, C4, C19), in points.
+enum DiveLayout {
+    /// The start card (spec C2). Its height never drops below the 64 pt minimum.
+    struct StartCard: Equatable {
+        let height: CGFloat
+        let glyphDisc: CGFloat
+        let glyph: CGFloat
+        let playDisc: CGFloat
+        let playGlyph: CGFloat
+        let discToTitle: CGFloat
+        let padding: CGFloat
+        let radius: CGFloat
+
+        init(_ sizeClass: DiveType.SizeClass) {
+            let regular = sizeClass == .regular
+            height = regular ? 72 : 64
+            glyphDisc = regular ? 36 : 30
+            glyph = regular ? 22 : 20
+            playDisc = regular ? 32 : 30
+            playGlyph = regular ? 13 : 12
+            discToTitle = regular ? 10 : 8
+            padding = regular ? 12 : 10
+            radius = DiveRadius.startCard(sizeClass)
+        }
+
+        /// The arming ring's diameter: 3 pt outside the play disc.
+        var armingRing: CGFloat { playDisc + 6 }
+    }
+
+    /// Platters sit this far in from the screen's sides.
+    static func platterInset(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 6 : 5
+    }
+
+    /// Horizontal padding inside a platter.
+    static func platterPadding(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 12 : 10
+    }
+
+    /// A row's height at the default text size; larger text grows it.
+    static func rowHeight(_ sizeClass: DiveType.SizeClass, hasDetail: Bool) -> CGFloat {
+        switch (sizeClass, hasDetail) {
+        case (.regular, false): return 48
+        case (.regular, true): return 54
+        case (.compact, false): return 46
+        case (.compact, true): return 52
+        }
+    }
+
+    static func rowIcon(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 17 : 16
+    }
+
+    static let rowIconColumn: CGFloat = 24
+
+    static func wetTileHeight(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 64 : 58
+    }
+
+    /// Wet Ready's text sits this far in from the screen's sides.
+    static func wetGutter(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 12 : 10
+    }
+
+    /// The Home card's profile.
+    static func sparklineHeight(_ sizeClass: DiveType.SizeClass) -> CGFloat {
+        sizeClass == .regular ? 30 : 26
+    }
+
+    /// The logo above Home's non-certified sentence (D16).
+    static let footerLogoWidth: CGFloat = 32
+}
+
 // MARK: - Motion
 
 /// Motion rules (spec D, DECISIONS D12–D14, D18). Underwater, automatic changes only cross-fade;
@@ -263,6 +483,26 @@ enum DiveMotion {
         /// index filling.
         case quickFade
 
+        // On land, before a dive.
+
+        /// Home's first appearance in a launch: cards and rows rise into place one after another.
+        case homeEnter
+        /// The sensor check finishes: the start cards brighten and their play discs turn blue.
+        case ready
+        /// A start card's ring traces once around its play disc while the recording starts.
+        case arm
+        /// A saved profile draws itself the first time it is shown.
+        case profileDraw
+        /// A plan row's fill when it is chosen or cleared.
+        case selection
+        /// A screen fades in: Wet Ready.
+        case screenEnter
+        /// Wet Ready's selection fill slides to the other dive type. Wet Ready can be underwater, so
+        /// it settles without overshooting.
+        case modeSlide
+        /// A controls guide illustration plays once when its page shows.
+        case illustration
+
         fileprivate var curve: Curve {
             switch self {
             case .press: return .snappy(duration: 0.25)
@@ -274,13 +514,24 @@ enum DiveMotion {
             case .recordingStart: return .smooth(duration: 0.5)
             case .signal: return .easeOut(duration: 0.3)
             case .quickFade: return .easeInOut(duration: 0.2)
+            case .homeEnter: return .smooth(duration: 0.5)
+            case .ready: return .easeInOut(duration: 0.25)
+            case .arm: return .easeInOut(duration: 0.6)
+            case .profileDraw: return .smooth(duration: 0.6)
+            case .selection: return .easeInOut(duration: 0.2)
+            case .screenEnter: return .easeOut(duration: 0.3)
+            case .modeSlide: return .smooth(duration: 0.3)
+            case .illustration: return .smooth(duration: 0.6)
             }
         }
 
         fileprivate var moves: Bool {
             switch self {
-            case .press, .diverPage, .rangeChange, .finale, .recordingStart: return true
-            case .autoFade, .chip, .signal, .quickFade: return false
+            case .press, .diverPage, .rangeChange, .finale, .recordingStart, .homeEnter, .arm, .profileDraw,
+                 .modeSlide, .illustration:
+                return true
+            case .autoFade, .chip, .signal, .quickFade, .ready, .selection, .screenEnter:
+                return false
             }
         }
     }
@@ -323,6 +574,10 @@ enum DiveMotion {
 
     /// How far a page travels when the diver pages (spec 12 px).
     static let pageOffset: CGFloat = 6
+    /// How far Home's cards and rows rise on its first appearance (spec 16 px), and the stagger
+    /// between them.
+    static let homeEnterOffset: CGFloat = 8
+    static let homeEnterStagger = 0.04
     static let reducedMotionCurve = Curve.easeInOut(duration: 0.2)
     /// Always-On entering or leaving: opacity and colour settle together, nothing moves.
     static let alwaysOnSettle = Curve.easeInOut(duration: 0.3)
@@ -377,6 +632,22 @@ enum DiveMotion {
         alwaysOnSettleCurve(reduceMotion: reduceMotion).animation
     }
 
+    /// When item `index` (0 first) starts rising on Home's first appearance.
+    static func homeEnterDelay(index: Int) -> Double {
+        Double(max(0, index)) * homeEnterStagger
+    }
+
+    /// How long a chosen plan shows its check before the plans screen closes.
+    static func planDismissDelay(reduceMotion: Bool) -> Double {
+        reduceMotion ? 0.2 : 0.35
+    }
+
+    /// Whether a symbol may bounce: only on land screens that are never underwater (the plan check),
+    /// and never under Reduce Motion or Always-On. Wet Ready never bounces.
+    static func allowsLandBounce(reduceMotion: Bool, alwaysOn: Bool) -> Bool {
+        !reduceMotion && !alwaysOn
+    }
+
     /// The gauge follows each depth sample linearly; under Reduce Motion or Always-On it jumps.
     static func depthGlideCurve(reduceMotion: Bool, alwaysOn: Bool) -> Curve? {
         reduceMotion || alwaysOn ? nil : depthGlide
@@ -426,19 +697,24 @@ enum DiveMotion {
 /// snappy settle, or a dim to 70% under Reduce Motion. Land surfaces only; recording pages have no
 /// touch targets. A disabled card, such as a real start card while the sensor check runs, is dimmed.
 struct DivePressStyle: ButtonStyle {
+    /// A start card draws its own disabled look (dimmed glyph and title, grey play disc), so it turns
+    /// this off.
+    var dimsWhenDisabled = true
+
     func makeBody(configuration: Configuration) -> some View {
-        PressableLabel(configuration: configuration)
+        PressableLabel(configuration: configuration, dimsWhenDisabled: dimsWhenDisabled)
     }
 
     private struct PressableLabel: View {
         let configuration: Configuration
+        let dimsWhenDisabled: Bool
         @Environment(\.isEnabled) private var isEnabled
         @Environment(\.accessibilityReduceMotion) private var reduceMotion
         @Environment(\.isLuminanceReduced) private var isLuminanceReduced
 
         var body: some View {
             configuration.label
-                .opacity((isEnabled ? 1 : 0.7) * (reduceMotion && configuration.isPressed ? 0.7 : 1))
+                .opacity((isEnabled || !dimsWhenDisabled ? 1 : 0.7) * (reduceMotion && configuration.isPressed ? 0.7 : 1))
                 .scaleEffect(!reduceMotion && configuration.isPressed ? 0.95 : 1)
                 .animation(
                     DiveMotion.press(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
@@ -940,6 +1216,18 @@ struct MiniDepthProfile: Shape {
         points.max { $0.y < $1.y }
     }
 
+    /// A long profile cut into at most `maximumCount` stretches, each kept as its deepest readable
+    /// depth, so a small drawing stays cheap and never loses a dive's bottom.
+    static func thinnedDepths(_ depths: [Double], maximumCount: Int) -> [Double] {
+        guard maximumCount > 0 else { return [] }
+        guard depths.count > maximumCount else { return depths }
+        return (0..<maximumCount).map { stretch in
+            let start = stretch * depths.count / maximumCount
+            let end = max((stretch + 1) * depths.count / maximumCount, start + 1)
+            return depths[start..<end].filter(\.isFinite).max() ?? .nan
+        }
+    }
+
     func path(in rect: CGRect) -> Path {
         let mapped = points.map { point in
             CGPoint(x: rect.minX + point.x * rect.width, y: rect.minY + point.y * rect.height)
@@ -959,6 +1247,136 @@ struct MiniDepthProfile: Shape {
             path.closeSubpath()
         }
         return path
+    }
+}
+
+/// Remembers which saved logs have already drawn their profile in this launch, so a profile draws
+/// itself only the first time it is shown (spec HM-SPARK).
+@MainActor
+final class DiveProfileDrawLog {
+    static let shared = DiveProfileDrawLog()
+
+    private var drawnIDs: Set<UUID> = []
+
+    func hasDrawn(_ id: UUID) -> Bool {
+        drawnIDs.contains(id)
+    }
+
+    /// True the first time it is asked for `id`; it then counts as drawn.
+    func claimFirstDraw(_ id: UUID) -> Bool {
+        drawnIDs.insert(id).inserted
+    }
+}
+
+/// A saved dive's profile drawn small (spec C15): the water above the diver, the line and the
+/// deepest point, with no axes. The first time a log's profile shows, the line draws itself, the
+/// water fades in and the deepest point pops in (HM-SPARK); after that it is drawn at once. Reduce
+/// Motion fades it in instead, and Always-On draws the line at half strength with no water.
+struct DepthSparkline: View {
+    let id: UUID
+    let points: [CGPoint]
+    var dotDiameter: CGFloat = 4
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @State private var drawn: CGFloat
+    @State private var showsDot: Bool
+
+    init(id: UUID, points: [CGPoint], dotDiameter: CGFloat = 4) {
+        self.id = id
+        self.points = points
+        self.dotDiameter = dotDiameter
+        let alreadyDrawn = DiveProfileDrawLog.shared.hasDrawn(id)
+        _drawn = State(initialValue: alreadyDrawn ? 1 : 0)
+        _showsDot = State(initialValue: alreadyDrawn)
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            // Reduce Motion fades the finished drawing in instead of tracing the line.
+            let traced = reduceMotion ? 1 : drawn
+            ZStack(alignment: .topLeading) {
+                MiniDepthProfile(points: points, style: .area)
+                    .fill(DiveWatchTheme.waterArea)
+                    .opacity(isLuminanceReduced ? 0 : drawn)
+                MiniDepthProfile(points: points)
+                    .trim(from: 0, to: traced)
+                    .stroke(Color.white.opacity(isLuminanceReduced ? 0.5 : 0.85),
+                            style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .opacity(reduceMotion ? drawn : 1)
+                if let deepest = MiniDepthProfile.deepestPoint(in: points) {
+                    Circle()
+                        .fill(DiveWatchTheme.ink)
+                        .frame(width: dotDiameter, height: dotDiameter)
+                        .scaleEffect(showsDot || reduceMotion ? 1 : 0.6)
+                        .opacity(showsDot ? 1 : 0)
+                        .position(x: deepest.x * proxy.size.width, y: deepest.y * proxy.size.height)
+                }
+            }
+        }
+        .accessibilityHidden(true)
+        .onAppear(perform: drawIfFirst)
+    }
+
+    private func drawIfFirst() {
+        guard DiveProfileDrawLog.shared.claimFirstDraw(id) else { return }
+        guard !isLuminanceReduced else {
+            drawn = 1
+            showsDot = true
+            return
+        }
+        withAnimation(DiveMotion.animation(.profileDraw, reduceMotion: reduceMotion, alwaysOn: false)) {
+            drawn = 1
+        }
+        // The deepest point lands once the line reaches it (spec: 300 ms snappy from 600 ms).
+        let dot = reduceMotion
+            ? DiveMotion.reducedMotionCurve.animation
+            : Animation.snappy(duration: 0.3).delay(0.6)
+        withAnimation(dot) {
+            showsDot = true
+        }
+    }
+}
+
+// MARK: - Symbols
+
+/// One icon by name: Divenary's own glyphs (spec C21: `divenary.freedive`, `divenary.scuba`,
+/// `divenary.column`, `divenary.column.half`) or any SF Symbol, fitted to a square of `size`.
+struct DiveSymbol: View {
+    enum Kind: Equatable {
+        case mode(DiveMode)
+        case column(DepthColumnGlyph.Variant)
+        case system(String)
+
+        init(name: String) {
+            switch name {
+            case "divenary.freedive": self = .mode(.freedive)
+            case "divenary.scuba": self = .mode(.scuba)
+            case "divenary.column": self = .column(.empty)
+            case "divenary.column.half": self = .column(.half)
+            default: self = .system(name)
+            }
+        }
+    }
+
+    let name: String
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            switch Kind(name: name) {
+            case let .mode(mode):
+                DiveModeGlyph(mode: mode)
+            case let .column(variant):
+                DepthColumnGlyph(variant: variant)
+            case let .system(systemName):
+                Image(systemName: systemName)
+                    .resizable()
+                    .scaledToFit()
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
     }
 }
 

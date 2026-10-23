@@ -410,6 +410,39 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(DiveMotion.pageCurve(userInitiated: true, reduceMotion: true, alwaysOn: false), .easeInOut(duration: 0.2))
     }
 
+    func testLandMotionFollowsTheSpec() {
+        XCTAssertEqual(DiveMotion.curve(.homeEnter, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.5))
+        XCTAssertEqual(DiveMotion.curve(.ready, reduceMotion: false, alwaysOn: false), .easeInOut(duration: 0.25))
+        XCTAssertEqual(DiveMotion.curve(.arm, reduceMotion: false, alwaysOn: false), .easeInOut(duration: 0.6))
+        XCTAssertEqual(DiveMotion.curve(.profileDraw, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.6))
+        XCTAssertEqual(DiveMotion.curve(.selection, reduceMotion: false, alwaysOn: false), .easeInOut(duration: 0.2))
+        XCTAssertEqual(DiveMotion.curve(.screenEnter, reduceMotion: false, alwaysOn: false), .easeOut(duration: 0.3))
+        XCTAssertEqual(DiveMotion.curve(.illustration, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.6))
+        // Wet Ready can be underwater: the mode fill slides smoothly and never overshoots (D13).
+        XCTAssertEqual(DiveMotion.curve(.modeSlide, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.3))
+        // Home rises 8 pt into place, one item every 40 ms.
+        XCTAssertEqual(DiveMotion.homeEnterOffset, 8)
+        XCTAssertEqual(DiveMotion.homeEnterDelay(index: 0), 0, accuracy: 0.0001)
+        XCTAssertEqual(DiveMotion.homeEnterDelay(index: 3), 0.12, accuracy: 0.0001)
+        XCTAssertEqual(DiveMotion.homeEnterDelay(index: -2), 0, accuracy: 0.0001)
+        // A chosen plan shows its check, then the screen pops back.
+        XCTAssertEqual(DiveMotion.planDismissDelay(reduceMotion: false), 0.35, accuracy: 0.0001)
+        XCTAssertEqual(DiveMotion.planDismissDelay(reduceMotion: true), 0.2, accuracy: 0.0001)
+    }
+
+    func testOnlyLandMotionMovesOrBounces() {
+        for kind in [DiveMotion.Kind.homeEnter, .arm, .profileDraw, .modeSlide, .illustration] {
+            XCTAssertTrue(DiveMotion.allowsMovement(kind, reduceMotion: false, alwaysOn: false), "\(kind)")
+        }
+        for kind in [DiveMotion.Kind.ready, .selection, .screenEnter] {
+            XCTAssertFalse(DiveMotion.allowsMovement(kind, reduceMotion: false, alwaysOn: false), "\(kind)")
+        }
+        // The plan check bounces once on land; Reduce Motion and Always-On drop it.
+        XCTAssertTrue(DiveMotion.allowsLandBounce(reduceMotion: false, alwaysOn: false))
+        XCTAssertFalse(DiveMotion.allowsLandBounce(reduceMotion: true, alwaysOn: false))
+        XCTAssertFalse(DiveMotion.allowsLandBounce(reduceMotion: false, alwaysOn: true))
+    }
+
     func testDepthSamplesGlideLinearlyAndJumpUnderReduceMotionOrAlwaysOn() {
         XCTAssertEqual(DiveMotion.depthGlideCurve(reduceMotion: false, alwaysOn: false), .linear(duration: 0.3))
         XCTAssertNil(DiveMotion.depthGlideCurve(reduceMotion: true, alwaysOn: false))
@@ -492,6 +525,30 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertNil(MiniDepthProfile.deepestPoint(in: []))
     }
 
+    func testLongProfilesAreThinnedWithoutLosingTheDeepestPoint() {
+        var depths = (0..<1_000).map { Double($0 % 50) / 10 }
+        depths[437] = 22.4
+        let thinned = MiniDepthProfile.thinnedDepths(depths, maximumCount: 100)
+        XCTAssertEqual(thinned.count, 100)
+        XCTAssertEqual(thinned.max(), 22.4)
+        XCTAssertEqual(thinned.first, 0.9)  // the deepest of the first ten readings
+        // Short profiles stay as they are.
+        XCTAssertEqual(MiniDepthProfile.thinnedDepths([0, 4, 9, 4, 0], maximumCount: 100), [0, 4, 9, 4, 0])
+        XCTAssertEqual(MiniDepthProfile.thinnedDepths([], maximumCount: 100), [])
+        XCTAssertEqual(MiniDepthProfile.thinnedDepths([1, 2, 3], maximumCount: 0), [])
+    }
+
+    @MainActor
+    func testAProfileDrawsItselfOnlyTheFirstTimeItIsShown() {
+        let log = DiveProfileDrawLog()
+        let first = UUID()
+        XCTAssertFalse(log.hasDrawn(first))
+        XCTAssertTrue(log.claimFirstDraw(first))
+        XCTAssertTrue(log.hasDrawn(first))
+        XCTAssertFalse(log.claimFirstDraw(first))
+        XCTAssertTrue(log.claimFirstDraw(UUID()))
+    }
+
     func testProfileLineAndAreaShapes() {
         let points = MiniDepthProfile.normalizedPoints(depths: [0, 10, 20, 10, 0])
         let rect = CGRect(x: 0, y: 0, width: 100, height: 22)
@@ -570,7 +627,149 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(wide.height, 18, accuracy: 0.5)
     }
 
+    func testDivenarySymbolNamesDrawTheCustomGlyphs() {
+        XCTAssertEqual(DiveSymbol.Kind(name: "divenary.freedive"), .mode(.freedive))
+        XCTAssertEqual(DiveSymbol.Kind(name: "divenary.scuba"), .mode(.scuba))
+        XCTAssertEqual(DiveSymbol.Kind(name: "divenary.column"), .column(.empty))
+        XCTAssertEqual(DiveSymbol.Kind(name: "divenary.column.half"), .column(.half))
+        XCTAssertEqual(DiveSymbol.Kind(name: "list.bullet"), .system("list.bullet"))
+        // Never Apple's water symbol (D17): the depth column stands in for it.
+        XCTAssertNotEqual(DiveSymbol.Kind(name: "divenary.column.half"), .system("water.waves"))
+    }
+
+    // MARK: - Off-recording type and layout (spec B2 second table, B3, C2, C3, C19)
+
+    func testOffRecordingTypeStartsFromTheLargeTextSize() {
+        // Base sizes are the Large text size (the 42 mm default); xLarge (the Ultra default) scales up.
+        let expected: [(DiveUIType.Role, CGFloat, Font.Weight, Bool)] = [
+            (.headline, 16, .semibold, false), (.body, 16, .regular, false),
+            (.footnote, 13, .regular, false), (.footnoteEmphasis, 13, .semibold, false),
+            (.eyebrow, 12, .semibold, false), (.title3, 19, .semibold, false),
+            // White on the selected blue tile needs 15 pt / 600 on every watch (D13).
+            (.wetMode, 15, .semibold, false), (.wetTruth, 13, .semibold, false),
+            (.wetGuide, 13, .regular, false), (.crownHint, 12, .regular, false),
+            (.metricXL, 36, .semibold, true), (.metricL, 30, .semibold, true),
+            (.metricM, 20, .semibold, true), (.statValue, 19, .semibold, true),
+            (.cardDepth, 22, .semibold, true), (.listDepth, 19, .semibold, true),
+            (.unitL, 15, .semibold, true), (.unitM, 12, .semibold, true),
+            (.cardDate, 14, .semibold, false), (.cardDetail, 14, .regular, false),
+            (.cardUnit, 13, .semibold, true), (.cardMarker, 12, .regular, false),
+            (.footnoteMetric, 13, .semibold, true),
+        ]
+        XCTAssertEqual(expected.count, DiveUIType.Role.allCases.count)
+        for (role, size, weight, metric) in expected {
+            XCTAssertEqual(DiveUIType.baseSize(role), size, "\(role)")
+            XCTAssertEqual(DiveUIType.weight(role), weight, "\(role)")
+            XCTAssertEqual(DiveUIType.usesMetricDigits(role), metric, "\(role)")
+        }
+    }
+
+    func testScreenWidthPicksTheOffRecordingSizeClass() {
+        XCTAssertEqual(DiveType.SizeClass(screenWidth: 205), .regular)  // Ultra 49 mm
+        XCTAssertEqual(DiveType.SizeClass(screenWidth: 198), .regular)  // Series 45 mm
+        XCTAssertEqual(DiveType.SizeClass(screenWidth: 187), .compact)  // Series 42 mm
+        XCTAssertEqual(DiveType.SizeClass(screenWidth: 162), .compact)
+    }
+
+    func testStartCardKeepsTheSixtyFourPointFloor() {
+        let ultra = DiveLayout.StartCard(.regular)
+        XCTAssertEqual(ultra.height, 72)
+        XCTAssertEqual(ultra.glyphDisc, 36)
+        XCTAssertEqual(ultra.glyph, 22)
+        XCTAssertEqual(ultra.playDisc, 32)
+        XCTAssertEqual(ultra.playGlyph, 13)
+        XCTAssertEqual(ultra.discToTitle, 10)
+        XCTAssertEqual(ultra.padding, 12)
+        XCTAssertEqual(ultra.radius, 18)
+        let series = DiveLayout.StartCard(.compact)
+        XCTAssertEqual(series.height, 64)
+        XCTAssertEqual(series.glyphDisc, 30)
+        XCTAssertEqual(series.glyph, 20)
+        XCTAssertEqual(series.playDisc, 30)
+        XCTAssertEqual(series.playGlyph, 12)
+        XCTAssertEqual(series.discToTitle, 8)
+        XCTAssertEqual(series.padding, 10)
+        XCTAssertEqual(series.radius, 16)
+        for card in [ultra, series] {
+            XCTAssertGreaterThanOrEqual(card.height, 64)
+            // The arming ring sits 3 pt outside the play disc.
+            XCTAssertEqual(card.armingRing, card.playDisc + 6)
+        }
+    }
+
+    func testOffRecordingRowsTilesAndGutters() {
+        XCTAssertEqual(DiveLayout.platterInset(.regular), 6)
+        XCTAssertEqual(DiveLayout.platterInset(.compact), 5)
+        XCTAssertEqual(DiveLayout.platterPadding(.regular), 12)
+        XCTAssertEqual(DiveLayout.platterPadding(.compact), 10)
+        XCTAssertEqual(DiveLayout.rowHeight(.regular, hasDetail: false), 48)
+        XCTAssertEqual(DiveLayout.rowHeight(.regular, hasDetail: true), 54)
+        XCTAssertEqual(DiveLayout.rowHeight(.compact, hasDetail: false), 46)
+        XCTAssertEqual(DiveLayout.rowHeight(.compact, hasDetail: true), 52)
+        XCTAssertEqual(DiveLayout.rowIcon(.regular), 17)
+        XCTAssertEqual(DiveLayout.rowIcon(.compact), 16)
+        XCTAssertEqual(DiveLayout.rowIconColumn, 24)
+        XCTAssertEqual(DiveLayout.wetTileHeight(.regular), 64)
+        XCTAssertEqual(DiveLayout.wetTileHeight(.compact), 58)
+        XCTAssertEqual(DiveLayout.wetGutter(.regular), 12)
+        XCTAssertEqual(DiveLayout.wetGutter(.compact), 10)
+        XCTAssertEqual(DiveLayout.sparklineHeight(.regular), 30)
+        XCTAssertEqual(DiveLayout.sparklineHeight(.compact), 26)
+        // The Home footer's logo is 64 px wide (D16).
+        XCTAssertEqual(DiveLayout.footerLogoWidth, 32)
+    }
+
+    // MARK: - Off-recording formats (spec C4, C11, G2)
+
+    func testRelativeDatesSayTodayYesterdayAndTomorrow() {
+        let calendar = seoulCalendar
+        let now = date(2026, 10, 22, 10, 46)
+        let korean = Locale(identifier: "ko_KR")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2026, 10, 22, 10, 2), now: now, calendar: calendar, locale: korean),
+                       "오늘 오전 10:02")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2026, 10, 21, 15, 5), now: now, calendar: calendar, locale: korean),
+                       "어제 오후 3:05")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2026, 10, 23, 9, 0), now: now, calendar: calendar, locale: korean),
+                       "내일 오전 9:00")
+        // Newer English time formats put a narrow no-break space before AM/PM.
+        let english = DiveFormatters.relativeDate(date(2026, 10, 21, 15, 5), now: now, calendar: calendar,
+                                                  locale: Locale(identifier: "en_US"))
+        XCTAssertEqual(english.replacingOccurrences(of: "\u{202F}", with: " "), "Yesterday 3:05 PM")
+    }
+
+    func testOtherDatesShowTheYearOnlyWhenItIsNotThisYear() {
+        let calendar = seoulCalendar
+        let now = date(2026, 10, 22, 10, 46)
+        let korean = Locale(identifier: "ko_KR")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2026, 10, 19, 9, 30), now: now, calendar: calendar, locale: korean),
+                       "10월 19일 오전 9:30")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2026, 10, 24, 9, 30), now: now, calendar: calendar, locale: korean),
+                       "10월 24일 오전 9:30")
+        XCTAssertEqual(DiveFormatters.relativeDate(date(2025, 10, 19, 9, 30), now: now, calendar: calendar, locale: korean),
+                       "2025년 10월 19일 오전 9:30")
+    }
+
+    func testCardDurationShowsWholeMinutesOrSecondsUnderAMinute() {
+        let korean = Locale(identifier: "ko_KR")
+        XCTAssertEqual(DiveFormatters.cardDuration(48 * 60, locale: korean), "48분")
+        XCTAssertEqual(DiveFormatters.cardDuration(42 * 60 + 50, locale: korean), "42분")
+        XCTAssertEqual(DiveFormatters.cardDuration(65 * 60, locale: korean), "1시간 5분")
+        XCTAssertEqual(DiveFormatters.cardDuration(40, locale: korean), "40초")
+        XCTAssertEqual(DiveFormatters.cardDuration(-5, locale: korean), "0초")
+        XCTAssertEqual(DiveFormatters.cardDuration(48 * 60, locale: Locale(identifier: "en_US")), "48 min")
+    }
+
     // MARK: - Helpers
+
+    private var seoulCalendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Seoul")!
+        return calendar
+    }
+
+    private func date(_ year: Int, _ month: Int, _ day: Int, _ hour: Int, _ minute: Int) -> Date {
+        seoulCalendar.date(from: DateComponents(year: year, month: month, day: day, hour: hour, minute: minute))!
+    }
 
     private func geometry(range: Double) -> RecordingGaugeGeometry {
         RecordingGaugeGeometry(scale: RecordingGaugeScale(maximumDepthMeters: 40, rangeMeters: range))

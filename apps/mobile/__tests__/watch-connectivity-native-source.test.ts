@@ -596,6 +596,67 @@ describe('WatchConnectivity native source contract', () => {
     expect(home).not.toContain('isExpanded');
   });
 
+  it('draws the Plumb Home, plans and controls guide with one term per concept', () => {
+    const home = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/HomeView.swift');
+    const guide = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/UnderwaterControlsView.swift');
+    const wetReady = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/WetReadyView.swift');
+    const sessionList = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/SessionListView.swift');
+    const catalog = JSON.parse(readRepoFile('apps/mobile/ios/DivenaryWatchApp/Localizable.xcstrings')) as {
+      strings: Record<
+        string,
+        { localizations?: Record<'en' | 'ko', { stringUnit?: { value?: string } } | undefined> }
+      >;
+    };
+    const korean = (key: string) => catalog.strings[key]?.localizations?.ko?.stringUnit?.value;
+    const english = (key: string) => catalog.strings[key]?.localizations?.en?.stringUnit?.value;
+    const latestCard = home.slice(home.indexOf('private struct LatestSessionCard'), home.indexOf('private struct LatestMetric'));
+    const plans = home.slice(home.indexOf('struct DivePlansView'), home.indexOf('private struct HomeSensorNotice'));
+
+    // Start cards keep the monofin and tank glyphs (D19); the demo row draws the depth column, never
+    // Apple's water symbol (D17); watchOS rows have no chevrons.
+    expect(home).toContain('systemImage: "divenary.freedive"');
+    expect(home).toContain('systemImage: "divenary.scuba"');
+    expect(home).toContain('systemImage: "divenary.column.half"');
+    expect(home).not.toContain('chevron.right');
+    for (const source of [home, guide, wetReady]) {
+      expect(source).not.toContain('water.waves');
+    }
+    // The real logo over the non-certified sentence (D16, COPY C3).
+    expect(home.slice(home.indexOf('private struct HomeSafetyFooter'))).toMatch(/LogoMark\(\)[\s\S]*Recreational capture and review/);
+    // The latest log shows sync as a glyph with the full status for VoiceOver, and no dive type (D3, D4).
+    expect(latestCard).toContain('Image(systemName: session.syncStatus.symbol)');
+    expect(latestCard).toContain('.accessibilityLabel(session.syncStatus.label)');
+    expect(latestCard).not.toContain('diveMode');
+    expect(home).not.toContain('shortLabel');
+    expect(latestCard).toContain('DepthSparkline(id: session.id');
+    expect(sessionList).toContain('case .pending: return "applewatch.and.arrow.forward"');
+    expect(sessionList).toContain('case .synced: return "iphone.gen3"');
+    expect(sessionList).toContain('case .failed: return "iphone.gen3.slash"');
+    expect(sessionList).not.toContain('icloud');
+    // Plan rows read the shipped "계획 최대 수심" term (COPY C11); the chosen check bounces only on land.
+    expect(plans).toContain('String(localized: "PLANNED MAX")');
+    expect(plans).toContain('"checkmark.circle.fill"');
+    expect(plans).toContain('DiveMotion.allowsLandBounce(');
+    expect(plans).toContain('DiveMotion.planDismissDelay(');
+    // The guide is three system vertical pages, the last one carrying the non-certified sentence.
+    expect(guide).toContain('.tabViewStyle(.verticalPage(transitionStyle: .blur))');
+    expect(guide).toMatch(/GuidePageLayout\(illustration: \.actionButton[\s\S]*DiveDisclaimer\(\)/);
+    // Copy: one term per dive type (C1), the demo row (C13), the plan term (C11), one non-certified
+    // sentence (C3), broken at the sentence as the canvas draws it.
+    expect(korean('Scuba Diving')).toBe('스쿠버');
+    expect(english('Scuba Diving')).toBe('Scuba');
+    expect(korean('Simulated depth')).toBe('기록 없이 둘러보기');
+    expect(english('Simulated depth')).toBe('Browse without recording');
+    expect(korean('PLANNED MAX')).toBe('계획 최대 수심');
+    for (const key of [
+      'Recreational capture and review. Not a certified dive computer.',
+      'RECREATIONAL USE ONLY. NON-CERTIFIED ASSISTANT.',
+    ]) {
+      expect(korean(key)).toBe('다이빙 기록·복기용입니다.\n인증된 다이브 컴퓨터가 아닙니다.');
+      expect(english(key)).toBe('For dive logging and review.\nNot a certified dive computer.');
+    }
+  });
+
   it('treats mismatched explicit watch home starts as ad-hoc sessions', () => {
     const home = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/HomeView.swift');
     const explicitStartPlan = home.slice(
@@ -950,9 +1011,21 @@ describe('WatchConnectivity native source contract', () => {
     expect(startCopy).toMatch(/if hasActionButton \{\s*return String\(localized: "If you assigned Divenary to the Action Button, press it to start recording\."\)/);
     expect(startCopy).toContain('String(localized: "Start recording from Home.")');
     expect(startCopy).toContain('String(localized: "Not recording yet")');
-    expect(wetReady).toContain('Button(String(localized: "Back to Home"), action: onHome)');
+    // Plumb P12: "Back to Home" is the toolbar circle at the top leading corner, read as "홈 화면으로",
+    // not a capsule under the text; the screen keeps its way home on every start path.
+    const wetReadyToolbar = wetReady.slice(wetReady.indexOf('.toolbar {'), wetReady.indexOf('.onAppear {'));
+    expect(wetReadyToolbar).toMatch(/if startGuidance\.showsHomeButton \{\s*ToolbarItem\(placement: \.topBarLeading\) \{\s*Button\(action: onHome\)/);
+    expect(wetReadyToolbar).toContain('.accessibilityLabel(Text(String(localized: "Back to Home")))');
+    expect(wetReady).not.toContain('.toolbar(.hidden, for: .navigationBar)');
+    expect(korean('Back to Home')).toBe('홈 화면으로');
     expect(wetReady).not.toContain('Underwater recording starts automatically.');
     expect(wetReady).toContain('.frame(maxWidth: .infinity, minHeight: 44)');
+    // Plumb P4 and WR-MODE: the water tint sits behind everything, and the selection fill slides
+    // between the tiles without overshooting (Wet Ready can be underwater, D13).
+    expect(wetReady).toContain('.containerBackground(Self.waterTint, for: .navigation)');
+    expect(wetReady).toContain('.matchedGeometryEffect(id: "selection", in: selectionSpace)');
+    expect(wetReady).toContain('DiveMotion.animation(.modeSlide');
+    expect(wetReady).not.toContain('.bounce');
     expect(realFlow).toContain('autoLaunchStatus: autoLaunchStatus');
     expect(realFlow).toMatch(/onBack: coordinator\.dismissSavedSummary,\s*showsNextDiveHint: ActionButtonHint\.current\.isLikelyUltra/);
     // The summary leads with max depth and duration; the sample count lives on the detail screen.
