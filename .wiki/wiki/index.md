@@ -58,7 +58,7 @@
 
 | Article | Summary | Updated |
 |---|---|---|
-| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략, 모바일 편집기·상세·목록 패턴과 함께 워치 Plumb · 측심 규칙(색 역할, 수심 고정 게이지 그라데이션, 모양 문법, 고정 기록 계기와 세로 힌트 점, 물속 크로스페이드·다이버만 이동 모션, 실제 로고만, 문구 C1–C15, polish 리뷰의 D20 규칙, 실기기 미검증 항목)을 둔다. | 2026-10-23 |
+| [Mobile/Watch UI 언어](design/mobile-watch-ui-language.md) | 다이버 언어와 개념당 한 용어, naver-ad-bidder 로딩 전략, 모바일 모션(누름 spring, 등장·퇴장, 차트 그리기와 뒤집힌 로고, 동작 줄이기), 모바일 편집기·상세·목록 패턴과 함께 워치 Plumb · 측심 규칙(색 역할, 수심 고정 게이지 그라데이션, 모양 문법, 고정 기록 계기와 세로 힌트 점, 물속 크로스페이드·다이버만 이동 모션, 실제 로고만, 문구 C1–C15, polish 리뷰의 D20 규칙, 실기기 미검증 항목)을 둔다. | 2026-10-23 |
 
 ## decisions
 

@@ -1,14 +1,14 @@
 # Mobile/Watch UI 언어
 
 Sources: 2026-10-22 워치 가독성 개선 요청; pre-Karpathy wiki page, 2026-06-28; Diving App repository implementation, 2026-07-07; user requested depth/safety stop/deco pending work, 2026-07-08; pre-device depth safety sync readiness implementation, 2026-07-09; pre-real-dive readiness scope and immediate hardening, 2026-07-12; Mobile claim bootstrap and theme recovery, 2026-07-22; 2026-10-21 프로젝트 리뷰 후속 수정 경계, 2026-10-21; 2026-10-22 모바일·워치 UI/UX 개편, 2026-10-22; 워치 리디자인 'Plumb · 측심' 설계 묶음·결정(D1–D20, C1–C15)과 구현 커밋 b75ba8e·d4baae0·89e6b5c·0240824·b760320, polish 리뷰 반영 커밋 c57f311, 마무리 로고 뒤집기 D16a, 2026-10-23
-Raw: [워치 가독성 개선 요구사항](../../raw/design/2026-10-22-watch-readability.md); [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md); [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md); [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md); [2026-10-23 워치 Plumb polish 리뷰](../../raw/design/2026-10-23-watch-plumb-polish-review.md); [2026-10-23 저장 뒤 마무리 로고 뒤집기 결정 (D16a)](../../raw/design/2026-10-23-finale-logo-rider-mirror.md); [2026-10-23 모바일 워치 연결 상태와 빈 로그북 수정](../../raw/design/2026-10-23-mobile-watch-status-and-empty-logbook.md)
+Raw: [워치 가독성 개선 요구사항](../../raw/design/2026-10-22-watch-readability.md); [Pre-Karpathy: Mobile/Watch UI 언어](../../raw/design/mobile-watch-ui-language.md); [Watch debug demo sync logbook UX](../../raw/architecture/2026-07-07-watch-debug-demo-sync-logbook-ux.md); [Depth cap, safety stop color, decompression stop terminology pending work](../../raw/questions/2026-07-08-depth-safety-stop-deco-pending-work.md); [Pre-device depth safety sync readiness](../../raw/decisions/2026-07-09-pre-device-depth-safety-sync-readiness.md); [Pre-real-dive readiness scope and immediate hardening](../../raw/architecture/2026-07-12-pre-real-dive-readiness.md); [Mobile claim bootstrap and theme recovery](../../raw/architecture/2026-07-22-mobile-claim-bootstrap-theme-recovery.md); [2026-10-21 프로젝트 리뷰 후속 수정 경계](../../raw/architecture/2026-10-21-review-remediation.md); [2026-10-22 모바일·워치 UI/UX 개편](../../raw/design/2026-10-22-ui-ux-overhaul.md); [2026-10-23 워치 리디자인 Plumb · 측심](../../raw/design/2026-10-23-watch-plumb-redesign.md); [2026-10-23 워치 Plumb polish 리뷰](../../raw/design/2026-10-23-watch-plumb-polish-review.md); [2026-10-23 저장 뒤 마무리 로고 뒤집기 결정 (D16a)](../../raw/design/2026-10-23-finale-logo-rider-mirror.md); [2026-10-23 모바일 워치 연결 상태와 빈 로그북 수정](../../raw/design/2026-10-23-mobile-watch-status-and-empty-logbook.md); [2026-10-23 모바일 모션](../../raw/design/2026-10-23-mobile-motion.md)
 Updated: 2026-10-23
 
 ## 요약
 
 `diving-app`의 모바일과 watchOS UI는 **iOS grouped base + dive instrument accent**를 공통 방향으로 삼는다. 워치 기록 화면은 2026-10-23 리디자인 'Plumb · 측심'부터 상태 띠·depth gauge·안내 칩이 고정된 하나의 계기이고, 다이버가 화면을 넘기면 오른쪽 값 열만 바뀐다. 모바일 cloud 상태는 backend가 없을 때 숨기고, 실제 상태가 생긴 뒤에만 low-chroma badge를 사용한다. Safety stop 권장 상태와 future mandatory/decompression 상태는 색상 severity를 분리한다.
 
-2026-10-22 개편부터 화면 문구는 다이버가 자연스럽게 읽는 말로 쓰고 개발자·시스템 용어를 화면에 내보내지 않으며, 개념 하나에는 용어 하나만 쓴다. 로딩 표시는 naver-ad-bidder 전략을 따라 1초 전에는 아무것도 보이지 않고, 1초부터 실제 모양의 정적 스켈레톤이나 spinner, 4초부터 짧은 문구, 10초부터 재시도를 보인다. 워치 실제 기록은 동작 버튼 한 번 누르기와 크라운 회전으로 화면을 넘기고, 다음 누르기가 무엇을 하는지 한 줄 안내 chip으로 알린다.
+2026-10-22 개편부터 화면 문구는 다이버가 자연스럽게 읽는 말로 쓰고 개발자·시스템 용어를 화면에 내보내지 않으며, 개념 하나에는 용어 하나만 쓴다. 로딩 표시는 naver-ad-bidder 전략을 따라 1초 전에는 아무것도 보이지 않고, 1초부터 실제 모양의 정적 스켈레톤이나 spinner, 4초부터 짧은 문구, 10초부터 재시도를 보인다. 모바일 모션(2026-10-23)은 누름 spring, 부드러운 등장·퇴장, 처음 볼 때 한 번 그려지는 차트와 선을 따라가는 실제 로고로 짧게 반응하고, 동작 줄이기에서는 투명도만 남긴다. 워치 실제 기록은 동작 버튼 한 번 누르기와 크라운 회전으로 화면을 넘기고, 다음 누르기가 무엇을 하는지 한 줄 안내 chip으로 알린다.
 
 워치의 색은 한 색에 한 의미만 준다: 검은 바탕, 흰 데이터(큰 숫자), 회색 라벨, 수심에 고정된 남색 물기둥, 누르기·선택에만 쓰는 파랑, 권장 스탑에만 쓰는 앰버. 모양은 캡슐·원이 누를 수 있는 것, 둥근 사각형이 정보다. 모션은 물속에서 차분하고(자동 변화는 크로스페이드, 다이버가 넘길 때만 이동, 숫자는 굴리지 않음) 물 밖에서 축하한다(저장 뒤 그래프가 그려지고 실제 로고가 선을 따라감). 애플 watchOS 문법은 따르되 애플 '수심' 앱 하나를 강하게 연상시키는 요소는 쓰지 않고, 가오리는 실제 로고만 쓴다.
 
@@ -51,7 +51,7 @@ watchOS 앱의 기준은 다음과 같다.
 - 모바일 `StatusPill`의 `warning` tone은 amber `--warning` token을 쓴다. 권장 스탑 미완료·일시정지, 동기화 부분 실패처럼 확인이 필요한 상태에만 쓰고, 오류·위험은 `danger`(destructive), 완료와 정상은 primary 또는 muted로 둔다. 권장 스탑 미완료를 빨강으로 표시하지 않는다.
 - 되돌릴 수 없는 삭제는 시스템 Alert로 확인하고, 함께 지워지는 대상(Watch 원본, 다른 기기 사본)을 알린다. 수정 중인 편집 화면을 벗어날 때는 변경 폐기를 확인한다.
 - 목록은 조회 실패(다시 시도), 검색·필터 결과 없음(검색어 지우기·모든 계획 보기), 처음부터 빈 상태를 서로 다른 문구와 action으로 구분한다.
-- 그림자와 장식 그라데이션을 쓰지 않는다. 새 카드는 보더·그림자 없는 `rounded-2xl bg-card`이고, 누르는 행과 버튼은 `scale(0.95)`로 반응한다. 글꼴 굵기는 300/400/600/700만 쓰고 500(medium)은 쓰지 않는다(워치 글자는 400/600만, 아래 watchOS 번역).
+- 그림자와 장식 그라데이션을 쓰지 않는다. 새 카드는 보더·그림자 없는 `rounded-2xl bg-card`이고, 누르는 버튼은 0.95, 통째로 눌리는 카드 행은 0.97로 줄었다가 spring으로 돌아온다(아래 모바일 모션). 글꼴 굵기는 300/400/600/700만 쓰고 500(medium)은 쓰지 않는다(워치 글자는 400/600만, 아래 watchOS 번역).
 - 워치 depth gauge의 그라데이션은 이 금지의 예외가 아니라 정보다. 색이 수심(m)에 고정돼 있어 현재 수심을 나타낸다(2026-10-23, D1). 워치 Wet Ready의 물빛 바탕은 소유자가 채택한 물속 대기 표시다(P4). 그 밖의 장식 그라데이션은 쓰지 않는다.
 
 ### 화면 문구
@@ -81,6 +81,18 @@ naver-ad-bidder의 로딩 전략을 그대로 따른다. 시간 값은 `src/cons
 - 결과 배너는 `useAppFeedback().notify(message, tone)` 하나로 띄운다. 보더·그림자 없는 `rounded-2xl` 배너가 tab bar 위에 뜨고, 4초 뒤 사라지며, VoiceOver에 한 번 알린다(iOS에는 polite live region이 없다). action이 없는 결과(저장함, 로그인함, 워치 기록 가져오기 결과)에만 쓴다.
 - 워치 자동 가져오기 토스트는 `기록 보기` action이 있어 다이버가 닫을 때까지 남는다. 반전된 표면(`bg-foreground`)을 쓰고, 결과 배너는 그 위에 쌓인다.
 - 워치는 저장 세션 목록을 동기로 읽어 스켈레톤이 없다. Home 센서 확인 중에는 placeholder 대신 실제 시작 카드를 비활성으로 그린다. 다이브 종료의 저장 중 화면은 즉시 보인다(저장이 main thread를 잡아 지연 timer가 동작할 수 없는 예외다). 실시간 수심·시간·상승 값에는 스켈레톤이나 redacted placeholder를 쓰지 않는다.
+
+### 모바일 모션
+
+2026-10-23 모바일 모션 설계(`docs/superpowers/specs/2026-10-23-mobile-motion/spec.md`, M1–M6)를 따른다. 워치와 같은 태도다: 모션은 짧고 목적이 있으며, 숫자는 굴리지 않고, 안전 신호로 쓰지 않는다.
+
+- 모든 시간과 크기는 `src/constants/motion.ts`(`PRESS_SCALE`, `MOTION_TIMING`, `MOTION_DISTANCE`, `TAB_BOUNCE`, `WATCH_STATUS_BLINK`)에만 둔다. 애니메이션은 reanimated shared value로 transform과 opacity만 바꾼다.
+- 누름: `usePressScale`과 `PressScaleButton`·`PressScalePressable`이 90 ms에 줄이고 spring으로 돌려놓는다. 버튼·알약·탭·뒤로는 0.95, 로그북 행·Home 최근 기록 카드·계획 행·워치 자동 가져오기 토스트는 0.97이다. grouped 목록 행은 iOS처럼 배경 강조다.
+- 탭 막대: 탭으로 선택이 바뀌면 새 아이콘이 한 번 튄다(0.86까지 줄었다가 spring). 처음 그릴 때, 다시 누를 때, 코드가 선택을 바꿀 때는 없다.
+- 나타나기: 결과 배너와 자동 가져오기 토스트는 8 pt 올라오며 240 ms에 밝아지고 160 ms에 흐려진다. 사라지는 사본은 눌리지 않고 VoiceOver에서 숨는다. 첫 불러오기 스켈레톤을 바꾸는 내용(Home 최근 기록, 로그북·계획 목록, 상세 route)과 늦게 나타나는 블록(가져오지 못한 워치 기록 안내, `다음 다이빙`, 동기화 충돌 배너)은 180 ms 투명도로만 나타난다. 재조회나 이미 있던 내용은 움직이지 않는다. 로그북이 보이는 동안 들어온 새 행만 나타나고, 첫 목록과 페이지 넘김은 그대로다. Home은 실행 뒤 처음 나타날 때만 블록이 40 ms 간격으로 올라온다.
+- 차트: 기록 상세 수심 그래프는 그 기록이 실행 중 처음 보일 때 화면 전환 300 ms 뒤 900 ms 동안 왼쪽부터 그려지고(clip 사각형으로 드러냄), 면적은 200 ms 늦게 밝아진다. 실제 로고(22 pt)가 선 끝을 따라가며 워치 D16a처럼 뒤집혀 머리가 진행 방향을 향하고(화면 좌표 기울기 + 57°), 그리기가 끝나면 사라진다. 수온 그래프는 150 ms 뒤 로고 없이, Home sparkline은 600 ms 동안 그려진다. 같은 기록을 다시 열면 끝 상태다.
+- 동작 줄이기: 이동·크기·그리기·로고·Home 간격 없이 투명도만 바뀐다(200 ms). 누름 크기 반응은 손가락 아래의 작은 직접 반응이라 남긴다. reanimated layout builder는 `ReduceMotion.Never`로 고정하고 분기는 코드에서 고른다. 시스템 설정을 따르게 두면 투명도 전환까지 사라지기 때문이다.
+- 쓰지 않는 것: 숫자 count-up, 스켈레톤 pulse·shimmer, 탭 내용 전환 애니메이션, 화면 전환·시트 수정(native 그대로), 햅틱.
 
 ### 모바일 화면 규칙
 

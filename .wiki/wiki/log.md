@@ -1299,3 +1299,11 @@
 - Recorded: 설정의 Apple Watch는 연동 + Divenary 설치면 `연결됨`이고 `isReachable`은 보이지 않는다(`지금은 연결되지 않음` 삭제). 연결 기기 페이지 진입과 앱 복귀 때 다시 읽고, `연결 상태 확인`이 끝나면 상태 행이 흐려졌다 돌아오며 VoiceOver가 결과를 읽는다.
 - Superseded: 빈 로그북 카드 안의 `기록 작성`·`워치 기록 가져오기` 버튼. 두 action은 머리 줄 버튼이 맡는다.
 - Recorded: jest가 `react-native-reanimated/mock`과 `react-native-worklets/src/mock`을 전역으로 쓰게 했고, 테스트 파일 3개의 부분 reanimated stub을 걷어냈다.
+
+## [2026-10-23] ingest | Mobile/Watch UI 언어
+- Added: 2026-10-23 모바일 모션 raw source(소유자 요청, M1–M6 결정 요약, 커밋, 시뮬레이터 녹화 확인과 미확인 항목)
+- Updated: Knowledge Base Index
+- Recorded: `모바일 모션` 절을 새로 두었다. 값은 `src/constants/motion.ts` 한 곳, 누름 0.95(버튼)·0.97(카드 행) spring, 탭 아이콘 한 번 튐, 배너·토스트 8 pt 상승 등장과 흐려지는 퇴장, 첫 불러오기·늦은 블록 180 ms 투명도, 새 로그북 행만 등장, Home 첫 등장 40 ms 간격, 차트 clip 그리기와 뒤집힌 실제 로고(화면 좌표 기울기 + 57°, 22 pt), 동작 줄이기 투명도만, 쓰지 않는 모션.
+- Superseded: 공통 원칙의 "누르는 행과 버튼은 `scale(0.95)`로 반응한다". 버튼 0.95, 카드 행 0.97, grouped 행은 배경 강조다.
+- Recorded: 구현 커밋 `6ad0496`, `74e6163`, `f9740ff`. 실기기의 움직임 느낌, 동작 줄이기 실제 설정, 워치 가져오기 중 새 행 등장은 확인하지 않았다.
+
