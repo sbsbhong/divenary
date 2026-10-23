@@ -111,28 +111,6 @@ extension EnvironmentValues {
     }
 }
 
-private struct CompactRecordingReadoutKey: EnvironmentKey {
-    static let defaultValue = false
-}
-
-private extension EnvironmentValues {
-    var compactRecordingReadout: Bool {
-        get { self[CompactRecordingReadoutKey.self] }
-        set { self[CompactRecordingReadoutKey.self] = newValue }
-    }
-}
-
-/// Secondary values stack one per row, so a value such as "2.1 m/min" never splits across lines in a
-/// narrow column. Compact readouts only tighten the spacing and type.
-private struct RecordingSecondaryMetrics<Content: View>: View {
-    @Environment(\.compactRecordingReadout) private var compact
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: compact ? 1 : 3) { content }
-    }
-}
-
 struct RecordingInstrumentView: View {
     @ObservedObject var recorder: DiveSessionRecorder
     let plan: PreDivePlan
@@ -144,6 +122,15 @@ struct RecordingInstrumentView: View {
     /// Real recording only: the readout pages the Action Button and crown move. Demo and debug
     /// recordings pass `nil`, stay on Live and keep the crown for simulated depth.
     var pages: RecordingPageModel?
+    /// A hint chip without page dots for a recording that does not page: the demo's crown hint.
+    var fixedHint: String?
+
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// False until the first frame: the rail then grows down from the top and the values fade in.
+    @State private var hasEntered = false
+
+    static let horizontalPadding: CGFloat = 4
 
     var body: some View {
         if let pages {
@@ -155,49 +142,157 @@ struct RecordingInstrumentView: View {
         }
     }
 
+    /// The fixed instrument (spec C7): the status band, the gauge and the hint chip hold their places
+    /// on every page; only the value column beside the gauge pages.
     private func instrumentStack(page: RecordingPage, hint: RecordingHint?) -> some View {
         GeometryReader { proxy in
-            VStack(spacing: 3) {
-                LiveReadoutStatusRow()
-                    .fixedSize(horizontal: false, vertical: true)
-                UnsupportedDepthWarning(
-                    currentDepthMeters: displayedDepthMeters,
-                    sensorDisplayLimitMeters: sensorDisplayLimitMeters
-                )
-                pageInstrument(page)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .layoutPriority(1)
+            let type = DiveType(
+                pageWidth: proxy.size.width + 2 * Self.horizontalPadding,
+                showsStorageError: recorder.recordingPersistenceError != nil
+            )
+            let key = RecordingContentKey(page: page, kind: instrumentKind(for: page))
+            let bottomSlot = bottomSlot(hint: hint)
 
-                recordingErrorFooter
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(spacing: 3) {
+                // The status band is always reserved, so the instrument under it never moves.
+                HStack(spacing: DiveSpacing.chipGap) {
+                    LiveReadoutStatusRow()
+                    UnsupportedDepthWarning(
+                        currentDepthMeters: displayedDepthMeters,
+                        sensorDisplayLimitMeters: sensorDisplayLimitMeters
+                    )
+                }
+                // The demo's toolbar circle shares the band's line; its chips start beside it.
+                .padding(.leading, showsNavigationToolbar ? type.toolbarClearance : 0)
+                .frame(maxWidth: .infinity, minHeight: DiveSpacing.chipHeight, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: readoutStatus(for: page))
+                .opacity(hasEntered ? 1 : 0)
+
+                RecordingPageTransition(key: key) {
+                    pageInstrument(page)
+                }
+                .opacity(hasEntered ? 1 : 0)
+                .environment(\.recordingBottomSlotOccupied, bottomSlot != .empty)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // One gauge for every page: it takes the page's range and stop zone, and never pages.
+                .overlayPreferenceValue(RecordingGaugeKey.self, alignment: .topLeading) { entries in
+                    if let rail = (entries.last { $0.key == key } ?? entries.last)?.rail {
+                        rail
+                    }
+                }
+                // The bottom slot, anchored to the instrument: the storage footer, or out of the water
+                // the Water Lock line, so the gauge never resizes when the diver surfaces.
+                .overlay(alignment: .bottomLeading) {
+                    Group {
+                        if bottomSlot == .storageError {
+                            recordingErrorFooter
+                        } else if bottomSlot == .waterLock {
+                            RecordingWaterLockNote()
+                        }
+                    }
+                    .frame(minHeight: type.bottomSlotHeight, alignment: .bottomLeading)
+                    .padding(.leading, RecordingColumn.leading)
+                    .animation(DiveMotion.autoFade(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: bottomSlot)
+                }
+                .layoutPriority(1)
 
                 // No fixed non-certified line during a dive (owner decision, 2026-10-22): Home, Wet
                 // Ready and the saved summary and detail carry the full sentence, and the stop
                 // readout already says "Recommended stop".
 
-                // The phase hint replaces a fixed end instruction. Demo ends from its toolbar and
-                // debug recordings show no end hint.
+                // The phase hint says what the next press does, the End page included. Demo shows its
+                // crown hint instead and ends from its toolbar; debug recordings show no hint.
                 if endControl == .crownHint, let hint {
                     RecordingHintBar(hint: hint)
                         .fixedSize(horizontal: false, vertical: true)
+                        // The hint text and current dot cross-fade with the page (spec RC-PAGE).
+                        .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: hint)
+                        .opacity(hasEntered ? 1 : 0)
+                } else if let fixedHint {
+                    RecordingHintChip(text: fixedHint)
+                        .frame(maxWidth: .infinity)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .opacity(hasEntered ? 1 : 0)
                 }
             }
             .environment(\.liveReadoutStatus, readoutStatus(for: page))
             .environment(\.recordingAuthorizedMaximum, maximumDepthMeters)
-            .environment(\.compactRecordingReadout, proxy.size.height < Self.compactReadoutHeight || recorder.recordingPersistenceError != nil)
+            .environment(\.diveType, type)
+            .environment(\.recordingChassisDrawsGauge, true)
+            .environment(\.recordingGaugeContext, gaugeContext(for: page))
+            .environment(\.recordingGaugeGrowth, hasEntered ? 1 : 0)
+            // RC-SIGNAL and RC-HERO: depth going stale or coming back only cross-fades.
+            .animation(DiveMotion.animation(.signal, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: displayedDepthMeters == nil)
+            // RC-AOD: Always-On keeps one motion, a 300 ms settle in which nothing moves.
+            .animation(DiveMotion.alwaysOnSettle(reduceMotion: reduceMotion), value: isLuminanceReduced)
+            // The band sits just under the clock (D10), above the system's own top inset.
+            .padding(.top, type.statusBandTop)
             .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
-        .padding(.horizontal, 4)
+        .padding(.horizontal, Self.horizontalPadding)
         // The system bottom inset left a blank band on every watch size. The readout and gauge take
         // that height; this margin keeps the centred hint chip clear of the rounded corners.
         .padding(.bottom, 8)
         .ignoresSafeArea(.container, edges: .bottom)
+        .ignoresSafeArea(.container, edges: .top)
         .background(DiveWatchTheme.background.ignoresSafeArea())
         .toolbar(showsNavigationToolbar ? .visible : .hidden, for: .navigationBar)
+        .onAppear {
+            guard !hasEntered else { return }
+            withAnimation(DiveMotion.animation(.recordingStart, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced)) {
+                hasEntered = true
+            }
+        }
     }
 
-    /// Below this the secondary values stack inline; 41/42 mm recording viewports fall under it.
-    static let compactReadoutHeight: CGFloat = 190
+    /// What the page shows, so an automatic change of it (the stop replacing Live, a freedive phase)
+    /// cross-fades without sliding.
+    private func instrumentKind(for page: RecordingPage) -> RecordingInstrumentKind {
+        switch page {
+        case .switchMode:
+            return .switchMode
+        case .end:
+            return .end
+        case .details:
+            return plan.diveMode == .freedive ? .freediveDetails : .scubaDetails
+        case .live:
+            switch plan.diveMode {
+            case .scuba:
+                return shouldShowSafetyStopInstrument ? .recommendedStop : .scubaLive
+            case .freedive:
+                switch currentFreeSnapshot.state {
+                case .surfaceReady: return .freediveSurfaceReady
+                case .diveActive: return .freediveDiving
+                case .surfaceInterval: return .freediveSurfaceInterval
+                case .summary: return .freediveSummary
+                }
+            }
+        }
+    }
+
+    /// The deepest reading draws the scuba max-depth ghost. Freediving shows the finished dives as
+    /// tide marks instead (P5), and nothing but the diver during a descent.
+    private func gaugeContext(for page: RecordingPage) -> RecordingGaugeContext {
+        var context = RecordingGaugeContext(isBeyondLimit: isBeyondSensorLimit)
+        context.emphasis = page == .details ? .details : .live
+        switch plan.diveMode {
+        case .scuba:
+            context.maxDepthMeters = capturedMaxDepthMeters
+        case .freedive:
+            if currentFreeSnapshot.state != .diveActive {
+                context.tideMarkDepths = currentFreeSnapshot.segments.map(\.maxDepthMeters)
+            }
+        }
+        return context
+    }
+
+    private func bottomSlot(hint: RecordingHint?) -> RecordingBottomSlot {
+        if recorder.recordingPersistenceError != nil {
+            return .storageError
+        }
+        return hint?.showsWaterLockNote == true ? .waterLock : .empty
+    }
 
     private func readoutStatus(for page: RecordingPage) -> LiveReadoutStatus {
         var status = LiveReadoutStatus(depthStatusText: depthStatusText, markerTitle: markerTitle)
@@ -219,16 +314,18 @@ struct RecordingInstrumentView: View {
         return status
     }
 
+    /// The storage footer in the bottom slot (P7): a quiet grey note. The log stays in memory and
+    /// the save is retried, so nothing here asks the diver to act.
     @ViewBuilder
     private var recordingErrorFooter: some View {
         if recorder.recordingPersistenceError != nil {
-            Label(String(localized: "Save retry pending"), systemImage: "externaldrive.badge.exclamationmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.danger)
-                .lineLimit(1)
-                .minimumScaleFactor(1)
-                .frame(maxWidth: .infinity)
+            RecordingStorageFooter()
         }
+    }
+
+    private var isBeyondSensorLimit: Bool {
+        recorder.liveDepthSignal == .beyondSensorRange
+            || (displayedDepthMeters.map { $0 > sensorDisplayLimitMeters } ?? false)
     }
 
     private var sensorDisplayLimitMeters: Double {
@@ -407,6 +504,125 @@ struct RecordingInstrumentView: View {
     }
 }
 
+/// What a recording page shows. A change of page slides or fades the column; a change of what the
+/// same page shows only cross-fades.
+private enum RecordingInstrumentKind: Hashable {
+    case scubaLive
+    case recommendedStop
+    case scubaDetails
+    case freediveSurfaceReady
+    case freediveDiving
+    case freediveSurfaceInterval
+    case freediveSummary
+    case freediveDetails
+    case switchMode
+    case end
+}
+
+private struct RecordingContentKey: Hashable {
+    let page: RecordingPage
+    let kind: RecordingInstrumentKind
+}
+
+/// What sits in the slot anchored to the instrument bottom (spec C7).
+private enum RecordingBottomSlot: Equatable {
+    case empty
+    case storageError
+    case waterLock
+}
+
+/// The value column's place beside the gauge (spec C7: column at 112 px, gauge 8–100 px).
+private enum RecordingColumn {
+    static let gaugeGap: CGFloat = 6
+    static let leading: CGFloat = DepthGaugeRail.layoutWidth + gaugeGap
+}
+
+/// The gauge a page asks for, collected by the chassis so it draws one gauge that never pages.
+private struct RecordingGaugeEntry {
+    var key: RecordingContentKey?
+    let rail: DepthGaugeRail
+}
+
+private struct RecordingGaugeKey: PreferenceKey {
+    static let defaultValue: [RecordingGaugeEntry] = []
+
+    static func reduce(value: inout [RecordingGaugeEntry], nextValue: () -> [RecordingGaugeEntry]) {
+        value.append(contentsOf: nextValue())
+    }
+}
+
+private struct RecordingChassisDrawsGaugeKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct RecordingBottomSlotOccupiedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    /// Inside the chassis, pages hand their gauge to it instead of drawing their own.
+    var recordingChassisDrawsGauge: Bool {
+        get { self[RecordingChassisDrawsGaugeKey.self] }
+        set { self[RecordingChassisDrawsGaugeKey.self] = newValue }
+    }
+
+    /// The column keeps clear of the bottom slot while it holds a line.
+    var recordingBottomSlotOccupied: Bool {
+        get { self[RecordingBottomSlotOccupiedKey.self] }
+        set { self[RecordingBottomSlotOccupiedKey.self] = newValue }
+    }
+}
+
+/// Pages the value column only (spec RC-PAGE, RC-AUTO; DECISIONS D12–D14): the diver's own page
+/// change slides it 6 pt with a fade, paging back reverses it, every automatic change cross-fades,
+/// and Always-On swaps it at once. The gauge is drawn by the chassis, so it never moves.
+private struct RecordingPageTransition<Content: View>: View {
+    let key: RecordingContentKey
+    @ViewBuilder let content: Content
+
+    @Environment(\.recordingPageMotion) private var motion
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        let userInitiated = motion.userInitiated && motion.page == key.page
+
+        content
+            .transformPreference(RecordingGaugeKey.self) { entries in
+                for index in entries.indices {
+                    entries[index].key = key
+                }
+            }
+            .id(key.kind)
+            .transition(DiveMotion.fadeTransition(alwaysOn: isLuminanceReduced))
+            .id(key.page)
+            .transition(DiveMotion.pageTransition(
+                userInitiated: userInitiated,
+                forward: motion.forward,
+                reduceMotion: reduceMotion,
+                alwaysOn: isLuminanceReduced
+            ))
+            .animation(
+                DiveMotion.pageAnimation(userInitiated: userInitiated, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced),
+                value: key.page
+            )
+            .animation(DiveMotion.autoFade(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: key.kind)
+    }
+}
+
+/// "Save retry pending" in grey (P7): the recording continues and the save is retried.
+private struct RecordingStorageFooter: View {
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        Label(String(localized: "Save retry pending"), systemImage: "externaldrive.badge.exclamationmark")
+            .font(.system(size: 11, weight: .regular))
+            .foregroundStyle(DiveWatchTheme.ink2)
+            .lineLimit(1)
+            .opacity(isLuminanceReduced ? 0.8 : 1)
+    }
+}
+
 #if DEBUG
 enum RecordingLayoutFixture: String {
     case real
@@ -484,28 +700,23 @@ private struct FreeSurfaceReadyInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            Spacer(minLength: 2)
-
             BigMetricText(
                 caption: String(localized: "Session time"),
                 value: DiveFormatters.duration(sessionTime),
-                color: DiveWatchTheme.secondary,
                 accessibilityTitle: String(localized: "Session time")
             )
 
-            RecordingSecondaryMetrics {
+            RecordingSecondaryMetrics(metrics: [
                 LiveInstrumentMetric(
                     title: String(localized: "Dive count"),
                     value: "\(max(0, diveCount))"
-                )
+                ),
                 LiveInstrumentMetric(
                     title: String(localized: "Depth"),
                     value: DiveFormatters.depth(currentDepthMeters),
                     keepsInAlwaysOn: true
-                )
-            }
-
-            Spacer(minLength: 2)
+                ),
+            ])
         }
     }
 
@@ -533,21 +744,21 @@ private struct FreeDiveActiveInstrument: View {
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: primaryTime,
                 timeCaption: DiveFormatters.freeDiveTimeCaption(depthMeters: currentDepthMeters))
 
-            RecordingSecondaryMetrics {
-                if currentDepthMeters == nil {
-                    LiveInstrumentMetric(
+            RecordingSecondaryMetrics(metrics: [
+                currentDepthMeters == nil
+                    ? LiveInstrumentMetric(
                         title: String(localized: "Observed time"),
                         value: DiveFormatters.duration(activeDiveTime),
                         keepsInAlwaysOn: true
                     )
-                } else {
-                    DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: activeDiveTime)
-                }
+                    : DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: activeDiveTime).metric,
                 LiveInstrumentMetric(
                     title: String(localized: "Ascent"),
-                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
-                )
-            }
+                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute),
+                    style: .quiet,
+                    valueColor: DiveWatchTheme.ink2
+                ),
+            ])
         }
     }
 
@@ -556,6 +767,8 @@ private struct FreeDiveActiveInstrument: View {
     }
 }
 
+/// The gauge beside the value column. Inside the chassis the gauge goes to the chassis, which draws
+/// one for every page; on its own (previews) the layout draws it in place.
 private struct InstrumentDepthLayout<Content: View>: View {
     let currentDepthMeters: Double?
     let maxScaleMeters: Double
@@ -564,36 +777,50 @@ private struct InstrumentDepthLayout<Content: View>: View {
     let sensorDisplayLimitMeters: Double
     @ViewBuilder let content: Content
 
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            DepthGaugeRail(
-                depthMeters: currentDepthMeters,
-                maxScaleMeters: maxScaleMeters,
-                stopZone: stopZone,
-                targetDepthMeters: targetDepthMeters
-            )
+    @Environment(\.recordingChassisDrawsGauge) private var chassisDrawsGauge
+    @Environment(\.recordingBottomSlotOccupied) private var bottomSlotOccupied
+    @Environment(\.diveType) private var type
 
-            VStack(alignment: .leading, spacing: 3) {
+    var body: some View {
+        let rail = DepthGaugeRail(
+            depthMeters: currentDepthMeters,
+            maxScaleMeters: maxScaleMeters,
+            stopZone: stopZone,
+            targetDepthMeters: targetDepthMeters
+        )
+
+        HStack(alignment: .top, spacing: RecordingColumn.gaugeGap) {
+            if chassisDrawsGauge {
+                Color.clear
+                    .frame(width: DepthGaugeRail.layoutWidth)
+                    .preference(key: RecordingGaugeKey.self, value: [RecordingGaugeEntry(rail: rail)])
+            } else {
+                rail
+            }
+
+            // Slots in a fixed order (spec C9): caption, hero, the stop page's state, two rows.
+            VStack(alignment: .leading, spacing: 0) {
                 content
             }
-            .padding(.top, 2)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .padding(.bottom, bottomSlotOccupied ? type.bottomSlotHeight : 0)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
     }
 }
 
-/// The depth status chip and the Demo/Test marker. Always-On never hides them.
+/// The status band's chips (spec C5): the freedive phase first, then the Demo/Test marker, then the
+/// depth status when the depth number is not current. Only "Diving" colours its text. Always-On
+/// never hides them.
 private struct LiveReadoutStatusRow: View {
     @Environment(\.liveReadoutStatus) private var status
 
     var body: some View {
         if status.phaseTitle != nil || status.markerTitle != nil || status.depthStatusText != nil {
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 4) { chips }
+                HStack(spacing: DiveSpacing.chipGap) { chips }
                 VStack(alignment: .leading, spacing: 2) { chips }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
         }
     }
@@ -601,48 +828,26 @@ private struct LiveReadoutStatusRow: View {
     @ViewBuilder
     private var chips: some View {
         if let phaseTitle = status.phaseTitle {
-            chip(phaseTitle, color: status.phaseIsActive ? DiveWatchTheme.primary : DiveWatchTheme.secondary)
+            StatusChip(title: phaseTitle, style: status.phaseIsActive ? .diving : .status)
         }
         if let markerTitle = status.markerTitle {
-            chip(markerTitle, color: DiveWatchTheme.secondary)
+            MarkerChip(title: markerTitle)
         }
         if let depthStatusText = status.depthStatusText {
-            chip(depthStatusText, color: DiveWatchTheme.mutedText)
+            StatusChip(title: depthStatusText)
         }
-    }
-
-    private func chip(_ text: String, color: Color) -> some View {
-        Text(text)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(color)
-            .lineLimit(2)
-            .minimumScaleFactor(1)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 5, style: .continuous)
-                    .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-            )
     }
 }
 
+/// A live depth past the sensor-authorized range. The depth status chip says the same words when the
+/// sensor itself reports it; then there is no live depth, so the chip is drawn once.
 private struct UnsupportedDepthWarning: View {
     let currentDepthMeters: Double?
     let sensorDisplayLimitMeters: Double
 
     var body: some View {
         if let currentDepthMeters, currentDepthMeters > sensorDisplayLimitMeters {
-            Text(String(localized: "Outside sensor-authorized depth"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
-                .lineLimit(2)
-                .minimumScaleFactor(1)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-                .background(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .fill(DiveWatchTheme.surfaceRaised.opacity(0.72))
-                )
+            StatusChip(title: String(localized: "Outside sensor-authorized depth"))
         }
     }
 }
@@ -664,10 +869,8 @@ private struct FreeSurfaceIntervalInstrument: View {
         ) {
             BigMetricText(
                 caption: String(localized: "Surface interval"),
-                value: DiveFormatters.duration(observedInterval),
-                color: DiveWatchTheme.secondary,
-                accessibilityTitle: observedInterval == nil
-                    ? String(localized: "Depth unavailable") : String(localized: "Surface interval")
+                value: observedInterval.map { DiveFormatters.duration($0) },
+                accessibilityTitle: String(localized: "Surface interval")
             )
 
             FreeLastDiveMetrics(lastSegment: lastSegment)
@@ -702,7 +905,6 @@ private struct FreeDiveSummaryInstrument: View {
             BigMetricText(
                 caption: String(localized: "Surface interval"),
                 value: DiveFormatters.duration(surfaceRestTime),
-                color: DiveWatchTheme.secondary,
                 accessibilityTitle: String(localized: "Surface interval")
             )
 
@@ -732,13 +934,15 @@ private struct ScubaLiveInstrument: View {
         ) {
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
 
-            RecordingSecondaryMetrics {
-                DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: elapsedTime)
+            RecordingSecondaryMetrics(metrics: [
+                DepthOrTimeSecondary(depthMeters: currentDepthMeters, time: elapsedTime).metric,
                 LiveInstrumentMetric(
                     title: String(localized: "Ascent"),
-                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute)
-                )
-            }
+                    value: DiveFormatters.ascentRate(ascentRateMetersPerMinute),
+                    style: .quiet,
+                    valueColor: DiveWatchTheme.ink2
+                ),
+            ])
         }
     }
 
@@ -747,6 +951,11 @@ private struct ScubaLiveInstrument: View {
     }
 }
 
+/// The recommended stop (spec C11, P2): "Recommended stop" and three minute indices in the caption
+/// slot, the remaining time as the hero, the paused or completed line in the state slot. It stays
+/// the supplementary caution amber whether it counts, pauses or completes: never the action blue,
+/// and never the danger tone reserved for future mandatory states. Words tell the states apart, so
+/// they still read in Always-On.
 private struct SafetyStopInstrument: View {
     let currentDepthMeters: Double?
     let safetyStop: SafetyStopRecord
@@ -761,34 +970,37 @@ private struct SafetyStopInstrument: View {
             targetDepthMeters: safetyStop.targetDepthMeters,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            pausedBand
-
-            Text(String(localized: "Recommended stop"))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(statusColor)
-                .fixedSize(horizontal: false, vertical: true)
+            RecordingCaptionSlot {
+                Text(String(localized: "Recommended stop"))
+                    .modifier(RecordingCaptionStyle(color: statusColor))
+                RecommendedStopIndices(completed: completedIndices, isPaused: isTimerPaused)
+            }
 
             BigMetricText(
                 value: DiveFormatters.duration(safetyStop.remainingSeconds),
                 color: statusColor,
                 accessibilityTitle: String(localized: "Recommended stop time remaining"),
-                size: 34
+                drawsCaptionSlot: false
             )
+            .opacity(isTimerPaused && safetyStop.status != .completed ? 0.6 : 1)
 
-            RecordingSecondaryMetrics {
+            pausedBand
+
+            RecordingSecondaryMetrics(metrics: [
                 LiveInstrumentMetric(
                     title: String(localized: "Depth"),
                     value: DiveFormatters.depth(currentDepthMeters),
                     keepsInAlwaysOn: true
-                )
-
+                ),
                 LiveInstrumentMetric(
                     title: String(localized: "Log time"),
                     value: DiveFormatters.duration(elapsedTime),
-                    keepsInAlwaysOn: true
-                )
-            }
+                    keepsInAlwaysOn: true,
+                    style: .quiet
+                ),
+            ], followsStateSlot: true)
         }
+        .modifier(RecordingStateFade(state: stopState))
     }
 
     private var maxScaleMeters: Double {
@@ -799,123 +1011,205 @@ private struct SafetyStopInstrument: View {
         safetyStop.isDisplayTimerPaused(depthMeters: currentDepthMeters)
     }
 
-    /// A recommended stop is the supplementary caution amber while it counts and while it pauses:
-    /// never the action blue, and never the danger tone reserved for future mandatory states. The
-    /// paused/completed wording tells states apart without relying on color.
+    private var completedIndices: Int {
+        safetyStop.status == .completed
+            ? RecommendedStopProgress.indexCount
+            : RecommendedStopProgress.completedIndices(remaining: safetyStop.remainingSeconds, total: safetyStop.durationSeconds)
+    }
+
+    private var stopState: RecordingStopState {
+        if safetyStop.status == .completed { return .completed }
+        return isTimerPaused ? .paused : .running
+    }
+
     private var statusColor: Color {
         DiveWatchTheme.caution
     }
 
-    /// A paused timer is told apart by words as well as amber, so it still reads in Always-On.
-    @ViewBuilder
+    /// The state slot: a paused or completed stop says so in words beside its glyph; a running stop
+    /// leaves the slot empty. Completion only fades in: no bounce underwater.
     private var pausedBand: some View {
-        if safetyStop.status == .completed {
-            Label(String(localized: "Stop complete"), systemImage: "checkmark")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(statusColor)
-        } else if isTimerPaused {
-            HStack(spacing: 4) {
-                RoundedRectangle(cornerRadius: 2, style: .continuous)
-                    .fill(DiveWatchTheme.caution.opacity(0.7))
-                    .frame(width: 3, height: 10)
-
-                Text(String(localized: "Timer paused"))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.caution)
-                    .lineLimit(1)
-                    .minimumScaleFactor(1)
+        RecordingStateSlot {
+            if safetyStop.status == .completed {
+                Label(String(localized: "Stop complete"), systemImage: "checkmark")
+                    .transition(.opacity)
+            } else if isTimerPaused {
+                Label(String(localized: "Timer paused"), systemImage: "pause.fill")
+                    .transition(.opacity)
             }
-            .accessibilityElement(children: .combine)
         }
     }
 }
 
-private struct LiveInstrumentMetric: View {
+/// One secondary value under the hero: a label and a formatted value such as "5.2 m", whose unit is
+/// drawn smaller. Always-On keeps only the values read at a glance (depth and time).
+private struct LiveInstrumentMetric {
     let title: String
     let value: String
-    /// Always-On keeps only the values read at a glance (depth and time); the rest are hidden.
     var keepsInAlwaysOn = false
+    var style: ValueRow.Style = .inline
+    var valueColor = DiveWatchTheme.ink
 
-    @Environment(\.compactRecordingReadout) private var compact
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
-
-    var body: some View {
-        if keepsInAlwaysOn || !isLuminanceReduced {
-            // Label and value on one row when both fit at full size; otherwise the label goes above.
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    metricLabel.fixedSize()
-                    metricValue.fixedSize()
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    metricLabel
-                    metricValue
-                }
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .combine)
-        }
-    }
-
-    private var metricLabel: some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.mutedText)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var metricValue: some View {
-        Text(value)
-            .font(DiveWatchTheme.metricFont(size: compact ? 14 : 18, weight: .semibold))
-            .foregroundStyle(DiveWatchTheme.text)
-            .lineLimit(2)
-            .minimumScaleFactor(compact ? 11.0 / 14.0 : 11.0 / 18.0)
+    var row: ValueRow {
+        ValueRow(label: title, formattedValue: value, style: style, valueColor: valueColor, keepsInAlwaysOn: keepsInAlwaysOn)
     }
 }
 
-/// The large number on a recording page. Digits are rounded and equal width, and the unit is a
-/// smaller separate text so the number keeps its size. Always-On draws the number white.
+/// Up to two rows on one grid, so a value such as "2.1 m/min" never splits and both values share an
+/// edge. They sit under the hero, or under the stop page's state slot.
+private struct RecordingSecondaryMetrics: View {
+    let metrics: [LiveInstrumentMetric]
+    var followsStateSlot = false
+
+    @Environment(\.diveType) private var type
+
+    var body: some View {
+        ValueRows(rows: metrics.map(\.row))
+            .padding(.top, followsStateSlot ? 0 : type.heroRowGap)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// The caption slot (spec C9): reserved on every page, empty or not, so the hero baseline never moves.
+private struct RecordingCaptionSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    @Environment(\.diveType) private var type
+
+    var body: some View {
+        HStack(spacing: 6) {
+            content
+        }
+        .frame(maxWidth: .infinity, minHeight: type.captionSlotHeight, maxHeight: type.captionSlotHeight, alignment: .leading)
+    }
+}
+
+/// Caption type: grey, or amber for the recommended stop. Always-On keeps it at 80%.
+private struct RecordingCaptionStyle: ViewModifier {
+    var color = DiveWatchTheme.ink2
+
+    @Environment(\.diveType) private var type
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    func body(content: Content) -> some View {
+        content
+            .font(type.font(.caption))
+            .tracking(type.tracking(.caption))
+            .foregroundStyle(color)
+            .opacity(isLuminanceReduced ? 0.8 : 1)
+            .lineLimit(1)
+    }
+}
+
+/// The hero slot: the number's baseline sits on one line on every page, whatever the hero's size.
+private struct RecordingHeroSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    @Environment(\.diveType) private var type
+
+    var body: some View {
+        let height = type.heroSlotHeight - type.heroBaselineInset
+        content
+            .alignmentGuide(.bottom) { dimensions in dimensions[.lastTextBaseline] }
+            .frame(maxWidth: .infinity, minHeight: height, maxHeight: height, alignment: .bottomLeading)
+            .padding(.bottom, type.heroBaselineInset)
+    }
+}
+
+private enum RecordingStopState: Hashable {
+    case running
+    case paused
+    case completed
+}
+
+/// The stop page's state slot, reserved whether or not it holds a line.
+private struct RecordingStateSlot<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    @Environment(\.diveType) private var type
+
+    var body: some View {
+        HStack(spacing: 4) {
+            content
+        }
+        .font(type.font(.stopState))
+        .tracking(type.tracking(.stopState))
+        .foregroundStyle(DiveWatchTheme.caution)
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, minHeight: type.stateSlotHeight, maxHeight: type.stateSlotHeight, alignment: .leading)
+    }
+}
+
+/// The recommended stop pausing, resuming or completing is automatic, so it only cross-fades.
+private struct RecordingStateFade: ViewModifier {
+    let state: RecordingStopState
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    func body(content: Content) -> some View {
+        content.animation(DiveMotion.autoFade(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: state)
+    }
+}
+
+/// Three minute indices beside "Recommended stop" (P2): one fills for each finished third of the
+/// stop. A reminder only. A paused timer dims them; Always-On keeps them static.
+private struct RecommendedStopIndices: View {
+    let completed: Int
+    var isPaused = false
+
+    @Environment(\.diveType) private var type
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        HStack(spacing: DiveType.stopIndexGap) {
+            ForEach(0..<RecommendedStopProgress.indexCount, id: \.self) { index in
+                Capsule(style: .continuous)
+                    .fill(fill(isFinished: index < completed))
+                    .frame(width: type.stopIndexSize.width, height: type.stopIndexSize.height)
+            }
+        }
+        .opacity(isPaused ? 0.4 : 1)
+        .animation(DiveMotion.animation(.quickFade, reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: completed)
+        .accessibilityHidden(true)
+    }
+
+    private func fill(isFinished: Bool) -> Color {
+        if isLuminanceReduced {
+            return DiveWatchTheme.caution.opacity(isFinished ? 0.6 : 0.2)
+        }
+        return isFinished ? DiveWatchTheme.caution : DiveWatchTheme.cautionDim
+    }
+}
+
+/// The caption slot and the one large number of a recording page (spec C9). The number is white
+/// (the stop countdown amber) and its unit a smaller separate text; Always-On draws it white.
 private struct BigMetricText: View {
     var caption: String?
-    let value: String
+    let value: String?
     var unit: String?
-    let color: Color
+    var kind: MetricHero.Kind = .time
+    var color: Color = DiveWatchTheme.ink
     let accessibilityTitle: String
-    var size: CGFloat = 38
-
-    @Environment(\.compactRecordingReadout) private var compact
-    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    /// The recommended stop draws its own caption (label and minute indices) in the reserved slot.
+    var drawsCaptionSlot = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let caption {
-                Text(caption)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(1)
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(DiveWatchTheme.metricFont(size: compact ? min(size, 30) : size, weight: .semibold))
-                    .foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                if let unit {
-                    Text(unit)
-                        .font(.system(size: max(11, size * 0.36), weight: .semibold, design: .rounded))
-                        .foregroundStyle(DiveWatchTheme.mutedText)
-                        .lineLimit(1)
-                        .fixedSize()
+            if drawsCaptionSlot {
+                RecordingCaptionSlot {
+                    if let caption {
+                        Text(caption)
+                            .modifier(RecordingCaptionStyle())
+                    }
                 }
             }
+
+            RecordingHeroSlot {
+                MetricHero(value: value, unit: unit, kind: kind, color: color, label: accessibilityTitle)
+            }
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(accessibilityTitle))
-        .accessibilityValue(Text(unit.map { "\(value) \($0)" } ?? value))
     }
 }
 
@@ -931,14 +1225,13 @@ private struct DepthOrTimeMetric: View {
             BigMetricText(
                 value: DiveFormatters.depthValue(depthMeters),
                 unit: "m",
-                color: DiveWatchTheme.primary,
+                kind: .depth,
                 accessibilityTitle: String(localized: "Depth")
             )
         } else {
             BigMetricText(
                 caption: timeCaption,
                 value: DiveFormatters.duration(time),
-                color: DiveWatchTheme.text,
                 accessibilityTitle: timeCaption ?? String(localized: "Time")
             )
         }
@@ -946,24 +1239,23 @@ private struct DepthOrTimeMetric: View {
 }
 
 /// Whichever of depth and time is not the large value. Unknown depth reads `--.- m`.
-private struct DepthOrTimeSecondary: View {
+private struct DepthOrTimeSecondary {
     let depthMeters: Double?
     let time: TimeInterval
 
-    var body: some View {
+    var metric: LiveInstrumentMetric {
         if depthMeters != nil {
-            LiveInstrumentMetric(
+            return LiveInstrumentMetric(
                 title: String(localized: "Time"),
                 value: DiveFormatters.duration(time),
                 keepsInAlwaysOn: true
             )
-        } else {
-            LiveInstrumentMetric(
-                title: String(localized: "Depth"),
-                value: DiveFormatters.depth(depthMeters),
-                keepsInAlwaysOn: true
-            )
         }
+        return LiveInstrumentMetric(
+            title: String(localized: "Depth"),
+            value: DiveFormatters.depth(depthMeters),
+            keepsInAlwaysOn: true
+        )
     }
 }
 
@@ -972,16 +1264,18 @@ private struct FreeLastDiveMetrics: View {
     let lastSegment: FreeDiveSegment?
 
     var body: some View {
-        RecordingSecondaryMetrics {
+        RecordingSecondaryMetrics(metrics: [
             LiveInstrumentMetric(
                 title: String(localized: "Last duration"),
-                value: DiveFormatters.duration(lastSegment?.durationSeconds)
-            )
+                value: DiveFormatters.duration(lastSegment?.durationSeconds),
+                style: .stacked
+            ),
             LiveInstrumentMetric(
                 title: String(localized: "Last depth"),
-                value: DiveFormatters.depth(lastSegment?.maxDepthMeters)
-            )
-        }
+                value: DiveFormatters.depth(lastSegment?.maxDepthMeters),
+                style: .quiet
+            ),
+        ])
     }
 }
 
@@ -1004,16 +1298,16 @@ private struct ScubaDetailsInstrument: View {
         ) {
             DepthOrTimeMetric(depthMeters: currentDepthMeters, time: elapsedTime)
 
-            RecordingSecondaryMetrics {
+            RecordingSecondaryMetrics(metrics: [
                 LiveInstrumentMetric(
                     title: String(localized: "Max"),
                     value: DiveFormatters.depth(maxDepthMeters)
-                )
+                ),
                 LiveInstrumentMetric(
                     title: String(localized: "Temp"),
                     value: DiveFormatters.temperature(waterTemperatureCelsius)
-                )
-            }
+                ),
+            ])
         }
     }
 }
@@ -1035,17 +1329,18 @@ private struct FreeSessionDetailsInstrument: View {
             BigMetricText(
                 caption: String(localized: "Dive count"),
                 value: "\(max(0, snapshot.diveCount))",
-                color: DiveWatchTheme.text,
-                accessibilityTitle: String(localized: "Dive count"),
-                size: 34
+                kind: .depth,
+                accessibilityTitle: String(localized: "Dive count")
             )
 
-            LiveInstrumentMetric(title: String(localized: "Last dive"), value: lastDiveText)
-
-            LiveInstrumentMetric(
-                title: String(localized: "Longest dive"),
-                value: DiveFormatters.duration(snapshot.segments.map(\.durationSeconds).max())
-            )
+            RecordingSecondaryMetrics(metrics: [
+                LiveInstrumentMetric(title: String(localized: "Last dive"), value: lastDiveText, style: .stacked),
+                LiveInstrumentMetric(
+                    title: String(localized: "Longest dive"),
+                    value: DiveFormatters.duration(snapshot.segments.map(\.durationSeconds).max()),
+                    style: .quiet
+                ),
+            ])
         }
     }
 
@@ -1056,13 +1351,13 @@ private struct FreeSessionDetailsInstrument: View {
 }
 
 /// Switch page, before the first descent: the next Action Button press restarts the recording as the
-/// other dive type. Like the End page it has no tap target.
+/// other dive type, shown by its glyph. Like the End page it has no tap target.
 private struct SwitchModePageInstrument: View {
     let currentMode: DiveMode
     let currentDepthMeters: Double?
     let sensorDisplayLimitMeters: Double
 
-    @Environment(\.compactRecordingReadout) private var compact
+    @Environment(\.diveType) private var type
 
     var body: some View {
         InstrumentDepthLayout(
@@ -1072,22 +1367,32 @@ private struct SwitchModePageInstrument: View {
             targetDepthMeters: nil,
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
-            if !compact {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .accessibilityHidden(true)
-            }
+            DiveModeGlyph(mode: targetMode)
+                .fill(DiveWatchTheme.ink)
+                .frame(width: glyphSize, height: glyphSize)
+                .padding(.top, 4)
+                .accessibilityHidden(true)
             Text(switchTitle)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .minimumScaleFactor(0.8)
+                .font(type.font(.switchTitle))
+                .tracking(type.tracking(.switchTitle))
+                .foregroundStyle(DiveWatchTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
             Text(String(localized: "No dive yet, so recording starts over."))
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.mutedText)
+                .font(type.font(.note))
+                .tracking(type.tracking(.note))
+                .foregroundStyle(DiveWatchTheme.ink2)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
         }
+    }
+
+    private var targetMode: DiveMode {
+        currentMode == .freedive ? .scuba : .freedive
+    }
+
+    private var glyphSize: CGFloat {
+        type.sizeClass == .regular ? 30 : 24
     }
 
     private var switchTitle: String {
@@ -1097,8 +1402,9 @@ private struct SwitchModePageInstrument: View {
     }
 }
 
-/// The last page of the Action Button cycle, at the surface once ending is allowed. It has no tap
-/// target: the next Action Button press ends through the coordinator's guarded path.
+/// The last page of the Action Button cycle, at the surface once ending is allowed. Its instruction
+/// is the largest text on the page. It has no tap target: the next Action Button press ends through
+/// the coordinator's guarded path.
 private struct EndPageInstrument: View {
     let currentDepthMeters: Double?
     let elapsedTime: TimeInterval
@@ -1106,7 +1412,7 @@ private struct EndPageInstrument: View {
     let scaleDepthMeters: Double
     let sensorDisplayLimitMeters: Double
 
-    @Environment(\.compactRecordingReadout) private var compact
+    @Environment(\.diveType) private var type
 
     var body: some View {
         InstrumentDepthLayout(
@@ -1117,23 +1423,27 @@ private struct EndPageInstrument: View {
             sensorDisplayLimitMeters: sensorDisplayLimitMeters
         ) {
             let guidance = RecordingEndGuidance(hasActionButton: ActionButtonHint.current.isLikelyUltra)
-            if !compact {
-                Image(systemName: guidance.symbol)
-                    .font(.system(size: 26, weight: .semibold))
-                    .foregroundStyle(DiveWatchTheme.text)
-                    .accessibilityHidden(true)
-            }
+            Image(systemName: guidance.symbol)
+                .font(.system(size: type.sizeClass == .regular ? 24 : 21, weight: .semibold))
+                .foregroundStyle(DiveWatchTheme.ink)
+                .frame(height: type.sizeClass == .regular ? 28 : 24, alignment: .leading)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
             Text(guidance.text)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(DiveWatchTheme.text)
-                .minimumScaleFactor(0.8)
+                .font(type.font(.endInstruction))
+                .tracking(type.tracking(.endInstruction))
+                .foregroundStyle(DiveWatchTheme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
                 .accessibilityLabel(guidance.accessibilityText)
-            LiveInstrumentMetric(
-                title: String(localized: "Log time"),
-                value: DiveFormatters.duration(elapsedTime),
-                keepsInAlwaysOn: true
-            )
+            RecordingSecondaryMetrics(metrics: [
+                LiveInstrumentMetric(
+                    title: String(localized: "Log time"),
+                    value: DiveFormatters.duration(elapsedTime),
+                    keepsInAlwaysOn: true,
+                    style: .small
+                ),
+            ])
         }
     }
 }

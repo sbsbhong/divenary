@@ -157,6 +157,8 @@ final class DiveDesignSystemTests: XCTestCase {
         let marks = RecordingGaugeGeometry.tideMarks(maxDepths: [8, 12, 15, 11, 18, 21, 16])
         XCTAssertEqual(marks.map(\.depthMeters), [15, 11, 18, 21, 16])
         XCTAssertEqual(marks.map(\.opacity), [0.35, 0.35, 0.35, 0.35, 0.8])
+        // Each mark keeps its dive's place in the session, so a new dive never re-labels the others.
+        XCTAssertEqual(marks.map(\.diveIndex), [2, 3, 4, 5, 6])
         XCTAssertEqual(RecordingGaugeGeometry.tideMarkLimit, 5)
     }
 
@@ -170,6 +172,7 @@ final class DiveDesignSystemTests: XCTestCase {
         let marks = RecordingGaugeGeometry.tideMarks(maxDepths: [.nan, 9, .infinity, 0, -1, 7])
         XCTAssertEqual(marks.map(\.depthMeters), [9, 7])
         XCTAssertEqual(marks.map(\.opacity), [0.35, 0.8])
+        XCTAssertEqual(marks.map(\.diveIndex), [1, 5])
         XCTAssertEqual(RecordingGaugeGeometry.tideMarks(maxDepths: []), [])
         XCTAssertEqual(RecordingGaugeGeometry.tideMarks(maxDepths: [10]).map(\.opacity), [0.8])
     }
@@ -178,29 +181,30 @@ final class DiveDesignSystemTests: XCTestCase {
 
     func testThreeMinuteStopFillsOneIndexPerFinishedMinute() {
         let remaining: [TimeInterval] = [180, 150, 121, 120, 61, 60, 1, 0]
-        XCTAssertEqual(remaining.map { RecommendedStopProgress.completedMinutes(remaining: $0, total: 180) },
+        XCTAssertEqual(remaining.map { RecommendedStopProgress.completedIndices(remaining: $0, total: 180) },
                        [0, 0, 0, 1, 1, 2, 2, 3])
         XCTAssertEqual(RecommendedStopProgress.indexCount, 3)
     }
 
     func testStopIndicesStayInsideZeroToThree() {
-        XCTAssertEqual(RecommendedStopProgress.completedMinutes(remaining: 200, total: 180), 0)
-        XCTAssertEqual(RecommendedStopProgress.completedMinutes(remaining: -5, total: 180), 3)
-        XCTAssertEqual(RecommendedStopProgress.completedMinutes(remaining: .nan, total: 180), 0)
-        XCTAssertEqual(RecommendedStopProgress.completedMinutes(remaining: 60, total: 0), 0)
-        XCTAssertEqual(RecommendedStopProgress.completedMinutes(remaining: 60, total: .infinity), 0)
+        XCTAssertEqual(RecommendedStopProgress.completedIndices(remaining: 200, total: 180), 0)
+        XCTAssertEqual(RecommendedStopProgress.completedIndices(remaining: -5, total: 180), 3)
+        XCTAssertEqual(RecommendedStopProgress.completedIndices(remaining: .nan, total: 180), 0)
+        XCTAssertEqual(RecommendedStopProgress.completedIndices(remaining: 60, total: 0), 0)
+        XCTAssertEqual(RecommendedStopProgress.completedIndices(remaining: 60, total: .infinity), 0)
     }
 
     // MARK: - Recording type scale (spec B2)
 
-    func testUltraReadoutUsesTheRegularRecordingSizes() {
-        let type = DiveType(readoutHeight: 180, showsStorageError: false)
+    func testUltraPageUsesTheRegularRecordingSizes() {
+        let type = DiveType(pageWidth: 205, showsStorageError: false)
         XCTAssertEqual(type.sizeClass, .regular)
         XCTAssertFalse(type.isTight)
         let expected: [DiveType.Role: CGFloat] = [
             .heroDepth: 56, .heroTime: 52, .heroUnit: 20, .caption: 13, .rowLabel: 12, .rowValue: 22,
             .rowUnit: 15, .stackedValue: 20, .quietValue: 15, .quietUnit: 12, .chip: 12, .hint: 12,
-            .tick: 12, .endInstruction: 19, .switchTitle: 20, .note: 13, .waterLock: 12, .stopState: 13,
+            .tick: 12, .endInstruction: 19, .endValue: 17, .switchTitle: 20, .note: 13, .waterLock: 12,
+            .stopState: 13,
         ]
         for (role, size) in expected {
             XCTAssertEqual(type.size(role), size, "\(role)")
@@ -208,28 +212,83 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(type.slotSpacing, 3)
     }
 
-    func testSeriesReadoutUsesTheCompactRecordingSizes() {
-        let type = DiveType(readoutHeight: 150, showsStorageError: false)
+    func testSeriesPageUsesTheCompactRecordingSizes() {
+        let type = DiveType(pageWidth: 187, showsStorageError: false)
         XCTAssertEqual(type.sizeClass, .compact)
         let expected: [DiveType.Role: CGFloat] = [
             .heroDepth: 48, .heroTime: 44, .heroUnit: 17, .caption: 12, .rowLabel: 11, .rowValue: 18,
             .rowUnit: 13, .stackedValue: 17, .quietValue: 14, .quietUnit: 11, .chip: 11, .hint: 11,
-            .tick: 11, .endInstruction: 16, .switchTitle: 17, .note: 12, .waterLock: 11, .stopState: 12,
+            .tick: 11, .endInstruction: 16, .endValue: 15, .switchTitle: 17, .note: 12, .waterLock: 11,
+            .stopState: 12,
         ]
         for (role, size) in expected {
             XCTAssertEqual(type.size(role), size, "\(role)")
         }
     }
 
-    func testReadoutHeightThresholdPicksTheSizeClass() {
-        XCTAssertEqual(DiveType.regularReadoutMinimumHeight, 170)
-        XCTAssertEqual(DiveType(readoutHeight: 170, showsStorageError: false).sizeClass, .regular)
-        XCTAssertEqual(DiveType(readoutHeight: 169.5, showsStorageError: false).sizeClass, .compact)
-        XCTAssertEqual(DiveType(readoutHeight: .nan, showsStorageError: false).sizeClass, .compact)
+    /// Ultra 205/211 pt, Series 46 mm 208 and 45 mm 198 are regular; 44, 42, 41 and 40 mm are compact.
+    func testPageWidthPicksTheSizeClass() {
+        XCTAssertEqual(DiveType.regularPageMinimumWidth, 195)
+        for width: CGFloat in [211, 205, 208, 198, 195] {
+            XCTAssertEqual(DiveType(pageWidth: width, showsStorageError: false).sizeClass, .regular, "\(width)")
+        }
+        for width: CGFloat in [194.5, 184, 187, 176, 162, 0, .nan] {
+            XCTAssertEqual(DiveType(pageWidth: width, showsStorageError: false).sizeClass, .compact, "\(width)")
+        }
+    }
+
+    func testOnlyAStorageErrorTakesTheTightStep() {
+        XCTAssertFalse(DiveType(pageWidth: 162, showsStorageError: false).isTight)
+        XCTAssertFalse(DiveType(pageWidth: 211, showsStorageError: false).isTight)
+        XCTAssertTrue(DiveType(pageWidth: 211, showsStorageError: true).isTight)
+        XCTAssertTrue(DiveType(pageWidth: 187, showsStorageError: true).isTight)
+    }
+
+    /// Spec C7: every page reserves the caption slot, so the hero baseline sits on one line
+    /// (Ultra column top 118 px → baseline 256 px; Series 108 px → 224 px).
+    func testColumnSlotsPutTheHeroBaselineOnOneLine() {
+        let ultra = DiveType(sizeClass: .regular, isTight: false)
+        XCTAssertEqual(ultra.captionSlotHeight, 16)
+        XCTAssertEqual(ultra.heroSlotHeight, 60)
+        XCTAssertEqual(ultra.heroBaselineInset, 7)
+        XCTAssertEqual(ultra.heroRowGap, 4)
+        XCTAssertEqual(ultra.stateSlotHeight, 16)
+        XCTAssertEqual(ultra.bottomSlotHeight, 16)
+        XCTAssertEqual((ultra.captionSlotHeight + ultra.heroSlotHeight - ultra.heroBaselineInset) * 2, 256 - 118)
+
+        let series = DiveType(sizeClass: .compact, isTight: false)
+        XCTAssertEqual(series.captionSlotHeight, 14)
+        XCTAssertEqual(series.heroSlotHeight, 50)
+        XCTAssertEqual(series.heroBaselineInset, 6)
+        XCTAssertEqual(series.heroRowGap, 2)
+        XCTAssertEqual(series.stateSlotHeight, 12)
+        XCTAssertEqual(series.bottomSlotHeight, 13)
+        XCTAssertEqual((series.captionSlotHeight + series.heroSlotHeight - series.heroBaselineInset) * 2, 224 - 108)
+
+        // The tight step shrinks the hero slot with the hero, never the caption slot.
+        XCTAssertEqual(DiveType(sizeClass: .regular, isTight: true).heroSlotHeight, 52)
+        XCTAssertEqual(DiveType(sizeClass: .compact, isTight: true).heroSlotHeight, 44)
+        XCTAssertEqual(DiveType(sizeClass: .regular, isTight: true).captionSlotHeight, 16)
+    }
+
+    func testStatusBandSitsUnderTheClockAndClearsTheDemoToolbar() {
+        let ultra = DiveType(sizeClass: .regular, isTight: false)
+        let series = DiveType(sizeClass: .compact, isTight: false)
+        XCTAssertEqual(ultra.statusBandTop * 2, 72)
+        XCTAssertEqual(series.statusBandTop * 2, 62)
+        // Chips start right of the xmark circle: 4 pt side padding + clearance = D10's x.
+        XCTAssertEqual((4 + ultra.toolbarClearance) * 2, 118)
+        XCTAssertEqual((4 + series.toolbarClearance) * 2, 104)
+    }
+
+    func testStopMinuteIndicesFollowTheSizeClass() {
+        XCTAssertEqual(DiveType(sizeClass: .regular, isTight: false).stopIndexSize, CGSize(width: 12, height: 4))
+        XCTAssertEqual(DiveType(sizeClass: .compact, isTight: false).stopIndexSize, CGSize(width: 10, height: 3))
+        XCTAssertEqual(DiveType.stopIndexGap, 3)
     }
 
     func testStorageErrorTightensHeroesRowValuesAndSlots() {
-        let ultra = DiveType(readoutHeight: 180, showsStorageError: true)
+        let ultra = DiveType(pageWidth: 205, showsStorageError: true)
         XCTAssertTrue(ultra.isTight)
         XCTAssertEqual(ultra.size(.heroDepth), 48)
         XCTAssertEqual(ultra.size(.heroTime), 44)
@@ -272,6 +331,8 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(DiveMotion.curve(.chip, reduceMotion: false, alwaysOn: false), .easeInOut(duration: 0.35))
         XCTAssertEqual(DiveMotion.curve(.rangeChange, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.6))
         XCTAssertEqual(DiveMotion.curve(.finale, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.5))
+        XCTAssertEqual(DiveMotion.curve(.recordingStart, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.5))
+        XCTAssertEqual(DiveMotion.curve(.signal, reduceMotion: false, alwaysOn: false), .easeOut(duration: 0.3))
         XCTAssertNotNil(DiveMotion.press(reduceMotion: false, alwaysOn: false))
         XCTAssertNotNil(DiveMotion.diverPage(reduceMotion: false, alwaysOn: false))
         XCTAssertNotNil(DiveMotion.autoFade(reduceMotion: false, alwaysOn: false))
@@ -286,10 +347,13 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertTrue(DiveMotion.allowsMovement(.diverPage, reduceMotion: false, alwaysOn: false))
         XCTAssertTrue(DiveMotion.allowsMovement(.rangeChange, reduceMotion: false, alwaysOn: false))
         XCTAssertTrue(DiveMotion.allowsMovement(.finale, reduceMotion: false, alwaysOn: false))
+        // Starting a recording is the diver's own act: the rail grows down from the top.
+        XCTAssertTrue(DiveMotion.allowsMovement(.recordingStart, reduceMotion: false, alwaysOn: false))
         XCTAssertFalse(DiveMotion.allowsMovement(.autoFade, reduceMotion: false, alwaysOn: false))
         XCTAssertFalse(DiveMotion.allowsMovement(.chip, reduceMotion: false, alwaysOn: false))
+        XCTAssertFalse(DiveMotion.allowsMovement(.signal, reduceMotion: false, alwaysOn: false))
         // Nothing that can run underwater lasts longer than 600 ms.
-        for kind in [DiveMotion.Kind.diverPage, .autoFade, .chip, .rangeChange] {
+        for kind in [DiveMotion.Kind.diverPage, .autoFade, .chip, .rangeChange, .recordingStart, .signal] {
             XCTAssertLessThanOrEqual(DiveMotion.curve(kind, reduceMotion: false, alwaysOn: false)?.duration ?? 0, 0.6)
         }
     }
@@ -315,6 +379,98 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertNil(DiveMotion.chip(reduceMotion: false, alwaysOn: true))
         XCTAssertNil(DiveMotion.rangeChange(reduceMotion: false, alwaysOn: true))
         XCTAssertNil(DiveMotion.finale(reduceMotion: false, alwaysOn: true))
+    }
+
+    func testAlwaysOnSettlesForThreeHundredMillisecondsWithoutMoving() {
+        XCTAssertEqual(DiveMotion.alwaysOnSettle, .easeInOut(duration: 0.3))
+        // The settle is the only motion Always-On keeps, and Reduce Motion keeps it too: it only fades.
+        XCTAssertEqual(DiveMotion.alwaysOnSettleCurve(reduceMotion: false), .easeInOut(duration: 0.3))
+        XCTAssertEqual(DiveMotion.alwaysOnSettleCurve(reduceMotion: true), .easeInOut(duration: 0.3))
+    }
+
+    func testOnlyTheDiversOwnPageChangeSlides() {
+        XCTAssertEqual(DiveMotion.pageMove(userInitiated: true, forward: true, reduceMotion: false, alwaysOn: false),
+                       .slide(offset: 6))
+        // Turning the crown back reverses the direction.
+        XCTAssertEqual(DiveMotion.pageMove(userInitiated: true, forward: false, reduceMotion: false, alwaysOn: false),
+                       .slide(offset: -6))
+        // Automatic returns and Reduce Motion only cross-fade.
+        XCTAssertEqual(DiveMotion.pageMove(userInitiated: false, forward: true, reduceMotion: false, alwaysOn: false), .fade)
+        XCTAssertEqual(DiveMotion.pageMove(userInitiated: true, forward: true, reduceMotion: true, alwaysOn: false), .fade)
+        // Always-On changes the page with no transition at all.
+        for userInitiated in [false, true] {
+            for reduceMotion in [false, true] {
+                XCTAssertEqual(DiveMotion.pageMove(userInitiated: userInitiated, forward: true,
+                                                   reduceMotion: reduceMotion, alwaysOn: true), DiveMotion.PageMove.none)
+                XCTAssertNil(DiveMotion.pageCurve(userInitiated: userInitiated, reduceMotion: reduceMotion, alwaysOn: true))
+            }
+        }
+        XCTAssertEqual(DiveMotion.pageCurve(userInitiated: true, reduceMotion: false, alwaysOn: false), .smooth(duration: 0.35))
+        XCTAssertEqual(DiveMotion.pageCurve(userInitiated: false, reduceMotion: false, alwaysOn: false), .easeInOut(duration: 0.45))
+        XCTAssertEqual(DiveMotion.pageCurve(userInitiated: true, reduceMotion: true, alwaysOn: false), .easeInOut(duration: 0.2))
+    }
+
+    func testDepthSamplesGlideLinearlyAndJumpUnderReduceMotionOrAlwaysOn() {
+        XCTAssertEqual(DiveMotion.depthGlideCurve(reduceMotion: false, alwaysOn: false), .linear(duration: 0.3))
+        XCTAssertNil(DiveMotion.depthGlideCurve(reduceMotion: true, alwaysOn: false))
+        XCTAssertNil(DiveMotion.depthGlideCurve(reduceMotion: false, alwaysOn: true))
+    }
+
+    // MARK: - Max-depth ghost (spec C8)
+
+    func testMaxDepthGhostHidesOffScaleAndUnderTheIndex() {
+        let live = geometry(range: 30)
+        XCTAssertTrue(live.showsMaxDepthGhost(maxDepth: 22.4, currentDepth: 18.6, height: ultraHeight))
+        XCTAssertTrue(live.showsMaxDepthGhost(maxDepth: 22.4, currentDepth: nil, height: ultraHeight))
+        // 19 m sits 2.1 pt below the 18.6 m index, so the index already covers it.
+        XCTAssertFalse(live.showsMaxDepthGhost(maxDepth: 19, currentDepth: 18.6, height: ultraHeight))
+        XCTAssertFalse(live.showsMaxDepthGhost(maxDepth: 0.4, currentDepth: 0.4, height: ultraHeight))
+        // 22.4 m is off the 0–10 m stop range.
+        XCTAssertFalse(geometry(range: 10).showsMaxDepthGhost(maxDepth: 22.4, currentDepth: 5.2, height: ultraHeight))
+        XCTAssertTrue(geometry(range: 10).showsMaxDepthGhost(maxDepth: 8, currentDepth: 5.2, height: ultraHeight))
+        // No reading yet, or an unreadable one, draws no ghost.
+        XCTAssertFalse(live.showsMaxDepthGhost(maxDepth: nil, currentDepth: 3, height: ultraHeight))
+        XCTAssertFalse(live.showsMaxDepthGhost(maxDepth: 0, currentDepth: nil, height: ultraHeight))
+        XCTAssertFalse(live.showsMaxDepthGhost(maxDepth: .nan, currentDepth: nil, height: ultraHeight))
+    }
+
+    // MARK: - Value rows and hero (spec C9, C10)
+
+    func testValueRowDrawsTheUnitOfAFormattedValueSmaller() {
+        assertRow(ValueRow(label: "수심", formattedValue: "5.2 m"), value: "5.2", unit: "m")
+        assertRow(ValueRow(label: "다이빙 시간", formattedValue: "21:40"), value: "21:40", unit: nil)
+        assertRow(ValueRow(label: "상승", formattedValue: "0.4 m/min"), value: "0.4", unit: "m/min")
+        assertRow(ValueRow(label: "수온", formattedValue: "21.3 °C"), value: "21.3", unit: "°C")
+        assertRow(ValueRow(label: "직전 다이빙", formattedValue: "01:06 · 14.2 m"), value: "01:06 · 14.2", unit: "m")
+    }
+
+    func testValueRowKeepsAnUnknownReadingAsGreyDashes() {
+        let depth = ValueRow(label: "수심", formattedValue: "--.- m")
+        XCTAssertNil(depth.value)
+        XCTAssertEqual(depth.placeholder, "--.-")
+        XCTAssertEqual(depth.unit, "m")
+        let time = ValueRow(label: "다이빙 시간", formattedValue: "--:--")
+        XCTAssertNil(time.value)
+        XCTAssertEqual(time.placeholder, "--:--")
+        XCTAssertNil(time.unit)
+        let lastDive = ValueRow(label: "직전 다이빙", formattedValue: "--:-- · --.- m")
+        XCTAssertNil(lastDive.value)
+        XCTAssertEqual(lastDive.placeholder, "--:-- · --.-")
+    }
+
+    func testValueRowSlotsNeverCollideWhenLabelsRepeat() {
+        let slots = ValueRows.slots([ValueRow(label: "수심", value: "1"), ValueRow(label: "수심", value: "2")])
+        XCTAssertEqual(Set(slots.map(\.id)).count, 2)
+        XCTAssertEqual(slots.map(\.row.value), ["1", "2"])
+    }
+
+    func testMetricHeroReadsAnUnknownValueAsUnavailable() {
+        XCTAssertEqual(MetricHero.accessibilityValue(value: "18.6", unit: "m", kind: .depth), "18.6 m")
+        XCTAssertEqual(MetricHero.accessibilityValue(value: "02:14", unit: nil, kind: .time), "02:14")
+        XCTAssertEqual(MetricHero.accessibilityValue(value: nil, unit: "m", kind: .depth),
+                       String(localized: "Depth unavailable"))
+        XCTAssertEqual(MetricHero.accessibilityValue(value: nil, unit: nil, kind: .time),
+                       String(localized: "Not available"))
     }
 
     // MARK: - Mini depth profile (spec C15)
@@ -397,6 +553,23 @@ final class DiveDesignSystemTests: XCTestCase {
             .contains(CGPoint(x: 25, y: 30)))
     }
 
+    func testDiveModeGlyphsDrawTheMonofinAndTheTank() {
+        let rect = CGRect(x: 0, y: 0, width: 24, height: 24)
+        let monofin = DiveModeGlyph(mode: .freedive).path(in: rect)
+        XCTAssertTrue(monofin.contains(CGPoint(x: 12, y: 8)))     // the stem
+        XCTAssertTrue(monofin.contains(CGPoint(x: 6, y: 19.5)))   // the blade
+        XCTAssertFalse(monofin.contains(CGPoint(x: 4, y: 6)))
+        let tank = DiveModeGlyph(mode: .scuba).path(in: rect)
+        XCTAssertTrue(tank.contains(CGPoint(x: 12, y: 14)))       // the cylinder
+        XCTAssertTrue(tank.contains(CGPoint(x: 12, y: 4)))        // the valve
+        XCTAssertTrue(tank.contains(CGPoint(x: 18.8, y: 8.5)))    // the hose
+        XCTAssertFalse(tank.contains(CGPoint(x: 4, y: 4)))
+        // The 24-unit grid is fitted and centred in a wider frame; the monofin is symmetric on it.
+        let wide = DiveModeGlyph(mode: .freedive).path(in: CGRect(x: 0, y: 0, width: 48, height: 24)).boundingRect
+        XCTAssertEqual(wide.midX, 24, accuracy: 0.2)
+        XCTAssertEqual(wide.height, 18, accuracy: 0.5)
+    }
+
     // MARK: - Helpers
 
     private func geometry(range: Double) -> RecordingGaugeGeometry {
@@ -416,6 +589,12 @@ final class DiveDesignSystemTests: XCTestCase {
         XCTAssertEqual(rgb.red * 255, red, accuracy: accuracy, "red", file: file, line: line)
         XCTAssertEqual(rgb.green * 255, green, accuracy: accuracy, "green", file: file, line: line)
         XCTAssertEqual(rgb.blue * 255, blue, accuracy: accuracy, "blue", file: file, line: line)
+    }
+
+    private func assertRow(_ row: ValueRow, value: String, unit: String?,
+                           file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(row.value, value, file: file, line: line)
+        XCTAssertEqual(row.unit, unit, file: file, line: line)
     }
 
     private func assertPoints(_ points: [CGPoint], _ expected: [(Double, Double)],

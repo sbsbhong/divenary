@@ -279,13 +279,6 @@ struct SimulatedRecordingFlowView: View {
             } else if let message = lifecycle.failureFeedback {
                 WatchFlowFailureNote(message: message)
             }
-            if recordingMode == .demo, lifecycle.showsRecordingControls {
-                Text(String(localized: "Adjust depth with the Digital Crown"))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .frame(maxWidth: .infinity)
-                    .allowsHitTesting(false)
-            }
         }
         .onAppear {
             if lifecycle.handleFlowAppearance(plan: preparedPlan) {
@@ -336,7 +329,9 @@ struct SimulatedRecordingFlowView: View {
             maximumDepthMeters: nil,
             endControl: recordingMode.endControl,
             showsNavigationToolbar: recordingMode == .demo,
-            markerTitle: recordingMode.markerTitle
+            markerTitle: recordingMode.markerTitle,
+            // The demo's hint chip sits where a real recording's does, without page dots (C13).
+            fixedHint: recordingMode == .demo ? String(localized: "Adjust depth with the Digital Crown") : nil
         )
         .focusable(recordingMode.controlPolicy.usesCrownDepthControl)
         .focused($crownDepthControlFocused)

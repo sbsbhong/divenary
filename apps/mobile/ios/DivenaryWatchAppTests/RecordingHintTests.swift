@@ -170,6 +170,33 @@ final class RecordingHintTests: XCTestCase {
         XCTAssertEqual(hint.text, String(localized: "Already dived · no switch"))
     }
 
+    /// The End page chip carries its text too (DECISIONS D12); only a refused press turns it white.
+    func testOnlyARefusedPressEmphasizesTheHintChip() {
+        let end = hint(page: .end, pages: [.live, .details, .end], availability: .available, water: .notSubmerged)
+        XCTAssertEqual(end.text, String(localized: "Press to end & save"))
+        XCTAssertFalse(end.isRejection)
+        XCTAssertFalse(hint(page: .live, availability: .notAtSurface, water: .submerged).isRejection)
+        XCTAssertTrue(hint(page: .live, availability: .notAtSurface, water: .submerged, showsRejection: true).isRejection)
+        XCTAssertTrue(hint(page: .live, availability: .notAtSurface, water: .submerged, showsRejection: true,
+                           rejection: .modeSwitchUnavailable).isRejection)
+    }
+
+    /// Paging back with the crown reverses the page motion; the Action Button always pages forward,
+    /// and automatic returns do not slide.
+    func testPageMotionFollowsTheDiversInput() {
+        let back = RecordingPageMotion(change: RecordingPageChange(page: .live, reason: .crown), crownDirection: -1)
+        XCTAssertTrue(back.userInitiated)
+        XCTAssertFalse(back.forward)
+        let crownForward = RecordingPageMotion(change: RecordingPageChange(page: .details, reason: .crown), crownDirection: 1)
+        XCTAssertTrue(crownForward.forward)
+        let press = RecordingPageMotion(change: RecordingPageChange(page: .live, reason: .actionButton), crownDirection: -1)
+        XCTAssertTrue(press.userInitiated)
+        XCTAssertTrue(press.forward)
+        let idle = RecordingPageMotion(change: RecordingPageChange(page: .live, reason: .idleTimeout), crownDirection: -1)
+        XCTAssertFalse(idle.userInitiated)
+        XCTAssertFalse(RecordingPageMotion(change: nil, crownDirection: 0).userInitiated)
+    }
+
     func testAuthorizedGaugeUsesSixMeterRangeAndCleanSparseTicks() {
         let scale = RecordingGaugeScale(maximumDepthMeters: 6, rangeMeters: 30)
         XCTAssertEqual(scale.upperBound, 6)

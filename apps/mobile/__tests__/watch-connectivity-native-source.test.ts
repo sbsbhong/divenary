@@ -758,6 +758,11 @@ describe('WatchConnectivity native source contract', () => {
     expect(recording).not.toContain('recordingMarkerLeadingPadding');
     expect(recording).toContain('.toolbar(showsNavigationToolbar ? .visible : .hidden, for: .navigationBar)');
     expect(watchUiCheck).toContain('ios/DivenaryWatchApp/Views/DepthGaugeRail.swift');
+    // Plumb redesign: the water colour is anchored to metres (DECISIONS D1), and the chassis draws one
+    // gauge for every page so paging never moves it; the status band sits under the clock (D10).
+    expect(gauge).toContain('stops: RecordingGaugeGeometry.waterGradientStops(upperBound: scale.upperBound)');
+    expect(recording).toContain('.overlayPreferenceValue(RecordingGaugeKey.self, alignment: .topLeading)');
+    expect(recording).toContain('.padding(.top, type.statusBandTop)');
   });
 
   it('renders watch session-list sync status as an icon with its full accessible status', () => {
@@ -832,6 +837,14 @@ describe('WatchConnectivity native source contract', () => {
     expect(hint).toContain('hasActionButton: ActionButtonHint.current.isLikelyUltra');
     expect(hintBar).not.toContain('Button(');
     expect(pager).not.toContain('Button(');
+    // Plumb redesign: the hint chip carries vertical page dots and its text on every page, the End page
+    // included (DECISIONS D12); the Water Lock note moved out of the chip into the instrument's bottom slot.
+    expect(hintBar).toContain('RecordingHintChip(');
+    expect(hintBar).toContain('text: hint.text,');
+    expect(hintBar).not.toContain('Water Lock off ends log');
+    expect(hint.slice(hint.indexOf('struct RecordingPageDots'), hint.indexOf('struct RecordingWaterLockNote'))).toContain('VStack(spacing:');
+    expect(recording.slice(recording.indexOf('private func instrumentStack'), recording.indexOf('private var recordingErrorFooter'))).toContain('RecordingWaterLockNote()');
+    expect(simulated).toContain('fixedHint: recordingMode == .demo ? String(localized: "Adjust depth with the Digital Crown") : nil');
     // Fractional crown updates add up to whole steps; each change alone rounded to zero on a real watch.
     expect(pager).toContain('let detents = crownDetents.consume(newTicks)');
     expect(pager).toContain('pages.stepFromCrown(by: detents)');
@@ -882,10 +895,19 @@ describe('WatchConnectivity native source contract', () => {
     expect(formatters).toContain('.system(size: size, weight: weight, design: .rounded).monospacedDigit()');
     // The old blue stop ring is gone; the recommended stop is drawn by SafetyStopInstrument only.
     expect(formatters).not.toContain('SafetyStopRing');
-    expect(bigMetric).toContain('foregroundStyle(isLuminanceReduced ? DiveWatchTheme.text : color)');
-    expect(bigMetric).toContain('Text(unit)');
-    // Always-On hides secondary values except depth and time; status chips and markers stay.
-    expect(metric).toContain('if keepsInAlwaysOn || !isLuminanceReduced');
+    // Plumb redesign: the hero is the shared MetricHero. Numbers are white (only the stop countdown
+    // passes the caution amber), the unit is its own smaller text, and Always-On draws the number white.
+    const designSystem = readRepoFile('apps/mobile/ios/DivenaryWatchApp/Views/DiveDesignSystem.swift');
+    const metricHero = designSystem.slice(designSystem.indexOf('struct MetricHero'), designSystem.indexOf('struct ValueRow {'));
+    const valueRows = designSystem.slice(designSystem.indexOf('struct ValueRows'), designSystem.indexOf('// MARK: - Glyphs and shapes'));
+    expect(bigMetric).toContain('MetricHero(value: value, unit: unit, kind: kind, color: color, label: accessibilityTitle)');
+    expect(bigMetric).toContain('var color: Color = DiveWatchTheme.ink');
+    expect(metricHero).toContain('return isLuminanceReduced ? DiveWatchTheme.ink : color');
+    expect(metricHero).toContain('Text(unit)');
+    expect(depthOrTime).not.toContain('DiveWatchTheme.primary');
+    // Always-On hides secondary values except depth and time, in place (layout kept); chips and markers stay.
+    expect(metric).toContain('var keepsInAlwaysOn = false');
+    expect(valueRows).toContain('guard row.keepsInAlwaysOn || !isLuminanceReduced else { return 0 }');
     expect(gauge).toContain('@Environment(\\.isLuminanceReduced) private var isLuminanceReduced');
     expect(gauge).toContain('static let layoutWidth: CGFloat = 46');
     expect(

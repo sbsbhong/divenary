@@ -33,14 +33,17 @@ struct DiveType: Equatable {
         case hint
         case tick
         case endInstruction
+        /// The End page's dive time, smaller than the instruction above it.
+        case endValue
         case switchTitle
         case note
         case waterLock
         case stopState
     }
 
-    /// Readouts at least this tall (Ultra 49mm class) use the regular sizes.
-    static let regularReadoutMinimumHeight: CGFloat = 170
+    /// Recording pages at least this wide use the regular sizes: Ultra (205/211 pt), Series 46 mm
+    /// (208) and 45 mm (198). 44, 42, 41 and 40 mm pages are compact, whatever their height.
+    static let regularPageMinimumWidth: CGFloat = 195
     static let regular = DiveType(sizeClass: .regular, isTight: false)
 
     let sizeClass: SizeClass
@@ -51,8 +54,9 @@ struct DiveType: Equatable {
         self.isTight = isTight
     }
 
-    init(readoutHeight: CGFloat, showsStorageError: Bool) {
-        sizeClass = readoutHeight >= Self.regularReadoutMinimumHeight ? .regular : .compact
+    /// `pageWidth` is the whole recording page, before the instrument's side padding.
+    init(pageWidth: CGFloat, showsStorageError: Bool) {
+        sizeClass = pageWidth >= Self.regularPageMinimumWidth ? .regular : .compact
         isTight = showsStorageError
     }
 
@@ -78,6 +82,8 @@ struct DiveType: Equatable {
             return regular ? 15 : 14
         case .endInstruction:
             return regular ? 19 : 16
+        case .endValue:
+            return regular ? 17 : 15
         }
     }
 
@@ -99,7 +105,7 @@ struct DiveType: Equatable {
             return 0.23
         case .note, .stopState:
             return 0.2
-        case .heroUnit, .rowUnit, .stackedValue, .quietValue, .quietUnit, .switchTitle:
+        case .heroUnit, .rowUnit, .stackedValue, .quietValue, .quietUnit, .switchTitle, .endValue:
             return 0
         }
     }
@@ -109,7 +115,7 @@ struct DiveType: Equatable {
         case .rowLabel, .quietValue, .quietUnit, .note, .waterLock:
             return .regular
         case .heroDepth, .heroTime, .heroUnit, .caption, .rowValue, .rowUnit, .stackedValue, .chip, .hint,
-             .tick, .endInstruction, .switchTitle, .stopState:
+             .tick, .endInstruction, .endValue, .switchTitle, .stopState:
             return .semibold
         }
     }
@@ -117,7 +123,8 @@ struct DiveType: Equatable {
     /// Numbers use rounded digits of equal width so live values never shift as they change.
     static func usesMetricDigits(_ role: Role) -> Bool {
         switch role {
-        case .heroDepth, .heroTime, .heroUnit, .rowValue, .rowUnit, .stackedValue, .quietValue, .quietUnit, .tick:
+        case .heroDepth, .heroTime, .heroUnit, .rowValue, .rowUnit, .stackedValue, .quietValue, .quietUnit, .tick,
+             .endValue:
             return true
         case .caption, .rowLabel, .chip, .hint, .endInstruction, .switchTitle, .note, .waterLock, .stopState:
             return false
@@ -132,6 +139,41 @@ struct DiveType: Equatable {
 
     /// Space between the column's slots; 1 pt while a storage error is shown.
     var slotSpacing: CGFloat { isTight ? 1 : 3 }
+
+    // Right-column slots (spec C7). The caption and hero slots are reserved on every page, so the
+    // hero baseline sits on the same line whichever page shows.
+
+    var captionSlotHeight: CGFloat { sizeClass == .regular ? 16 : 14 }
+
+    /// The hero slot follows the hero: 4 pt (2 pt compact) of headroom over the depth hero.
+    var heroSlotHeight: CGFloat { size(.heroDepth) + (sizeClass == .regular ? 4 : 2) }
+
+    /// The hero baseline sits this far above the bottom of its slot.
+    var heroBaselineInset: CGFloat { sizeClass == .regular ? 7 : 6 }
+
+    /// The gap between the hero slot and the first row; the stop page's state slot takes its place.
+    var heroRowGap: CGFloat { isTight ? 1 : (sizeClass == .regular ? 4 : 2) }
+
+    /// The recommended stop's paused or completed line.
+    var stateSlotHeight: CGFloat { sizeClass == .regular ? 16 : 12 }
+
+    /// The slot anchored to the instrument bottom: the Water Lock line or the storage footer.
+    var bottomSlotHeight: CGFloat { sizeClass == .regular ? 16 : 13 }
+
+    /// One recommended-stop minute index (proposal P2, adopted).
+    var stopIndexSize: CGSize {
+        sizeClass == .regular ? CGSize(width: 12, height: 4) : CGSize(width: 10, height: 3)
+    }
+
+    static let stopIndexGap: CGFloat = 3
+
+    /// The status band's top, just under the system clock (DECISIONS D10: Ultra 72 px, Series
+    /// 62 px). The system's own top inset sits lower and would cost the instrument that height.
+    var statusBandTop: CGFloat { sizeClass == .regular ? 36 : 31 }
+
+    /// Where the status band's chips start when the demo's toolbar circle shares their line
+    /// (D10: x 118 px Ultra, 104 px Series, inside the instrument's 4 pt side padding).
+    var toolbarClearance: CGFloat { sizeClass == .regular ? 55 : 48 }
 }
 
 private struct DiveTypeKey: EnvironmentKey {
@@ -198,7 +240,7 @@ enum DiveSpacing {
 /// Motion rules (spec D, DECISIONS D12–D14, D18). Underwater, automatic changes only cross-fade;
 /// only a diver's own page change moves, plus the one adopted exception: the recommended-stop range
 /// change interpolates once over 600 ms. Bounce and overshoot belong on land. Reduce Motion turns
-/// every move into a 200 ms fade, and Always-On turns animation off.
+/// every move into a 200 ms fade, and Always-On turns animation off apart from its own 300 ms settle.
 enum DiveMotion {
     enum Kind: CaseIterable {
         /// A card, row, tile or button press (on land).
@@ -213,6 +255,13 @@ enum DiveMotion {
         case rangeChange
         /// The saved summary's first appearance.
         case finale
+        /// A recording starts: the gauge rail grows down from the top and the values fade in.
+        case recordingStart
+        /// Live depth stops or resumes: the gauge fill and index fade.
+        case signal
+        /// A small element fades: a tick label stepping back from the depth index, a stop minute
+        /// index filling.
+        case quickFade
 
         fileprivate var curve: Curve {
             switch self {
@@ -222,13 +271,16 @@ enum DiveMotion {
             case .chip: return .easeInOut(duration: 0.35)
             case .rangeChange: return .smooth(duration: 0.6)
             case .finale: return .smooth(duration: 0.5)
+            case .recordingStart: return .smooth(duration: 0.5)
+            case .signal: return .easeOut(duration: 0.3)
+            case .quickFade: return .easeInOut(duration: 0.2)
             }
         }
 
         fileprivate var moves: Bool {
             switch self {
-            case .press, .diverPage, .rangeChange, .finale: return true
-            case .autoFade, .chip: return false
+            case .press, .diverPage, .rangeChange, .finale, .recordingStart: return true
+            case .autoFade, .chip, .signal, .quickFade: return false
             }
         }
     }
@@ -237,10 +289,13 @@ enum DiveMotion {
         case snappy(duration: Double)
         case smooth(duration: Double)
         case easeInOut(duration: Double)
+        case easeOut(duration: Double)
+        case linear(duration: Double)
 
         var duration: Double {
             switch self {
-            case let .snappy(duration), let .smooth(duration), let .easeInOut(duration):
+            case let .snappy(duration), let .smooth(duration), let .easeInOut(duration), let .easeOut(duration),
+                 let .linear(duration):
                 return duration
             }
         }
@@ -250,13 +305,29 @@ enum DiveMotion {
             case let .snappy(duration): return .snappy(duration: duration)
             case let .smooth(duration): return .smooth(duration: duration)
             case let .easeInOut(duration): return .easeInOut(duration: duration)
+            case let .easeOut(duration): return .easeOut(duration: duration)
+            case let .linear(duration): return .linear(duration: duration)
             }
         }
+    }
+
+    /// How a recording page changes (spec RC-PAGE, RC-AUTO).
+    enum PageMove: Equatable {
+        /// Always-On: the page swaps at once.
+        case none
+        /// Automatic changes and Reduce Motion: a cross-fade.
+        case fade
+        /// The diver's own page change: the column rises (or, paging back, drops) by `offset`.
+        case slide(offset: CGFloat)
     }
 
     /// How far a page travels when the diver pages (spec 12 px).
     static let pageOffset: CGFloat = 6
     static let reducedMotionCurve = Curve.easeInOut(duration: 0.2)
+    /// Always-On entering or leaving: opacity and colour settle together, nothing moves.
+    static let alwaysOnSettle = Curve.easeInOut(duration: 0.3)
+    /// A new depth sample: the gauge fill and index glide while the digits change at once.
+    static let depthGlide = Curve.linear(duration: 0.3)
 
     static func curve(_ kind: Kind, reduceMotion: Bool, alwaysOn: Bool) -> Curve? {
         guard !alwaysOn else { return nil }
@@ -296,15 +367,58 @@ enum DiveMotion {
         animation(.finale, reduceMotion: reduceMotion, alwaysOn: alwaysOn)
     }
 
-    /// The diver's page change: the new page rises into place and the old one leaves upward; paging
-    /// back reverses the direction. Under Reduce Motion it is a plain fade.
-    static func pageTransition(forward: Bool = true, reduceMotion: Bool) -> AnyTransition {
-        guard !reduceMotion else { return .opacity }
-        let offset = forward ? pageOffset : -pageOffset
-        return .asymmetric(
-            insertion: .opacity.combined(with: .offset(y: offset)),
-            removal: .opacity.combined(with: .offset(y: -offset))
-        )
+    /// The Always-On settle is a fade, so Reduce Motion keeps it. Use it at the parent, keyed on
+    /// `isLuminanceReduced`.
+    static func alwaysOnSettleCurve(reduceMotion: Bool) -> Curve {
+        alwaysOnSettle
+    }
+
+    static func alwaysOnSettle(reduceMotion: Bool) -> Animation {
+        alwaysOnSettleCurve(reduceMotion: reduceMotion).animation
+    }
+
+    /// The gauge follows each depth sample linearly; under Reduce Motion or Always-On it jumps.
+    static func depthGlideCurve(reduceMotion: Bool, alwaysOn: Bool) -> Curve? {
+        reduceMotion || alwaysOn ? nil : depthGlide
+    }
+
+    static func depthGlide(reduceMotion: Bool, alwaysOn: Bool) -> Animation? {
+        depthGlideCurve(reduceMotion: reduceMotion, alwaysOn: alwaysOn)?.animation
+    }
+
+    static func pageMove(userInitiated: Bool, forward: Bool, reduceMotion: Bool, alwaysOn: Bool) -> PageMove {
+        guard !alwaysOn else { return .none }
+        guard userInitiated, !reduceMotion else { return .fade }
+        return .slide(offset: forward ? pageOffset : -pageOffset)
+    }
+
+    /// The diver's page change uses the smooth page curve; anything automatic cross-fades.
+    static func pageCurve(userInitiated: Bool, reduceMotion: Bool, alwaysOn: Bool) -> Curve? {
+        curve(userInitiated ? .diverPage : .autoFade, reduceMotion: reduceMotion, alwaysOn: alwaysOn)
+    }
+
+    static func pageAnimation(userInitiated: Bool, reduceMotion: Bool, alwaysOn: Bool) -> Animation? {
+        pageCurve(userInitiated: userInitiated, reduceMotion: reduceMotion, alwaysOn: alwaysOn)?.animation
+    }
+
+    /// The new page rises into place and the old one leaves upward; paging back reverses it.
+    static func pageTransition(userInitiated: Bool, forward: Bool, reduceMotion: Bool, alwaysOn: Bool) -> AnyTransition {
+        switch pageMove(userInitiated: userInitiated, forward: forward, reduceMotion: reduceMotion, alwaysOn: alwaysOn) {
+        case .none:
+            return .identity
+        case .fade:
+            return .opacity
+        case let .slide(offset):
+            return .asymmetric(
+                insertion: .opacity.combined(with: .offset(y: offset)),
+                removal: .opacity.combined(with: .offset(y: -offset))
+            )
+        }
+    }
+
+    /// An automatic change of what a page shows: a cross-fade, or nothing under Always-On.
+    static func fadeTransition(alwaysOn: Bool) -> AnyTransition {
+        alwaysOn ? .identity : .opacity
     }
 }
 
@@ -390,26 +504,28 @@ private struct DiveChipLabel: View {
     }
 }
 
-/// The hint chip at the bottom of a real recording (spec C6): vertical page dots at the leading edge,
-/// matching watchOS vertical paging, then one hint line. `pageCount` 0 draws no dots (demo, summary);
-/// a `nil` text draws dots only. It has no tap target. Always-On hides the dots and dims the text.
+/// The hint chip at the bottom of a recording (spec C6): vertical page dots at the leading edge,
+/// matching watchOS vertical paging, then one hint line that says what the next press does.
+/// `pageCount` 0 draws no dots (demo, summary); a `nil` text draws dots only. It has no tap target.
+/// Always-On hides the dots without moving the text and dims the text.
 struct RecordingHintChip: View {
     var text: String?
     var pageIndex = 0
     var pageCount = 0
-    /// A rejected press shows its note in white for a moment.
+    /// A refused press shows its note in white for a moment.
     var isEmphasized = false
 
     @Environment(\.diveType) private var type
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var showsDots: Bool { pageCount > 0 && !isLuminanceReduced }
     private var isRegular: Bool { type.sizeClass == .regular }
 
     var body: some View {
         HStack(spacing: isRegular ? 6 : 5) {
-            if showsDots {
-                HintPageDots(index: pageIndex, count: pageCount)
+            if pageCount > 0 {
+                RecordingPageDots(index: pageIndex, count: pageCount)
+                    .opacity(isLuminanceReduced ? 0 : 1)
             }
 
             if let text {
@@ -420,35 +536,20 @@ struct RecordingHintChip: View {
                     .opacity(isLuminanceReduced ? 0.75 : 1)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.leading, isRegular ? 8 : 7)
         .padding(.trailing, text == nil ? (isRegular ? 8 : 7) : (isRegular ? 9 : 8))
+        .padding(.vertical, 2)
         .frame(minHeight: DiveSpacing.hintChipHeight(type.sizeClass))
         .background(
             RoundedRectangle(cornerRadius: DiveRadius.hintChip, style: .continuous)
                 .fill(DiveWatchTheme.chip)
         )
         .frame(maxWidth: DiveSpacing.hintChipMaxWidth(type.sizeClass))
+        .animation(DiveMotion.chip(reduceMotion: reduceMotion, alwaysOn: isLuminanceReduced), value: isEmphasized)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// 4 pt dots on a 6 pt pitch, stacked vertically; the current page is white. The hint text carries
-/// the same position for VoiceOver.
-private struct HintPageDots: View {
-    let index: Int
-    let count: Int
-
-    var body: some View {
-        VStack(spacing: DiveSpacing.pageDotPitch - DiveSpacing.pageDot) {
-            ForEach(0..<max(count, 1), id: \.self) { dot in
-                Circle()
-                    .fill(dot == index ? DiveWatchTheme.ink : DiveWatchTheme.dotOff)
-                    .frame(width: DiveSpacing.pageDot, height: DiveSpacing.pageDot)
-            }
-        }
-        .accessibilityHidden(true)
     }
 }
 
@@ -459,14 +560,18 @@ private struct HintPageDots: View {
 /// change in place without rolling. Always-On keeps the number white and greys the unit.
 struct MetricHero: View {
     enum Kind {
+        /// Depth and the freedive count, drawn at the depth size.
         case depth
+        /// Time, the stop countdown and surface rest.
         case time
     }
 
     let value: String?
-    let unit: String
+    var unit: String?
     var kind: Kind = .depth
     var color: Color = DiveWatchTheme.ink
+    /// What the number is, for VoiceOver.
+    var label: String = ""
 
     @Environment(\.diveType) private var type
     @Environment(\.isLuminanceReduced) private var isLuminanceReduced
@@ -481,23 +586,38 @@ struct MetricHero: View {
                 .tracking(type.tracking(role))
                 .foregroundStyle(numberColor)
                 .contentTransition(.identity)
+                .minimumScaleFactor(0.75)
 
-            Text(unit)
-                .font(type.font(.heroUnit))
-                .foregroundStyle(value == nil || isLuminanceReduced ? DiveWatchTheme.ink3 : DiveWatchTheme.ink2)
+            if let unit {
+                Text(unit)
+                    .font(type.font(.heroUnit))
+                    .foregroundStyle(value == nil || isLuminanceReduced ? DiveWatchTheme.ink3 : DiveWatchTheme.ink2)
+            }
         }
         .lineLimit(1)
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(label))
+        .accessibilityValue(Text(Self.accessibilityValue(value: value, unit: unit, kind: kind)))
     }
 
     private var numberColor: Color {
         if value == nil { return DiveWatchTheme.ink3 }
         return isLuminanceReduced ? DiveWatchTheme.ink : color
     }
+
+    /// The value as VoiceOver reads it. Grey dashes are never read out: an unknown depth says the
+    /// depth is unavailable, and any other unknown value says it is not available.
+    static func accessibilityValue(value: String?, unit: String?, kind: Kind) -> String {
+        guard let value else {
+            return kind == .depth ? String(localized: "Depth unavailable") : String(localized: "Not available")
+        }
+        guard let unit, !unit.isEmpty else { return value }
+        return "\(value) \(unit)"
+    }
 }
 
 /// One secondary value row under the hero (spec C10).
-struct ValueRow: Identifiable {
+struct ValueRow {
     enum Style {
         /// Label, then the value and unit on the same line.
         case inline
@@ -505,6 +625,8 @@ struct ValueRow: Identifiable {
         case quiet
         /// Label on its own line above the value, for labels too long to share a line.
         case stacked
+        /// A smaller semibold value under a larger instruction: the End page's dive time.
+        case small
     }
 
     let label: String
@@ -513,24 +635,71 @@ struct ValueRow: Identifiable {
     var style: Style = .inline
     var valueColor: Color = DiveWatchTheme.ink
     var placeholder = "--.-"
+    /// Always-On keeps only the values read at a glance; the others go transparent in place.
+    var keepsInAlwaysOn = true
+}
 
-    var id: String { label }
+extension ValueRow {
+    /// A row from a formatted value such as "5.2 m" or "21:40": the text after the last space is the
+    /// unit, drawn smaller. A value holding dashes is unknown and draws in grey.
+    init(
+        label: String,
+        formattedValue: String,
+        style: Style = .inline,
+        valueColor: Color = DiveWatchTheme.ink,
+        keepsInAlwaysOn: Bool = true
+    ) {
+        let parts = Self.split(formattedValue)
+        let isUnknown = parts.number.contains("--")
+        self.init(
+            label: label,
+            value: isUnknown ? nil : parts.number,
+            unit: parts.unit,
+            style: style,
+            valueColor: valueColor,
+            placeholder: parts.number,
+            keepsInAlwaysOn: keepsInAlwaysOn
+        )
+    }
+
+    private static func split(_ formatted: String) -> (number: String, unit: String?) {
+        guard let space = formatted.lastIndex(of: " ") else { return (formatted, nil) }
+        let unit = formatted[formatted.index(after: space)...]
+        // A trailing unit is letters, "/" or "°" only; anything else stays with the number.
+        guard !unit.isEmpty, unit.allSatisfy({ $0.isLetter || $0 == "/" || $0 == "°" }) else {
+            return (formatted, nil)
+        }
+        return (String(formatted[..<space]), String(unit))
+    }
 }
 
 /// Up to two secondary rows. Inline and quiet rows share one grid, so their values start on the same
-/// edge; a stacked row spans the grid.
+/// edge; a stacked row spans the grid. Always-On keeps the rows it is told to keep at 80% and makes
+/// the rest transparent without moving anything.
 struct ValueRows: View {
+    /// One row in its place. The id is the row's position, so two rows never share one.
+    struct Slot: Identifiable {
+        let id: Int
+        let row: ValueRow
+    }
+
     let rows: [ValueRow]
 
     @Environment(\.diveType) private var type
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    static func slots(_ rows: [ValueRow]) -> [Slot] {
+        rows.enumerated().map { Slot(id: $0.offset, row: $0.element) }
+    }
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline,
              horizontalSpacing: DiveSpacing.valueColumnGap(type.sizeClass),
              verticalSpacing: DiveSpacing.rowGap) {
-            ForEach(rows) { row in
+            ForEach(Self.slots(rows)) { slot in
+                let row = slot.row
                 switch row.style {
-                case .inline, .quiet:
+                case .inline, .quiet, .small:
                     GridRow {
                         label(row)
                         value(row)
@@ -545,12 +714,19 @@ struct ValueRows: View {
         }
     }
 
+    /// Always-On keeps only the rows read at a glance, at 80%; the rest go transparent in place.
+    private func opacity(_ row: ValueRow) -> Double {
+        guard row.keepsInAlwaysOn || !isLuminanceReduced else { return 0 }
+        return isLuminanceReduced ? 0.8 : 1
+    }
+
     private func label(_ row: ValueRow) -> some View {
         Text(row.label)
             .font(type.font(.rowLabel))
             .tracking(type.tracking(.rowLabel))
             .foregroundStyle(DiveWatchTheme.ink2)
             .lineLimit(1)
+            .opacity(opacity(row))
     }
 
     private func value(_ row: ValueRow) -> some View {
@@ -558,22 +734,26 @@ struct ValueRows: View {
         case .inline: (.rowValue, .rowUnit)
         case .quiet: (.quietValue, .quietUnit)
         case .stacked: (.stackedValue, .rowUnit)
+        case .small: (.endValue, .rowUnit)
         }
+        let isUnknown = row.value == nil
 
         return HStack(alignment: .firstTextBaseline, spacing: 2) {
             Text(row.value ?? row.placeholder)
                 .font(type.font(roles.value))
                 .tracking(type.tracking(roles.value))
-                .foregroundStyle(row.value == nil ? DiveWatchTheme.ink3 : row.valueColor)
+                .foregroundStyle(isUnknown ? DiveWatchTheme.ink3 : row.valueColor)
                 .contentTransition(.identity)
 
             if let unit = row.unit {
                 Text(unit)
                     .font(type.font(roles.unit))
-                    .foregroundStyle(row.value == nil ? DiveWatchTheme.ink3 : DiveWatchTheme.ink2)
+                    .foregroundStyle(isUnknown || isLuminanceReduced ? DiveWatchTheme.ink3 : DiveWatchTheme.ink2)
             }
         }
         .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .opacity(opacity(row))
     }
 }
 
@@ -684,6 +864,51 @@ struct DepthColumnGlyph: Shape {
     }
 }
 
+/// The dive-type glyphs (spec C21, DECISIONS D19): the monofin for freediving and the tank for scuba.
+/// Drawn on a 24-unit grid, fitted to the rect without stretching and centred. Fill it with the
+/// foreground colour.
+struct DiveModeGlyph: Shape {
+    let mode: DiveMode
+
+    func path(in rect: CGRect) -> Path {
+        let scale = min(rect.width, rect.height) / 24
+        guard scale.isFinite, scale > 0 else { return Path() }
+        let glyph = mode == .freedive ? Self.monofin : Self.tank
+        let placement = CGAffineTransform(translationX: rect.midX - 12 * scale, y: rect.midY - 12 * scale)
+            .scaledBy(x: scale, y: scale)
+        return glyph.applying(placement)
+    }
+
+    private static var monofin: Path {
+        var path = Path()
+        path.move(to: CGPoint(x: 12, y: 2.5))
+        path.addCurve(to: CGPoint(x: 9.6, y: 5.3), control1: CGPoint(x: 10.5, y: 2.5), control2: CGPoint(x: 9.6, y: 3.7))
+        path.addLine(to: CGPoint(x: 9.6, y: 11.9))
+        path.addCurve(to: CGPoint(x: 8.4, y: 14.8), control1: CGPoint(x: 9.6, y: 13), control2: CGPoint(x: 9.2, y: 14))
+        path.addLine(to: CGPoint(x: 4.6, y: 18.6))
+        path.addCurve(to: CGPoint(x: 5.4, y: 20.5), control1: CGPoint(x: 3.9, y: 19.3), control2: CGPoint(x: 4.4, y: 20.5))
+        path.addLine(to: CGPoint(x: 18.6, y: 20.5))
+        path.addCurve(to: CGPoint(x: 19.4, y: 18.6), control1: CGPoint(x: 19.6, y: 20.5), control2: CGPoint(x: 20.1, y: 19.3))
+        path.addLine(to: CGPoint(x: 15.6, y: 14.8))
+        path.addCurve(to: CGPoint(x: 14.4, y: 11.9), control1: CGPoint(x: 14.8, y: 14), control2: CGPoint(x: 14.4, y: 13))
+        path.addLine(to: CGPoint(x: 14.4, y: 5.3))
+        path.addCurve(to: CGPoint(x: 12, y: 2.5), control1: CGPoint(x: 14.4, y: 3.7), control2: CGPoint(x: 13.5, y: 2.5))
+        path.closeSubpath()
+        return path
+    }
+
+    private static var tank: Path {
+        var path = Path(roundedRect: CGRect(x: 7.5, y: 6.5, width: 9, height: 15.5), cornerRadius: 4.5)
+        path.addPath(Path(roundedRect: CGRect(x: 10.3, y: 2.5, width: 3.4, height: 4.6), cornerRadius: 1))
+        var hose = Path()
+        hose.move(to: CGPoint(x: 13.7, y: 4.2))
+        hose.addArc(tangent1End: CGPoint(x: 18.8, y: 4.2), tangent2End: CGPoint(x: 18.8, y: 10), radius: 2.3)
+        hose.addLine(to: CGPoint(x: 18.8, y: 10))
+        path.addPath(hose.strokedPath(StrokeStyle(lineWidth: 1.7, lineCap: .round, lineJoin: .round)))
+        return path
+    }
+}
+
 /// A dive profile drawn small, with the surface at the top (spec C15). `points` are normalized:
 /// x runs 0...1 across the dive and y 0...1 down a depth axis that reaches 1.1 × the deepest reading,
 /// so the line never touches the bottom. `.line` is the profile; `.area` is the water above the
@@ -767,7 +992,7 @@ struct MiniDepthProfile: Shape {
     VStack(alignment: .leading, spacing: DiveType.regular.slotSpacing) {
         MetricHero(value: "18.6", unit: "m")
         MetricHero(value: nil, unit: "m")
-        MetricHero(value: "02:41", unit: "", kind: .time, color: DiveWatchTheme.caution)
+        MetricHero(value: "02:41", kind: .time, color: DiveWatchTheme.caution)
         ValueRows(rows: [
             ValueRow(label: "다이빙 시간", value: "24:18"),
             ValueRow(label: "상승", value: "6.0", unit: "m/min", style: .quiet, valueColor: DiveWatchTheme.ink2),

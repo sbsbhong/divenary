@@ -95,6 +95,11 @@ struct RecordingHint: Equatable {
         )
     }
 
+    /// A press that could not act. Its note shows in white for a moment.
+    var isRejection: Bool {
+        kind == .endRejected || kind == .switchRejected
+    }
+
     var text: String {
         let position = pageIndex + 1
         switch kind {
@@ -128,6 +133,33 @@ struct RecordingHint: Equatable {
     }
 }
 
+/// How the latest page change should move (spec RC-PAGE, RC-AUTO): only the diver's own change
+/// slides, and turning the crown back slides the other way. The Action Button always pages forward.
+struct RecordingPageMotion: Equatable {
+    let change: RecordingPageChange?
+    /// The sign of the latest crown step: negative when the crown turned back toward Live.
+    let crownDirection: Int
+
+    var page: RecordingPage? { change?.page }
+
+    var userInitiated: Bool { change?.userInitiated ?? false }
+
+    var forward: Bool {
+        !(change?.reason == .crown && crownDirection < 0)
+    }
+}
+
+private struct RecordingPageMotionKey: EnvironmentKey {
+    static let defaultValue = RecordingPageMotion(change: nil, crownDirection: 0)
+}
+
+extension EnvironmentValues {
+    var recordingPageMotion: RecordingPageMotion {
+        get { self[RecordingPageMotionKey.self] }
+        set { self[RecordingPageMotionKey.self] = newValue }
+    }
+}
+
 /// Real recording only. It shows the page the Action Button and crown select, reports Always-On to
 /// the page model and flashes a short note after a rejected press. It plays no haptics: the runtime
 /// confirms presses and page changes the diver made, and nothing else.
@@ -145,6 +177,7 @@ struct RealRecordingPager<Content: View>: View {
     @State private var crownDetents = CrownDetentCounter()
     @State private var flashedRejectionID: Int?
     @State private var flashedRejection: DiveActionRejection?
+    @State private var crownDirection = 0
 
     var body: some View {
         content(displayedPage, hint)
@@ -167,6 +200,7 @@ struct RealRecordingPager<Content: View>: View {
             .onChange(of: crownTicks) { _, newTicks in
                 let detents = crownDetents.consume(newTicks)
                 if detents != 0 {
+                    crownDirection = detents > 0 ? 1 : -1
                     pages.stepFromCrown(by: detents)
                 }
             }
@@ -191,6 +225,7 @@ struct RealRecordingPager<Content: View>: View {
                 guard !Task.isCancelled else { return }
                 flashedRejectionID = nil
             }
+            .environment(\.recordingPageMotion, RecordingPageMotion(change: pages.lastChange, crownDirection: crownDirection))
     }
 
     /// The same page is drawn and acted on. Always-On keeps the model on Live.
@@ -259,60 +294,55 @@ struct CrownFocusKeeper: ViewModifier {
     }
 }
 
-/// Page dots, the hint chip and, at the surface, the Water Lock note. It has no tap target: the
-/// touchscreen is locked while recording, and ending never happens by touch.
+/// The hint chip under a real recording: vertical page dots and what the next press does, the End
+/// page included. It has no tap target: the touchscreen is locked while recording, and ending never
+/// happens by touch. The Water Lock note sits in the instrument's bottom slot instead.
 struct RecordingHintBar: View {
     let hint: RecordingHint
 
     var body: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 5) {
-                RecordingPageDots(index: hint.pageIndex, count: hint.pageCount)
-
-                // The End page already presents this instruction prominently; keep its dots
-                // and Water Lock note without repeating a second end-and-save label.
-                if hint.kind != .pressToEnd && hint.kind != .waterLockToEnd {
-                    Text(hint.text)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(hint.kind == .pressToEnd ? DiveWatchTheme.text : DiveWatchTheme.mutedText)
-                        .lineLimit(2)
-                        .minimumScaleFactor(1)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(DiveWatchTheme.surfaceRaised)
-            )
-
-            if hint.showsWaterLockNote {
-                Text(String(localized: "Water Lock off ends log"))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundStyle(DiveWatchTheme.mutedText)
-                    .lineLimit(2)
-                    .minimumScaleFactor(1)
-            }
-        }
+        RecordingHintChip(
+            text: hint.text,
+            pageIndex: hint.pageIndex,
+            pageCount: hint.pageCount,
+            isEmphasized: hint.isRejection
+        )
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
     }
 }
 
-/// Which readout page is showing. The hint text carries the same position for VoiceOver.
+/// Which readout page is showing, stacked vertically like watchOS vertical paging: 4 pt dots on a
+/// 6 pt pitch, the current page white. The hint text carries the same position for VoiceOver.
 struct RecordingPageDots: View {
     let index: Int
     let count: Int
 
     var body: some View {
-        HStack(spacing: 3) {
+        VStack(spacing: DiveSpacing.pageDotPitch - DiveSpacing.pageDot) {
             ForEach(0..<max(count, 1), id: \.self) { dot in
                 Circle()
-                    .fill(dot == index ? DiveWatchTheme.text : DiveWatchTheme.mutedText.opacity(0.75))
-                    .frame(width: 4, height: 4)
+                    .fill(dot == index ? DiveWatchTheme.ink : DiveWatchTheme.dotOff)
+                    .frame(width: DiveSpacing.pageDot, height: DiveSpacing.pageDot)
             }
         }
         .accessibilityHidden(true)
+    }
+}
+
+/// "Water Lock off ends log", in the instrument's bottom slot while the watch is out of the water,
+/// so the gauge never resizes when the diver surfaces. Always-On keeps it at 60%.
+struct RecordingWaterLockNote: View {
+    @Environment(\.diveType) private var type
+    @Environment(\.isLuminanceReduced) private var isLuminanceReduced
+
+    var body: some View {
+        Text(String(localized: "Water Lock off ends log"))
+            .font(type.font(.waterLock))
+            .tracking(type.tracking(.waterLock))
+            .foregroundStyle(DiveWatchTheme.ink2)
+            .opacity(isLuminanceReduced ? 0.6 : 1)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 
